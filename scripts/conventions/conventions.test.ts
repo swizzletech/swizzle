@@ -480,6 +480,41 @@ it("no-other-products reports a product name in any tracked file but a lockfile"
   ]);
 });
 
+it("review-config-paths reports a pattern or named file in the review configuration that matches nothing", async () => {
+  const config = [
+    "reviews:",
+    "  path_filters:",
+    '    - "!pnpm-lock.yaml"',
+    '    - "!docs/generated/**"',
+    "  path_instructions:",
+    '    - path: "apps/**/*.ts"',
+    "      instructions: >-",
+    "        Follow `docs/rules.md` and `docs/moved.md`. Keep data in `packages/db` and",
+    "        `packages/gone`; call `vi.stubEnv` and `just gen`.",
+    "knowledge_base:",
+    "  code_guidelines:",
+    "    filePatterns:",
+    '      - files: "docs/rules.md,docs/renamed.md"',
+    '        applyTo: "packages/**,web/**,{apps,packages}/**/*.ts"',
+    "",
+  ].join("\n");
+  expect(
+    await reported("review-config-paths", {
+      ".coderabbit.yaml": config,
+      "pnpm-lock.yaml": "",
+      "apps/api/main.ts": "",
+      "packages/db/schema.ts": "",
+      "docs/rules.md": "",
+    }),
+  ).toEqual([
+    ".coderabbit.yaml:13",
+    ".coderabbit.yaml:14",
+    ".coderabbit.yaml:4",
+    ".coderabbit.yaml:8",
+    ".coderabbit.yaml:9",
+  ]);
+});
+
 it("no-private-paths reports a public file that names a file the export leaves out", async () => {
   const login = ".agents/skills/demo/scripts/login";
   expect(

@@ -10,17 +10,19 @@ import type { NotificationRule } from "../../lib/api";
 import { useDashboardClient } from "../../lib/dashboard-client";
 import { refreshAll, useAutomations } from "../../lib/queries";
 import { ageInWords, durationInWords } from "../../lib/words/time";
-import { Section } from "./section";
+import { SECTION_DATA, Section } from "./section";
 
 const BOT_TOKEN_SECRET = "SWIZZLE_TELEGRAM_BOT_TOKEN";
 
 export function Notifications({ operator }: { readonly operator: boolean }) {
   const { api, queryScope } = useDashboardClient();
   const rules = useQuery({
+    meta: SECTION_DATA,
     queryFn: async () => (await api.listNotificationRules()).rules,
     queryKey: ["notification-rules", ...queryScope],
   });
   const secrets = useQuery({
+    meta: SECTION_DATA,
     queryFn: async () => (await api.listSecrets()).secrets,
     queryKey: ["secrets", ...queryScope],
   });
@@ -318,6 +320,7 @@ function Deliveries() {
   const { api, queryScope } = useDashboardClient();
   const now = useNow();
   const deliveries = useQuery({
+    meta: SECTION_DATA,
     queryFn: async () => (await api.listNotificationDeliveries({ limit: 20 })).deliveries,
     queryKey: ["notification-deliveries", ...queryScope],
   });

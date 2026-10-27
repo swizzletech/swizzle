@@ -21,11 +21,13 @@ export interface StoredCredential extends CredentialTarget {
 }
 
 /** A credential offered to another project; it binds there once an admin of that project accepted. */
-export interface StoredCredentialShare {
+export interface CredentialShare {
   readonly shareId: string;
-  readonly credential: StoredCredential;
+  readonly credential: Omit<StoredCredential, "projectId">;
   /** The project the credential is offered to. */
-  readonly projectId: string;
+  readonly project: ProjectRef;
+  /** The project that owns the credential. */
+  readonly credentialProject: ProjectRef;
   readonly offeredBy: string | null;
   readonly acceptedBy: string | null;
   readonly acceptedAt: string | null;
@@ -36,21 +38,13 @@ export interface StoredCredentialShare {
 export interface CredentialAccess {
   readonly credential: StoredCredential;
   readonly grants: readonly CredentialGrant[];
-  readonly shares: readonly ListedCredentialShare[];
-}
-
-/** A share as the API lists it, with the names of both projects it joins. */
-export interface ListedCredentialShare extends StoredCredentialShare {
-  /** The project it is offered to. */
-  readonly project: ProjectRef;
-  /** The project that owns the credential. */
-  readonly credentialProject: ProjectRef;
+  readonly shares: readonly CredentialShare[];
 }
 
 /** A credential its project shares with others, with each share; the project tab lists these. */
 export interface SharedCredential {
   readonly credential: StoredCredential;
-  readonly shares: readonly ListedCredentialShare[];
+  readonly shares: readonly CredentialShare[];
 }
 
 /**
@@ -62,7 +56,7 @@ export interface CredentialAccessView {
   readonly right: CredentialRight;
   readonly holders: readonly CredentialHolder[];
   readonly grants: readonly CredentialGrant[];
-  readonly shares: readonly ListedCredentialShare[];
+  readonly shares: readonly CredentialShare[];
   /** The service accounts of the owning project, which a grant may name. */
   readonly serviceAccounts: readonly { readonly id: string; readonly name: string }[];
 }

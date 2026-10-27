@@ -3,6 +3,7 @@ import {
   type AutomationWebhookSignatureConfig,
   normalizeWebhookPath,
   validateWebhookPayloadAgainstSchema,
+  type WebhookPayloadValidationIssue,
 } from "@swizzle/config";
 import { createDisplayName } from "@swizzle/core";
 import type { AuditEventOf } from "@swizzle/db";
@@ -196,7 +197,8 @@ export async function startManualRun(
     );
   }
   const payload = options.payload ?? {};
-  validateTriggerInput(trigger, payload);
+  const problem = validateTriggerConfiguration(trigger) ?? validateTriggerPayload(trigger, payload);
+  if (problem !== null) throw triggerInputError(trigger, problem);
   const run = await options.enqueueRun({
     correlationId: options.correlationId ?? null,
     payload,
@@ -234,7 +236,15 @@ export async function triggerWebhookByPath(
     );
   }
 
-  await validateWebhookTrigger(options.store, trigger, options.source ?? "config-webhook-path");
+  const configurationProblem = validateTriggerConfiguration(trigger);
+  if (configurationProblem !== null) {
+    await rejectWebhookInput(
+      options.store,
+      trigger,
+      options.source ?? "config-webhook-path",
+      configurationProblem,
+    );
+  }
   // Signature is verified BEFORE payload validation: an unsigned or wrongly-signed
   // caller to a signed endpoint must be rejected before any payload-schema feedback
   // (which would otherwise confirm the endpoint exists and leak its schema).
@@ -407,47 +417,63 @@ function normalizeRuntimeWebhookPath(path: string): string {
   }
 }
 
-function assertTriggerConfiguration(trigger: StoredTrigger): void {
-  if (trigger.status === "invalid") {
-    throw new AutomationRuntimeError(
-      "TRIGGER_CONFIGURATION_INVALID",
-      trigger.errorMessage ?? "The trigger configuration is invalid.",
-    );
-  }
+type TriggerInputProblem =
+  | { readonly kind: "invalid-config"; readonly message: string }
+  | { readonly kind: "payload-errors"; readonly errors: readonly WebhookPayloadValidationIssue[] };
+
+function validateTriggerConfiguration(
+  trigger: StoredTrigger,
+): Extract<TriggerInputProblem, { readonly kind: "invalid-config" }> | null {
+  return trigger.status === "invalid"
+    ? {
+        kind: "invalid-config",
+        message: trigger.errorMessage ?? "The trigger configuration is invalid.",
+      }
+    : null;
 }
 
-/** Manual runs and signed deliveries apply the same configuration and payload checks. */
-function validateTriggerInput(trigger: StoredTrigger, payload: unknown): void {
-  assertTriggerConfiguration(trigger);
+/** Payload checks follow configuration checks and, for signed deliveries, signature verification. */
+function validateTriggerPayload(
+  trigger: StoredTrigger,
+  payload: unknown,
+): Extract<TriggerInputProblem, { readonly kind: "payload-errors" }> | null {
   const validation = validateWebhookPayloadAgainstSchema(
     trigger.config.trigger.type === "webhook" ? trigger.config.trigger.payload_schema : undefined,
     payload,
   );
-  if (!validation.ok) {
-    throw new AutomationRuntimeError(
-      "WEBHOOK_PAYLOAD_INVALID",
-      `Payload for automation ${trigger.automationName} does not match trigger.payload_schema.`,
-      { details: { validationErrors: validation.errors } },
-    );
+  return validation.ok ? null : { kind: "payload-errors", errors: validation.errors };
+}
+
+function triggerInputError(
+  trigger: StoredTrigger,
+  problem: TriggerInputProblem,
+): AutomationRuntimeError {
+  switch (problem.kind) {
+    case "invalid-config":
+      return new AutomationRuntimeError("TRIGGER_CONFIGURATION_INVALID", problem.message);
+    case "payload-errors":
+      return new AutomationRuntimeError(
+        "WEBHOOK_PAYLOAD_INVALID",
+        `Payload for automation ${trigger.automationName} does not match trigger.payload_schema.`,
+        { details: { validationErrors: problem.errors } },
+      );
   }
 }
 
-async function validateWebhookTrigger(
+async function rejectWebhookInput(
   store: ControlPlaneStore,
   trigger: StoredTrigger,
   source: string,
-): Promise<void> {
-  try {
-    assertTriggerConfiguration(trigger);
-  } catch (error) {
-    await writeWebhookRejectedAudit(store, trigger, {
-      errorCode: trigger.errorCode,
-      reason: "trigger-invalid",
-      source,
-      webhookPath: trigger.webhookPath,
-    });
-    throw error;
-  }
+  problem: TriggerInputProblem,
+): Promise<never> {
+  await writeWebhookRejectedAudit(store, trigger, {
+    ...(problem.kind === "invalid-config"
+      ? { errorCode: trigger.errorCode, reason: "trigger-invalid" }
+      : { reason: "payload-schema-invalid", validationErrors: problem.errors }),
+    source,
+    webhookPath: trigger.webhookPath,
+  });
+  throw triggerInputError(trigger, problem);
 }
 
 async function enqueueWebhook(options: {
@@ -459,17 +485,9 @@ async function enqueueWebhook(options: {
   readonly trigger: StoredTrigger;
   readonly webhookContext?: StoredRun["webhookContext"];
 }): Promise<StoredRun> {
-  try {
-    validateTriggerInput(options.trigger, options.payload);
-  } catch (error) {
-    await writeWebhookRejectedAudit(options.store, options.trigger, {
-      reason: "payload-schema-invalid",
-      source: options.source,
-      validationErrors:
-        error instanceof AutomationRuntimeError ? error.details?.validationErrors : undefined,
-      webhookPath: options.trigger.webhookPath,
-    });
-    throw error;
+  const problem = validateTriggerPayload(options.trigger, options.payload);
+  if (problem !== null) {
+    await rejectWebhookInput(options.store, options.trigger, options.source, problem);
   }
 
   try {

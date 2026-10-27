@@ -18,12 +18,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { AutomationRuntimeConfig } from "@swizzle/config";
-import type { RunImageDisk } from "@swizzle/db";
 import { BoundedOutput } from "./bounded-output.js";
 
 import { containerLimitArguments, installDiskLimitMb } from "./container-limits.js";
-import { DockerScope, removeAbandonedContainers, stackLabel, workerLabel } from "./docker-cli.js";
-import { readImageLayerHistory } from "./docker-image-history.js";
+import { DockerScope, stackLabel, workerLabel } from "./docker-cli.js";
 import { AutomationRuntimeError, getErrorMessage } from "./errors.js";
 import {
   egressProxyEnvironment,
@@ -33,14 +31,6 @@ import {
 } from "./sandbox.js";
 import type { AutomationDefinition } from "./validation.js";
 
-const DEFAULT_IMAGE_RETENTION_HOURS = 24;
-const DEFAULT_IMAGE_DISK_MB = 20_480;
-/** How often a worker prunes images that no live worker's active deployment keeps. */
-export const RUN_IMAGE_PRUNE_INTERVAL_MS = 15 * 60 * 1_000;
-/** Gives an assembly time to start its sandbox, after which Docker refuses to remove its image. */
-const FRESH_IMAGE_MS = 10 * 60 * 1_000;
-const RUN_TAG = /^swizzle-run:([0-9a-f]{24})$/u;
-const IMAGE_FORMAT = `[{{json .Id}},{{json .Created}},{{json .RepoTags}},{{json .RootFS.Layers}}]`;
 const ASSEMBLY_ATTEMPTS = 2;
 /** How long one assembly attempt, the install step included, may take. */
 const ASSEMBLY_TIMEOUT_MS = 10 * 60 * 1_000;
@@ -359,7 +349,8 @@ async function assembleOnce(input: AssemblyInput): Promise<void> {
   const { install } = input.recipe;
   const name = assemblyContainer(input.tag);
   const owner = new DockerScope({ timeoutMs: ASSEMBLY_TIMEOUT_MS, containerName: name });
-  const docker = (args: readonly string[]) => owner.run(args, { outputLimitBytes: 64 * 1_024 });
+  const docker = (args: readonly string[], deadline: "control" | "transfer" = "control") =>
+    owner.run(args, { outputLimitBytes: 64 * 1_024, deadline });
   let toolDirectory: string | null = null;
   try {
     if (install !== null) toolDirectory = await mkdtemp(path.join(tmpdir(), "swizzle-tools-"));
@@ -397,22 +388,31 @@ async function assembleOnce(input: AssemblyInput): Promise<void> {
       return;
     }
     // --archive gives every copied file to the container's user, the sandbox user.
-    await docker(["cp", "--archive", `${input.automationDirectory}/.`, `${name}:/automation`]);
+    await docker(
+      ["cp", "--archive", `${input.automationDirectory}/.`, `${name}:/automation`],
+      "transfer",
+    );
     if (toolDirectory !== null) {
-      await docker(["cp", "--archive", `${toolDirectory}/.`, `${name}:${TOOL_DIRECTORY}`]);
+      await docker(
+        ["cp", "--archive", `${toolDirectory}/.`, `${name}:${TOOL_DIRECTORY}`],
+        "transfer",
+      );
       await runInstallStep(name, input.onLog, owner);
     }
-    const committed = await docker([
-      "commit",
-      ...input.recipe.environment.flatMap((value) => ["--change", `ENV ${value}`]),
-      "--change",
-      "WORKDIR /automation",
-      "--change",
-      `ENTRYPOINT ${JSON.stringify(input.recipe.command)}`,
-      "--change",
-      "CMD []",
-      name,
-    ]);
+    const committed = await docker(
+      [
+        "commit",
+        ...input.recipe.environment.flatMap((value) => ["--change", `ENV ${value}`]),
+        "--change",
+        "WORKDIR /automation",
+        "--change",
+        `ENTRYPOINT ${JSON.stringify(input.recipe.command)}`,
+        "--change",
+        "CMD []",
+        name,
+      ],
+      "transfer",
+    );
     const image = committed.stdout.trim();
     owner.ownImage(image);
     await docker(["tag", image, input.tag]);
@@ -566,227 +566,6 @@ function installScript(install: string): string {
     .map(([key, value]) => `${key}=${shellQuote(value)}`)
     .join(" ");
   return `export ${exports} && cd /automation && ${install}`;
-}
-
-/**
- * Keeps tags selected from durable ownership and images within the assembly grace period.
- * Removes other stack images by age and disk budget, newest first. Docker refuses removal
- * while a container uses the image, so that image stays until a later pass. Resolves the count
- * removed and the bytes the keep set holds, which no budget bounds.
- */
-export async function pruneRunImages(input: {
-  readonly keep: ReadonlySet<string>;
-  readonly logger?: ImagePruneLogger;
-  readonly signal?: AbortSignal;
-}): Promise<{ readonly removed: number; readonly disk: RunImageDisk }> {
-  return await withPassOwner(async (owner) => {
-    const docker: DockerCall = (args) => owner.run(args, { outputLimitBytes: 1_048_576 });
-    const now = Date.now();
-    const budgetBytes = diskBudgetBytes();
-    await removeAbandonedContainers();
-    const retained = new Set<string>();
-    const active: RunImage[] = [];
-    const fresh: RunImage[] = [];
-    const candidates: RunImage[] = [];
-    const listed = await listStackRunImages(owner);
-    for (const image of await measureImageFootprints(listed, owner, budgetBytes, input.logger)) {
-      if (image.tags.some((tag) => input.keep.has(tag))) active.push(image);
-      else if (now - image.createdAt < FRESH_IMAGE_MS) fresh.push(image);
-      else candidates.push(image);
-    }
-    let bytes = 0;
-    const retain = (image: RunImage) => {
-      bytes += additionalImageBytes(image, retained);
-      for (const layer of image.layers) retained.add(layer.chain);
-    };
-    for (const image of active) retain(image);
-    const activeBytes = bytes;
-    for (const image of fresh) retain(image);
-    const retentionMs =
-      positiveInteger("SWIZZLE_RUNNER_IMAGE_RETENTION_HOURS", DEFAULT_IMAGE_RETENTION_HOURS) *
-      3_600_000;
-    let removed = 0;
-    candidates.sort((left, right) => right.createdAt - left.createdAt);
-    for (const image of candidates) {
-      const { tags } = image;
-      const additional = additionalImageBytes(image, retained);
-      if (now - image.createdAt < retentionMs && bytes + additional <= budgetBytes) {
-        bytes += additional;
-        for (const layer of image.layers) retained.add(layer.chain);
-        continue;
-      }
-      // The run tag goes last: an image a container uses keeps it when its removal fails.
-      const references = tags.length === 0 ? [image.id] : [...tags].sort(runTagLast);
-      try {
-        await docker(["image", "rm", ...references]);
-        removed += 1;
-      } catch (error) {
-        if (error instanceof AutomationRuntimeError) throw error;
-        bytes += additional;
-        for (const layer of image.layers) retained.add(layer.chain);
-      }
-    }
-    input.signal?.throwIfAborted();
-    return { removed, disk: { activeBytes, budgetBytes } };
-  }, input.signal);
-}
-
-type ImagePruneLogger = { warn(...args: readonly unknown[]): void };
-
-type DockerCall = (args: readonly string[]) => Promise<{ readonly stdout: string }>;
-
-async function withPassOwner<T>(
-  pass: (docker: DockerScope) => Promise<T>,
-  signal?: AbortSignal,
-): Promise<T> {
-  const owner = new DockerScope({
-    timeoutMs: 60_000,
-    containerName: null,
-    ...(signal === undefined ? {} : { signal }),
-  });
-  try {
-    return await pass(owner);
-  } finally {
-    await owner.close();
-  }
-}
-
-/** This stack's images, as Docker lists and inspects them. */
-async function listStackRunImages(owner: DockerScope): Promise<InspectedRunImage[]> {
-  const docker: DockerCall = (args) => owner.run(args, { outputLimitBytes: 1_048_576 });
-  const listed = await docker([
-    "image",
-    "ls",
-    "--all",
-    "--filter",
-    `label=${stackLabel()}`,
-    "--quiet",
-    "--no-trunc",
-  ]);
-  const ids = [...new Set(listed.stdout.split("\n").map((id) => id.trim()))].filter(Boolean);
-  if (ids.length === 0) return [];
-  // The CLI inspects its arguments sequentially. Bound parallel batches to fit the pass deadline.
-  const batchSize = Math.max(16, Math.ceil(ids.length / 8));
-  const batches: string[][] = [];
-  for (let offset = 0; offset < ids.length; offset += batchSize) {
-    batches.push(ids.slice(offset, offset + batchSize));
-  }
-  const inspected = await Promise.all(
-    batches.map((batch) => docker(["image", "inspect", "--format", IMAGE_FORMAT, ...batch])),
-  );
-  return inspected.flatMap(({ stdout }) => stdout.split("\n").flatMap(parseRunImage));
-}
-
-/** History reports unpacked layer bytes on both Docker image stores, without packed blobs. */
-async function measureImageFootprints(
-  images: readonly InspectedRunImage[],
-  owner: DockerScope,
-  budgetBytes: number,
-  logger: ImagePruneLogger | undefined,
-): Promise<RunImage[]> {
-  const measured: { image: InspectedRunImage; sizes: number[] }[] = [];
-  // Bound CLI processes while keeping a large inventory inside the prune pass deadline.
-  for (let offset = 0; offset < images.length; offset += 8) {
-    measured.push(
-      ...(await Promise.all(
-        images.slice(offset, offset + 8).map(async (image) => {
-          const { stdout } = await owner.run(
-            ["image", "history", "--human=false", "--no-trunc", "--format", "{{.Size}}", image.id],
-            { outputLimitBytes: 1_048_576 },
-          );
-          const sizes = stdout.trim() === "" ? [] : stdout.trim().split("\n").map(Number);
-          if (sizes.some((size) => !Number.isSafeInteger(size) || size < 0)) {
-            throw new Error(`Cannot read layer sizes of run image ${image.id}.`);
-          }
-          return { image, sizes: sizes.reverse() };
-        }),
-      )),
-    );
-  }
-  const ambiguous = measured.filter(
-    ({ image, sizes }) => sizes.filter((size) => size > 0).length !== image.layers.length,
-  );
-  const histories =
-    ambiguous.length === 0
-      ? new Map<string, readonly boolean[]>()
-      : await readImageLayerHistory(
-          ambiguous.map(({ image }) => image),
-          owner,
-        );
-  return measured.map(({ image, sizes }) => {
-    const history = histories.get(image.id);
-    const filesystem =
-      history === undefined
-        ? sizes.filter((size) => size > 0)
-        : sizes.filter((_, index) => history[index]);
-    if (
-      (history !== undefined && history.length !== sizes.length) ||
-      filesystem.length !== image.layers.length
-    ) {
-      logger?.warn(
-        { imageId: image.id, tags: image.tags },
-        "Cannot measure run image; counting it above the disk budget.",
-      );
-      // An unknown footprint must leave no room for inactive images, even when protected.
-      return { ...image, layers: [{ chain: `unmeasured:${image.id}`, bytes: budgetBytes + 1 }] };
-    }
-    return {
-      ...image,
-      layers: filesystem.map((bytes, index) => ({
-        chain: image.layers.slice(0, index + 1).join("/"),
-        bytes,
-      })),
-    };
-  });
-}
-
-interface RunImage extends Omit<InspectedRunImage, "layers"> {
-  readonly layers: readonly { readonly chain: string; readonly bytes: number }[];
-}
-
-interface InspectedRunImage {
-  readonly id: string;
-  readonly createdAt: number;
-  readonly layers: readonly string[];
-  readonly tags: readonly string[];
-}
-
-/** One line of IMAGE_FORMAT output; none when the line is not one. */
-function parseRunImage(line: string): InspectedRunImage[] {
-  if (line.trim() === "") return [];
-  const parsed: unknown = JSON.parse(line);
-  if (!Array.isArray(parsed)) return [];
-  const [id, created, tags, layers] = parsed;
-  if (typeof id !== "string" || typeof created !== "string") return [];
-  return [
-    {
-      layers: Array.isArray(layers) ? layers.filter((layer) => typeof layer === "string") : [],
-      createdAt: Date.parse(created),
-      id,
-      tags: Array.isArray(tags) ? tags.filter((tag) => typeof tag === "string") : [],
-    },
-  ];
-}
-
-/** A diff ID shares storage only under the same sequence of parent layers. */
-function additionalImageBytes(image: RunImage, retained: ReadonlySet<string>): number {
-  return image.layers.reduce(
-    (bytes, layer) => bytes + (retained.has(layer.chain) ? 0 : layer.bytes),
-    0,
-  );
-}
-
-function diskBudgetBytes(): number {
-  return positiveInteger("SWIZZLE_RUNNER_IMAGE_DISK_MB", DEFAULT_IMAGE_DISK_MB) * 1_048_576;
-}
-
-function runTagLast(left: string, right: string): number {
-  return Number(RUN_TAG.test(left)) - Number(RUN_TAG.test(right));
-}
-
-function positiveInteger(name: string, fallback: number): number {
-  const configured = Number(process.env[name]);
-  return Number.isSafeInteger(configured) && configured >= 1 ? configured : fallback;
 }
 
 function nodeInstallCommand(lockfile: string | undefined): string {

@@ -19,7 +19,7 @@ You can still override that with `--payload` or `--payload-file`.
 | Example | Runtime | Trigger | Secrets | Helper style | What it demonstrates |
 | --- | --- | --- | --- | --- | --- |
 | `hello-webhook` | Python | webhook `/hello` | none | raw contract | Smallest believable happy-path webhook with Mermaid flow and sample payload |
-| `document-scanner` | Python | webhook `/document-scan` | none | vendored Python helper | Extracting structured document metadata from raw text without external services |
+| `document-scanner` | Python | webhook `/document-scan` | none | vendored Python helper | Durable steps that match its flowchart: parse, detect topics, extract fields, ask a person when no topic matches, and route to a team |
 | `webhook-transformer` | Node.js | webhook `/transform-webhook` | none | raw contract | Normalizing inbound partner webhooks into a stable internal event shape |
 | `typescript-webhook` | TypeScript | webhook `/typescript-webhook` | none | vendored TS helper | Typed webhook normalization on top of the existing stdin/stdout runtime contract |
 | `rag-indexer` | Python | cron `0 * * * *` | none | raw contract | Dry-run-friendly chunking and indexing preparation for later retrieval pipelines |
@@ -37,7 +37,7 @@ You can still override that with `--payload` or `--payload-file`.
 
 ### `document-scanner`
 - Demonstrates the Python helper SDK path without introducing external dependencies.
-- Good reference when an agent needs structured stderr step logging plus plain Python logic.
+- Good reference for durable steps: each `run_step` and `request_approval` name is a node id in `flow.mermaid`, so the dashboard's track and Play follow the run.
 
 ### `webhook-transformer`
 - Demonstrates the low-friction Node.js authoring path.

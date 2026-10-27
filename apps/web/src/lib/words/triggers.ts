@@ -104,9 +104,10 @@ export function nextRunInWords(trigger: TriggerSummary | null, now: Date): strin
     const sources = chainSourcesInWords(trigger);
     return sources.length === 1 ? `after ${sources[0]}` : "after its sources";
   }
-  if (!trigger.schedulerServes) return `No scheduler for ${trigger.environment}`;
-  if (trigger.nextRunAt === null) return "–";
-  const next = new Date(trigger.nextRunAt);
+  if (trigger.nextRun?.kind === "unserved")
+    return `No scheduler for ${trigger.nextRun.environment}`;
+  if (trigger.nextRun === null) return "–";
+  const next = new Date(trigger.nextRun.at);
   const inMs = next.getTime() - now.getTime();
   if (inMs < 60 * 60_000) return `in ${durationInWords(Math.max(0, inMs))}`;
   if (inMs < 24 * 60 * 60_000) return clockTime(next);

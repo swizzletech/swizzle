@@ -18,6 +18,7 @@ import type {
   AutomationFolder,
   ConnectionView,
   CredentialRight,
+  CredentialShare,
   DashboardAutomationDetail,
   DashboardAutomationRefusals,
   DashboardAutomationSummary,
@@ -27,7 +28,6 @@ import type {
   DashboardRunsResult,
   DashboardTriggerSummary,
   InstanceRole,
-  ListedCredentialShare,
   PeopleDirectory,
   PlacementWorker,
   PlatformRunStatus,
@@ -103,13 +103,19 @@ export type RunDiagnosisResponse = Diagnosis;
 export type DeploymentSummaryResponse = DashboardDeploymentSummary & {
   readonly readiness: RuntimeReadinessReport;
 };
-/**
- * A trigger judged by the API: whether a live scheduler serves its environment. Without one a cron
- * trigger never fires, so its `nextRunAt` passes and no run comes.
- */
-export type JudgedTriggerSummary = DashboardTriggerSummary & {
-  readonly schedulerServes: boolean;
-};
+/** A cron's next run, or the environment no live scheduler serves; null without a next time. */
+export type CronNextRun =
+  | { readonly kind: "at"; readonly at: string }
+  | { readonly kind: "unserved"; readonly environment: string }
+  | null;
+
+/** Only cron triggers have a next run to judge against the live schedulers. */
+export type JudgedTriggerSummary = Omit<DashboardTriggerSummary, "triggerType" | "nextRunAt"> &
+  (
+    | { readonly triggerType: "cron"; readonly nextRun: CronNextRun }
+    | { readonly triggerType: "chain" }
+    | { readonly triggerType: "webhook" }
+  );
 /**
  * A trigger with the URL its webhook answers at, which the API builds from its public URL (see
  * `publicApiUrl`); null for another trigger or where the API does not know where it is reached.
@@ -340,7 +346,7 @@ export type DeploymentCheckResponse = PlatformDeploymentCheck & {
 };
 
 export interface CredentialSharesResponse {
-  readonly shares: readonly ListedCredentialShare[];
+  readonly shares: readonly CredentialShare[];
 }
 
 export interface ConnectionAuthorizationRequest {
@@ -365,6 +371,7 @@ export type {
   CreateServiceAccountResult as CreateServiceAccountResponse,
   CreateTeamResult as CreateTeamResponse,
   CredentialAccessView as CredentialAccessResponse,
+  CredentialShare as CredentialShareResponse,
   DashboardAutomationReadme as AutomationReadmeResponse,
   DashboardAutomationSource as AutomationSourceResponse,
   DashboardMermaidDiagram as AutomationMermaidResponse,
@@ -376,7 +383,6 @@ export type {
   GrantRemovalResult as RemoveGrantResponse,
   GrantWriteResult as SetGrantResponse,
   IdentityResponse,
-  ListedCredentialShare as CredentialShareResponse,
   MembershipResult as TeamMembershipResponse,
   MovedAutomation as MoveAutomationResponse,
   ProjectAccessView as ProjectAccessResponse,

@@ -113,8 +113,8 @@ describe("connection routes", () => {
     expect(callbackResponse.statusCode).toBe(200);
     expect(callbackResponse.headers["content-type"]).toContain("text/html");
     expect(callbackResponse.headers["cache-control"]).toBe("no-store");
-    // The approval page's frame: the mark, and the name as text.
-    expect(callbackResponse.body).toContain('class="mark"');
+    // The approval page's frame: the logo above the card.
+    expect(callbackResponse.body).toContain('aria-label="Swizzle"');
     expect(callbackResponse.body).toContain("<h1>Connection &quot;jan-google&quot; is active</h1>");
     expect(callbackResponse.body).not.toContain("<script>");
     expect(callbackResponse.body).not.toContain("access-token");

@@ -18,14 +18,10 @@ import {
 import { AutomationRuntimeError, getErrorMessage } from "./errors.js";
 import type { ExecutedScript } from "./executed-script.js";
 import { withLocalLlmAccess } from "./local-llm-access.js";
+import { OutputPump } from "./output-pump.js";
 import { createOutputRedactor, redactRunResult } from "./output-redaction.js";
-import {
-  ensureRunImage,
-  pruneRunImages,
-  type RunImageRecipe,
-  runImageRecipe,
-  runImageTag,
-} from "./run-image.js";
+import { ensureRunImage, type RunImageRecipe, runImageRecipe, runImageTag } from "./run-image.js";
+import { pruneRunImages } from "./run-image-prune.js";
 import type { AutomationRunFailure, AutomationRunResult, RunPhases } from "./run-result.js";
 import {
   claimSandbox,
@@ -346,46 +342,34 @@ async function executeInSandbox(input: {
         stdio: ["pipe", "pipe", "pipe"],
       },
     );
-    let callbacks = Promise.resolve();
-    let callbackFailure: unknown;
-    const deliver = (
-      stream: typeof child.stdout,
-      callback: ((chunk: string) => void | Promise<void>) | undefined,
-      chunk: string,
-    ) => {
-      if (callback === undefined) return;
-      stream.pause();
-      callbacks = callbacks
-        .then(async () => {
-          if (callbackFailure === undefined) await callback(chunk);
-        })
-        .catch((error) => {
-          callbackFailure = error;
-          stop("aborted");
-        })
-        .finally(() => stream.resume());
-    };
-    const stdout = new BoundedOutput(input.outputLimitBytes);
-    const stderr = new BoundedOutput(input.stderrLimitBytes);
     let timedOut = false;
     let aborted = false;
     let settled = false;
     let stopping = false;
     let forceKill: NodeJS.Timeout | undefined;
-    let outputLimitExceeded: "stderr" | "stdout" | null = null;
 
     // Stopping the sandbox ends the exec, unless the daemon no longer answers it. Stop and kill
     // have deadlines, so once both have returned and the grace has passed, the CLI is killed here.
     const stop = (reason: "aborted" | "timeout" | "stderr" | "stdout") => {
       if (reason === "aborted") aborted = true;
       if (reason === "timeout") timedOut = true;
-      if (reason === "stderr" || reason === "stdout") outputLimitExceeded = reason;
       if (stopping) return;
       stopping = true;
+      output.stop();
       void stopContainer(input.sandbox).then(() => {
         if (!settled) forceKill = setTimeout(() => killDockerProcess(child), EXEC_CLOSE_GRACE_MS);
       });
     };
+    const output = new OutputPump({
+      stdout: child.stdout,
+      stderr: child.stderr,
+      stdoutLimitBytes: input.outputLimitBytes,
+      stderrLimitBytes: input.stderrLimitBytes,
+      onStdoutChunk: input.onStdoutChunk,
+      onStderrChunk: input.onStderrChunk,
+      limitPolicy: "stop",
+      onStop: (reason) => stop(reason.kind === "limit" ? reason.stream : "aborted"),
+    });
     const timeout = setTimeout(() => stop("timeout"), input.timeoutMs);
     const abort = () => stop("aborted");
     if (input.abortSignal?.aborted) abort();
@@ -397,21 +381,6 @@ async function executeInSandbox(input: {
       input.abortSignal?.removeEventListener("abort", abort);
     };
 
-    const append = (stream: "stderr" | "stdout", chunk: string) => {
-      if (stopping) return;
-      const output = stream === "stdout" ? stdout : stderr;
-      const accepted = output.append(chunk);
-      if (accepted) {
-        if (stream === "stdout") deliver(child.stdout, input.onStdoutChunk, accepted);
-        else deliver(child.stderr, input.onStderrChunk, accepted);
-      }
-      if (output.exceeded) stop(stream);
-    };
-
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => append("stdout", chunk));
-    child.stderr.on("data", (chunk: string) => append("stderr", chunk));
     const fail = (message: string, error: unknown) => {
       if (settled) return;
       settle();
@@ -425,23 +394,26 @@ async function executeInSandbox(input: {
     };
     child.once("error", (error) => fail("Could not invoke the container runtime", error));
     child.once("close", (exitCode, signal) => {
-      void callbacks.then(() => {
-        if (settled) return;
-        settle();
-        if (callbackFailure !== undefined) {
-          reject(callbackFailure);
-          return;
-        }
-        resolve({
-          aborted,
-          exitCode,
-          outputLimitExceeded,
-          signal,
-          stderr: stderr.value,
-          stdout: stdout.value,
-          timedOut,
-        });
-      });
+      void output.finished().then(
+        () => {
+          if (settled) return;
+          settle();
+          resolve({
+            aborted,
+            exitCode,
+            outputLimitExceeded: output.exceeded,
+            signal,
+            stderr: output.stderr,
+            stdout: output.stdout,
+            timedOut,
+          });
+        },
+        (error: unknown) => {
+          if (settled) return;
+          settle();
+          reject(error);
+        },
+      );
     });
     child.stdin.on("error", (error: NodeJS.ErrnoException) => {
       if (error.code === "EPIPE") return;

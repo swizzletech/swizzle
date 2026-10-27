@@ -1,7 +1,7 @@
 /* The frame: a light sidebar with the five places, the environment and the person, and a hairline
    bar above each page with its trail. At phone width the sidebar becomes a sticky glass header:
-   the mark, the environment and Sign out on one row, every place on the row below; the bar stays
-   under it only on pages with a trail. */
+   the logo (the head alone on a phone), the environment and Sign out on one row, every place on
+   the row below; the bar stays under it only on pages with a trail. */
 @layer components {
   /* The sidebar sticks while the page scrolls; the frame paints its column to the bottom. */
   .app {
@@ -323,6 +323,15 @@
     }
     .topbar:has(.trail:empty) {
       display: none;
+    }
+  }
+  /* Below this the full logo would push into the environment and its Protected chip, so the
+     header keeps only the head: in the 28px logo the head ends at 25.2px and the word starts
+     at 32.9px. */
+  @media (max-width: 420px) {
+    .side-brand {
+      width: 26px;
+      overflow: hidden;
     }
   }
 }

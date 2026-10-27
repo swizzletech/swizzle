@@ -182,6 +182,7 @@ function classifyFailure(result: AutomationRunFailure): ErrorClassification {
   switch (result.code) {
     case "CONTAINER_RUNTIME_UNAVAILABLE":
     case "DOCKER_CONTROL_TIMEOUT":
+    case "DOCKER_TRANSFER_TIMEOUT":
     case "PROCESS_EXIT_NON_ZERO":
     case "PROCESS_SIGNAL":
     case "PROCESS_TIMEOUT":

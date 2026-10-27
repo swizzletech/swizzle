@@ -1,0 +1,153 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# The automated review of every pull request, release pull requests included. Each path below
+# points the review at the public document that owns its rules, so a contributor and the review
+# read the same text. `just check` covers what a tool can prove; the review spends its comments on
+# behavior. The review-config-paths convention fails when a pattern or path here matches no file.
+
+language: en-US
+
+reviews:
+  profile: chill
+  # The pull request description says what changed; the review adds findings, not a retelling.
+  high_level_summary: false
+  review_status: false
+  in_progress_fortune: false
+  # Labels and reviewers come from the repository: there is no label scheme, and CODEOWNERS
+  # requests the maintainers.
+  suggested_labels: false
+  suggested_reviewers: false
+  auto_review:
+    enabled: true
+    drafts: false
+  # An author cannot have the review approve their own pull request.
+  auto_approvals:
+    allow_author_approval: false
+  pre_merge_checks:
+    # A comment states a reason the code cannot show; a coverage threshold rewards narration.
+    docstrings:
+      mode: "off"
+  # Maintainers carry each change into the repository themselves, and a release merges the exact
+  # tree it tested, so the review never commits to a pull request branch.
+  finishing_touches:
+    docstrings:
+      enabled: false
+    unit_tests:
+      enabled: false
+    autofix:
+      enabled: false
+    fix_ci:
+      enabled: false
+    resolve_merge_conflict:
+      enabled: false
+  # Generated and vendored files, which `just check` proves equal to their reviewed source; the
+  # version constant every release bumps, which the platform-version convention checks; and binary
+  # assets.
+  path_filters:
+    - "!pnpm-lock.yaml"
+    - "!docs/reference/api.md"
+    - "!docs/reference/cli.md"
+    - "!docs/reference/config.md"
+    - "!packages/db/drizzle/meta/**"
+    - "!apps/cli/assets/sdk/**"
+    - "!infra/examples/**/swizzle-sdk.ts"
+    - "!infra/examples/**/swizzle_sdk.py"
+    - "!packages/core/src/version.ts"
+    - "!docs/assets/**"
+    - "!apps/web/public/**"
+    - "!apps/web/src/fonts/**"
+  # Rules a reviewer can judge from a diff. Mechanical rules stay with `just check`.
+  path_instructions:
+    - path: "{apps,packages}/**"
+      instructions: >-
+        PostgreSQL is the durable record. Valkey and BullMQ carry only work in flight, so every
+        service must recover from database rows after a restart; see
+        `docs/explanation/durability.md`. Apps are thin entry points: execution and persistence
+        belong in packages, which every entry point shares. A changed API payload is typed in
+        `packages/runtime/src/http-contract.ts`, and the API, CLI and dashboard consumers change
+        with it. A change of behavior updates the documentation page that owns it in the same pull
+        request; `docs/README.md` names each page's owner. Flag a silent fallback that hides a
+        failure the caller should see.
+    - path: "{packages/runtime,packages/sdk-ts,packages/sdk-py,apps/worker,apps/docker-broker,infra/docker}/**"
+      instructions: >-
+        User code is untrusted. A deployed run executes in the restricted container sandbox, and
+        the child process receives only its declared secrets and `SWIZZLE_*` metadata, built from
+        an explicit allowlist; see `docs/explanation/security-model.md`. A run succeeds only when
+        the process exits with code 0 and writes valid JSON to stdout, and logs go to stderr; see
+        `docs/reference/runtime-contract.md`. Flag any change that widens what a run can reach or
+        lets host configuration into a run. A new container command or flag needs the broker
+        policy in `apps/docker-broker/src/policy.ts` to allow it in the same change.
+    - path: "{packages/db,apps/api}/**"
+      instructions: >-
+        Secrets and connection tokens are encrypted at rest and write-only: no route, log, error or
+        audit entry returns a stored value. Every record carries its environment, so a query
+        without an environment filter can mix staging and production data. A schema change comes
+        with a new generated migration under `packages/db/drizzle`; an existing migration is never
+        edited.
+    - path: "apps/web/src/**"
+      instructions: >-
+        The dashboard reads and changes state only through the API, and each request names the
+        response type its route declares in `packages/runtime/src/http-contract.ts`. Every page
+        handles loading, empty and error states, and shows a failed request as an error, not as an
+        empty list. Secret values are sent and never displayed again. Wording for codes and kinds
+        the API returns lives in `apps/web/src/lib/words`. Styles use the tokens and classes in
+        `apps/web/src/styles.css`, and endless animations change only opacity and transform.
+    - path: "apps/cli/src/**"
+      instructions: >-
+        Command output is a contract for agents and scripts: `apps/cli/src/output.ts` owns its
+        format, errors and exit codes. A changed command or flag regenerates
+        `docs/reference/cli.md` through `just gen`.
+    - path: "**/*.test.{ts,tsx}"
+      instructions: >-
+        Keep a test only when it proves a behavior whose breakage would cause a problem; there is
+        no coverage target, so do not ask for tests that only raise coverage. A test calls the code
+        the way its users do and asserts a literal result. It owns its files, ports, processes and
+        data: `temporaryDirectory()` from `test/support.ts`, port 0, and `vi.stubEnv` or
+        `vi.stubGlobal` for environment changes. A test waits on an observable state or event,
+        never on elapsed time, sleeps, polling loops, per-test timeouts or retries; a flaky test is
+        fixed, not retried. CI runs on hosted Ubuntu runners that ship the Docker CLI and daemon,
+        so tests that start containers run there.
+    - path: "infra/examples/**"
+      instructions: >-
+        Examples are runnable automations that people and agents copy. They follow
+        `docs/reference/runtime-contract.md`. Their vendored SDK files are exact copies of
+        `packages/sdk-ts/src/index.ts` and `packages/sdk-py/swizzle_sdk.py`, which `just check`
+        enforces, so review SDK changes in the packages.
+    - path: "**/*.md"
+      instructions: >-
+        Describe Swizzle and its behavior in its own terms. Never compare it with another
+        automation, workflow, job or container platform, or name one as an example; the
+        no-other-products convention in `scripts/conventions/rules/no-other-products.ts` lists the
+        names it rejects, and a name missing from that list is still a finding. Use plain,
+        specific sentences.
+    - path: "CHANGELOG.md"
+      instructions: >-
+        Each entry describes a change that people who run Swizzle or write automations can observe,
+        under Added, Changed, Fixed, Removed or Security, and matches what the diff does. Version
+        fields change together on release, and the platform-version convention checks them, so do
+        not comment on version bumps.
+    - path: ".github/**"
+      instructions: >-
+        CI runs each check through a `just` recipe on hosted Ubuntu runners, which ship the Docker
+        CLI and daemon. Actions are pinned to a full commit SHA. Flag a change that skips a job,
+        weakens a check, or lowers a gate to make CI pass; the fix belongs at the cause.
+    - path: ".coderabbit.yaml"
+      instructions: >-
+        This file decides what every review checks. Flag a change that narrows which files or
+        pull requests are reviewed, loosens the rules for authors outside the organization, or lets
+        the review commit to a pull request branch.
+
+chat:
+  # Outside contributors get the same review; only organization members can talk to it.
+  allow_non_org_members: false
+
+knowledge_base:
+  code_guidelines:
+    filePatterns:
+      - files: "CONTRIBUTING.md"
+        applyTo: "**"
+      - files: "docs/explanation/security-model.md"
+        applyTo: "apps/**,packages/**,infra/docker/**"
+      - files: "docs/reference/runtime-contract.md"
+        applyTo: "packages/runtime/**,packages/sdk-ts/**,packages/sdk-py/**,apps/worker/**,infra/examples/**"
+      - files: "docs/explanation/durability.md"
+        applyTo: "packages/runtime/**,packages/db/**,apps/scheduler/**,apps/worker/**,apps/api/**"

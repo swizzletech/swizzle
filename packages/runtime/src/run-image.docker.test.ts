@@ -8,7 +8,7 @@ import { expect, it, vi } from "vitest";
 import { z } from "zod";
 import { temporaryDirectory, waitFor } from "../../../test/support.js";
 import { createInstallGate } from "../test/install-gate.js";
-import { pruneRunImages } from "./run-image.js";
+import { pruneRunImages } from "./run-image-prune.js";
 import { runAutomation } from "./runner.js";
 
 const exec = promisify(execFile);

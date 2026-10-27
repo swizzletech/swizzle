@@ -13,7 +13,7 @@ import {
   sql,
   TransactionRollbackError,
 } from "drizzle-orm";
-import type { DatabaseClient } from "./client.js";
+import { causeViolation, type DatabaseClient, PG_ERROR } from "./client.js";
 import { CodedError } from "./coded-error.js";
 import { shareLiveAutomation } from "./control-plane-automations.js";
 import { getRunById } from "./control-plane-read-models.js";
@@ -248,16 +248,10 @@ export async function getRun(client: DatabaseClient, runId: string): Promise<Sto
 }
 
 function isChainJoinAlreadyFired(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) {
-    return false;
-  }
-  const code = "code" in error ? error.code : undefined;
-  const constraint = "constraint" in error ? error.constraint : undefined;
-  const cause = "cause" in error ? error.cause : undefined;
-
+  const violation = causeViolation(error);
   return (
-    (code === "23505" && constraint === "chain_join_fires_trigger_origin_unique") ||
-    isChainJoinAlreadyFired(cause)
+    violation?.code === PG_ERROR.uniqueViolation &&
+    violation.constraint === "chain_join_fires_trigger_origin_unique"
   );
 }
 

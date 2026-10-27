@@ -95,7 +95,12 @@ describe("a prune pass", () => {
 
     expect(await pruneRunImages({ keep: new Set([active]) })).toEqual({
       removed: 1,
-      disk: { activeBytes: IMAGE_MIB * 1_048_576, budgetBytes: 100 * 1_048_576 },
+      disk: {
+        activeBytes: IMAGE_MIB * 1_048_576,
+        unmeasuredActiveImagesOmitted: 0,
+        unmeasuredActiveImages: [],
+        budgetBytes: 100 * 1_048_576,
+      },
     });
 
     expect(await docker.imageIds()).toEqual([(await docker.commits())[0]]);
@@ -308,6 +313,7 @@ async function freshRuntime() {
     ...(await import("./deployment-preparation.js")),
     ...(await import("../../../test/platform.js")),
     ...(await import("./run-image.js")),
+    ...(await import("./run-image-prune.js")),
     ...(await import("./runner.js")),
   };
 }

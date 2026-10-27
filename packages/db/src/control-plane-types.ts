@@ -9,11 +9,11 @@ import type {
   ConsumedConnectionAuthorization,
   CredentialAccess,
   CredentialPlace,
+  CredentialShare,
   DeclaredCredentials,
   DeleteConnectionResult,
   DeploymentCredential,
   FindSecretDeclarationCollisionsInput,
-  ListedCredentialShare,
   MarkConnectionErrorInput,
   RecordRunExecutionConnectionUsagesInput,
   RecordRunExecutionSecretUsagesInput,
@@ -355,17 +355,17 @@ export interface ControlPlaneStore {
     readonly projectId: string;
     readonly offeredBy: string | null;
     readonly accepted: boolean;
-  }): Promise<ListedCredentialShare>;
+  }): Promise<CredentialShare>;
   /** Null when the project has no such share. */
   acceptCredentialShare(input: {
     readonly shareId: string;
     readonly projectId: string;
     readonly acceptedBy: string | null;
-  }): Promise<ListedCredentialShare | null>;
+  }): Promise<CredentialShare | null>;
   /** Deletes the share and every deployment binding made through it; false when there was none. */
   removeCredentialShare(shareId: string): Promise<boolean>;
   /** The shares offered to a project, accepted or not. */
-  listCredentialShares(projectId: string): Promise<readonly ListedCredentialShare[]>;
+  listCredentialShares(projectId: string): Promise<readonly CredentialShare[]>;
   /** The credential each declared name would bind; a name without an entry binds nothing. */
   findDeploymentCredentials(
     declared: DeclaredCredentials,
@@ -406,13 +406,13 @@ export type {
   CredentialAccess,
   CredentialAccessView,
   CredentialPlace,
+  CredentialShare,
   CredentialState,
   DeclaredConnectionStatus,
   DeclaredCredentials,
   DeleteConnectionResult,
   DeploymentCredential,
   FindSecretDeclarationCollisionsInput,
-  ListedCredentialShare,
   MarkConnectionErrorInput,
   RecordRunExecutionConnectionUsagesInput,
   RecordRunExecutionSecretUsagesInput,
@@ -426,7 +426,6 @@ export type {
   StoredConnection,
   StoredConnectionUsage,
   StoredCredential,
-  StoredCredentialShare,
   StoredRunExecutionConnectionUsage,
   StoredRunExecutionSecretUsage,
   StoredSecret,

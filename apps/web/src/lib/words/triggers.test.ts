@@ -5,8 +5,13 @@ import { nextRunInWords, triggerInWords } from "./triggers";
 
 const NOW = new Date("2026-10-23T12:00:00.000Z");
 
-function trigger(overrides: Partial<TriggerSummary>): TriggerSummary {
-  return {
+function trigger(
+  overrides: Partial<TriggerSummary> & {
+    nextRun?: Extract<TriggerSummary, { triggerType: "cron" }>["nextRun"];
+  },
+): TriggerSummary {
+  const { nextRun = null, ...summary } = overrides;
+  const base: Omit<TriggerSummary, "triggerType"> = {
     chainOnStatus: null,
     chainHiddenSourceCount: 0,
     chainPayloadMode: null,
@@ -18,18 +23,18 @@ function trigger(overrides: Partial<TriggerSummary>): TriggerSummary {
     environment: "staging",
     errorCode: null,
     errorMessage: null,
-    nextRunAt: null,
     pausedAt: null,
-    schedulerServes: true,
     status: "active",
     triggerId: "t",
-    triggerType: "webhook",
     updatedAt: NOW.toISOString(),
     versionId: "v",
     webhookPath: "/hello",
     webhookUrl: "http://127.0.0.1:19826/hello?environment=staging",
-    ...overrides,
+    ...summary,
   };
+  return overrides.triggerType === "cron"
+    ? { ...base, triggerType: "cron", nextRun }
+    : { ...base, triggerType: overrides.triggerType ?? "webhook" };
 }
 
 describe("triggerInWords", () => {
@@ -68,8 +73,12 @@ describe("triggerInWords", () => {
   });
 
   it("says when a timed automation runs next, and that a webhook runs on call", () => {
-    const cron = trigger({ cronIntervalMs: 30_000, nextRunAt: "2026-10-23T12:00:18.000Z" });
-    expect(nextRunInWords({ ...cron, triggerType: "cron" }, NOW)).toBe("in 18 s");
+    const cron = trigger({
+      triggerType: "cron",
+      cronIntervalMs: 30_000,
+      nextRun: { kind: "at", at: "2026-10-23T12:00:18.000Z" },
+    });
+    expect(nextRunInWords(cron, NOW)).toBe("in 18 s");
     expect(nextRunInWords(trigger({}), NOW)).toBe("on call");
     expect(nextRunInWords(trigger({ status: "paused" }), NOW)).toBe("Paused");
     expect(nextRunInWords(trigger({ status: "invalid", triggerType: "chain" }), NOW)).toBe("–");
@@ -80,8 +89,7 @@ describe("triggerInWords", () => {
   it("names the environment no scheduler serves instead of a next run", () => {
     const unserved = trigger({
       environment: "production",
-      nextRunAt: "2026-10-23T11:59:00.000Z",
-      schedulerServes: false,
+      nextRun: { kind: "unserved", environment: "production" },
       triggerType: "cron",
     });
     expect(nextRunInWords(unserved, NOW)).toBe("No scheduler for production");

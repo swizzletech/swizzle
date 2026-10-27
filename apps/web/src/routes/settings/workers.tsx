@@ -10,6 +10,7 @@ import type { WorkerEnrollment, WorkerListing } from "../../lib/api";
 import { useDashboardClient } from "../../lib/dashboard-client";
 import { useProjects } from "../../lib/queries";
 import { workerKindInWords, workerStateInWords, workerTone } from "../../lib/words/workers";
+import { SECTION_DATA } from "./section";
 
 export function Workers() {
   const { api, environment, queryScope } = useDashboardClient();
@@ -31,6 +32,7 @@ export function Workers() {
   const now = useNow();
   const key = ["workers", ...queryScope];
   const workers = useQuery({
+    meta: SECTION_DATA,
     queryKey: key,
     queryFn: () => api.listWorkers(),
     refetchInterval: 15_000,

@@ -139,7 +139,12 @@ it("lists the groups that serve one project and environment", () => {
 });
 
 it("warns about run images only when an unrevoked worker's active images pass its budget", () => {
-  const over = { activeBytes: 3 * 1_048_576, budgetBytes: 1_048_576 };
+  const over = {
+    activeBytes: 3 * 1_048_576,
+    unmeasuredActiveImagesOmitted: 0,
+    unmeasuredActiveImages: [],
+    budgetBytes: 1_048_576,
+  };
   expect(runImageDiskOverBudget(worker({ runImageDisk: over }))).toEqual(over);
   expect(
     runImageDiskOverBudget(worker({ runImageDisk: { ...over, activeBytes: 1_048_576 } })),

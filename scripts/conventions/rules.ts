@@ -11,6 +11,7 @@ import { noPrivatePaths } from "./rules/no-private-paths.js";
 import { noRootPackageScripts } from "./rules/no-root-package-scripts.js";
 import { platformVersion } from "./rules/platform-version.js";
 import { recipesSayWhy } from "./rules/recipes-say-why.js";
+import { reviewConfigPaths } from "./rules/review-config-paths.js";
 import { sdkCopiesMatch } from "./rules/sdk-copies-match.js";
 import { skillTeachesTheProduct } from "./rules/skill-teaches-the-product.js";
 import { toolchainPins } from "./rules/toolchain-pins.js";
@@ -33,5 +34,6 @@ export const rules: readonly Rule[] = [
   sdkCopiesMatch,
   noOtherProducts,
   noPrivatePaths,
+  reviewConfigPaths,
   webReadsTheContract,
 ];

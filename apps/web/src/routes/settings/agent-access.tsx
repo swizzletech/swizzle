@@ -13,7 +13,7 @@ import { useDashboardClient } from "../../lib/dashboard-client";
 import { refreshAll, useProjects } from "../../lib/queries";
 import { scopeInWords } from "../../lib/words/access";
 import { ageInWords, expiryInWords } from "../../lib/words/time";
-import { Section } from "./section";
+import { SECTION_DATA, Section } from "./section";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -44,6 +44,7 @@ export function AgentAccess() {
     return () => window.removeEventListener("pagehide", forget);
   }, []);
   const tokens = useQuery({
+    meta: SECTION_DATA,
     queryFn: async () => (await api.listApiTokens()).tokens,
     queryKey: ["tokens", ...queryScope],
   });

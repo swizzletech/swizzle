@@ -7,7 +7,6 @@ import path from "node:path";
 import { validateWebhookPayloadAgainstSchema } from "@swizzle/config";
 import { createDisplayName } from "@swizzle/core";
 import { contractChangeFailure } from "./api-signals.js";
-import { BoundedOutput } from "./bounded-output.js";
 import { runContainerAutomation } from "./container-runner.js";
 import { prepareAutomationDependencies } from "./dependency-preparation.js";
 import {
@@ -22,6 +21,7 @@ import {
   type RunInputs,
   type ScriptPersistence,
 } from "./executed-script.js";
+import { OutputPump } from "./output-pump.js";
 import type { AutomationRunFailure, AutomationRunResult, RuntimeMetadata } from "./run-result.js";
 import { buildRuntimeEnvironmentAdditions } from "./runtime-requirements.js";
 import { assertRuntimeTimeoutWithinPlatformCeiling } from "./timeout-policy.js";
@@ -583,31 +583,9 @@ async function executeChildProcess(input: {
       throw new AutomationRuntimeError("RUN_CANCELLED", "Run cancelled by user.");
     const child = spawn(input.command.command, input.command.args, spawnOptions);
 
-    const stdout = new BoundedOutput(input.outputLimitBytes);
-    const stderr = new BoundedOutput(input.outputLimitBytes);
     let timedOut = false;
     let aborted = false;
-    let outputLimitExceeded: "stderr" | "stdout" | null = null;
     let killTimer: NodeJS.Timeout | undefined;
-    let callbacks: Promise<void> = Promise.resolve();
-    let callbackFailure: unknown;
-    const deliver = (
-      stream: typeof child.stdout,
-      callback: ((chunk: string) => void | Promise<void>) | undefined,
-      chunk: string,
-    ) => {
-      if (callback === undefined) return;
-      stream.pause();
-      callbacks = callbacks
-        .then(async () => {
-          if (callbackFailure === undefined) await callback(chunk);
-        })
-        .catch((error) => {
-          callbackFailure = error;
-          child.kill("SIGTERM");
-        })
-        .finally(() => stream.resume());
-    };
     let settled = false;
     let abortListener: (() => void) | undefined;
 
@@ -671,32 +649,30 @@ async function executeChildProcess(input: {
       }
     }
 
-    const stopForOutputLimit = (stream: "stderr" | "stdout") => {
-      if (outputLimitExceeded !== null || settled) {
+    const stopForOutputLimit = () => {
+      if (settled) {
         return;
       }
 
-      outputLimitExceeded = stream;
       child.kill("SIGTERM");
       killTimer = setTimeout(() => {
         child.kill("SIGKILL");
       }, DEFAULT_KILL_GRACE_PERIOD_MS);
     };
 
-    const append = (stream: "stdout" | "stderr", chunk: string) => {
-      const output = stream === "stdout" ? stdout : stderr;
-      const accepted = output.append(chunk);
-      if (output.exceeded) stopForOutputLimit(stream);
-      if (accepted) {
-        if (stream === "stdout") deliver(child.stdout, input.onStdoutChunk, accepted);
-        else deliver(child.stderr, input.onStderrChunk, accepted);
-      }
-    };
-
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => append("stdout", chunk));
-    child.stderr.on("data", (chunk: string) => append("stderr", chunk));
+    const output = new OutputPump({
+      stdout: child.stdout,
+      stderr: child.stderr,
+      stdoutLimitBytes: input.outputLimitBytes,
+      stderrLimitBytes: input.outputLimitBytes,
+      onStdoutChunk: input.onStdoutChunk,
+      onStderrChunk: input.onStderrChunk,
+      limitPolicy: "stop",
+      onStop: (reason) => {
+        if (reason.kind === "limit") stopForOutputLimit();
+        else child.kill("SIGTERM");
+      },
+    });
 
     child.once("error", (error) => {
       settleWithFailure(
@@ -709,22 +685,18 @@ async function executeChildProcess(input: {
     });
 
     child.once("close", (exitCode, signal) => {
-      void callbacks.then(() => {
-        if (callbackFailure !== undefined) {
-          settleWithFailure(callbackFailure);
-          return;
-        }
+      void output.finished().then(() => {
         settleWithSuccess({
           aborted,
           exitCode,
           outputLimitBytes: input.outputLimitBytes,
-          outputLimitExceeded,
+          outputLimitExceeded: output.exceeded,
           signal,
-          stderr: stderr.value,
-          stdout: stdout.value,
+          stderr: output.stderr,
+          stdout: output.stdout,
           timedOut,
         });
-      });
+      }, settleWithFailure);
     });
 
     child.stdin.on("error", (error) => {

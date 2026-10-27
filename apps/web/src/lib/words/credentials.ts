@@ -5,7 +5,7 @@ import type {
   AttentionItem,
   CredentialRight,
   CredentialRightSource,
-  ListedCredentialShare,
+  CredentialShare,
   ProjectRole,
 } from "../api";
 import { ageInWords } from "./time";
@@ -88,7 +88,7 @@ export function credentialSourceInWords(source: CredentialRightSource, holds: Cr
 }
 
 /** "Offered to Finance; its admin has not accepted", "Shared with Finance since 3 d ago". */
-export function credentialShareInWords(share: ListedCredentialShare, now: Date): string {
+export function credentialShareInWords(share: CredentialShare, now: Date): string {
   return share.acceptedAt === null
     ? `Offered to ${share.project.name}; an admin there has not accepted yet`
     : `Shared with ${share.project.name}, accepted ${ageInWords(share.acceptedAt, now)}: its admins may bind it there`;

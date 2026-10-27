@@ -96,7 +96,7 @@ An owner or instance admin reads them through `GET /workers/:workerId/audit`.
 
 | Route | Result |
 |---|---|
-| `POST /worker/runtime` | Receives `{capabilities, services, runImageDisk}` and stores all three on the worker's row with the time it was seen. Deploy readiness reads `capabilities`; grants and capacity come from the registry. `services` is the health of each service the worker runs, such as `local-llm`, which claims read. `runImageDisk` is the last image prune pass's measurement, `{activeBytes, budgetBytes}`, or null before the first pass: `activeBytes` is the size of images kept for active deployments, and `budgetBytes` is the worker's configured disk budget in bytes. The API stores it on the worker's row. `GET /workers` returns it as `runImageDisk`, and as `runImageDiskOverBudget` while the worker is unrevoked and active images alone exceed the budget; otherwise that field is null. `runImageDiskWarning` is the overage in words from [`runImageDiskWarning`](../../packages/db/src/worker-words.ts), which Settings > Workers, the Overview and `swizzle worker list` print. |
+| `POST /worker/runtime` | Receives `{capabilities, services, runImageDisk}` and stores them with the time the worker reported them. Deploy readiness reads `capabilities`; grants and capacity come from the registry. `services` reports each worker service's health, such as `local-llm`. The image disk report is described below. |
 | `POST /worker/preparations` | Active deployment IDs and at most one unknown source bundle for the worker's grants, without secrets. |
 | `POST /worker/run-images` | Records `{deploymentId, tag}` after checking the worker's deployment scope. Repeatable. |
 | `POST /worker/run-images/keep` | Receives `{}` and returns `{keep: string[]}`: the newest tag this worker reported for each active deployment version in each environment. The worker's next prune pass keeps those images. The authenticated request is the proof that the worker is live, so no heartbeat age applies. |
@@ -108,6 +108,16 @@ An owner or instance admin reads them through `GET /workers/:workerId/audit`.
 | `POST /worker/output` | Applies ordered stdout/stderr chunks. Repeating the last acknowledged sequence and content is idempotent. A chunk past the output limit, or a state or step event that fails, ends the execution with that failure in the same transaction that found it; that reply and every later request of the execution get HTTP 409, and the worker stops the sandbox. |
 | `POST /worker/complete` | Validates exit status and JSON stdout, then commits the execution and receipt together. |
 | `POST /worker/drain` | Stops new admissions while current leases may finish. |
+
+### Run image disk report
+
+`runImageDisk` is the last image prune pass's report. It is null before the first pass. The report contains `{activeBytes, budgetBytes, unmeasuredActiveImages, unmeasuredActiveImagesOmitted}`. `activeBytes` counts measured active image bytes. `budgetBytes` is the configured budget in bytes.
+
+`unmeasuredActiveImages` lists at most eight unknown active footprints as `{id, tags}`. Each entry has one active run tag. `unmeasuredActiveImagesOmitted` counts further unknown images. Prune warnings include every unmeasured image's ID and tags.
+
+`GET /workers` returns the report as `runImageDisk`. It returns the same report as `runImageDiskOverBudget` for unrevoked workers when active usage is unknown or measured bytes exceed the budget. Otherwise, `runImageDiskOverBudget` is null.
+
+`runImageDiskWarning` contains the warning from [`runImageDiskWarning`](../../packages/db/src/worker-words.ts). Settings > Workers, the Overview, and `swizzle worker list` display it.
 
 Assignments contain a run or check lease, script kind, input, state/step snapshots, trace context and the SHA-256 digest of the bundle's manifest; they carry no secrets and no source. The worker fetches the source with `POST /worker/source`, refuses a bundle whose digest differs, stages it, and only then calls `POST /worker/start` for the secrets. Both routes answer only the current owner of the live lease; another worker, an older generation or a finished lease gets HTTP 409. A transfer broken off before start is fetched again under the same lease or, after expiry, by the next owner. Transfer allows 4,096 files and 32 MiB total, checks SHA-256, preserves executable bits, and rejects links, traversal and duplicate paths. Each output stream is limited to 1 MiB. Chunks have increasing sequence numbers within one generation. Logs, state and step writes are acknowledged after their durable processing. Final completion is a single immutable report. Workers retry transport failures, HTTP 429 and HTTP 5xx with the identical output sequence/chunk or report while their lease remains valid. Executors await output acknowledgements before reporting completion.
 

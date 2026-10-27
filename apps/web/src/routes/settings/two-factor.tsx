@@ -9,12 +9,16 @@ import { Chip, ErrorNote, Skeleton } from "../../components/ui";
 import type { TwoFactorEnrollment } from "../../lib/api";
 import { sessionApi } from "../../lib/api/account";
 import { useDashboardClient } from "../../lib/dashboard-client";
-import { Section } from "./section";
+import { SECTION_DATA, Section } from "./section";
 
 export function TwoFactor() {
   const { api } = useDashboardClient();
   const queryClient = useQueryClient();
-  const status = useQuery({ queryFn: () => api.getTwoFactor(), queryKey: ["two-factor"] });
+  const status = useQuery({
+    meta: SECTION_DATA,
+    queryFn: () => api.getTwoFactor(),
+    queryKey: ["two-factor"],
+  });
   const [enrollment, setEnrollment] = useState<TwoFactorEnrollment | null>(null);
   const [recoveryCodes, setRecoveryCodes] = useState<readonly string[] | null>(null);
   const [password, setPassword] = useState("");

@@ -8,7 +8,7 @@ import { Chip, ErrorNote, Skeleton, useNow } from "../../components/ui";
 import { useDashboardClient } from "../../lib/dashboard-client";
 import { sessionDeviceInWords } from "../../lib/words/access";
 import { ageInWords } from "../../lib/words/time";
-import { Section } from "./section";
+import { SECTION_DATA, Section } from "./section";
 
 export function Account() {
   const { api, refreshAuth } = useDashboardClient();
@@ -18,7 +18,11 @@ export function Account() {
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
   const [code, setCode] = useState("");
-  const twoFactor = useQuery({ queryFn: () => api.getTwoFactor(), queryKey: ["two-factor"] });
+  const twoFactor = useQuery({
+    meta: SECTION_DATA,
+    queryFn: () => api.getTwoFactor(),
+    queryKey: ["two-factor"],
+  });
   const needsCode = twoFactor.data?.enabled === true;
   const changePassword = useMutation({
     mutationFn: () => {
@@ -41,7 +45,11 @@ export function Account() {
     next.length >= 15 &&
     (!needsCode || code.trim() !== "") &&
     !changePassword.isPending;
-  const sessions = useQuery({ queryFn: () => api.listSessions(), queryKey: ["sessions"] });
+  const sessions = useQuery({
+    meta: SECTION_DATA,
+    queryFn: () => api.listSessions(),
+    queryKey: ["sessions"],
+  });
   const revoke = useMutation({
     mutationFn: (sessionId: string) => api.revokeSession(sessionId),
     onSettled: () => queryClient.invalidateQueries({ queryKey: ["sessions"] }),

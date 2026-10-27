@@ -6,9 +6,8 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
-import { BoundedOutput } from "./bounded-output.js";
-
 import { AutomationRuntimeError, getErrorMessage } from "./errors.js";
+import { OutputPump } from "./output-pump.js";
 
 export interface DockerOutcome {
   readonly exitCode: number | null;
@@ -29,9 +28,16 @@ const REMOVE_ATTEMPTS = 3;
 const REMOVE_RETRY_MS = 1_000;
 
 /** Deadline for daemon metadata and sandbox control commands. */
-const CONTROL_TIMEOUT_MS = 5_000;
+export const CONTROL_TIMEOUT_MS = 5_000;
 /** Copying source and exporting image layers depend on their size and the daemon's storage. */
-const TRANSFER_TIMEOUT_MS = 60_000;
+export const TRANSFER_TIMEOUT_MS = 60_000;
+export type DockerDeadlines = Readonly<{ control: number; transfer: number }>;
+export const DOCKER_DEADLINES: DockerDeadlines = {
+  control: CONTROL_TIMEOUT_MS,
+  transfer: TRANSFER_TIMEOUT_MS,
+};
+type DockerDeadline = keyof DockerDeadlines;
+
 const scopes = new Set<DockerScope>();
 const PROCESS_LABEL = "swizzle.sandbox-process";
 const processId = randomUUID();
@@ -47,12 +53,16 @@ type DockerOutputOptions = {
   readonly outputLimitBytes: number;
 } & (
   | { readonly onStdoutChunk?: (chunk: string) => void; readonly onStdoutBytes?: never }
-  | { readonly onStdoutBytes: (chunk: Buffer) => void; readonly onStdoutChunk?: never }
+  | {
+      readonly onStdoutBytes: (chunk: Buffer) => "stop" | undefined;
+      readonly onStdoutChunk?: never;
+    }
 );
 
 /** Owns Docker subprocesses and, when named, their container until close completes cleanup. */
 export class DockerScope {
   readonly signal: AbortSignal;
+  private readonly deadlines: DockerDeadlines;
   private readonly controller = new AbortController();
   private readonly commands = new Set<Promise<unknown>>();
   private image: string | null = null;
@@ -61,6 +71,7 @@ export class DockerScope {
 
   constructor(input: {
     readonly timeoutMs: number;
+    readonly deadlines?: DockerDeadlines;
     readonly signal?: AbortSignal;
     readonly containerName: string | null;
   }) {
@@ -73,6 +84,7 @@ export class DockerScope {
       ...(input.signal === undefined ? [] : [input.signal]),
     ]);
     this.container = input.containerName;
+    this.deadlines = input.deadlines ?? DOCKER_DEADLINES;
     scopes.add(this);
   }
 
@@ -81,18 +93,16 @@ export class DockerScope {
     await Promise.all([...scopes].map((scope) => scope.closing));
   }
 
-  run(args: readonly string[], options: DockerOutputOptions): Promise<DockerOutcome> {
+  run(
+    args: readonly string[],
+    options: DockerOutputOptions & { readonly deadline?: DockerDeadline },
+  ): Promise<DockerOutcome> {
+    const deadline = options.deadline ?? "control";
     return this.command(
       args,
       options,
-      AbortSignal.any([
-        this.signal,
-        AbortSignal.timeout(
-          args[0] === "cp" || args[0] === "commit" || args[1] === "save"
-            ? TRANSFER_TIMEOUT_MS
-            : CONTROL_TIMEOUT_MS,
-        ),
-      ]),
+      AbortSignal.any([this.signal, AbortSignal.timeout(this.deadlines[deadline])]),
+      deadline,
     );
   }
 
@@ -129,8 +139,9 @@ export class DockerScope {
     args: readonly string[],
     options: DockerOutputOptions,
     signal: AbortSignal,
+    deadline: DockerDeadline = "control",
   ): Promise<DockerOutcome> {
-    return this.track(runDocker(args, options, signal));
+    return this.track(runDocker(args, options, signal, deadline));
   }
 
   private track<T>(command: Promise<T>): Promise<T> {
@@ -173,43 +184,40 @@ async function runDocker(
   args: readonly string[],
   options: DockerOutputOptions,
   signal: AbortSignal,
+  deadline: DockerDeadline = "control",
 ): Promise<DockerOutcome> {
-  if (signal.aborted) throw dockerAbortError(args, signal);
+  if (signal.aborted) throw dockerAbortError(args, signal, deadline);
   return await new Promise((resolve, reject) => {
     const child = spawn("docker", [...args], {
       detached: process.platform !== "win32",
       env: dockerCliEnvironment(),
       stdio: ["ignore", "pipe", "pipe"],
     });
-    const stdout = new BoundedOutput(options.outputLimitBytes);
-    const stderr = new BoundedOutput(options.outputLimitBytes);
-    let callbackFailure: { readonly error: unknown } | undefined;
+    let stopped = false;
+    const onStdoutBytes = options.onStdoutBytes;
+    const output = new OutputPump({
+      stdout: child.stdout,
+      stderr: child.stderr,
+      stdoutLimitBytes: options.outputLimitBytes,
+      stderrLimitBytes: options.outputLimitBytes,
+      onStderrChunk: options.onStderrChunk,
+      ...(onStdoutBytes === undefined
+        ? { onStdoutChunk: options.onStdoutChunk }
+        : {
+            onStdoutBytes: (chunk: Buffer) => {
+              if (onStdoutBytes(chunk) === "stop") {
+                stopped = true;
+                output.stop();
+                killDockerProcess(child);
+              }
+            },
+          }),
+      limitPolicy: "capture",
+      onStop: () => killDockerProcess(child),
+    });
     const abort = () => killDockerProcess(child);
-    const deliver = <T>(callback: ((chunk: T) => void) | undefined, chunk: T) => {
-      if (callbackFailure !== undefined) return;
-      try {
-        callback?.(chunk);
-      } catch (error) {
-        callbackFailure = { error };
-        killDockerProcess(child);
-      }
-    };
     signal.addEventListener("abort", abort, { once: true });
     if (signal.aborted) abort();
-    child.stderr.setEncoding("utf8");
-    if (options.onStdoutBytes !== undefined) {
-      child.stdout.on("data", (chunk: Buffer) => deliver(options.onStdoutBytes, chunk));
-    } else {
-      child.stdout.setEncoding("utf8");
-      child.stdout.on("data", (chunk: string) => {
-        stdout.append(chunk);
-        deliver(options.onStdoutChunk, chunk);
-      });
-    }
-    child.stderr.on("data", (chunk: string) => {
-      stderr.append(chunk);
-      deliver(options.onStderrChunk, chunk);
-    });
     child.once("error", (error) => {
       signal.removeEventListener("abort", abort);
       reject(
@@ -221,19 +229,25 @@ async function runDocker(
       );
     });
     child.once("close", (exitCode, exitSignal) => {
-      signal.removeEventListener("abort", abort);
-      if (callbackFailure !== undefined) {
-        reject(callbackFailure.error);
-      } else if (signal.aborted) {
-        reject(dockerAbortError(args, signal));
-      } else if (exitCode === 0)
-        resolve({ exitCode, signal: exitSignal, stderr: stderr.value, stdout: stdout.value });
-      else
-        reject(
-          new Error(
-            `docker ${args[0] ?? "command"} failed (${exitCode ?? exitSignal}): ${stderr.value.trim().slice(-4096)}`,
-          ),
-        );
+      void output.finished().then(
+        () => {
+          signal.removeEventListener("abort", abort);
+          if (signal.aborted) {
+            reject(dockerAbortError(args, signal, deadline));
+          } else if (stopped || exitCode === 0)
+            resolve({ exitCode, signal: exitSignal, stderr: output.stderr, stdout: output.stdout });
+          else
+            reject(
+              new Error(
+                `docker ${args[0] ?? "command"} failed (${exitCode ?? exitSignal}): ${output.stderr.trim().slice(-4096)}`,
+              ),
+            );
+        },
+        (error: unknown) => {
+          signal.removeEventListener("abort", abort);
+          reject(error);
+        },
+      );
     });
   });
 }
@@ -254,11 +268,16 @@ export function killDockerProcess(child: ChildProcess): void {
   child.stderr?.destroy();
 }
 
-function dockerAbortError(args: readonly string[], signal: AbortSignal): AutomationRuntimeError {
+function dockerAbortError(
+  args: readonly string[],
+  signal: AbortSignal,
+  deadline: DockerDeadline,
+): AutomationRuntimeError {
   const timeout = signal.reason instanceof Error && signal.reason.name === "TimeoutError";
+  const code = deadline === "transfer" ? "DOCKER_TRANSFER_TIMEOUT" : "DOCKER_CONTROL_TIMEOUT";
   return new AutomationRuntimeError(
-    timeout ? "DOCKER_CONTROL_TIMEOUT" : "CONTAINER_RUNTIME_UNAVAILABLE",
-    `docker ${args[0] ?? "command"} stopped: ${timeout ? "DOCKER_CONTROL_TIMEOUT: Docker deadline exceeded" : getErrorMessage(signal.reason)}`,
+    timeout ? code : "CONTAINER_RUNTIME_UNAVAILABLE",
+    `docker ${args[0] ?? "command"} stopped: ${timeout ? `${code}: Docker deadline exceeded` : getErrorMessage(signal.reason)}`,
   );
 }
 

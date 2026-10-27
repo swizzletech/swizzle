@@ -4,12 +4,12 @@ import { prepareContainerAutomation } from "./container-runner.js";
 import { closeDockerScopes, removeAbandonedContainers } from "./docker-cli.js";
 import { withExecutionSource } from "./execution-wire.js";
 import type { PlatformLogger } from "./platform-types.js";
+import { runImageRecipe, runImageTag } from "./run-image.js";
 import {
+  type PruneDeadlines,
   pruneRunImages,
   RUN_IMAGE_PRUNE_INTERVAL_MS,
-  runImageRecipe,
-  runImageTag,
-} from "./run-image.js";
+} from "./run-image-prune.js";
 import { runsInSandbox } from "./runner.js";
 import { closeSandboxes } from "./sandbox.js";
 import { parseRuntimeTimeout } from "./timeout-policy.js";
@@ -37,6 +37,7 @@ export function startDeploymentPreparation(input: {
   readonly recordImage: (deploymentId: string, tag: string) => Promise<void>;
   readonly keptImages: () => Promise<readonly string[]>;
   readonly logger?: PlatformLogger;
+  readonly pruneDeadlines?: PruneDeadlines;
 }): DeploymentPreparation {
   // A prepared deployment learned its tag (or needs no sandbox). Only failures before tag
   // acknowledgement retry, at the stored time. Image ownership itself lives in Postgres.
@@ -97,6 +98,7 @@ export function startDeploymentPreparation(input: {
     if (complete && (changed || Date.now() - prunedAt >= RUN_IMAGE_PRUNE_INTERVAL_MS)) {
       const pass = await pruneRunImages({
         keep: new Set(await input.keptImages()),
+        ...(input.pruneDeadlines === undefined ? {} : { deadlines: input.pruneDeadlines }),
         ...(input.logger === undefined ? {} : { logger: input.logger }),
       });
       if (pass.removed > 0) input.logger?.info({ removed: pass.removed }, "Pruned run images.");

@@ -1,13 +1,29 @@
-# Swizzle
+<div align="center">
+
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+    <img src="docs/assets/logo.svg" alt="Swizzle" width="360">
+  </picture>
+</h1>
 
 Swizzle is a self-hosted runtime for automations written as ordinary code.
+
+[![CI](https://github.com/swizzletech/swizzle/actions/workflows/ci.yml/badge.svg)](https://github.com/swizzletech/swizzle/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/@swizzletech/cli)](https://www.npmjs.com/package/@swizzletech/cli)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
+[Website](https://swizzletech.github.io/swizzle-site/) · [Documentation](docs/README.md) · [Changelog](CHANGELOG.md)
+
+</div>
+
 Write the business logic in Python, JavaScript, or TypeScript. Swizzle handles queues, retries, secrets, versioned deployments, and logs.
 It ships as a Docker Compose stack with a dashboard and the `swizzle` CLI.
 
 Use it for scheduled jobs, incoming webhooks, and workflows that need to pause for approval or an external event.
 Keep the code in your editor and use the dashboard to inspect runs, manage access, and retry failures.
 
-![Swizzle dashboard showing automations and their run status](docs/assets/dashboard.png)
+![Dark-mode Play view of document-scanner with its Python code, step diagram, and a successful run that includes an approval step](docs/assets/dashboard.png)
 
 ## Quick start
 

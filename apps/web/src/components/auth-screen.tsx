@@ -12,8 +12,8 @@ import { flushSync } from "react-dom";
 import { ApiError, type TwoFactorEnrollment } from "../lib/api";
 import { sessionApi } from "../lib/api/account";
 import { signInProblemInWords } from "../lib/words/access";
+import { Logo } from "./logo";
 import { RecoveryCodes, TwoFactorSetup } from "./two-factor";
-import { Mark } from "./ui";
 
 export function AuthScreen(props: {
   readonly title: string;
@@ -23,10 +23,7 @@ export function AuthScreen(props: {
   return (
     <div className="grid min-h-screen place-items-center px-4 py-12" data-testid="auth-screen">
       <div className="w-full max-w-[460px]">
-        <span className="brand mb-5">
-          <Mark />
-          swizzle
-        </span>
+        <Logo className="brand mb-5" />
         <main className="card p-7 sm:p-8">
           <h1 className="t-page">{props.title}</h1>
           {props.intro === undefined ? null : <div className="t-meta mt-1.5">{props.intro}</div>}

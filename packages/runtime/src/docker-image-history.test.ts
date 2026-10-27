@@ -6,7 +6,7 @@ import { temporaryDirectory } from "../../../test/support.js";
 import { DockerScope } from "./docker-cli.js";
 import { readImageLayerHistory } from "./docker-image-history.js";
 
-it("reports a tar parse error when a truncated Docker export exits normally", async () => {
+it("leaves a truncated Docker export unmeasured when it exits normally", async () => {
   const directory = await temporaryDirectory("swizzle-truncated-image-export-");
   const id = "a".repeat(64);
   const config = `${id}.json`;
@@ -30,7 +30,7 @@ process.stdout.write(require('node:fs').readFileSync(${JSON.stringify(archive)})
   try {
     await expect(
       readImageLayerHistory([{ id: `sha256:${id}`, layers: ["base"] }], owner),
-    ).rejects.toThrow(/TAR_BAD_ARCHIVE: Truncated input/u);
+    ).resolves.toEqual({ state: "unreadable" });
   } finally {
     await owner.close();
   }

@@ -46,28 +46,42 @@ export function workerReaches(reach: WorkerReach, target: WorkerEnvironment): bo
   );
 }
 
+/** Keep worker heartbeats and warnings bounded regardless of the Docker inventory size. */
+export const RUN_IMAGE_DISK_DETAILS_LIMIT = 8;
+
 /**
  * What a worker's last image prune pass measured on its Docker engine, as its next heartbeat
  * reported it. Images of active deployments are always kept (ADR 0006), so `activeBytes` can pass
- * `budgetBytes`; the dashboard then warns the owner, and nothing is refused.
+ * `budgetBytes`. Unmeasured active images also warn the owner; nothing is refused.
  */
 export interface RunImageDisk {
-  /** Bytes of the run images kept because an active deployment uses them. */
+  /** Measured bytes of active images; excludes unmeasuredActiveImages. */
   readonly activeBytes: number;
+  /** Additional unmeasured images whose details are omitted from this report. */
+  readonly unmeasuredActiveImagesOmitted: number;
+  /** Details for at most RUN_IMAGE_DISK_DETAILS_LIMIT images, with one active run tag each. */
+  readonly unmeasuredActiveImages: readonly {
+    readonly id: string;
+    readonly tags: readonly string[];
+  }[];
   /** The worker's SWIZZLE_RUNNER_IMAGE_DISK_MB in bytes. */
   readonly budgetBytes: number;
 }
 
 /**
  * The measurement the owner is warned about, wherever workers show: Settings > Workers, the
- * Overview and `swizzle worker list`, which print the runtime's `runImageDiskWarning`. Null within
- * the budget, before the first prune pass, and for a revoked worker, whose images no longer matter.
+ * Overview and `swizzle worker list`, which print `runImageDiskWarning`. Null when all active images
+ * are measured within budget, before the first pass, and for revoked workers.
  */
 export function runImageDiskOverBudget(
   worker: Pick<RegisteredWorker, "runImageDisk" | "state">,
 ): RunImageDisk | null {
   const disk = worker.runImageDisk;
-  return disk !== null && worker.state !== "revoked" && disk.activeBytes > disk.budgetBytes
+  return disk !== null &&
+    worker.state !== "revoked" &&
+    (disk.activeBytes > disk.budgetBytes ||
+      disk.unmeasuredActiveImages.length > 0 ||
+      disk.unmeasuredActiveImagesOmitted > 0)
     ? disk
     : null;
 }
