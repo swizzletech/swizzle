@@ -48,7 +48,7 @@ export type Route =
   | { readonly kind: "commit"; readonly container: string }
   | { readonly kind: "container"; readonly container: string; readonly action: ContainerAction }
   | { readonly kind: "exec"; readonly exec: string; readonly hijack: boolean }
-  | { readonly kind: "image"; readonly image: string }
+  | { readonly kind: "image"; readonly images: readonly string[] }
   | { readonly kind: "deny"; readonly reason: string };
 
 type ContainerAction =
@@ -96,6 +96,13 @@ export function route(method: string, rawUrl: string): Route {
 
   if (call === "GET /_ping" || call === "HEAD /_ping" || call === "GET /version") return FORWARD;
   if (call === "GET /images/json") return FORWARD;
+  if (call === "GET /images/get") {
+    const images = query.getAll("names");
+    if (images.length === 0 || images.some((id) => !/^(?:sha256:)?[a-f0-9]{64}$/u.test(id))) {
+      return deny("an image export must name image IDs");
+    }
+    return onlyParameters(query, ["names"]) ?? { kind: "image", images };
+  }
   if (call === "GET /containers/json") {
     const filters = query.get("filters");
     if (filters === null) return deny("a container list names no label filter");
@@ -114,16 +121,17 @@ export function route(method: string, rawUrl: string): Route {
     return onlyParameters(query, ["fromImage", "tag"]) ?? FORWARD;
   }
 
-  const image = /^\/images\/([A-Za-z0-9._:/@-]+?)(\/json|\/tag)?$/u.exec(path);
+  const image = /^\/images\/([A-Za-z0-9._:/@-]+?)(\/json|\/tag|\/history)?$/u.exec(path);
   if (image !== null) {
     const [, reference = "", suffix] = image;
     if (method === "GET" && suffix === "/json") return FORWARD;
-    if (method === "DELETE" && suffix === undefined) return { image: reference, kind: "image" };
+    if (method === "GET" && suffix === "/history") return { images: [reference], kind: "image" };
+    if (method === "DELETE" && suffix === undefined) return { images: [reference], kind: "image" };
     if (method === "POST" && suffix === "/tag") {
       if (query.get("repo") !== RUN_IMAGE_REPOSITORY) {
         return deny(`images may be tagged only into ${RUN_IMAGE_REPOSITORY}`);
       }
-      return { image: reference, kind: "image" };
+      return { images: [reference], kind: "image" };
     }
   }
 

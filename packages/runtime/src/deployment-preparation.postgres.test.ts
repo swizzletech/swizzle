@@ -480,19 +480,12 @@ case "$1 $2" in
       id=$(image_of "$reference") || { echo "Error: No such image: $reference" >&2; exit 1; }
       [ -n "$format" ] || continue
       tags=$(tags_of "$id" | sed 's/.*/"&"/' | paste -s -d , -)
-      echo "[\\"$id\\",\\"$(iso "$(cat "$state/images/$id/created")")\\",$(cat "$state/images/$id/size"),[$tags]]"
+      echo "[\\"$id\\",\\"$(iso "$(cat "$state/images/$id/created")")\\",[$tags],[\\"$id\\"]]"
     done ;;
-  "system dial-stdio")
-    read -r request
-    printf 'HTTP/1.0 200 OK\\r\\n\\r\\n['
-    comma=''
-    for directory in "$state"/images/*/; do
-      [ -d "$directory" ] || continue
-      id=$(basename "$directory")
-      printf '%s{"Id":"%s","Size":%s,"SharedSize":0}' "$comma" "$id" "$(cat "$directory/size")"
-      comma=','
-    done
-    printf ']' ;;
+  "image history")
+    eval reference=\\\${$#}
+    id=$(image_of "$reference") || exit 1
+    cat "$state/images/$id/size" ;;
   "container inspect") echo sha256:base ;;
   "image ls")
     label=$(echo "$*" | sed -n 's/.*--filter label=\\([^ ]*\\).*/\\1/p')

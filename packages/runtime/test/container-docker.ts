@@ -5,6 +5,7 @@ import { list as listTar } from "tar";
 import { onTestFinished, vi } from "vitest";
 import { temporaryDirectory, waitFor } from "../../../test/support.js";
 import type { RunContainerAutomationOptions } from "../src/container-runner.js";
+import { DockerScope } from "../src/docker-cli.js";
 import { entrypointScript } from "../src/executed-script.js";
 import { sandboxRemovals } from "../src/sandbox.js";
 import type { AutomationDefinition } from "../src/validation.js";
@@ -98,8 +99,8 @@ exit 0
   vi.stubEnv("PATH", input.cliGoneAtAttach ? bin : `${bin}:${process.env.PATH}`);
   const calls = async () =>
     (await readFile(log, "utf8").catch(() => "")).split("\n").filter(Boolean);
-  // A run removes its sandbox in the background. The test waits until each removal has started and
-  // ended, or it deletes this fake mid-call and the removal's retry lands in a later test's log.
+  // Sandbox and assembly removals can outlive the result. Keep the fake until cleanup ends,
+  // including retries, so a late call cannot recreate its log during directory removal.
   onTestFinished(async ({ signal }) => {
     await waitFor(signal, async () => {
       const logged = await calls();
@@ -109,6 +110,7 @@ exit 0
       });
     });
     await sandboxRemovals();
+    await DockerScope.removals();
   });
   return {
     calls,

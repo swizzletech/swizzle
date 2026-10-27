@@ -3,7 +3,6 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { gzip } from "node:zlib";
 import { create as tarCreate } from "tar";
 import { expect, it, vi } from "vitest";
 import { z } from "zod";
@@ -13,11 +12,9 @@ import { pruneRunImages } from "./run-image.js";
 import { runAutomation } from "./runner.js";
 
 const exec = promisify(execFile);
-const compress = promisify(gzip);
 const MIB = 1_048_576;
 const inspectedImage = z.object({
   Id: z.string(),
-  Size: z.number(),
   RootFS: z.object({ Layers: z.array(z.string()) }),
 });
 
@@ -143,20 +140,19 @@ it("measures partially shared bases independently of excluded images, orphan com
     })();
   const fixture = await imageArchive(directory, marker);
   const old = new Date(Date.now() - 11 * 60_000).toISOString();
-  const common = await fixture.layer("common", randomBytes(8 * MIB));
+  const common = await fixture.layer("common", Buffer.alloc(8 * MIB, "a"));
+  const zero = await fixture.layer("zero", Buffer.alloc(0));
   const customA = await fixture.layer("custom-a", randomBytes(4 * MIB));
   const customB = await fixture.layer("custom-b", randomBytes(6 * MIB));
   const tag = (name: string) =>
     `swizzle-run:${createHash("sha256").update(`${marker}:${name}`).digest("hex").slice(0, 24)}`;
   const baseCommon = tag("common");
   const baseA = tag("base-a");
-  const baseB = tag("base-b");
   const add = async (
     name: string,
     layers: readonly LayerDescriptor[],
     scope: string,
     created = old,
-    baseBytes = 0,
   ) => {
     const reference = tag(name);
     await fixture.image(
@@ -166,7 +162,6 @@ it("measures partially shared bases independently of excluded images, orphan com
         "swizzle.stack": scope,
         "swizzle.verify-image-disk": marker,
         "swizzle.verify-image-name": name,
-        "swizzle.runner-base-bytes": String(baseBytes),
       },
       created,
     );
@@ -176,34 +171,24 @@ it("measures partially shared bases independently of excluded images, orphan com
   const closeToDisk = (actual: number, expected: number) => {
     expect(Math.abs(actual - expected) / expected).toBeLessThan(0.03);
   };
+  console.log(
+    `Docker storage: ${(
+      await docker("info", "--format", "{{.ServerVersion}} {{.Driver}} {{json .DriverStatus}}")
+    ).trim()}`,
+  );
   try {
-    await add("common", [common], `${stack}-excluded`);
-    await add("base-a", [common, customA], `${stack}-excluded`);
-    await add("base-b", [common, customB], `${stack}-excluded`);
+    await add("common", [common, zero], `${stack}-excluded`);
+    await add("base-a", [common, zero, customA], `${stack}-excluded`);
+    await add("base-b", [common, zero, customB], `${stack}-excluded`);
     await load();
-    const commonBytes = (await inspect(baseCommon)).Size;
-    const baseABytes = (await inspect(baseA)).Size;
-    const baseBBytes = (await inspect(baseB)).Size;
     const a = tag("a");
     const b = tag("b");
-    await add(
-      "a",
-      [common, customA, await fixture.layer("a", randomBytes(MIB))],
-      stack,
-      old,
-      baseABytes,
-    );
-    await add(
-      "b",
-      [common, customB, await fixture.layer("b", randomBytes(MIB))],
-      stack,
-      old,
-      baseBBytes,
-    );
+    await add("a", [common, zero, customA, await fixture.layer("a", randomBytes(MIB))], stack, old);
+    await add("b", [common, zero, customB, await fixture.layer("b", randomBytes(MIB))], stack, old);
     // This excluded image shares custom-a too. A daemon-wide shared size would undercount A.
     await add(
       "excluded",
-      [common, customA, await fixture.layer("excluded", randomBytes(2 * MIB))],
+      [common, zero, customA, await fixture.layer("excluded", randomBytes(2 * MIB))],
       `${stack}-excluded`,
     );
     await load();
@@ -212,7 +197,8 @@ it("measures partially shared bases independently of excluded images, orphan com
     expect(imageA.RootFS.Layers.filter((id) => imageB.RootFS.Layers.includes(id))).toEqual(
       (await inspect(baseCommon)).RootFS.Layers,
     );
-    const expectedActive = imageA.Size + imageB.Size - commonBytes;
+    // Payload sizes are independent of Docker's version-dependent packed/unpacked Size fields.
+    const expectedActive = 20 * MIB;
     vi.stubEnv("SWIZZLE_STACK", stack);
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "100");
     const active = await pruneRunImages({ keep: new Set([a, b]) });
@@ -223,10 +209,9 @@ it("measures partially shared bases independently of excluded images, orphan com
     const cached = tag("cached");
     await add(
       "cached",
-      [common, customA, await fixture.layer("cached", randomBytes(MIB))],
+      [common, zero, customA, await fixture.layer("cached", randomBytes(MIB))],
       stack,
       old,
-      baseABytes,
     );
     await load();
     const source = path.join(directory, "untagged.bin");
@@ -240,26 +225,19 @@ it("measures partially shared bases independently of excluded images, orphan com
         `swizzle.stack=${stack}`,
         "--label",
         "swizzle.verify-image-name=untagged",
-        "--label",
-        `swizzle.runner-base-bytes=${baseABytes}`,
         "--entrypoint",
         "/unused",
         baseA,
       )
     ).trim();
-    let untagged: string;
     try {
       await docker("cp", source, `${assembly}:/untagged`);
-      untagged = (await docker("commit", assembly)).trim();
+      await docker("commit", assembly);
     } finally {
       await docker("container", "rm", assembly);
     }
     const cachedId = (await inspect(cached)).Id;
-    const expectedRetained =
-      expectedActive +
-      (await inspect(cached)).Size +
-      (await inspect(untagged)).Size -
-      2 * baseABytes;
+    const expectedRetained = expectedActive + 2 * MIB;
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", String(Math.ceil(expectedRetained / MIB) + 1));
     const retained = await pruneRunImages({ keep: new Set([a, b]) });
     expect(retained.removed).toBe(0);
@@ -278,12 +256,12 @@ it("measures partially shared bases independently of excluded images, orphan com
         `inventory-${i}`,
         [
           common,
+          zero,
           customA,
           await fixture.layer(`inventory-${i}`, Buffer.from(`source ${marker} ${i}`)),
         ],
         largeStack,
         old,
-        baseABytes,
       );
       if ((i + 1) % 16 === 0) await load();
     }
@@ -296,7 +274,7 @@ it("measures partially shared bases independently of excluded images, orphan com
     const large = await pruneRunImages({ keep: new Set(inventory) });
     const elapsed = performance.now() - started;
     expect(large.removed).toBe(0);
-    expect(large.disk.activeBytes).toBeGreaterThan(baseABytes);
+    expect(large.disk.activeBytes).toBeGreaterThan(12 * MIB);
     expect(large.disk.activeBytes).toBeLessThan(100 * MIB);
     expect(elapsed).toBeLessThan(60_000);
     console.log(
@@ -325,39 +303,33 @@ it("measures partially shared bases independently of excluded images, orphan com
   }
 }, 600_000);
 
-interface Descriptor {
-  readonly mediaType: string;
-  readonly digest: string;
-  readonly size: number;
-}
-
-interface LayerDescriptor extends Descriptor {
+interface LayerDescriptor {
   readonly diffId: string;
+  readonly file: string;
 }
 
-/** An OCI image archive: real shared layers, imported without network access or running a container. */
+/** A Docker save archive, accepted by both classic and containerd image stores. */
 async function imageArchive(directory: string, marker: string) {
   const root = path.join(directory, "archive");
-  await mkdir(path.join(root, "blobs", "sha256"), { recursive: true });
-  const manifests: (Descriptor & { annotations: Record<string, string> })[] = [];
-  const blob = async (bytes: Buffer, mediaType: string): Promise<Descriptor> => {
-    const hash = createHash("sha256").update(bytes).digest("hex");
-    await writeFile(path.join(root, "blobs", "sha256", hash), bytes);
-    return { mediaType, digest: `sha256:${hash}`, size: bytes.length };
+  await mkdir(root);
+  const manifests: { Config: string; RepoTags: string[]; Layers: string[] }[] = [];
+  const json = async (value: unknown) => {
+    const bytes = Buffer.from(JSON.stringify(value));
+    const file = `${createHash("sha256").update(bytes).digest("hex")}.json`;
+    await writeFile(path.join(root, file), bytes);
+    return file;
   };
-  const json = (value: unknown, mediaType: string) =>
-    blob(Buffer.from(JSON.stringify(value)), mediaType);
   return {
-    layer: async (name: string, contents: Buffer) => {
+    layer: async (name: string, contents: Buffer): Promise<LayerDescriptor> => {
       const source = path.join(directory, name);
       await mkdir(source);
       const filename = `${marker}-${name}`;
       await writeFile(path.join(source, filename), contents);
-      const file = path.join(source, "layer.tar");
-      await tarCreate({ cwd: source, file, portable: true }, [filename]);
-      const bytes = await readFile(file);
+      const file = `${name}.tar`;
+      await tarCreate({ cwd: source, file: path.join(root, file), portable: true }, [filename]);
+      const bytes = await readFile(path.join(root, file));
       return {
-        ...(await blob(await compress(bytes), "application/vnd.oci.image.layer.v1.tar+gzip")),
+        file,
         diffId: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
       };
     },
@@ -367,42 +339,24 @@ async function imageArchive(directory: string, marker: string) {
       labels: Record<string, string>,
       created: string,
     ) => {
-      const config = await json(
-        {
-          created,
-          architecture: process.arch === "arm64" ? "arm64" : "amd64",
-          os: "linux",
-          config: { Labels: labels },
-          rootfs: { type: "layers", diff_ids: layers.map((layer) => layer.diffId) },
-          history: layers.map(() => ({ created, created_by: "COPY fixture" })),
-        },
-        "application/vnd.oci.image.config.v1+json",
-      );
-      const manifest = await json(
-        {
-          schemaVersion: 2,
-          mediaType: "application/vnd.oci.image.manifest.v1+json",
-          config,
-          layers: layers.map(({ mediaType, digest, size }) => ({ mediaType, digest, size })),
-        },
-        "application/vnd.oci.image.manifest.v1+json",
-      );
+      const config = await json({
+        created,
+        architecture: process.arch === "arm64" ? "arm64" : "amd64",
+        os: "linux",
+        config: { Labels: labels },
+        rootfs: { type: "layers", diff_ids: layers.map((layer) => layer.diffId) },
+        history: layers.map(() => ({ created, created_by: "COPY fixture" })),
+      });
       manifests.push({
-        ...manifest,
-        annotations: {
-          "org.opencontainers.image.ref.name": tag,
-          "io.containerd.image.name": `docker.io/library/${tag}`,
-        },
+        Config: config,
+        RepoTags: [tag],
+        Layers: layers.map((layer) => layer.file),
       });
     },
     archive: async () => {
-      await writeFile(path.join(root, "oci-layout"), '{"imageLayoutVersion":"1.0.0"}');
-      await writeFile(
-        path.join(root, "index.json"),
-        JSON.stringify({ schemaVersion: 2, manifests }),
-      );
+      await writeFile(path.join(root, "manifest.json"), JSON.stringify(manifests));
       const file = path.join(directory, "images.tar");
-      await tarCreate({ cwd: root, file }, ["oci-layout", "index.json", "blobs"]);
+      await tarCreate({ cwd: root, file }, ["."]);
       manifests.length = 0;
       return file;
     },

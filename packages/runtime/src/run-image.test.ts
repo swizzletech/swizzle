@@ -1,7 +1,8 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { create as tarCreate } from "tar";
 import { expect, it, vi } from "vitest";
-import { temporaryDirectory } from "../../../test/support.js";
+import { temporaryDirectory, waitFor } from "../../../test/support.js";
 import { pruneRunImages } from "./run-image.js";
 
 it("counts common ancestors of distinct custom bases once for disk warnings and pruning", async () => {
@@ -41,22 +42,6 @@ it("counts a shared base once and retains images whose combined layers fit the b
   });
 });
 
-it("measures a large inventory on one base with one metadata request", async () => {
-  const tags = Array.from(
-    { length: 500 },
-    (_, i) => `swizzle-run:${i.toString(16).padStart(24, "0")}`,
-  );
-  const requests = await fakeDocker(
-    tags.map((tag, i) => ({ tag, layers: { base: 300, [`source-${i}`]: 1 } })),
-  );
-  vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "1000");
-  expect(await pruneRunImages({ keep: new Set(tags) })).toEqual({
-    removed: 0,
-    disk: { activeBytes: 838860800, budgetBytes: 1048576000 },
-  });
-  expect(await readFile(requests, "utf8")).toBe("usage\n");
-});
-
 it("counts an ancestor shared by three images once and prunes only the excess", async () => {
   const tags = Array.from({ length: 3 }, (_, i) => `swizzle-run:${String(i).repeat(24)}`);
   await fakeDocker([
@@ -91,80 +76,191 @@ it("retains a cached image when a fresh untagged commit shares its base", async 
   });
 });
 
-it("reads chunked Docker metadata forwarded by the broker", async () => {
-  const tags = [`swizzle-run:${"a".repeat(24)}`, `swizzle-run:${"b".repeat(24)}`];
-  await fakeDocker(
-    [
-      { tag: tags[0] ?? "", layers: { common: 200, a: 1 } },
-      { tag: tags[1] ?? "", layers: { common: 200, b: 1 } },
-    ],
-    200,
-    true,
-  );
-  expect(await pruneRunImages({ keep: new Set(tags) })).toEqual({
-    removed: 0,
-    disk: { activeBytes: 211812352, budgetBytes: 21474836480 },
-  });
-});
-
-it("fails the pass when Docker cannot measure shared disk use", async () => {
+it("fails the pass when Docker cannot measure layer sizes", async () => {
   await fakeDocker(
     [
       { tag: `swizzle-run:${"a".repeat(24)}`, layers: { base: 300, a: 1 } },
       { tag: `swizzle-run:${"b".repeat(24)}`, layers: { base: 300, b: 1 } },
     ],
-    503,
+    false,
   );
-  await expect(pruneRunImages({ keep: new Set() })).rejects.toThrow(
-    "Cannot measure shared disk use",
-  );
+  await expect(pruneRunImages({ keep: new Set() })).rejects.toThrow("history unavailable");
 });
 
-/** Docker's boundary: usage shares only the images selected by reference. */
+it.each(["unmappable", "missing-config"] as const)(
+  "prunes over-budget images and names an image with %s history",
+  async (fault) => {
+    const active = `swizzle-run:${"a".repeat(24)}`;
+    const cached = `swizzle-run:${"b".repeat(24)}`;
+    const broken = `swizzle-run:${"c".repeat(24)}`;
+    const { removed } = await fakeDocker([
+      { tag: active, layers: { base: 300, empty: 0, active: 1 } },
+      { tag: cached, layers: { base: 300, cached: 1 } },
+      { tag: broken, layers: { base: 300, empty: 0, broken: 1 }, fault },
+    ]);
+    vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "301");
+    const warn = vi.fn();
+    expect(await pruneRunImages({ keep: new Set([active]), logger: { warn } })).toEqual({
+      removed: 2,
+      disk: { activeBytes: 315621376, budgetBytes: 315621376 },
+    });
+    expect((await readFile(removed, "utf8")).trim().split("\n")).toEqual([cached, broken]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ imageId: `sha256:${"2".padStart(64, "0")}`, tags: [broken] }),
+      expect.stringContaining("Cannot measure run image"),
+    );
+  },
+);
+
+it.each(["active", "fresh"] as const)(
+  "keeps a protected %s image with unknown size and leaves no budget for cached images",
+  async (protection) => {
+    const protectedTag = `swizzle-run:${"a".repeat(24)}`;
+    await fakeDocker([
+      {
+        tag: protectedTag,
+        fresh: protection === "fresh",
+        layers: { base: 300, empty: 0, protected: 1 },
+        fault: "unmappable",
+      },
+      { tag: `swizzle-run:${"b".repeat(24)}`, layers: { base: 300, cached: 1 } },
+    ]);
+    vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "400");
+    expect(
+      await pruneRunImages({ keep: new Set(protection === "active" ? [protectedTag] : []) }),
+    ).toEqual({
+      removed: 1,
+      disk: { activeBytes: protection === "active" ? 419430401 : 0, budgetBytes: 419430400 },
+    });
+  },
+);
+
+it("counts zero-byte filesystem layers separately from metadata and still prunes", async () => {
+  const tags = [`swizzle-run:${"a".repeat(24)}`, `swizzle-run:${"b".repeat(24)}`];
+  await fakeDocker([
+    { tag: tags[0] ?? "", layers: { base: 300, empty: 0, a: 1 } },
+    { tag: tags[1] ?? "", layers: { base: 300, empty: 0, b: 1 } },
+    { tag: null, layers: { base: 300, empty: 0, orphan: 1 } },
+  ]);
+  vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "302");
+  expect(await pruneRunImages({ keep: new Set(tags) })).toEqual({
+    removed: 1,
+    disk: { activeBytes: 316669952, budgetBytes: 316669952 },
+  });
+});
+
+it("counts the same diff under distinct parent chains separately", async () => {
+  const tags = [`swizzle-run:${"a".repeat(24)}`, `swizzle-run:${"b".repeat(24)}`];
+  await fakeDocker([
+    { tag: tags[0] ?? "", layers: { "base-a": 100, source: 1 } },
+    { tag: tags[1] ?? "", layers: { "base-b": 50, source: 1 } },
+  ]);
+  expect(await pruneRunImages({ keep: new Set(tags) })).toEqual({
+    removed: 0,
+    disk: { activeBytes: 159383552, budgetBytes: 21474836480 },
+  });
+});
+
+/** Docker history includes metadata-only entries of zero bytes, in reverse layer order. */
 async function fakeDocker(
-  images: readonly { tag: string | null; fresh?: boolean; layers: Record<string, number> }[],
-  status = 200,
-  chunked = false,
+  images: readonly {
+    tag: string | null;
+    fresh?: boolean;
+    layers: Record<string, number>;
+    fault?: "unmappable" | "missing-config";
+  }[],
+  historyAvailable = true,
 ) {
   const directory = await temporaryDirectory("swizzle-image-layers-");
-  const requests = path.join(directory, "requests.txt");
+  const configs = await Promise.all(
+    images.map(async (image, index) => {
+      if (image.fault === "missing-config") return [];
+      const file = `${index.toString(16).padStart(64, "0")}.json`;
+      await writeFile(
+        path.join(directory, file),
+        JSON.stringify({
+          rootfs: { diff_ids: Object.keys(image.layers) },
+          history: [
+            ...(image.fault === "unmappable" ? [{ empty_layer: true }] : []),
+            ...Object.values(image.layers).flatMap(() => [
+              { empty_layer: true },
+              { empty_layer: false },
+            ]),
+            { empty_layer: true },
+          ],
+        }),
+      );
+      return [file];
+    }),
+  );
+  const archive = path.join(directory, "images.tar");
+  await tarCreate({ cwd: directory, file: archive }, configs.flat());
+
+  const removed = path.join(directory, "removed");
   await writeFile(
     path.join(directory, "docker"),
     `#!${process.execPath}
 const args = process.argv.slice(2);
-const fs = require('node:fs');
-const aliasFile = ${JSON.stringify(path.join(directory, "aliases.json"))};
-const aliases = fs.existsSync(aliasFile) ? JSON.parse(fs.readFileSync(aliasFile, 'utf8')) : {};
-const images = ${JSON.stringify(images)}.map((image, i) => ({
-  ...image, id: 'image-' + i,
-  bytes: Object.values(image.layers).reduce((a, b) => a + b, 0) * 1048576,
-}));
+const images = ${JSON.stringify(images)}.map((image, i) => ({ ...image, id: 'sha256:' + i.toString(16).padStart(64, '0') }));
 const created = new Date(Date.now() - 11 * 60_000).toISOString();
 if (args[0] === 'ps') {}
 else if (args[1] === 'ls') console.log(images.map(i => i.id).join('\\n'));
 else if (args[1] === 'inspect') console.log(images.filter(i => args.slice(4).includes(i.id)).map(i => JSON.stringify([
-  i.id, i.fresh ? new Date().toISOString() : created, i.bytes, i.tag === null ? [] : [i.tag], Object.keys(i.layers),
+  i.id, i.fresh ? new Date().toISOString() : created, i.tag === null ? [] : [i.tag], Object.keys(i.layers),
 ])).join('\\n'));
-else if (args[0] === 'tag') { aliases[args[2]] = args[1]; fs.writeFileSync(aliasFile, JSON.stringify(aliases)); }
-else if (args[1] === 'rm') console.log(args.slice(2).join('\\n'));
-else if (args[1] === 'dial-stdio') process.stdin.once('data', request => {
-  fs.appendFileSync(${JSON.stringify(requests)}, 'usage\\n');
-  const url = new URL(request.toString().split(' ')[1], 'http://docker');
-  const refs = JSON.parse(url.searchParams.get('filters')).reference;
-  const selected = images.filter(i => refs === undefined || refs.includes(i.tag) || refs.some(ref => aliases[ref] === i.id));
-  const body = selected.map(i => ({ Id: i.id, Size: i.bytes, SharedSize:
-    Object.entries(i.layers).reduce((sum, [id, size]) => sum +
-      (selected.some(other => other.id !== i.id && id in other.layers) ? size * 1048576 : 0), 0),
-  }));
-  const json = JSON.stringify(body);
-  const response = ${chunked} ? 'HTTP/1.1 ${status} Docker\\r\\nTransfer-Encoding: chunked\\r\\n\\r\\n' + Buffer.byteLength(json).toString(16) + '\\r\\n' + json + '\\r\\n0\\r\\n\\r\\n' : 'HTTP/1.0 ${status} Docker\\r\\n\\r\\n' + json;
-  process.stdout.write(response, () => process.exit(0));
-});
+else if (args[1] === 'history') {
+  if (!${historyAvailable}) { console.error('history unavailable'); process.exit(1); }
+  const image = images.find(i => i.id === args.at(-1));
+  console.log([0, ...Object.values(image.layers).reverse().flatMap(size => [size * 1048576, 0])].join('\\n'));
+}
+else if (args[1] === 'save') {
+  process.stdout.write(require('node:fs').readFileSync(${JSON.stringify(archive)}));
+  if (!images.some(i => i.fault === 'missing-config')) setInterval(() => {}, 1000);
+}
+else if (args[1] === 'rm') { require('node:fs').appendFileSync(${JSON.stringify(removed)}, args.slice(2).join('\\n') + '\\n'); console.log(args.slice(2).join('\\n')); }
 else { console.error('Unexpected Docker call: ' + args.join(' ')); process.exit(1); }
 `,
     { mode: 0o755 },
   );
   vi.stubEnv("PATH", `${directory}:${process.env.PATH}`);
   vi.stubEnv("SWIZZLE_STACK", "layer-budget");
-  return requests;
+  return { removed };
 }
+
+// Closing preparation closes the process-wide Docker scopes, so give it fresh module state.
+it("logs the unmappable image through the worker preparation logger and completes pruning", async ({
+  signal,
+}) => {
+  const active = `swizzle-run:${"a".repeat(24)}`;
+  const broken = `swizzle-run:${"b".repeat(24)}`;
+  const cached = `swizzle-run:${"c".repeat(24)}`;
+  const { removed } = await fakeDocker([
+    { tag: active, layers: { base: 300, active: 1 } },
+    { tag: broken, layers: { base: 300, empty: 0, broken: 1 }, fault: "unmappable" },
+    { tag: cached, layers: { base: 300, cached: 1 } },
+  ]);
+  vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "301");
+  vi.resetModules();
+  const { startDeploymentPreparation } = await import("./deployment-preparation.js");
+  const warn = vi.fn();
+  const preparation = startDeploymentPreparation({
+    poll: async () => ({ activeIds: [], deployments: [] }),
+    recordImage: async () => {},
+    keptImages: async () => [active],
+    logger: { debug() {}, error() {}, info() {}, warn },
+  });
+  try {
+    await waitFor(signal, () => preparation.runImageDisk() !== null);
+    expect(preparation.runImageDisk()).toEqual({
+      activeBytes: 315621376,
+      budgetBytes: 315621376,
+    });
+    expect((await readFile(removed, "utf8")).trim().split("\n")).toEqual([broken, cached]);
+    expect(warn).toHaveBeenCalledWith(
+      { imageId: `sha256:${"1".padStart(64, "0")}`, tags: [broken] },
+      "Cannot measure run image; counting it above the disk budget.",
+    );
+  } finally {
+    await preparation.close();
+  }
+});

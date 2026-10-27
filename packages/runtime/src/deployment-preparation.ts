@@ -95,7 +95,10 @@ export function startDeploymentPreparation(input: {
     }
     const complete = [...activeIds].every((id) => nextPreparation.get(id) === "prepared");
     if (complete && (changed || Date.now() - prunedAt >= RUN_IMAGE_PRUNE_INTERVAL_MS)) {
-      const pass = await pruneRunImages({ keep: new Set(await input.keptImages()) });
+      const pass = await pruneRunImages({
+        keep: new Set(await input.keptImages()),
+        ...(input.logger === undefined ? {} : { logger: input.logger }),
+      });
       if (pass.removed > 0) input.logger?.info({ removed: pass.removed }, "Pruned run images.");
       disk = pass.disk;
       prunedAt = Date.now();

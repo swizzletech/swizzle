@@ -227,13 +227,15 @@ async function decideRoute(
       return owner.allow ? { allow: true, body: null, path: url } : owner;
     }
     case "image": {
-      const image = await daemon(`/images/${routed.image}/json`);
-      if (image.status !== 200) return passThrough(image);
-      const labels =
-        isRecord(image.body) && isRecord(image.body.Config) ? image.body.Config.Labels : null;
-      return ownedBy(labels, scope)
-        ? { allow: true, body: null, path: url }
-        : refuse(`the image ${routed.image} does not belong to stack ${scope.stack}`);
+      for (const reference of routed.images) {
+        const image = await daemon(`/images/${reference}/json`);
+        if (image.status !== 200) return passThrough(image);
+        const labels =
+          isRecord(image.body) && isRecord(image.body.Config) ? image.body.Config.Labels : null;
+        if (!ownedBy(labels, scope))
+          return refuse(`the image ${reference} does not belong to stack ${scope.stack}`);
+      }
+      return { allow: true, body: null, path: url };
     }
   }
 }
