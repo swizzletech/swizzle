@@ -9,7 +9,7 @@ catalog:
   # Held on 26: the types follow the Node that mise.toml and the images run.
   "@types/node": ^26.6.5
   "@types/pg": ^8.23.1
-  bullmq: ^6.4.0
+  bullmq: ^6.4.1
   fastify: ^5.12.7
   pg: ^8.23.1
   pino: ^10.4.0
@@ -17,7 +17,7 @@ catalog:
   tsx: ^4.23.15
   # Held on 6: dependency-cruiser 18.7 parses TypeScript through its compiler API (>=2 <7),
   # which TypeScript 7 no longer ships.
-  typescript: ^6.0.3
+  typescript: ^7.0.2
   yaml: ^2.9.1
 
 # Only `just setup` installs, from the frozen lockfile. pnpm's default would make every

@@ -21,7 +21,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "bullmq": "catalog:",
     "dependency-cruiser": "^18.7.0",
-    "knip": "^6.42.1",
+    "knip": "^6.43.0",
     "marked": "^18.1.1",
     "pg": "catalog:",
     "rimraf": "^6.1.3",

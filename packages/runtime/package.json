@@ -42,7 +42,7 @@
     "@swizzle/connections": "workspace:*",
     "@swizzle/core": "workspace:*",
     "@swizzle/db": "workspace:*",
-    "@aws-sdk/client-s3": "^3.1155.0",
+    "@aws-sdk/client-s3": "^3.1156.0",
     "@opentelemetry/api": "catalog:",
     "bullmq": "catalog:",
     "esbuild": "^0.28.2",
