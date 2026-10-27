@@ -1,11 +1,13 @@
 // The broker in front of a fake Docker daemon on a Unix socket. cli-requests.json holds the bodies
 // the worker image's Docker CLI (29.9.2) sends for the sandbox and image assembly creates and for
 // a run's exec, captured with the arguments packages/runtime builds.
+import { execFile } from "node:child_process";
 import { once } from "node:events";
 import type { IncomingMessage } from "node:http";
 import { createServer, type Server } from "node:http";
 import { type AddressInfo, connect, type Socket } from "node:net";
 import path from "node:path";
+import { promisify } from "node:util";
 import { containerLimitArguments } from "@swizzle/runtime";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
@@ -14,8 +16,11 @@ import { createBroker } from "./broker.js";
 import requests from "./cli-requests.json" with { type: "json" };
 import { readBrokerScope } from "./policy.js";
 
+const exec = promisify(execFile);
+
 const OWNED_ID = "a".repeat(64);
 const FOREIGN_ID = "b".repeat(64);
+const SECOND_OWNED_ID = "c".repeat(64);
 
 interface Received {
   readonly method: string;
@@ -54,11 +59,36 @@ async function startBroker(): Promise<{
         res.flushHeaders();
         return;
       }
-      const inspected = /\/containers\/(\w[\w.-]*)\/json$/u.exec(req.url ?? "")?.[1];
+      if (req.url?.includes("/images/get?")) {
+        res.writeHead(200, { "content-type": "application/x-tar" });
+        res.end(Buffer.alloc(1024));
+        return;
+      }
+      if (req.url?.endsWith("/history")) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(
+          JSON.stringify([
+            {
+              Id: OWNED_ID,
+              Created: 0,
+              CreatedBy: "COPY fixture",
+              Size: 2097152,
+              Tags: [],
+              Comment: "",
+            },
+          ]),
+        );
+        return;
+      }
+      const inspected = /\/(?:containers|images)\/(\w[\w.-]*)\/json$/u.exec(req.url ?? "")?.[1];
       if (inspected === STALLED) return;
       res.writeHead(inspected === undefined ? 201 : 200, { "content-type": "application/json" });
       if (inspected === undefined) res.end("{}");
-      else if (inspected === "swizzle-run-1" || inspected === OWNED_ID)
+      else if (
+        inspected === "swizzle-run-1" ||
+        inspected === OWNED_ID ||
+        inspected === SECOND_OWNED_ID
+      )
         res.end(
           JSON.stringify({ Config: { Labels: { "swizzle.stack": "stack-a" } }, Id: OWNED_ID }),
         );
@@ -159,22 +189,61 @@ function withHostConfig(change: Record<string, unknown>): unknown {
   return { ...requests.sandbox, HostConfig: { ...requests.sandbox.HostConfig, ...change } };
 }
 
-it("forwards an image usage filter with hundreds of selected references", async () => {
+it("allows image history only for images owned by the stack", async () => {
   const { url, received } = await startBroker();
-  const query = new URLSearchParams({
-    "shared-size": "true",
-    filters: JSON.stringify({
-      label: ["swizzle.stack=stack-a"],
-      reference: Array.from(
-        { length: 400 },
-        (_, i) => `swizzle-run:${i.toString(16).padStart(24, "0")}`,
-      ),
-    }),
+  const route = `/images/${OWNED_ID}/history`;
+  vi.stubEnv("DOCKER_CONTEXT", "swizzle-unavailable-test-context");
+  vi.stubEnv("DOCKER_TLS", "1");
+  vi.stubEnv("DOCKER_TLS_VERIFY", "1");
+  vi.stubEnv("DOCKER_CERT_PATH", await temporaryDirectory("docker-inherited-certs-"));
+  const { stdout } = await exec(
+    "docker",
+    ["image", "history", "--human=false", "--no-trunc", "--format", "{{.Size}}", OWNED_ID],
+    {
+      env: {
+        PATH: process.env.PATH,
+        DOCKER_CONFIG: await temporaryDirectory("docker-cli-config-"),
+        DOCKER_HOST: url.replace("http:", "tcp:"),
+      },
+    },
+  );
+  expect(stdout).toBe("2097152\n");
+  expect(
+    received.map((call) => ({ ...call, url: call.url.replace(/^\/v\d+\.\d+/u, "") })),
+  ).toContainEqual({ method: "GET", url: route, body: "" });
+  expect((await fetch(`${url}/v1.52/images/${FOREIGN_ID}/history`)).status).toBe(403);
+  expect(received).not.toContainEqual({
+    method: "GET",
+    url: `/v1.52/images/${FOREIGN_ID}/history`,
+    body: "",
   });
-  const route = `/images/json?${query}`;
-  const response = await fetch(`${url}${route}`);
-  expect(response.status).toBe(201);
-  expect(received).toContainEqual({ method: "GET", url: route, body: "" });
+});
+
+it("exports the CLI's image set only when every image belongs to the stack", async () => {
+  const { url, received } = await startBroker();
+  const { stdout } = await exec("docker", ["image", "save", OWNED_ID, SECOND_OWNED_ID], {
+    encoding: "buffer",
+    env: {
+      PATH: process.env.PATH,
+      DOCKER_CONFIG: await temporaryDirectory("docker-cli-save-config-"),
+      DOCKER_HOST: url.replace("http:", "tcp:"),
+    },
+  });
+  expect(stdout).toEqual(Buffer.alloc(1024));
+  const exported = `/images/get?names=${OWNED_ID}&names=${SECOND_OWNED_ID}`;
+  expect(
+    received.map((call) => ({ ...call, url: call.url.replace(/^\/v\d+\.\d+/u, "") })),
+  ).toContainEqual({ method: "GET", url: exported, body: "" });
+  const refused = `/images/get?names=${OWNED_ID}&names=${FOREIGN_ID}`;
+  expect((await fetch(`${url}${refused}`)).status).toBe(403);
+  expect(received).not.toContainEqual({ method: "GET", url: refused, body: "" });
+  for (const route of [
+    "/images/get",
+    "/images/get?names=node:latest",
+    `/images/get?names=${OWNED_ID}&unexpected=true`,
+  ]) {
+    expect((await fetch(`${url}${route}`)).status).toBe(403);
+  }
 });
 
 describe("docker-broker", () => {

@@ -36,7 +36,14 @@ swizzle validate hello
 swizzle run hello
 ```
 
-This short demo runs trusted code on your host. After [connecting the CLI](docs/how-to/install.md#connect-the-cli) to your instance, deploy it with `swizzle apply hello` to run it in Swizzle's restricted Docker sandbox.
+This short demo runs trusted code on your host. After [connecting the CLI](docs/how-to/install.md#connect-the-cli) to your instance, store the webhook's signing secret and deploy it to run in Swizzle's restricted Docker sandbox:
+
+```bash
+export HELLO_SIGNING_SECRET="$(node -e "console.log(crypto.randomBytes(32).toString('hex'))")"
+swizzle secret set HELLO_SIGNING_SECRET --value-env HELLO_SIGNING_SECRET
+swizzle apply hello
+```
+
 [Build your first automation](docs/tutorials/first-automation.md) walks through the result and deployment.
 
 ## Explore

@@ -129,6 +129,10 @@ e2e *args: build
 audit:
     pnpm audit --audit-level=moderate
 
+# Raise every dependency to the newest release its range allows, so no major changes, and rewrite the lockfile (reads the live registry).
+deps-update:
+    pnpm update -r
+
 # List every dependency with a newer release, holds included; the catalog in pnpm-workspace.yaml says why each is held (reads the live registry, exits 1 while it lists one).
 deps-outdated:
     pnpm outdated -r

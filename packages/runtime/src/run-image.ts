@@ -23,6 +23,7 @@ import { BoundedOutput } from "./bounded-output.js";
 
 import { containerLimitArguments, installDiskLimitMb } from "./container-limits.js";
 import { DockerScope, removeAbandonedContainers, stackLabel, workerLabel } from "./docker-cli.js";
+import { readImageLayerHistory } from "./docker-image-history.js";
 import { AutomationRuntimeError, getErrorMessage } from "./errors.js";
 import {
   egressProxyEnvironment,
@@ -39,7 +40,7 @@ export const RUN_IMAGE_PRUNE_INTERVAL_MS = 15 * 60 * 1_000;
 /** Gives an assembly time to start its sandbox, after which Docker refuses to remove its image. */
 const FRESH_IMAGE_MS = 10 * 60 * 1_000;
 const RUN_TAG = /^swizzle-run:([0-9a-f]{24})$/u;
-const IMAGE_FORMAT = `[{{json .Id}},{{json .Created}},{{.Size}},{{json .RepoTags}},{{json .RootFS.Layers}}]`;
+const IMAGE_FORMAT = `[{{json .Id}},{{json .Created}},{{json .RepoTags}},{{json .RootFS.Layers}}]`;
 const ASSEMBLY_ATTEMPTS = 2;
 /** How long one assembly attempt, the install step included, may take. */
 const ASSEMBLY_TIMEOUT_MS = 10 * 60 * 1_000;
@@ -575,6 +576,7 @@ function installScript(install: string): string {
  */
 export async function pruneRunImages(input: {
   readonly keep: ReadonlySet<string>;
+  readonly logger?: ImagePruneLogger;
   readonly signal?: AbortSignal;
 }): Promise<{ readonly removed: number; readonly disk: RunImageDisk }> {
   return await withPassOwner(async (owner) => {
@@ -582,25 +584,24 @@ export async function pruneRunImages(input: {
     const now = Date.now();
     const budgetBytes = diskBudgetBytes();
     await removeAbandonedContainers();
-    const retained = new Map<FootprintGroup, RunImage>();
+    const retained = new Set<string>();
     const active: RunImage[] = [];
     const fresh: RunImage[] = [];
     const candidates: RunImage[] = [];
     const listed = await listStackRunImages(owner);
-    const tagged = await tagUntaggedImages(listed, owner);
-    for (const image of await measureImageFootprints(tagged, owner)) {
+    for (const image of await measureImageFootprints(listed, owner, budgetBytes, input.logger)) {
       if (image.tags.some((tag) => input.keep.has(tag))) active.push(image);
       else if (now - image.createdAt < FRESH_IMAGE_MS) fresh.push(image);
       else candidates.push(image);
     }
     let bytes = 0;
-    const retain = async (image: RunImage) => {
-      bytes += await additionalImageBytes(image, retained, owner);
-      retained.set(image.footprint.group, image);
+    const retain = (image: RunImage) => {
+      bytes += additionalImageBytes(image, retained);
+      for (const layer of image.layers) retained.add(layer.chain);
     };
-    for (const image of active) await retain(image);
+    for (const image of active) retain(image);
     const activeBytes = bytes;
-    for (const image of fresh) await retain(image);
+    for (const image of fresh) retain(image);
     const retentionMs =
       positiveInteger("SWIZZLE_RUNNER_IMAGE_RETENTION_HOURS", DEFAULT_IMAGE_RETENTION_HOURS) *
       3_600_000;
@@ -608,10 +609,10 @@ export async function pruneRunImages(input: {
     candidates.sort((left, right) => right.createdAt - left.createdAt);
     for (const image of candidates) {
       const { tags } = image;
-      const additional = await additionalImageBytes(image, retained, owner);
+      const additional = additionalImageBytes(image, retained);
       if (now - image.createdAt < retentionMs && bytes + additional <= budgetBytes) {
         bytes += additional;
-        retained.set(image.footprint.group, image);
+        for (const layer of image.layers) retained.add(layer.chain);
         continue;
       }
       // The run tag goes last: an image a container uses keeps it when its removal fails.
@@ -622,13 +623,15 @@ export async function pruneRunImages(input: {
       } catch (error) {
         if (error instanceof AutomationRuntimeError) throw error;
         bytes += additional;
-        retained.set(image.footprint.group, image);
+        for (const layer of image.layers) retained.add(layer.chain);
       }
     }
     input.signal?.throwIfAborted();
     return { removed, disk: { activeBytes, budgetBytes } };
   }, input.signal);
 }
+
+type ImagePruneLogger = { warn(...args: readonly unknown[]): void };
 
 type DockerCall = (args: readonly string[]) => Promise<{ readonly stdout: string }>;
 
@@ -674,107 +677,89 @@ async function listStackRunImages(owner: DockerScope): Promise<InspectedRunImage
   return inspected.flatMap(({ stdout }) => stdout.split("\n").flatMap(parseRunImage));
 }
 
-/** Keeps an alias on untagged commits so disk measurements can refer to them until pruning. */
-async function tagUntaggedImages(
+/** History reports unpacked layer bytes on both Docker image stores, without packed blobs. */
+async function measureImageFootprints(
   images: readonly InspectedRunImage[],
   owner: DockerScope,
-): Promise<TaggedRunImage[]> {
-  return await Promise.all(
-    images.map(async (image): Promise<TaggedRunImage> => {
-      let reference = image.tags[0];
-      if (reference === undefined) {
-        // Removing the only tag can delete the image, so pruning owns this alias's lifetime.
-        reference = `swizzle-run:disk-${image.id.replace(/^sha256:/u, "")}`;
-        await owner.run(["tag", image.id, reference], { outputLimitBytes: 4096 });
-      }
-      return { ...image, tags: [reference, ...image.tags.slice(1)] };
-    }),
-  );
-}
-
-async function measureImageFootprints(
-  images: readonly TaggedRunImage[],
-  owner: DockerScope,
+  budgetBytes: number,
+  logger: ImagePruneLogger | undefined,
 ): Promise<RunImage[]> {
-  if (images.length === 0) return [];
-  const usage = parseImageUsage(await owner.imageUsage(null));
-  const layerUses = new Map<string, number>();
-  const bases = new Map<string, InspectedRunImage[]>();
-  for (const image of images) {
-    for (const layer of image.layers) layerUses.set(layer, (layerUses.get(layer) ?? 0) + 1);
-    const base = image.layers.slice(0, -1).join("/");
-    const group = bases.get(base) ?? [];
-    group.push(image);
-    bases.set(base, group);
+  const measured: { image: InspectedRunImage; sizes: number[] }[] = [];
+  // Bound CLI processes while keeping a large inventory inside the prune pass deadline.
+  for (let offset = 0; offset < images.length; offset += 8) {
+    measured.push(
+      ...(await Promise.all(
+        images.slice(offset, offset + 8).map(async (image) => {
+          const { stdout } = await owner.run(
+            ["image", "history", "--human=false", "--no-trunc", "--format", "{{.Size}}", image.id],
+            { outputLimitBytes: 1_048_576 },
+          );
+          const sizes = stdout.trim() === "" ? [] : stdout.trim().split("\n").map(Number);
+          if (sizes.some((size) => !Number.isSafeInteger(size) || size < 0)) {
+            throw new Error(`Cannot read layer sizes of run image ${image.id}.`);
+          }
+          return { image, sizes: sizes.reverse() };
+        }),
+      )),
+    );
   }
-  // A private final layer cannot share bytes with another image. With two such images,
-  // Docker's shared size is the entire common base, so later images add only private bytes.
-  const sharedBases = new Map<string, FootprintGroup>();
-  for (const [base, group] of bases) {
-    const first = group[0];
-    if (first === undefined || group.length < 2) continue;
-    const baseBytes = usage.get(first.id)?.sharedBytes;
-    if (
-      group.every((image) => {
-        const source = image.layers.at(-1);
-        return (
-          source !== undefined &&
-          layerUses.get(source) === 1 &&
-          usage.get(image.id)?.sharedBytes === baseBytes
+  const ambiguous = measured.filter(
+    ({ image, sizes }) => sizes.filter((size) => size > 0).length !== image.layers.length,
+  );
+  const histories =
+    ambiguous.length === 0
+      ? new Map<string, readonly boolean[]>()
+      : await readImageLayerHistory(
+          ambiguous.map(({ image }) => image),
+          owner,
         );
-      })
-    )
-      sharedBases.set(base, { kind: "base", layers: first.layers.slice(0, -1) });
-  }
-  return images.map((image) => {
-    const measured = usage.get(image.id);
-    if (measured === undefined) throw new Error(`Cannot read disk use of run image ${image.id}.`);
-    const reference = image.tags[0];
-    const base = image.layers.slice(0, -1).join("/");
+  return measured.map(({ image, sizes }) => {
+    const history = histories.get(image.id);
+    const filesystem =
+      history === undefined
+        ? sizes.filter((size) => size > 0)
+        : sizes.filter((_, index) => history[index]);
+    if (
+      (history !== undefined && history.length !== sizes.length) ||
+      filesystem.length !== image.layers.length
+    ) {
+      logger?.warn(
+        { imageId: image.id, tags: image.tags },
+        "Cannot measure run image; counting it above the disk budget.",
+      );
+      // An unknown footprint must leave no room for inactive images, even when protected.
+      return { ...image, layers: [{ chain: `unmeasured:${image.id}`, bytes: budgetBytes + 1 }] };
+    }
     return {
       ...image,
-      bytes: measured.bytes,
-      footprint: {
-        reference,
-        group: sharedBases.get(base) ?? { kind: "image", id: image.id },
-        sharedBytes: measured.sharedBytes,
-      },
+      layers: filesystem.map((bytes, index) => ({
+        chain: image.layers.slice(0, index + 1).join("/"),
+        bytes,
+      })),
     };
   });
 }
 
-type FootprintGroup =
-  | { readonly kind: "base"; readonly layers: readonly string[] }
-  | { readonly kind: "image"; readonly id: string };
-
-interface RunImage {
-  readonly id: string;
-  readonly createdAt: number;
-  readonly bytes: number;
-  readonly layers: readonly string[];
-  readonly footprint: {
-    readonly group: FootprintGroup;
-    readonly sharedBytes: number;
-    readonly reference: string;
-  };
-  readonly tags: readonly string[];
+interface RunImage extends Omit<InspectedRunImage, "layers"> {
+  readonly layers: readonly { readonly chain: string; readonly bytes: number }[];
 }
 
-type InspectedRunImage = Omit<RunImage, "footprint">;
-type TaggedRunImage = Omit<InspectedRunImage, "tags"> & {
-  readonly tags: readonly [string, ...string[]];
-};
+interface InspectedRunImage {
+  readonly id: string;
+  readonly createdAt: number;
+  readonly layers: readonly string[];
+  readonly tags: readonly string[];
+}
 
 /** One line of IMAGE_FORMAT output; none when the line is not one. */
 function parseRunImage(line: string): InspectedRunImage[] {
   if (line.trim() === "") return [];
   const parsed: unknown = JSON.parse(line);
   if (!Array.isArray(parsed)) return [];
-  const [id, created, bytes, tags, layers] = parsed as unknown[];
-  if (typeof id !== "string" || typeof created !== "string" || typeof bytes !== "number") return [];
+  const [id, created, tags, layers] = parsed;
+  if (typeof id !== "string" || typeof created !== "string") return [];
   return [
     {
-      bytes,
       layers: Array.isArray(layers) ? layers.filter((layer) => typeof layer === "string") : [],
       createdAt: Date.parse(created),
       id,
@@ -783,46 +768,12 @@ function parseRunImage(line: string): InspectedRunImage[] {
   ];
 }
 
-/** Private commit layers are additive after one image from their base group is retained. */
-async function additionalImageBytes(
-  image: RunImage,
-  retained: ReadonlyMap<FootprintGroup, RunImage>,
-  docker: DockerScope,
-): Promise<number> {
-  if (retained.has(image.footprint.group)) return image.bytes - image.footprint.sharedBytes;
-  if (retained.size === 0) return image.bytes;
-  const references = [...retained.values()].map((entry) => entry.footprint.reference);
-  const usage = parseImageUsage(
-    await docker.imageUsage([...references, image.footprint.reference]),
+/** A diff ID shares storage only under the same sequence of parent layers. */
+function additionalImageBytes(image: RunImage, retained: ReadonlySet<string>): number {
+  return image.layers.reduce(
+    (bytes, layer) => bytes + (retained.has(layer.chain) ? 0 : layer.bytes),
+    0,
   );
-  const measured = usage.get(image.id);
-  if (measured === undefined)
-    throw new Error(`Cannot read shared disk use of run image ${image.id}.`);
-  return measured.bytes - measured.sharedBytes;
-}
-
-function parseImageUsage(value: unknown): Map<string, { bytes: number; sharedBytes: number }> {
-  if (!Array.isArray(value)) throw new Error("Cannot read Docker image disk use.");
-  const usage = new Map<string, { bytes: number; sharedBytes: number }>();
-  for (const entry of value) {
-    if (
-      typeof entry !== "object" ||
-      entry === null ||
-      !("Id" in entry) ||
-      typeof entry.Id !== "string" ||
-      !("Size" in entry) ||
-      typeof entry.Size !== "number" ||
-      !Number.isSafeInteger(entry.Size) ||
-      !("SharedSize" in entry) ||
-      typeof entry.SharedSize !== "number" ||
-      !Number.isSafeInteger(entry.SharedSize) ||
-      entry.SharedSize < 0 ||
-      entry.SharedSize > entry.Size
-    )
-      throw new Error("Cannot read Docker image disk use.");
-    usage.set(entry.Id, { bytes: entry.Size, sharedBytes: entry.SharedSize });
-  }
-  return usage;
 }
 
 function diskBudgetBytes(): number {

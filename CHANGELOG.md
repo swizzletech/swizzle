@@ -3,6 +3,16 @@
 Each release lists changes for people who run Swizzle and write automations.
 Versions follow Semantic Versioning. Tags use `vX.Y.Z`; pre-releases use `X.Y.Z-rc.N`.
 
+## 1.0.1
+
+### Fixed
+
+- The runner image disk budget counts each unpacked image layer once, on Docker's containerd image store and on the classic overlay2 storage driver. Before, a worker on the containerd store could report its active images at more than twice their size and remove retained images sooner than `SWIZZLE_RUNNER_IMAGE_DISK_MB` required. On the classic driver, it could undercount images that share layers and keep more than the budget. The budget covers unpacked layers only, so reserve extra host disk for packed image blobs and metadata.
+- One runner image whose layers cannot be mapped no longer stops the worker from pruning the others. The worker logs that image and counts it as larger than `SWIZZLE_RUNNER_IMAGE_DISK_MB`, so an inactive one is removed after the ten-minute grace period.
+- Two deployments that claim the same webhook path at the same moment: the one that loses now gets `TRIGGER_WEBHOOK_PATH_CONFLICT` instead of a raw database error.
+- The health strip on the Overview reads "Last run did not fail" or "Last run failed" for an automation with one run, instead of "Last 1 runs".
+- The README's first deployment stores the webhook signing secret before `swizzle apply hello`, which otherwise stops with `PLATFORM_REQUIRED_SECRETS_MISSING`.
+
 ## 1.0.0
 
 The first public release of Swizzle, a self-hosted runtime for automations written as ordinary code.

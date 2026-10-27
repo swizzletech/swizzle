@@ -234,32 +234,6 @@ else if (process.argv[2] === 'rm') fs.appendFileSync(${JSON.stringify(removals)}
   }
 });
 
-it("closes a stalled image usage connection with its Docker owner", async ({ signal }) => {
-  const directory = await temporaryDirectory("swizzle-docker-usage-close-");
-  const pidFile = path.join(directory, "pid");
-  await writeFile(
-    path.join(directory, "docker"),
-    `#!/bin/sh
-  echo $$ > '${pidFile}'
-  exec sleep 1000
-`,
-    { mode: 0o755 },
-  );
-  vi.stubEnv("PATH", `${directory}:${process.env.PATH}`);
-  const owner = new DockerScope({ timeoutMs: 10_000, containerName: null });
-  const rejected = expect(
-    owner.imageUsage(["swizzle-run:aaaaaaaaaaaaaaaaaaaaaaaa"]),
-  ).rejects.toMatchObject({ code: "CONTAINER_RUNTIME_UNAVAILABLE" });
-  try {
-    await waitFor(signal, async () => (await readFile(pidFile, "utf8").catch(() => "")) !== "");
-  } finally {
-    await owner.close();
-  }
-  await rejected;
-  const pid = Number(await readFile(pidFile, "utf8"));
-  expect(() => process.kill(pid, 0)).toThrow("ESRCH");
-});
-
 it("reaps unresponsive Docker commands and bounds independently owned cleanup", async ({
   signal,
 }) => {

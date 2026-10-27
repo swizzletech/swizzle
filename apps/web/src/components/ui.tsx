@@ -31,7 +31,9 @@ export function HealthStrip(props: { readonly runs: readonly { readonly status: 
   const label =
     oldestFirst.length === 0
       ? "No runs yet"
-      : `Last ${oldestFirst.length} runs, ${failed === 0 ? "none" : failed} failed`;
+      : oldestFirst.length === 1
+        ? `Last run ${failed === 0 ? "did not fail" : "failed"}`
+        : `Last ${oldestFirst.length} runs, ${failed === 0 ? "none" : failed} failed`;
   return (
     <span aria-label={label} className="strip" role="img" title={label}>
       {Array.from({ length: empty }, (_, index) => (

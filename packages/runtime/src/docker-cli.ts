@@ -1,12 +1,10 @@
-// Scoped Docker operations for the sandbox modules. Commands and image usage requests use the
+// Scoped Docker operations for the sandbox modules. Commands use the
 // CLI's daemon connection with only the environment it needs (DOCKER_HOST, the broker in Compose).
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { request } from "node:http";
 import { hostname } from "node:os";
-import { Duplex, Readable, Writable } from "node:stream";
 import { setTimeout as delay } from "node:timers/promises";
 import { BoundedOutput } from "./bounded-output.js";
 
@@ -44,11 +42,13 @@ export function sandboxProcessLabel(): string {
 }
 let closed = false;
 
-interface DockerOutputOptions {
+type DockerOutputOptions = {
   readonly onStderrChunk?: (chunk: string) => void;
-  readonly onStdoutChunk?: (chunk: string) => void;
   readonly outputLimitBytes: number;
-}
+} & (
+  | { readonly onStdoutChunk?: (chunk: string) => void; readonly onStdoutBytes?: never }
+  | { readonly onStdoutBytes: (chunk: Buffer) => void; readonly onStdoutChunk?: never }
+);
 
 /** Owns Docker subprocesses and, when named, their container until close completes cleanup. */
 export class DockerScope {
@@ -76,6 +76,11 @@ export class DockerScope {
     scopes.add(this);
   }
 
+  /** Waits for cleanup already started, without closing active scopes. */
+  static async removals(): Promise<void> {
+    await Promise.all([...scopes].map((scope) => scope.closing));
+  }
+
   run(args: readonly string[], options: DockerOutputOptions): Promise<DockerOutcome> {
     return this.command(
       args,
@@ -83,27 +88,11 @@ export class DockerScope {
       AbortSignal.any([
         this.signal,
         AbortSignal.timeout(
-          args[0] === "cp" || args[0] === "commit" ? TRANSFER_TIMEOUT_MS : CONTROL_TIMEOUT_MS,
+          args[0] === "cp" || args[0] === "commit" || args[1] === "save"
+            ? TRANSFER_TIMEOUT_MS
+            : CONTROL_TIMEOUT_MS,
         ),
       ]),
-    );
-  }
-
-  /** Sharing among these references, or all stack images for null, on the CLI's selected engine. */
-  imageUsage(references: readonly string[] | null): Promise<unknown> {
-    const query = new URLSearchParams({
-      all: "true",
-      "shared-size": "true",
-      filters: JSON.stringify({
-        label: [stackLabel()],
-        ...(references === null ? {} : { reference: references }),
-      }),
-    });
-    return this.track(
-      dockerJson(
-        `/images/json?${query}`,
-        AbortSignal.any([this.signal, AbortSignal.timeout(CONTROL_TIMEOUT_MS)]),
-      ),
     );
   }
 
@@ -196,7 +185,7 @@ async function runDocker(
     const stderr = new BoundedOutput(options.outputLimitBytes);
     let callbackFailure: { readonly error: unknown } | undefined;
     const abort = () => killDockerProcess(child);
-    const deliver = (callback: ((chunk: string) => void) | undefined, chunk: string) => {
+    const deliver = <T>(callback: ((chunk: T) => void) | undefined, chunk: T) => {
       if (callbackFailure !== undefined) return;
       try {
         callback?.(chunk);
@@ -207,12 +196,16 @@ async function runDocker(
     };
     signal.addEventListener("abort", abort, { once: true });
     if (signal.aborted) abort();
-    child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      stdout.append(chunk);
-      deliver(options.onStdoutChunk, chunk);
-    });
+    if (options.onStdoutBytes !== undefined) {
+      child.stdout.on("data", (chunk: Buffer) => deliver(options.onStdoutBytes, chunk));
+    } else {
+      child.stdout.setEncoding("utf8");
+      child.stdout.on("data", (chunk: string) => {
+        stdout.append(chunk);
+        deliver(options.onStdoutChunk, chunk);
+      });
+    }
     child.stderr.on("data", (chunk: string) => {
       stderr.append(chunk);
       deliver(options.onStderrChunk, chunk);
@@ -243,87 +236,6 @@ async function runDocker(
         );
     });
   });
-}
-
-/** Uses Node's HTTP framing over the CLI connection, so contexts and the broker work alike. */
-async function dockerJson(path: string, signal: AbortSignal): Promise<unknown> {
-  const args = ["system", "dial-stdio"];
-  if (signal.aborted) throw dockerAbortError(args, signal);
-  const child = spawn("docker", args, {
-    detached: process.platform !== "win32",
-    env: dockerCliEnvironment(),
-    stdio: ["pipe", "pipe", "pipe"],
-  });
-  const exited = new Promise<void>((resolve) => child.once("close", () => resolve()));
-  const socket = Duplex.fromWeb({
-    readable: Readable.toWeb(child.stdout),
-    writable: Writable.toWeb(child.stdin),
-  });
-  const stderr = new BoundedOutput(4096);
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk: string) => {
-    stderr.append(chunk);
-  });
-  const client = request({
-    method: "GET",
-    host: "docker",
-    path,
-    headers: { connection: "close" },
-    createConnection: () => socket,
-  });
-  const abort = () => client.destroy(dockerAbortError(args, signal));
-  signal.addEventListener("abort", abort, { once: true });
-  child.once("error", (error) =>
-    client.destroy(
-      new AutomationRuntimeError(
-        "CONTAINER_RUNTIME_UNAVAILABLE",
-        `Docker CLI is unavailable: ${getErrorMessage(error)}`,
-        { cause: error },
-      ),
-    ),
-  );
-  child.once("close", (code) => {
-    if (!client.destroyed)
-      client.destroy(
-        new Error(`Docker image usage connection closed (${code}): ${stderr.value.trim()}`),
-      );
-  });
-  try {
-    return await new Promise((resolve, reject) => {
-      client.on("error", reject);
-      client.on("response", (response) => {
-        if (response.statusCode !== 200) {
-          response.resume();
-          reject(new Error(`Cannot measure shared disk use (HTTP ${response.statusCode}).`));
-          return;
-        }
-        let body = "";
-        let bytes = 0;
-        response.setEncoding("utf8");
-        response.on("data", (chunk: string) => {
-          bytes += Buffer.byteLength(chunk);
-          if (bytes > 1_048_576) response.destroy(new Error("Docker image usage exceeds 1 MiB."));
-          else body += chunk;
-        });
-        response.on("error", reject);
-        response.on("end", () => {
-          try {
-            resolve(JSON.parse(body));
-          } catch (error) {
-            reject(error);
-          }
-        });
-      });
-      if (signal.aborted) abort();
-      client.end();
-    });
-  } finally {
-    signal.removeEventListener("abort", abort);
-    client.destroy();
-    socket.destroy();
-    killDockerProcess(child);
-    await exited;
-  }
 }
 
 /**

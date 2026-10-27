@@ -668,14 +668,17 @@ async function insertDeploymentAuditEventInTransaction(
 }
 
 function isWebhookPathConflict(error: unknown): boolean {
-  if (!error || typeof error !== "object") {
-    return false;
+  for (let current = error; current instanceof Error; current = current.cause) {
+    if (
+      "code" in current &&
+      current.code === "23505" &&
+      "constraint" in current &&
+      current.constraint === "automation_triggers_webhook_path_unique"
+    ) {
+      return true;
+    }
   }
-
-  const code = "code" in error ? error.code : undefined;
-  const constraint = "constraint" in error ? error.constraint : undefined;
-
-  return code === "23505" && constraint === "automation_triggers_webhook_path_unique";
+  return false;
 }
 
 async function getChainTriggersForSourceInTransaction(

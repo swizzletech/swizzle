@@ -5,9 +5,10 @@ import {
   createPostgresAccessStore,
   type DatabaseClient,
 } from "@swizzle/db/postgres";
-import { it } from "vitest";
+import { it, vi } from "vitest";
 import { testDatabase } from "../test/postgres.js";
 import { testControlPlaneStore } from "../test/stores.js";
+import { lockWaiters } from "./verify-postgres-locks.js";
 import { commitDeploymentFixture } from "./verify-state-fixtures.js";
 
 async function verifyDeploymentCommit(store: ControlPlaneStore): Promise<StoredDeployment> {
@@ -132,14 +133,34 @@ it("deployment commit", { timeout: 60_000 }, async () => {
 it("returns the deployment-check conflict code when concurrent commits claim one webhook path", async () => {
   const store = testControlPlaneStore();
   const trigger = { type: "webhook", path: "/shared-path" } as const;
-  const results = await Promise.allSettled(
-    ["path-first", "path-second"].map((name) =>
-      commitDeploymentFixture(store, name, DEFAULT_PROJECT_ID, "state-machine", [], trigger),
-    ),
-  );
+  const client = testDatabase();
+  const blocker = await client.pool.connect();
+  const results = await (async () => {
+    try {
+      await blocker.query("BEGIN");
+      // Both prechecks must finish before either insert can claim the path.
+      await blocker.query("LOCK TABLE automation_triggers IN SHARE MODE");
+      const pending = Promise.allSettled(
+        ["path-first", "path-second"].map((name) =>
+          commitDeploymentFixture(store, name, DEFAULT_PROJECT_ID, "state-machine", [], trigger),
+        ),
+      );
+      try {
+        await vi.waitFor(async () => assert.equal(await lockWaiters(client), 2), {
+          timeout: 10_000,
+        });
+      } finally {
+        await blocker.query("ROLLBACK");
+        await pending;
+      }
+      return await pending;
+    } finally {
+      blocker.release();
+    }
+  })();
   assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
   const refused = results.find((result) => result.status === "rejected");
-  assert.equal(refused?.reason.code, "TRIGGER_WEBHOOK_PATH_CONFLICT");
+  assert.equal(refused?.reason.code, "TRIGGER_WEBHOOK_PATH_CONFLICT", String(refused?.reason));
   await assert.rejects(
     commitDeploymentFixture(store, "path-third", DEFAULT_PROJECT_ID, "state-machine", [], trigger),
     { code: "TRIGGER_WEBHOOK_PATH_CONFLICT" },
