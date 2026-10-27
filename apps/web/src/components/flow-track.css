@@ -1,0 +1,31 @@
+/* The track card above an automation's runs. */
+@layer components {
+  .track-card {
+    margin-bottom: 18px;
+    overflow: hidden;
+  }
+  .track-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+  }
+  .track-head:not(:last-child) {
+    border-bottom: 1px solid var(--line);
+  }
+  .track-fold {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    border: 0;
+    background: none;
+    font: 700 13px var(--font-sans);
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .track-fold .chev {
+    width: 10px;
+    color: var(--ink-3);
+  }
+}

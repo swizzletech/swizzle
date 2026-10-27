@@ -1,0 +1,36 @@
+name: agent-pipeline-intake
+version: 2.0.0
+description: Validate and forward a decision-complete work order into a composable agent pipeline
+entrypoint: main.ts
+trigger:
+  type: webhook
+  path: /agent-pipeline
+  payload_schema:
+    type: object
+    required:
+      - repoUrl
+      - baseBranch
+      - specRef
+    properties:
+      repoUrl:
+        type: string
+      baseBranch:
+        type: string
+      specRef:
+        type: string
+      options:
+        type: object
+runtime:
+  language: typescript
+  execution_mode: host
+  profile: host-default
+  timeout: 30s
+  permissions:
+    network: false
+    writable_dirs: []
+  retry:
+    max_attempts: 3
+    backoff: exponential
+  requirements:
+    binaries: []
+secrets: []

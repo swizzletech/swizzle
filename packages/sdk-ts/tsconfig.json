@@ -1,0 +1,11 @@
+{
+  "//": "Automations run src/index.ts with Node's type stripping, which rejects syntax it cannot erase.",
+  "extends": "../../tsconfig.node.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    "erasableSyntaxOnly": true
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}

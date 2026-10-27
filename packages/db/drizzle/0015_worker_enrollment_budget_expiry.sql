@@ -1,0 +1,1 @@
+CREATE INDEX "worker_enrollment_budgets_started_idx" ON "worker_enrollment_budgets" USING btree ("started_at");

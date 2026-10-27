@@ -1,0 +1,12 @@
+name: cron-requires-secret
+version: 1.0.0
+entrypoint: main.py
+trigger:
+  type: cron
+  schedule: "*/5 * * * *"
+runtime:
+  timeout: 5s
+secrets:
+  - CRON_REQUIRED_TOKEN
+api_check:
+  mode: passive

@@ -1,0 +1,7 @@
+name: empty-stdout
+version: 1.0.0
+entrypoint: main.py
+trigger:
+  type: webhook
+runtime:
+  timeout: 5s

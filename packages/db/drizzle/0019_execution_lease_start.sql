@@ -1,0 +1,1 @@
+ALTER TABLE "execution_leases" ADD COLUMN "started_at" timestamp with time zone;

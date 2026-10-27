@@ -1,0 +1,12 @@
+name: webhook-signature
+version: 1.0.0
+entrypoint: main.js
+trigger:
+  type: webhook
+  path: /signed-webhook
+  signature:
+    secret: WEBHOOK_SIGNING_SECRET
+    header: x-swizzle-signature
+    prefix: sha256=
+runtime:
+  timeout: 30s

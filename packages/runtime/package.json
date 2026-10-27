@@ -1,0 +1,53 @@
+{
+  "name": "@swizzle/runtime",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "swizzle-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./platform": {
+      "swizzle-source": "./src/platform.ts",
+      "types": "./dist/platform.d.ts",
+      "import": "./dist/platform.js",
+      "require": "./dist/platform.js"
+    },
+    "./http-contract": {
+      "swizzle-source": "./src/http-contract.ts",
+      "types": "./dist/http-contract.d.ts",
+      "import": "./dist/http-contract.js",
+      "require": "./dist/http-contract.js"
+    },
+    "./local-llm-gateway": {
+      "swizzle-source": "./src/local-llm-gateway.ts",
+      "types": "./dist/local-llm-gateway.d.ts",
+      "import": "./dist/local-llm-gateway.js",
+      "require": "./dist/local-llm-gateway.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@swizzle/config": "workspace:*",
+    "@swizzle/connections": "workspace:*",
+    "@swizzle/core": "workspace:*",
+    "@swizzle/db": "workspace:*",
+    "@aws-sdk/client-s3": "^3.1155.0",
+    "@opentelemetry/api": "catalog:",
+    "bullmq": "catalog:",
+    "esbuild": "^0.28.2",
+    "ioredis": "^6.0.0",
+    "tar": "catalog:",
+    "zod": "^4.6.7"
+  }
+}

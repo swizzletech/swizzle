@@ -1,0 +1,27 @@
+{
+  "//": "Type-checks what runs under vitest or tsx rather than from a build: the node-side test files, every script and the db package's tooling. Package tsconfigs exclude tests so dist never ships them.",
+  "extends": "./tsconfig.node.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "incremental": true,
+    "tsBuildInfoFile": "node_modules/.cache/tsc/test.tsbuildinfo"
+  },
+  "include": [
+    "apps/api/src/**/*.test.ts",
+    "apps/cli/src/**/*.test.ts",
+    "apps/cli/*.mts",
+    "apps/docker-broker/src/**/*.test.ts",
+    "apps/scheduler/src/**/*.test.ts",
+    "apps/worker/src/**/*.test.ts",
+    "packages/*/src/**/*.test.ts",
+    "packages/db/*.ts",
+    "scripts/**/*",
+    ".agents/checks/**/*",
+    "test/**/*",
+    "vitest.config.ts",
+    "playwright.config.ts"
+  ]
+}

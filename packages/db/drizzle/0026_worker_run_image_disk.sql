@@ -1,0 +1,1 @@
+ALTER TABLE "workers" ADD COLUMN "run_image_disk" jsonb;

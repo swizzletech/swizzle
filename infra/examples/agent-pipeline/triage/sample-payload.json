@@ -1,0 +1,60 @@
+{
+  "origin": {
+    "automation": "agent-pipeline-builder",
+    "runId": "run-builder-sample"
+  },
+  "results": {
+    "agent-pipeline-reviewer": {
+      "repoUrl": "https://example.invalid/acme/service.git",
+      "baseBranch": "main",
+      "specRef": "docs/specs/healthcheck.md",
+      "options": {
+        "reviewProfile": "standard",
+        "runE2e": true
+      },
+      "branch": "agent/work-a11ec5a33413",
+      "sha": "1e00a859c8622ef15c86a6a8d6e69059d84e406e612736bc3036aec310c1f654",
+      "verdict": "pass",
+      "findings": []
+    },
+    "agent-pipeline-e2e-verifier": {
+      "repoUrl": "https://example.invalid/acme/service.git",
+      "baseBranch": "main",
+      "specRef": "docs/specs/healthcheck.md",
+      "options": {
+        "reviewProfile": "standard",
+        "runE2e": true
+      },
+      "branch": "agent/work-a11ec5a33413",
+      "sha": "1e00a859c8622ef15c86a6a8d6e69059d84e406e612736bc3036aec310c1f654",
+      "verdict": "pass",
+      "checks": [
+        {
+          "name": "spec-reference-preserved",
+          "passed": true,
+          "detail": "The verifier can locate the decision-complete spec artifact."
+        },
+        {
+          "name": "implementation-file-present",
+          "passed": true,
+          "detail": "The simulated workspace includes an implementation file."
+        },
+        {
+          "name": "test-file-present",
+          "passed": true,
+          "detail": "The simulated workspace includes a test file."
+        },
+        {
+          "name": "durable-workspace-pointer",
+          "passed": true,
+          "detail": "The branch and SHA can be re-fetched by a fresh verifier stage."
+        },
+        {
+          "name": "options-preserved",
+          "passed": true,
+          "detail": "Pipeline options remain available to a replacement verifier."
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,4 @@
+flowchart TD
+  A[Cron tick] --> B[Load document batch]
+  B --> C[Chunk content]
+  C --> D[Emit dry-run index plan]

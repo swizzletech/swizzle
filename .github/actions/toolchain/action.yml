@@ -1,0 +1,16 @@
+name: Toolchain
+description: Install the toolchain mise.toml pins, just included, and restore the pnpm store. Run it after checkout.
+
+runs:
+  using: composite
+  steps:
+    - name: Install the toolchain from mise.toml
+      uses: jdx/mise-action@8418fedb1110381a0d3ba51a7a415d7c1b884550 # v5.2.2
+
+    - name: Restore the pnpm store
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        # pnpm's default store on a Linux runner, where neither PNPM_HOME nor XDG_DATA_HOME is set.
+        path: ~/.local/share/pnpm/store
+        key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: pnpm-store-${{ runner.os }}-

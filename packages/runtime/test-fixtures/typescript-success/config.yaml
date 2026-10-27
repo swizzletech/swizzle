@@ -1,0 +1,8 @@
+name: typescript-success
+version: 1.0.0
+entrypoint: main.ts
+trigger:
+  type: cron
+  schedule: "0 * * * *"
+runtime:
+  timeout: 5s

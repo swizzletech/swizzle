@@ -1,0 +1,151 @@
+/* The Overview: its counts, the automation rows with their pipeline steps, the recent changes and
+   the first steps of an empty instance. */
+@layer components {
+  /* Four counts in one card, each cell split by a hairline. */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin-top: 20px;
+  }
+  .stats > div {
+    display: grid;
+    gap: 2px;
+    padding: 12px 16px;
+  }
+  .stats > div + div {
+    border-left: 1px solid var(--line-soft);
+  }
+  .stats .t-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 12.5px;
+  }
+  .stats b {
+    font-weight: 600;
+    font-size: 22px;
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .arow {
+    display: grid;
+    grid-template-columns: 10px minmax(0, 1fr) 170px 60px 96px 80px;
+    gap: 12px;
+    align-items: center;
+    min-height: 52px;
+    padding: 8px 14px;
+    color: inherit;
+    text-decoration: none;
+  }
+  .arow.linked {
+    position: relative;
+  }
+  .arow.linked:hover {
+    background: var(--surface-2);
+  }
+  .arow .stretch {
+    color: inherit;
+    text-decoration: none;
+  }
+  .arow .stretch::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+  .arow .stretch:focus-visible {
+    outline: none;
+  }
+  .arow .stretch:focus-visible::after {
+    outline: 2px solid var(--ring);
+    outline-offset: -2px;
+    border-radius: var(--radius-s);
+  }
+  .arow.head {
+    min-height: 36px;
+    padding-block: 0;
+  }
+  .arow .name {
+    font-weight: 500;
+  }
+  .arow .name + .t-meta {
+    font-size: 12.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .arow .steps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin-top: 3px;
+    color: var(--ink-3);
+    font-size: 12px;
+  }
+  .arow .steps .member {
+    position: relative;
+    z-index: 1;
+    text-decoration: none;
+    font: 400 11.5px var(--font-mono);
+    padding: 1px 6px;
+    border-radius: 5px;
+    background: var(--surface-2);
+    color: var(--ink-2);
+  }
+  .arow .steps .member:hover {
+    color: var(--ink);
+    text-decoration: underline;
+  }
+  .crow {
+    display: grid;
+    grid-template-columns: 170px minmax(0, 1fr) 120px;
+    gap: 12px;
+    padding: 11px 14px;
+    align-items: center;
+    color: inherit;
+    font-size: 13px;
+    text-decoration: none;
+  }
+  .steps3 {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 20px;
+  }
+  .arow .steps .graph-toggle {
+    border: 1px dashed var(--line-2);
+    background: none;
+    cursor: pointer;
+  }
+
+  @media (max-width: 900px) {
+    .steps3 {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .stats {
+      grid-template-columns: 1fr 1fr;
+    }
+    .stats > div:nth-child(3) {
+      border-left: 0;
+    }
+    .stats > div:nth-child(n + 3) {
+      border-top: 1px solid var(--line-soft);
+    }
+    .arow {
+      grid-template-columns: 10px minmax(0, 1fr) 60px;
+    }
+    .arow > :nth-child(3),
+    .arow > :nth-child(5),
+    .arow > :nth-child(6) {
+      display: none;
+    }
+    .crow {
+      grid-template-columns: minmax(0, 1fr) auto;
+      row-gap: 2px;
+    }
+    .crow > :nth-child(2) {
+      grid-row: 2;
+    }
+  }
+}

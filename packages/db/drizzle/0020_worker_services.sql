@@ -1,0 +1,1 @@
+ALTER TABLE "workers" ADD COLUMN "services" text[] NOT NULL;

@@ -1,0 +1,1 @@
+ALTER TABLE "execution_leases" RENAME COLUMN "attempt" TO "execution_state";

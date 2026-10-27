@@ -1,0 +1,9 @@
+# Git hooks and `just secret-scan` read this policy. It keeps gitleaks' default rules.
+[extend]
+useDefault = true
+
+# generic-api-key reads "valkey/valkey:<tag>" as a key named "valkey" with the tag as its value.
+[[allowlists]]
+description = "Valkey image references"
+regexTarget = "line"
+regexes = ['''^\s+image: valkey/valkey:[\w.-]+$''']

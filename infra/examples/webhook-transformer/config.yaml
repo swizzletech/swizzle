@@ -1,0 +1,21 @@
+name: webhook-transformer
+version: 1.0.0
+description: Normalize partner webhook payloads into an internal event envelope
+entrypoint: main.js
+trigger:
+  type: webhook
+  path: /transform-webhook
+runtime:
+  language: node
+  execution_mode: host
+  profile: host-default
+  timeout: 30s
+  permissions:
+    network: true
+    writable_dirs: []
+  retry:
+    max_attempts: 3
+    backoff: exponential
+  requirements:
+    binaries: []
+secrets: []

@@ -1,0 +1,248 @@
+/* The track: stations on top of lanes. Every view that draws one imports components/track.tsx. */
+@layer components {
+  /* Dagre places each station; the SVG beneath draws the lanes. A station is an HTML box, so its
+     label wraps and an approval station holds real buttons. */
+  .track-scroll {
+    overflow-x: auto;
+    padding: 10px 12px;
+  }
+  .track {
+    position: relative;
+    margin: 0 auto;
+  }
+  .track .lanes {
+    position: absolute;
+    inset: 0;
+    overflow: visible;
+  }
+  .lanes .arrow {
+    fill: context-stroke;
+  }
+  .lane path {
+    fill: none;
+    stroke: var(--line-2);
+    stroke-width: 1.5;
+  }
+  .lane.done path {
+    stroke: var(--ok);
+    stroke-width: 2;
+  }
+  .lane.active path {
+    stroke: var(--run);
+    stroke-width: 2;
+  }
+  .lane.untaken path {
+    stroke: var(--idle);
+    stroke-dasharray: 3 5;
+  }
+  .lane.dashed path {
+    stroke-dasharray: 6 4;
+  }
+  .lane.untaken.dashed path {
+    stroke-dasharray: 2 4;
+  }
+  .lane text {
+    font: 500 11px var(--font-sans);
+    fill: var(--ink-3);
+  }
+  .lane.done text,
+  .lane.active text {
+    fill: var(--ink-2);
+  }
+  .track-wait {
+    height: 120px;
+  }
+  .station {
+    position: absolute;
+    display: grid;
+    box-sizing: border-box;
+    background: var(--raised);
+    border: 1.5px solid var(--line-2);
+    border-radius: var(--radius-s);
+    color: var(--ink);
+    font-size: 12.5px;
+    line-height: 1.3;
+  }
+  .station.pill {
+    border-radius: 999px;
+  }
+  /* A decision as a chamfered box: the border is a clipped layer under a clipped surface, because
+     a rotated square would rotate its text too. */
+  .station.diamond {
+    border-color: transparent;
+    background: none;
+  }
+  .station.diamond::before,
+  .station.diamond::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    clip-path: polygon(
+      14px 0,
+      calc(100% - 14px) 0,
+      100% 50%,
+      calc(100% - 14px) 100%,
+      14px 100%,
+      0 50%
+    );
+    background: var(--line-2);
+  }
+  .station.diamond::after {
+    inset: 1.5px;
+    clip-path: polygon(
+      13px 0,
+      calc(100% - 13px) 0,
+      100% 50%,
+      calc(100% - 13px) 100%,
+      13px 100%,
+      0 50%
+    );
+    background: var(--raised);
+  }
+  .station.diamond > * {
+    position: relative;
+    z-index: 1;
+  }
+  .st-hit {
+    display: grid;
+    gap: 2px;
+    width: 100%;
+    height: 100%;
+    padding: 8px 12px;
+    align-content: center;
+    justify-items: center;
+    text-align: center;
+    border: 0;
+    border-radius: inherit;
+    background: none;
+    color: inherit;
+    font: inherit;
+  }
+  button.st-hit {
+    cursor: pointer;
+  }
+  button.st-hit:focus-visible {
+    outline: 2px solid var(--coral);
+    outline-offset: 2px;
+  }
+  .st-label {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .st-meta {
+    font-size: 11px;
+    color: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+  .st-bar {
+    display: block;
+    width: 100%;
+    height: 4px;
+    margin-top: 3px;
+    border-radius: 2px;
+    background: var(--surface-2);
+    overflow: hidden;
+  }
+  .st-bar i {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+    background: var(--ok);
+  }
+  .st-act {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    padding: 0 10px 10px;
+  }
+  .station .st-act .st-ask {
+    display: -webkit-box;
+    width: 100%;
+    overflow: hidden;
+    font-size: 11.5px;
+    line-height: 1.3;
+    color: var(--ink-2);
+    text-align: left;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  .station .st-act .field {
+    width: 100%;
+    height: 30px;
+    font-size: 12.5px;
+  }
+  .station .st-act .btn {
+    height: 30px;
+    padding: 0 12px;
+    font-size: 12.5px;
+  }
+  .station.idle {
+    color: var(--ink-2);
+  }
+  .station.narration {
+    border-style: dashed;
+    border-color: var(--line);
+    color: var(--ink-3);
+  }
+  .station.done {
+    border-color: var(--ok);
+  }
+  .station.done .st-meta {
+    color: var(--ok);
+  }
+  .station.running {
+    border-color: var(--run);
+  }
+  .station.running .st-meta {
+    color: var(--ink-2);
+  }
+  /* The halo blinks on opacity alone, so the layout never moves while a run is live. */
+  .station.running::after {
+    content: "";
+    position: absolute;
+    inset: -5px;
+    border: 2px solid var(--run);
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0.6;
+    animation: halo-duty 2.4s steps(1, end) infinite;
+  }
+  .station.diamond.running::after {
+    inset: 1.5px;
+    border: 0;
+    opacity: 1;
+    animation: none;
+  }
+  @keyframes halo-duty {
+    0%,
+    60% {
+      opacity: 0.6;
+    }
+    61%,
+    100% {
+      opacity: 0.15;
+    }
+  }
+  .station.waiting {
+    border-color: var(--warn);
+    background: var(--tint-warn);
+  }
+  .station.waiting .st-meta {
+    color: var(--warn-text);
+  }
+  .station.failed {
+    border-color: var(--fail);
+  }
+  .station.failed .st-meta {
+    color: var(--fail);
+  }
+  .station.failed .st-bar i {
+    background: var(--fail);
+  }
+  .station[aria-current="step"] {
+    box-shadow:
+      0 0 0 2px var(--surface),
+      0 0 0 4px var(--accent-text);
+  }
+}

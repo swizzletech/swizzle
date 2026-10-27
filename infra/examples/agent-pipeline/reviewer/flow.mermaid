@@ -1,0 +1,5 @@
+flowchart TD
+  A[Configured upstream workspace] --> B[Validate work order + branch + sha]
+  B --> C[Review changed-file summary]
+  C --> D[Review verdict]
+  D --> E[Workspace pointer + findings]

@@ -1,0 +1,328 @@
+/* The frame: a light sidebar with the five places, the environment and the person, and a hairline
+   bar above each page with its trail. At phone width the sidebar becomes a sticky glass header:
+   the mark, the environment and Sign out on one row, every place on the row below; the bar stays
+   under it only on pages with a trail. */
+@layer components {
+  /* The sidebar sticks while the page scrolls; the frame paints its column to the bottom. */
+  .app {
+    display: grid;
+    grid-template-columns: 236px minmax(0, 1fr);
+    min-height: 100vh;
+    background: linear-gradient(
+      90deg,
+      var(--sidebar) 235px,
+      var(--line) 235px 236px,
+      transparent 236px
+    );
+  }
+  .side {
+    position: sticky;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    height: 100vh;
+    padding: 12px 10px;
+    background: var(--sidebar);
+    border-right: 1px solid var(--line);
+  }
+  .side-brand {
+    height: 32px;
+    padding: 0 8px;
+    margin-bottom: 8px;
+  }
+  .side-env {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-bottom: 10px;
+  }
+  .env {
+    position: relative;
+    display: inline-flex;
+    flex: 1;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    height: 32px;
+    padding: 0 0 0 10px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--radius-s);
+    background: var(--raised);
+    box-shadow: var(--shadow-xs);
+    font-size: 13px;
+  }
+  .env .led {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--warn);
+    flex: none;
+  }
+  .env select {
+    appearance: none;
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    padding: 0 26px 0 0;
+    cursor: pointer;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--ink-3) 50%),
+      linear-gradient(135deg, var(--ink-3) 50%, transparent 50%);
+    background-position:
+      right 14px center,
+      right 10px center;
+    background-size: 4px 4px;
+    background-repeat: no-repeat;
+  }
+  .env select:focus-visible {
+    outline: none;
+  }
+  .env:has(select:focus-visible) {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  .env select option {
+    color: var(--ink);
+    background: var(--raised);
+  }
+  .side-nav {
+    display: grid;
+    gap: 1px;
+  }
+  .navlink {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    height: 32px;
+    padding: 0 10px;
+    border-radius: var(--radius-s);
+    color: var(--ink-2);
+    font-size: 13.5px;
+    text-decoration: none;
+  }
+  .navlink .icon {
+    color: var(--ink-3);
+  }
+  .navlink:hover {
+    background: var(--surface-2);
+    color: var(--ink);
+  }
+  .navlink[aria-current="page"] {
+    background: var(--surface);
+    color: var(--ink);
+    font-weight: 500;
+    box-shadow:
+      0 0 0 1px var(--line),
+      var(--shadow-xs);
+  }
+  .navlink[aria-current="page"] .icon {
+    color: var(--ink);
+  }
+  .navlink .count {
+    min-width: 18px;
+    height: 18px;
+    margin-left: auto;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: color-mix(in srgb, var(--coral) 18%, transparent);
+    color: var(--accent-text);
+    font-weight: 600;
+    font-size: 11px;
+    line-height: 18px;
+    text-align: center;
+  }
+  .side-foot {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 6px 2px;
+    border-top: 1px solid var(--line);
+  }
+  .avatar {
+    display: inline-grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    flex: none;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: var(--surface-2);
+    color: var(--ink-2);
+    font-weight: 600;
+    font-size: 10.5px;
+  }
+  .who {
+    display: grid;
+    min-width: 0;
+    line-height: 1.3;
+  }
+  .who b {
+    overflow: hidden;
+    font-weight: 500;
+    font-size: 13px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .who span {
+    color: var(--ink-3);
+    font-size: 11.5px;
+  }
+  .signout {
+    margin-left: auto;
+    height: 26px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--ink-2);
+    font: 500 12.5px var(--font-sans);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .signout:hover {
+    background: var(--surface-2);
+    color: var(--ink);
+  }
+  .signout-error {
+    color: var(--fail-text);
+    font-weight: 500;
+    font-size: 12px;
+  }
+  .main {
+    min-width: 0;
+  }
+  .topbar {
+    display: flex;
+    align-items: center;
+    height: 52px;
+    padding: 0 24px;
+    border-bottom: 1px solid var(--line);
+  }
+  .crumbs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    font-size: 13px;
+    color: var(--ink-3);
+  }
+  .crumbs .trail {
+    display: contents;
+  }
+  .crumbs a {
+    text-decoration: none;
+  }
+  .crumbs a:hover {
+    color: var(--ink);
+  }
+  .crumbs b {
+    overflow: hidden;
+    color: var(--ink);
+    font-weight: 500;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .crumbs .sep {
+    color: var(--line-2);
+  }
+  /* A page that draws its own trail hides the place's name. */
+  .crumbs .trail:not(:empty) + .place {
+    display: none;
+  }
+
+  /* The page's content column: 1120 px plus its padding. */
+  .page {
+    max-width: 1184px;
+    margin: 0 auto;
+    padding: 24px 32px 48px;
+  }
+
+  @media (max-width: 900px) {
+    /* The sticky header's height, so what else sticks to the top sits below it. */
+    :root {
+      --header-h: 85px;
+      /* An anchor, such as /settings#people, scrolls its target below the header. */
+      scroll-padding-top: var(--header-h);
+    }
+    /* The header row keeps its height; the page row takes what the screen has left. */
+    .app {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto 1fr;
+      background: none;
+    }
+    .page {
+      padding: 16px 12px 40px;
+    }
+    .side {
+      z-index: 10;
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-rows: 32px 30px;
+      gap: 8px 10px;
+      align-items: center;
+      height: auto;
+      padding: 8px 12px 6px;
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--sidebar) var(--glass-opacity), transparent);
+      -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+      backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
+    }
+    .side-brand {
+      grid-area: 1 / 1;
+      margin: 0;
+      padding: 0;
+    }
+    .side-env {
+      grid-area: 1 / 2;
+      justify-self: end;
+      max-width: 180px;
+      padding: 0;
+    }
+    .env {
+      height: 30px;
+    }
+    .side-foot {
+      grid-area: 1 / 3;
+      margin: 0;
+      padding: 0;
+      border: 0;
+    }
+    .side-foot .avatar,
+    .side-foot .who {
+      display: none;
+    }
+    .side-nav {
+      grid-area: 2 / 1 / 3 / -1;
+      display: flex;
+      justify-content: space-between;
+      gap: 0;
+    }
+    .navlink {
+      gap: 5px;
+      height: 30px;
+      padding: 0 7px;
+      font-size: 13px;
+    }
+    .navlink .icon {
+      display: none;
+    }
+    .navlink .count {
+      margin-left: 0;
+    }
+    /* The bar keeps a page's trail, its only way back to the parent; a place's bare name it drops. */
+    .topbar {
+      height: 40px;
+      padding: 0 12px;
+    }
+    .topbar:has(.trail:empty) {
+      display: none;
+    }
+  }
+}

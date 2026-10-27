@@ -1,0 +1,214 @@
+/* Play: the code beside the track. It follows track.css, since its phone station card
+   overrides a station's state rules. */
+@layer components {
+  .play {
+    display: grid;
+    gap: 14px;
+  }
+  .play-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+  }
+  .play-pick {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .play-body {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 18px;
+    align-items: start;
+  }
+  .play-rail {
+    position: sticky;
+    top: 16px;
+    display: grid;
+    gap: 10px;
+  }
+  .play-rail .track-scroll {
+    max-height: calc(100vh - 160px);
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-m);
+  }
+  .play-code {
+    margin: 0;
+    padding: 12px 0;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-m);
+    background: var(--screen);
+    color: var(--screen-ink);
+    font: 400 12px / 1.7 var(--font-mono);
+    overflow: auto;
+  }
+  .pl {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 0 14px 0 0;
+    border-left: 3px solid transparent;
+    transition: opacity 0.2s var(--ease);
+  }
+  .pl .ln {
+    flex: none;
+    width: 40px;
+    text-align: right;
+    color: var(--screen-dim);
+    user-select: none;
+  }
+  .pl .code {
+    flex: 1 1 auto;
+    white-space: pre;
+    min-height: 1.65em;
+  }
+  .pl .tag {
+    flex: none;
+    margin-left: auto;
+    padding: 1px 7px;
+    border-radius: 6px;
+    font: 500 10.5px var(--font-sans);
+    white-space: nowrap;
+    background: color-mix(in srgb, var(--screen-ink) 8%, transparent);
+    color: var(--screen-ink);
+    align-self: center;
+  }
+  .pl .tag.done {
+    background: var(--tint-ok);
+    color: var(--ok-text);
+  }
+  .pl .tag.running,
+  .pl .tag.waiting {
+    background: var(--tint-warn);
+    color: var(--warn-text);
+  }
+  .pl .tag.failed {
+    background: var(--tint-fail);
+    color: var(--fail-text);
+  }
+  /* The bracket: every line of a step carries the state's colour in the gutter. */
+  .pl.in-step {
+    border-left-color: var(--idle);
+  }
+  .pl.in-step.done {
+    border-left-color: var(--ok);
+  }
+  .pl.in-step.running {
+    border-left-color: var(--run);
+  }
+  .pl.in-step.waiting {
+    border-left-color: var(--warn);
+  }
+  .pl.in-step.failed {
+    border-left-color: var(--fail);
+  }
+  .pl.first {
+    margin-top: 3px;
+    border-top-left-radius: 3px;
+  }
+  .pl.last {
+    margin-bottom: 3px;
+    border-bottom-left-radius: 3px;
+  }
+  .play-code.has-active .pl:not(.focus) {
+    opacity: 0.4;
+  }
+  .play-code.has-active .pl.focus {
+    background: color-mix(in srgb, var(--screen-ink) 6%, transparent);
+  }
+  .play-inline,
+  .play-pin,
+  .play-bar {
+    display: none;
+  }
+  /* Without a flowchart there is no rail; the replay transport then sits under the code. */
+  .play-transport-row {
+    grid-column: 1 / -1;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-m);
+    background: var(--surface);
+  }
+  .play-transport {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+  }
+  .play-transport input[type="range"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    accent-color: var(--accent-text);
+  }
+
+  @media (max-width: 900px) {
+    /* The phone reads every track top-down and the Play as one column: each station sits above
+       the first line of its code, the current step pins to the top, the bars to the bottom. */
+    .play-body {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .play-rail {
+      display: none;
+    }
+    .pl .code {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .play-transport-row {
+      display: none;
+    }
+    .play-inline {
+      display: block;
+      padding: 8px 12px 4px;
+    }
+    .station.st-card {
+      position: static;
+      display: flex;
+      width: 100%;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 7px 12px;
+      font: 600 12.5px var(--font-sans);
+      text-align: left;
+      cursor: pointer;
+    }
+    .station.st-card .st-meta {
+      font-weight: 500;
+    }
+    .play-pin {
+      position: sticky;
+      top: var(--header-h);
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-m);
+      background: var(--surface);
+      font-size: 13px;
+    }
+    .play-bar {
+      position: sticky;
+      bottom: 0;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-m);
+      background: var(--surface);
+    }
+    .play-approve {
+      bottom: 0;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      background: var(--tint-warn);
+    }
+  }
+}

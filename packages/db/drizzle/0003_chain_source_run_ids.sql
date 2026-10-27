@@ -1,0 +1,1 @@
+ALTER TABLE "runs" ADD COLUMN "chain_source_run_ids" uuid[] DEFAULT '{}'::uuid[] NOT NULL;

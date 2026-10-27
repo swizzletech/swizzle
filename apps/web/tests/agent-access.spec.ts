@@ -1,0 +1,97 @@
+import { expect, test } from "@playwright/test";
+
+import { mockDashboardApi, seededState } from "./dashboard-mock";
+
+// Settings promises the agent token is shown only once. The browser keeps a page it leaves in the
+// back/forward cache, so Back must not bring the token block back.
+
+// Playwright turns the back/forward cache off, and its headless shell has none; this flow needs
+// the cache of the full browser.
+test.use({
+  channel: "chromium",
+  launchOptions: { ignoreDefaultArgs: ["--disable-back-forward-cache"] },
+});
+
+test("the one-time agent token is gone after leaving the page and pressing Back", async ({
+  page,
+}) => {
+  // Records what the cached page holds the moment it comes back, before React could render.
+  await page.addInitScript(() => {
+    window.addEventListener("pageshow", (event) => {
+      if (!event.persisted) return;
+      const token = document.querySelector('[data-testid="give-to-agent"]') !== null;
+      document.documentElement.dataset.restored = token ? "with-token" : "without-token";
+    });
+  });
+  await mockDashboardApi(page, seededState());
+  await page.goto("/settings#agent-access");
+  await page.getByLabel("Token name").fill("Claude on my laptop");
+  await page.getByRole("button", { name: "Create agent token" }).click();
+  await expect(page.getByTestId("give-to-agent")).toContainText("swz_token-1_one-time-plaintext");
+
+  await page.goto("about:blank");
+  // A page restored from the cache fires no load event, so wait only for the navigation.
+  await page.goBack({ waitUntil: "commit" });
+
+  // Without the attribute the page loaded fresh, which remounts React and proves nothing.
+  await expect(page.locator("html")).toHaveAttribute("data-restored", "without-token");
+  await expect(page.getByRole("heading", { name: "Agent access" })).toBeVisible();
+  await expect(page.getByText("swz_token-1_one-time-plaintext")).toHaveCount(0);
+});
+
+// The owner may leave while the token is still being created. The answer then arrives in the
+// cached page, and Back must not show it either.
+test("a token that arrives after the owner left is not shown on Back", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.addEventListener("pageshow", (event) => {
+      if (event.persisted) document.documentElement.dataset.restored = "true";
+    });
+  });
+  await mockDashboardApi(page, seededState());
+  let answer = () => {};
+  const answered = new Promise<void>((resolve) => {
+    answer = resolve;
+  });
+  await page.route(
+    (url) => url.pathname === "/api/auth/tokens",
+    async (route) => {
+      if (route.request().method() === "POST") await answered;
+      await route.fallback();
+    },
+  );
+  await page.goto("/settings#agent-access");
+  await page.getByLabel("Token name").fill("Claude on my laptop");
+  await page.getByRole("button", { name: "Create agent token" }).click();
+  await expect(page.getByRole("button", { name: "Creating…" })).toBeVisible();
+
+  await page.goto("about:blank");
+  answer();
+  await page.goBack({ waitUntil: "commit" });
+
+  await expect(page.locator("html")).toHaveAttribute("data-restored", "true");
+  // The new token's row shows once the creation has finished in the restored page.
+  await expect(page.getByTestId("token-row")).toContainText("Claude on my laptop");
+  await expect(page.getByTestId("give-to-agent")).toHaveCount(0);
+  await expect(page.getByText("swz_token-1_one-time-plaintext")).toHaveCount(0);
+});
+
+test("a limited agent token is sent with its limits and listed with them", async ({ page }) => {
+  const state = seededState();
+  await mockDashboardApi(page, state);
+  await page.goto("/settings#agent-access");
+  await page.getByLabel("Token name").fill("Claude for Default");
+  await page.getByText("Limit what it may do").click();
+  const scope = page.getByTestId("scope-fields");
+  await scope.getByRole("combobox", { name: "At most" }).selectOption("operator");
+  await scope.getByRole("checkbox", { exact: true, name: "Default" }).check();
+  await scope.getByRole("checkbox", { exact: true, name: "staging" }).check();
+  await page.getByRole("button", { name: "Create agent token" }).click();
+
+  await expect(page.getByTestId("token-row")).toContainText("at most operator · Default · staging");
+  const created = state.requests.find(
+    (request) => request.method === "POST" && request.pathname === "/auth/tokens",
+  );
+  expect(created?.body).toMatchObject({
+    scope: { environments: ["staging"], projects: ["default"], role: "operator" },
+  });
+});

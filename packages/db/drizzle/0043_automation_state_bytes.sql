@@ -1,0 +1,1 @@
+ALTER TABLE "automation_state" ADD COLUMN "value_bytes" integer NOT NULL;

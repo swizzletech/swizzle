@@ -1,0 +1,21 @@
+name: rag-indexer
+version: 1.0.0
+description: Dry-run-friendly retrieval indexing preparation example
+entrypoint: main.py
+trigger:
+  type: cron
+  schedule: 0 * * * *
+runtime:
+  language: python
+  execution_mode: host
+  profile: host-default
+  timeout: 30s
+  permissions:
+    network: true
+    writable_dirs: []
+  retry:
+    max_attempts: 3
+    backoff: exponential
+  requirements:
+    binaries: []
+secrets: []

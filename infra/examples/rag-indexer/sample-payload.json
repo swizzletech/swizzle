@@ -1,0 +1,14 @@
+{
+  "documents": [
+    {
+      "document_id": "kb-1",
+      "title": "Onboarding Guide",
+      "content": "Swizzle runs local automations through stdin, stdout, and environment variables. This guide explains how new teammates validate, run, and deploy an automation package in a repeatable way."
+    },
+    {
+      "document_id": "kb-2",
+      "title": "Incident Playbook",
+      "content": "When a run fails repeatedly, inspect the latest attempts, look at stderr logs, confirm required secrets exist, and rerun with a sample payload before shipping another deployment."
+    }
+  ]
+}

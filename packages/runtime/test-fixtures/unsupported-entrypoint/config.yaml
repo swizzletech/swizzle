@@ -1,0 +1,5 @@
+name: unsupported-entrypoint
+version: 1.0.0
+entrypoint: main.sh
+trigger:
+  type: webhook

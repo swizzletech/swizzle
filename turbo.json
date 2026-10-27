@@ -1,0 +1,41 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    // No package has a transit script, so it runs nothing. A task that depends on it hashes the
+    // sources of every workspace it depends on, which it reads through the swizzle-source
+    // condition, and still runs in parallel with them.
+    "transit": {
+      "dependsOn": ["^transit"]
+    },
+    "build": {
+      "dependsOn": ["transit"],
+      "outputs": ["dist/**", "build/**"]
+    },
+    "clean": {
+      "cache": false
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": [
+        "SWIZZLE_*",
+        "API_*",
+        "AWS_*",
+        "DATABASE_URL",
+        "DOCKER_HOST",
+        "LOG_LEVEL",
+        "NODE_ENV",
+        "OTEL_*",
+        "SCHEDULER_*",
+        "VALKEY_URL",
+        "VITE_*",
+        "WEB_*",
+        "WORKER_*"
+      ]
+    },
+    "typecheck": {
+      "dependsOn": ["transit"],
+      "outputs": []
+    }
+  }
+}

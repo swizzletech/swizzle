@@ -1,0 +1,10 @@
+name: secret-collision-b
+version: 1.0.0
+entrypoint: main.py
+trigger:
+  type: webhook
+  path: /secret-collision-b
+secrets:
+  - DRY_RUN
+api_check:
+  mode: passive

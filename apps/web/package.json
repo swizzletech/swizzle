@@ -1,0 +1,32 @@
+{
+  "name": "@swizzle/web",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "clean": "rimraf dist",
+    "dev": "vite",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@swizzle/config": "workspace:*",
+    "@swizzle/db": "workspace:*",
+    "@swizzle/runtime": "workspace:*",
+    "@tanstack/react-query": "^5.104.5",
+    "@tanstack/react-router": "^1.170.45",
+    "dagre-d3-es": "^7.0.14",
+    "dompurify": "^3.4.17",
+    "lean-qr": "^2.7.4",
+    "marked": "^18.1.1",
+    "mermaid": "^12.2.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tailwindcss": "^4.3.3"
+  },
+  "devDependencies": {
+    "@swizzle/core": "workspace:*",
+    "vite": "^8.3.5"
+  }
+}

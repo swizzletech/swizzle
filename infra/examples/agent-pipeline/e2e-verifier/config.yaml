@@ -1,0 +1,23 @@
+name: agent-pipeline-e2e-verifier
+version: 2.0.0
+description: Append deterministic e2e checks without dropping the workspace pointer
+entrypoint: main.ts
+trigger:
+  type: chain
+  source: agent-pipeline-builder
+  on: succeeded
+  payload: result
+runtime:
+  language: typescript
+  execution_mode: host
+  profile: host-default
+  timeout: 30s
+  permissions:
+    network: false
+    writable_dirs: []
+  retry:
+    max_attempts: 3
+    backoff: exponential
+  requirements:
+    binaries: []
+secrets: []

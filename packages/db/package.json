@@ -1,0 +1,41 @@
+{
+  "name": "@swizzle/db",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "swizzle-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.js"
+    },
+    "./postgres": {
+      "swizzle-source": "./src/postgres.ts",
+      "types": "./dist/postgres.d.ts",
+      "import": "./dist/postgres.js",
+      "require": "./dist/postgres.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@swizzle/config": "workspace:*",
+    "@swizzle/core": "workspace:*",
+    "@swizzle/events": "workspace:*",
+    "better-auth": "1.7.12",
+    "cron-parser": "^5.10.2",
+    "drizzle-orm": "^0.45.4",
+    "pg": "catalog:"
+  },
+  "devDependencies": {
+    "@types/pg": "catalog:",
+    "drizzle-kit": "^0.31.11"
+  }
+}

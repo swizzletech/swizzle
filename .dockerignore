@@ -1,0 +1,16 @@
+.git
+.gitignore
+.turbo
+node_modules
+**/node_modules
+**/dist
+**/build
+.swizzle
+.DS_Store
+.env
+.env.*
+!.env.example
+.claude
+docs
+.vscode
+.idea

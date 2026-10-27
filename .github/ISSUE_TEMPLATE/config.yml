@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability privately
+    url: https://github.com/swizzletech/swizzle/security/advisories/new
+    about: Keep vulnerabilities and exploit details out of public issues.
+  - name: Questions and discussions
+    url: https://github.com/swizzletech/swizzle/discussions
+    about: Ask about using Swizzle or discuss an automation.

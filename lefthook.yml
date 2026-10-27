@@ -1,0 +1,17 @@
+# Git hooks; `just setup` installs them. Commands run under the mise toolchain, because git
+# starts hooks from shells that may not have it on PATH.
+
+# Seconds, on the staged files only: Biome's format and lint check, then a secrets scan.
+pre-commit:
+  parallel: true
+  jobs:
+    - name: biome
+      run: mise exec -- pnpm exec biome check --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
+    - name: secrets
+      run: mise exec -- gitleaks git --pre-commit --staged --redact --no-banner --verbose
+
+# The static gate, so a branch reaches the remote only when `just check` is green.
+pre-push:
+  jobs:
+    - name: check
+      run: just check

@@ -1,0 +1,9 @@
+{
+  "repoUrl": "https://example.invalid/acme/service.git",
+  "baseBranch": "main",
+  "specRef": "docs/specs/healthcheck.md",
+  "options": {
+    "reviewProfile": "standard",
+    "runE2e": true
+  }
+}

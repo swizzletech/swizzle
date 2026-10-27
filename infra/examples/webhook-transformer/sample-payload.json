@@ -1,0 +1,11 @@
+{
+  "vendor": "shop-system",
+  "event": "order.created",
+  "occurred_at": "2026-04-14T10:15:00Z",
+  "customer": {
+    "id": "cust-42",
+    "email": "buyer@example.com"
+  },
+  "order_id": "order-9001",
+  "total": 149.9
+}

@@ -1,0 +1,45 @@
+/* Settings: the sections' anchors on the left, the sections on the right; at phone width the
+   anchors wrap above the sections, so every one shows. */
+@layer components {
+  .settings {
+    display: grid;
+    grid-template-columns: 180px minmax(0, 1fr);
+    gap: 32px;
+    align-items: start;
+  }
+  .snav {
+    position: sticky;
+    top: 24px;
+    display: grid;
+    gap: 1px;
+  }
+  .snav a {
+    padding: 6px 10px;
+    border-radius: 7px;
+    color: var(--ink-2);
+    font-size: 13.5px;
+    text-decoration: none;
+  }
+  .snav a:hover {
+    background: var(--surface-2);
+    color: var(--ink);
+  }
+  .snav a[aria-current="location"] {
+    background: var(--surface-2);
+    color: var(--ink);
+    font-weight: 500;
+  }
+
+  @media (max-width: 900px) {
+    .settings {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 16px;
+    }
+    .snav {
+      position: static;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 2px;
+    }
+  }
+}

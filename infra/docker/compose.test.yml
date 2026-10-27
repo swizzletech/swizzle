@@ -1,0 +1,11 @@
+# One test run's PostgreSQL. Docker assigns its loopback port and removes the data on teardown.
+services:
+  postgres:
+    extends: { file: databases.yml, service: postgres }
+    volumes:
+      - type: tmpfs
+        target: /var/lib/postgresql
+    ports: ["127.0.0.1::5432"]
+    healthcheck:
+      interval: 1s
+      retries: 30

@@ -1,0 +1,40 @@
+name: Bug report
+description: Report reproducible behavior that does not match the documentation.
+title: "bug: "
+body:
+  - type: markdown
+    attributes:
+      value: "For vulnerabilities, use Security > Report a vulnerability. Remove credentials and personal data from every example."
+  - type: input
+    id: version
+    attributes:
+      label: Swizzle version
+      description: Include the CLI and server version if they differ.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Host OS and architecture, Docker and Compose versions, and relevant configuration without secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest automation or request that demonstrates the bug.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Redact tokens, passwords, personal data, and approval or event links.
+      render: text

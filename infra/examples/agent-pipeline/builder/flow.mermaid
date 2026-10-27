@@ -1,0 +1,5 @@
+flowchart TD
+  A[Configured upstream work order] --> B[Validate envelope]
+  B --> C[runStep: build-workspace]
+  C --> D[Workspace handoff: work order + branch + sha + summary]
+  D --> E[Configured downstream stages]

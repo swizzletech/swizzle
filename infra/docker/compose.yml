@@ -1,0 +1,363 @@
+# The packaged stack: `just stack` runs it behind Caddy as production does, and `just smoke` boots
+# it as a throwaway project. The env file names the project (`just init-env` writes it), so each
+# checkout's stack has containers, networks, volumes and images of its own; nothing here fixes one.
+name: ${COMPOSE_PROJECT_NAME:?The env file lacks COMPOSE_PROJECT_NAME; just init-env adds it to .env}
+
+x-build: &build
+  context: ../..
+  dockerfile: infra/docker/Dockerfile
+
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
+x-database-env: &database-env
+  DATABASE_URL: postgresql://${POSTGRES_USER:-swizzle}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-swizzle}
+
+x-artifact-env: &artifact-env
+  SWIZZLE_ARTIFACTS_DIR: /data/artifacts
+  SWIZZLE_ARTIFACT_BACKEND: ${SWIZZLE_ARTIFACT_BACKEND:-local}
+  SWIZZLE_ARTIFACT_S3_BUCKET: ${SWIZZLE_ARTIFACT_S3_BUCKET:-swizzle-artifacts}
+  SWIZZLE_ARTIFACT_S3_ENDPOINT: ${SWIZZLE_ARTIFACT_S3_ENDPOINT:-}
+  SWIZZLE_ARTIFACT_S3_FORCE_PATH_STYLE: ${SWIZZLE_ARTIFACT_S3_FORCE_PATH_STYLE:-true}
+  SWIZZLE_ARTIFACT_S3_PREFIX: ${SWIZZLE_ARTIFACT_S3_PREFIX:-artifacts}
+  SWIZZLE_ARTIFACT_S3_REGION: ${SWIZZLE_ARTIFACT_S3_REGION:-us-east-1}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+
+# The API and scheduler hold the database, queue, encryption key, and artifact store.
+# Workers receive only their machine credential and assignments.
+x-control-plane: &control-plane
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  restart: unless-stopped
+  # Cover the default 30 s drain before Docker sends SIGKILL.
+  stop_grace_period: 45s
+  depends_on: &control-plane-dependencies
+    control-egress-proxy:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+    valkey:
+      condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
+  volumes:
+    - artifacts-data:/data/artifacts
+
+x-execution-env: &execution-env
+  SWIZZLE_SHUTDOWN_TIMEOUT_MS: ${SWIZZLE_SHUTDOWN_TIMEOUT_MS:-30000}
+  SWIZZLE_MAX_RUN_TIMEOUT: ${SWIZZLE_MAX_RUN_TIMEOUT:-1h}
+  SWIZZLE_MAX_RUN_MEMORY_MB: ${SWIZZLE_MAX_RUN_MEMORY_MB:-2048}
+  SWIZZLE_MAX_RUN_CPUS: ${SWIZZLE_MAX_RUN_CPUS:-2}
+  SWIZZLE_MAX_INSTALL_DISK_MB: ${SWIZZLE_MAX_INSTALL_DISK_MB:-4096}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  NODE_ENV: production
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+
+x-control-plane-env: &control-plane-env
+  <<: [*database-env, *artifact-env, *execution-env]
+  SWIZZLE_ENCRYPTION_KEY: ${SWIZZLE_ENCRYPTION_KEY:?Set a unique 32-byte raw or base64 encryption key}
+  SWIZZLE_ENCRYPTION_PREVIOUS_KEYS: ${SWIZZLE_ENCRYPTION_PREVIOUS_KEYS:-[]}
+  SWIZZLE_ENVIRONMENT: ${SWIZZLE_ENVIRONMENT:-staging}
+  # Externally reachable API base, including any proxy path, for OAuth callbacks.
+  SWIZZLE_PUBLIC_URL: ${SWIZZLE_PUBLIC_URL:-${SWIZZLE_API_ORIGIN:-http://api.localhost:19826}}
+  VALKEY_URL: redis://:${VALKEY_PASSWORD:?Set VALKEY_PASSWORD}@valkey:6379
+x-control-plane-health: &control-plane-health
+  interval: 15s
+  timeout: 5s
+  retries: 3
+  start_period: 20s
+
+services:
+  postgres:
+    extends: { file: databases.yml, service: postgres }
+    restart: unless-stopped
+    networks: [control]
+    healthcheck:
+      interval: 10s
+      retries: 5
+
+  valkey:
+    extends: { file: databases.yml, service: valkey }
+    restart: unless-stopped
+    networks: [control]
+    healthcheck:
+      interval: 10s
+      retries: 5
+
+  migrate:
+    <<: *hardened
+    profiles: ["stack"]
+    build:
+      <<: *build
+      target: service
+      args:
+        WORKSPACE: "@swizzle/db"
+    command: ["node", "dist/migrate.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment: *database-env
+    networks: [control]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    restart: "no"
+
+  # One-shot CLI for `just backup` and `just restore`. It reaches the stack's database and
+  # artifact volume, which processes on the host cannot.
+  backup:
+    <<: *hardened
+    profiles: ["tools"]
+    build:
+      <<: *build
+      target: cli
+      args:
+        WORKSPACE: "@swizzle/cli"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: [*database-env, *artifact-env]
+      NODE_ENV: production
+    volumes:
+      - artifacts-data:/data/artifacts
+    networks: [control, outbound]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    restart: "no"
+
+  api:
+    <<: [*control-plane, *hardened, *logging]
+    profiles: ["stack"]
+    build:
+      <<: *build
+      target: service
+      args:
+        WORKSPACE: "@swizzle/api"
+    environment:
+      <<: *control-plane-env
+      API_PORT: 19820
+      SWIZZLE_LOCAL_WORKER_TOKEN: ${SWIZZLE_LOCAL_WORKER_TOKEN:?Run just init-env to provision the local worker token}
+      SWIZZLE_LOCAL_WORKER_API_HOST: local-worker-api
+      SWIZZLE_LOCAL_WORKER_API_PORT: 19821
+      SWIZZLE_LOCAL_WORKER_CAPACITY: ${WORKER_CONCURRENCY:-}
+      SWIZZLE_LINK_URL: ${SWIZZLE_LINK_URL:-${SWIZZLE_LINK_ORIGIN:-http://links.localhost:${SWIZZLE_HTTP_PORT:-19826}}}
+      SWIZZLE_SETUP_TOKEN: ${SWIZZLE_SETUP_TOKEN:?Set a unique one-time owner setup token of at least 32 bytes}
+      SWIZZLE_PLATFORM_VERSION: ${SWIZZLE_IMAGE_TAG:-dev}
+      SWIZZLE_CORS_ORIGINS: ${SWIZZLE_CORS_ORIGINS:-${SWIZZLE_DASHBOARD_ORIGIN:-http://localhost}}
+      # Invitations and password resets go out by mail through the control egress proxy; their
+      # links open the dashboard. Without SWIZZLE_SMTP_URL the inviter passes the link on.
+      SWIZZLE_SMTP_URL: ${SWIZZLE_SMTP_URL:-}
+      SWIZZLE_MAIL_FROM: ${SWIZZLE_MAIL_FROM:-}
+      SWIZZLE_DASHBOARD_ORIGIN: ${SWIZZLE_DASHBOARD_ORIGIN:-http://localhost:19826}
+      SWIZZLE_AUTH_COOKIE_SECURE: ${SWIZZLE_AUTH_COOKIE_SECURE:-}
+      SWIZZLE_REQUIRE_SANDBOX: "true"
+      SWIZZLE_CONTROL_EGRESS_PROXY: http://control-egress-proxy:3128
+      SWIZZLE_RUNNER_EGRESS_PROXY: http://runner-egress-proxy:3128
+      SWIZZLE_WEBHOOK_INGRESS_RATE_LIMIT: ${SWIZZLE_WEBHOOK_INGRESS_RATE_LIMIT:-60/min}
+      SWIZZLE_APPROVAL_RATE_LIMIT: ${SWIZZLE_APPROVAL_RATE_LIMIT:-30/min}
+      SWIZZLE_EVENT_CALLBACK_RATE_LIMIT: ${SWIZZLE_EVENT_CALLBACK_RATE_LIMIT:-60/min}
+      # This stack sits behind the bundled Caddy reverse proxy, so the API's socket
+      # peer is Caddy. The API publishes no port, so every peer sits on the stack's
+      # private networks: trusting those (proxy-addr's `uniquelocal`) lets the webhook
+      # rate limiter and request logs see the real client IP from X-Forwarded-For.
+      SWIZZLE_TRUSTED_PROXY: ${SWIZZLE_TRUSTED_PROXY:-uniquelocal}
+    expose:
+      - "19820"
+    networks:
+      control:
+      control-egress:
+      edge:
+      worker-api:
+        aliases: [local-worker-api]
+    pids_limit: ${SWIZZLE_API_PIDS_LIMIT:-256}
+    mem_limit: ${SWIZZLE_API_MEMORY_LIMIT:-768m}
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    healthcheck:
+      <<: *control-plane-health
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:19820/ready"]
+
+  scheduler:
+    <<: [*control-plane, *hardened, *logging]
+    profiles: ["stack"]
+    build:
+      <<: *build
+      target: service
+      args:
+        WORKSPACE: "@swizzle/scheduler"
+    environment:
+      <<: *control-plane-env
+      SWIZZLE_INSTANCE_ID: ${SWIZZLE_SCHEDULER_INSTANCE_ID:-scheduler-1}
+      SWIZZLE_NOTIFICATION_DELIVERY_RETENTION_DAYS: ${SWIZZLE_NOTIFICATION_DELIVERY_RETENTION_DAYS:-30}
+      SWIZZLE_QUEUE_METRIC_RETENTION_DAYS: ${SWIZZLE_QUEUE_METRIC_RETENTION_DAYS:-14}
+      SWIZZLE_HEARTBEAT_RETENTION_HOURS: ${SWIZZLE_HEARTBEAT_RETENTION_HOURS:-6}
+      SWIZZLE_QUEUE_FAILED_RETENTION_HOURS: ${SWIZZLE_QUEUE_FAILED_RETENTION_HOURS:-24}
+      SWIZZLE_RUN_RETENTION_DAYS: ${SWIZZLE_RUN_RETENTION_DAYS:-30}
+      SWIZZLE_ARTIFACT_RETENTION_DEPLOYMENTS: ${SWIZZLE_ARTIFACT_RETENTION_DEPLOYMENTS:-5}
+      SCHEDULER_INTERVAL_MS: ${SCHEDULER_INTERVAL_MS:-15000}
+      SCHEDULER_MAINTENANCE_INTERVAL_MS: ${SCHEDULER_MAINTENANCE_INTERVAL_MS:-60000}
+      SCHEDULER_HEALTH_PORT: 19829
+      HEALTHCHECK_PORT: 19829
+    networks: [control, outbound]
+    pids_limit: ${SWIZZLE_SCHEDULER_PIDS_LIMIT:-256}
+    mem_limit: ${SWIZZLE_SCHEDULER_MEMORY_LIMIT:-768m}
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+    healthcheck:
+      <<: *control-plane-health
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:19829/health"]
+
+  worker:
+    extends: { file: execution.yml, service: worker }
+    profiles: ["stack"]
+    depends_on:
+      api:
+        condition: service_healthy
+      docker-broker:
+        condition: service_healthy
+      runner-base:
+        condition: service_completed_successfully
+      local-llm-gateway:
+        condition: service_healthy
+      runner-egress-proxy:
+        condition: service_healthy
+    environment:
+      SWIZZLE_WORKER_API_URL: http://local-worker-api:19821
+      SWIZZLE_WORKER_TOKEN: ${SWIZZLE_LOCAL_WORKER_TOKEN:?Run just init-env to provision the local worker token}
+      SWIZZLE_WORKER_LOCAL_HTTP: "true"
+    networks: [worker-api]
+
+  docker-broker:
+    extends: { file: execution.yml, service: docker-broker }
+    profiles: ["stack"]
+
+  runner-base:
+    extends: { file: execution.yml, service: runner-base }
+    profiles: ["stack"]
+
+  local-llm-gateway:
+    extends: { file: execution.yml, service: local-llm-gateway }
+
+  runner-egress-proxy:
+    extends: { file: execution.yml, service: runner-egress-proxy }
+    profiles: ["stack"]
+
+  control-egress-proxy:
+    extends: { file: execution.yml, service: control-egress-proxy }
+    profiles: ["stack"]
+    environment:
+      SWIZZLE_ARTIFACT_S3_ENDPOINT: ${SWIZZLE_ARTIFACT_S3_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+
+  web:
+    <<: [*hardened, *logging]
+    profiles: ["stack"]
+    restart: unless-stopped
+    build:
+      <<: *build
+      target: web
+      args:
+        # Same-origin by default (Caddy routes /api/* to the api service).
+        # Override only when the API is on a different hostname.
+        VITE_API_BASE_URL: ${SWIZZLE_WEB_API_BASE_URL:-/api}
+    depends_on:
+      api:
+        condition: service_started
+    expose:
+      - "4173"
+    networks: [edge]
+    pids_limit: 128
+    mem_limit: 256m
+    tmpfs:
+      - "/tmp:rw,noexec,nosuid,size=32m"
+      - "/var/cache/nginx:rw,noexec,nosuid,size=32m"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4173/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  caddy:
+    <<: [*hardened, *logging]
+    profiles: ["stack"]
+    build:
+      <<: *build
+      target: caddy
+    # Caddy writes its certificates and state; the volumes below hold them.
+    read_only: false
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+      web:
+        condition: service_started
+    environment:
+      # Where Caddy serves the dashboard: its origin, unless a proxy on this host such as
+      # tailscale serve answers the origin over HTTPS and forwards to Caddy's HTTP port.
+      SWIZZLE_DASHBOARD_SITE: ${SWIZZLE_DASHBOARD_SITE:-${SWIZZLE_DASHBOARD_ORIGIN:-http://localhost:19826}}
+      SWIZZLE_API_ORIGIN: ${SWIZZLE_API_ORIGIN:-http://api.localhost:19826}
+      SWIZZLE_API_SITE: ${SWIZZLE_API_SITE:-${SWIZZLE_API_ORIGIN:-http://api.localhost:19826}}
+      SWIZZLE_LINK_ORIGIN: ${SWIZZLE_LINK_ORIGIN:-http://links.localhost:${SWIZZLE_HTTP_PORT:-19826}}
+      SWIZZLE_LINK_PORT: ${SWIZZLE_LINK_PORT:-19828}
+      SWIZZLE_PRIVATE_RANGES: ${SWIZZLE_PRIVATE_RANGES:-0.0.0.0/0 ::/0}
+      # Empty trusts no proxy's X-Forwarded-For on the links origin.
+      SWIZZLE_LINK_TRUSTED_PROXY: ${SWIZZLE_LINK_TRUSTED_PROXY:-}
+      # Safe non-empty default so Caddy's `email` directive parses when the user
+      # hasn't set a real ACME email (plain-HTTP local dev). ACME never engages
+      # on http:// origins so the value is effectively inert.
+      SWIZZLE_ACME_EMAIL: ${SWIZZLE_ACME_EMAIL:-none@invalid.local}
+    ports:
+      # Symmetric mapping: Caddy listens internally on the port specified in
+      # SWIZZLE_DASHBOARD_SITE / SWIZZLE_API_SITE, so the external host
+      # port must match the site. For public access, use an IPv4 SWIZZLE_HTTP_BIND.
+      - "${SWIZZLE_HTTP_BIND:-127.0.0.1}:${SWIZZLE_HTTP_PORT:-19826}:${SWIZZLE_HTTP_PORT:-19826}"
+      # Explicit IPv4 binds avoid Docker translating IPv6 clients to a private gateway address,
+      # which would bypass SWIZZLE_PRIVATE_RANGES. Both edge ports use the same bind.
+      - "${SWIZZLE_HTTP_BIND:-127.0.0.1}:${SWIZZLE_HTTPS_PORT:-19827}:${SWIZZLE_HTTPS_PORT:-19827}"
+      # A tunnel must target this links-only listener, never the shared HTTP/HTTPS ports.
+      - "127.0.0.1:${SWIZZLE_LINK_PORT:-19828}:${SWIZZLE_LINK_PORT:-19828}"
+    networks: [edge, outbound]
+    cap_add: [NET_BIND_SERVICE]
+    pids_limit: 128
+    mem_limit: 256m
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2019/config/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  artifacts-data:
+  caddy-config:
+  caddy-data:
+  dep-cache-data:
+  postgres-data:
+  valkey-data:
+
+networks:
+  worker-api:
+    internal: true
+  control:
+    internal: true
+  control-egress:
+    internal: true
+  edge:
+    internal: true
+  outbound:
+  runner-control:
+    internal: true
+  runner-egress:
+    internal: true

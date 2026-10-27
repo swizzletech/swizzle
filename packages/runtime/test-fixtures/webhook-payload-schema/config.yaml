@@ -1,0 +1,23 @@
+name: webhook-payload-schema
+version: 1.0.0
+description: Webhook fixture with a platform-enforced payload schema
+entrypoint: main.py
+trigger:
+  type: webhook
+  path: /payload-schema
+  payload_schema:
+    type: object
+    required:
+      - event
+    properties:
+      event:
+        type: string
+      amount:
+        type: number
+    additionalProperties: false
+runtime:
+  execution_mode: host
+  timeout: 30s
+  retry:
+    max_attempts: 1
+    backoff: fixed

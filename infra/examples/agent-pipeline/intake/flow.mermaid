@@ -1,0 +1,5 @@
+flowchart TD
+  A[Webhook /agent-pipeline] --> B[Validate work-order envelope]
+  B --> C[Normalize options]
+  C --> D[Forward repoUrl + baseBranch + specRef + options]
+  D --> E[Configured downstream stage]

@@ -1,0 +1,12 @@
+name: cron-success
+version: 1.0.0
+entrypoint: main.py
+trigger:
+  type: cron
+  schedule: "*/5 * * * *"
+runtime:
+  timeout: 30s
+  retry:
+    max_attempts: 2
+    backoff: exponential
+secrets: []

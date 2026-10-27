@@ -1,0 +1,12 @@
+name: platform-connection-snapshot
+version: 1.0.0
+entrypoint: main.py
+trigger:
+  type: webhook
+  path: /platform-connection
+runtime:
+  timeout: 5s
+connections:
+  - test-google
+api_check:
+  mode: passive

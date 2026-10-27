@@ -1,0 +1,27 @@
+/* A small menu that opens under its button, on frosted glass. Only components/menu.tsx draws it. */
+@layer components {
+  .menu {
+    position: relative;
+  }
+  .menu > summary {
+    list-style: none;
+  }
+  .menu > summary::-webkit-details-marker {
+    display: none;
+  }
+  .menu > .menu-body {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    z-index: 20;
+    min-width: 240px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--shadow-pop);
+  }
+  .menu.start > .menu-body {
+    left: 0;
+    right: auto;
+  }
+}

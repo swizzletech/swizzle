@@ -1,0 +1,12 @@
+name: platform-env-snapshot
+version: 1.0.0
+entrypoint: main.py
+trigger:
+  type: webhook
+  path: /platform-env
+runtime:
+  timeout: 5s
+secrets:
+  - DECLARED_SECRET
+api_check:
+  mode: passive

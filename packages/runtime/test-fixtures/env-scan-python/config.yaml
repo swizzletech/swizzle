@@ -1,0 +1,11 @@
+name: env-scan-python
+version: 1.0.0
+entrypoint: main.py
+trigger:
+  type: webhook
+secrets:
+  - DECLARED_SECRET
+vars:
+  DECLARED_VAR: visible
+api_check:
+  mode: passive

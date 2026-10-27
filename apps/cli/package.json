@@ -1,0 +1,40 @@
+{
+  "name": "@swizzle/cli",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "swizzle": "./dist/bin.js"
+  },
+  "exports": {
+    ".": {
+      "swizzle-source": "./src/main.ts"
+    }
+  },
+  "scripts": {
+    "build": "node build.mts",
+    "clean": "rimraf dist build",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@swizzle/config": "workspace:*",
+    "@swizzle/core": "workspace:*",
+    "@swizzle/db": "workspace:*",
+    "@swizzle/runtime": "workspace:*",
+    "@toon-format/toon": "^4.4.0",
+    "axi-sdk-js": "^0.1.13",
+    "commander": "^15.0.0",
+    "esbuild": "^0.28.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/swizzletech/swizzle.git",
+    "directory": "apps/cli"
+  },
+  "homepage": "https://github.com/swizzletech/swizzle#readme",
+  "bugs": {
+    "url": "https://github.com/swizzletech/swizzle/issues"
+  },
+  "swizzlePackageName": "@swizzletech/cli"
+}

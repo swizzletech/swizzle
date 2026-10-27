@@ -1,0 +1,21 @@
+name: document-scanner
+version: 1.0.0
+description: Extract structured metadata from incoming document text
+entrypoint: main.py
+trigger:
+  type: webhook
+  path: /document-scan
+runtime:
+  language: python
+  execution_mode: host
+  profile: host-default
+  timeout: 30s
+  permissions:
+    network: true
+    writable_dirs: []
+  retry:
+    max_attempts: 3
+    backoff: exponential
+  requirements:
+    binaries: []
+secrets: []

@@ -1,0 +1,1 @@
+ALTER TABLE "dashboard_users" ADD COLUMN "credential_revision" integer DEFAULT 0 NOT NULL;

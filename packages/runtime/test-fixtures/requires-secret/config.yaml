@@ -1,0 +1,12 @@
+name: requires-secret
+version: 1.0.0
+entrypoint: main.py
+trigger:
+  type: webhook
+  path: /requires-secret
+runtime:
+  timeout: 5s
+secrets:
+  - REQUIRED_TOKEN
+api_check:
+  mode: passive

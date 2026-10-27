@@ -1,0 +1,5 @@
+name: flow-drift
+version: 1.0.0
+entrypoint: main.js
+trigger:
+  type: webhook

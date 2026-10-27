@@ -1,0 +1,7 @@
+flowchart TD
+  A[agent-pipeline-intake] --> B[agent-pipeline-builder]
+  B --> C[agent-pipeline-reviewer]
+  B --> D[agent-pipeline-e2e-verifier]
+  C --> E[agent-pipeline-triage join]
+  D --> E
+  E --> F[Workspace pointer + final decision]

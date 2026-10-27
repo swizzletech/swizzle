@@ -1,0 +1,35 @@
+packages:
+  - apps/*
+  - packages/*
+
+# One version for a dependency several workspaces share, and the holds `just deps-outdated`
+# keeps listing, each with the reason on its line.
+catalog:
+  "@opentelemetry/api": ^1.10.0
+  # Held on 26: the types follow the Node that mise.toml and the images run.
+  "@types/node": ^26.6.5
+  "@types/pg": ^8.23.1
+  bullmq: ^6.4.0
+  fastify: ^5.12.7
+  pg: ^8.23.1
+  pino: ^10.4.0
+  tar: ^7.5.22
+  tsx: ^4.23.15
+  # Held on 6: dependency-cruiser 18.7 parses TypeScript through its compiler API (>=2 <7),
+  # which TypeScript 7 no longer ships.
+  typescript: ^6.0.3
+  yaml: ^2.9.1
+
+# Only `just setup` installs, from the frozen lockfile. pnpm's default would make every
+# `pnpm exec` (the git hooks included) run a non-frozen install that rewrites the lockfile.
+verifyDepsBeforeRun: error
+
+overrides:
+  # drizzle-kit bundles tsx and does not use this obsolete loader, which pulls vulnerable esbuild.
+  "drizzle-kit>@esbuild-kit/esm-loader": "-"
+
+allowBuilds:
+  esbuild: true
+  msgpackr-extract: true
+  # Its postinstall only checks how dependents spell its version range; nothing is built.
+  protobufjs: false

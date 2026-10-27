@@ -1,0 +1,61 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.6.2/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "ignoreUnknown": true,
+    "includes": ["**", "!.claude", "!.forgemate-*", "!**/.swizzle", "!packages/db/drizzle"]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "a11y": {
+        // SecretInput in apps/web/src/components/actions.tsx renders an <input>.
+        "noLabelWithoutControl": {
+          "level": "error",
+          "options": { "inputComponents": ["SecretInput"] }
+        }
+      },
+      "suspicious": {
+        // It keys turbo's cache on the environment a task reads, but it checks only the root
+        // package's files, which no turbo task runs, and never the workspaces whose tasks turbo runs.
+        "noUndeclaredEnvVars": "off"
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
+  },
+  // Biome formats Markdown and YAML since 2.6. The prose follows docs/README.md and the YAML is
+  // compose, workflows and pnpm's own files, so Biome keeps to code, JSON and CSS.
+  "markdown": {
+    "formatter": { "enabled": false }
+  },
+  "yaml": {
+    "formatter": { "enabled": false }
+  },
+  "json": {
+    "formatter": {
+      "trailingCommas": "none"
+    }
+  }
+}

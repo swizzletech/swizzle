@@ -1,0 +1,20 @@
+{
+  "name": "@swizzle/scheduler",
+  "version": "1.0.0",
+  "license": "Apache-2.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist",
+    "dev": "tsx watch --conditions=swizzle-source --import ./src/tracing.ts src/main.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@swizzle/core": "workspace:*",
+    "@swizzle/db": "workspace:*",
+    "@swizzle/runtime": "workspace:*",
+    "fastify": "catalog:",
+    "pino": "catalog:"
+  }
+}

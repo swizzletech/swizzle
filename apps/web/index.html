@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>Swizzle</title>
+    <!-- The cascade layers in their order, before any stylesheet. A shared chunk's stylesheet
+         (a component's @layer components) can load ahead of styles.css, and the first sheet to
+         name a layer would otherwise put components below base. -->
+    <style>
+      @layer properties, theme, base, components, utilities;
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

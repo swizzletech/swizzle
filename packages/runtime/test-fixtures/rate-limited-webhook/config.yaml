@@ -1,0 +1,10 @@
+name: rate-limited-webhook
+version: 1.0.0
+entrypoint: main.js
+trigger:
+  type: webhook
+  path: /rate-limited-webhook
+runtime:
+  timeout: 5s
+  rate_limits:
+    external_api: 2/min

@@ -1,0 +1,21 @@
+name: hello-webhook
+version: 1.0.0
+description: Minimal webhook automation example for Swizzle
+entrypoint: main.py
+trigger:
+  type: webhook
+  path: /hello
+runtime:
+  language: python
+  execution_mode: host
+  profile: host-default
+  timeout: 30s
+  permissions:
+    network: true
+    writable_dirs: []
+  retry:
+    max_attempts: 3
+    backoff: exponential
+  requirements:
+    binaries: []
+secrets: []

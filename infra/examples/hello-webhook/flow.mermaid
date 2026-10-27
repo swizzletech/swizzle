@@ -1,0 +1,5 @@
+graph TD
+  A[Webhook /hello] --> B[Queue platform-runs--host-default]
+  B --> C[Worker process]
+  C --> D[hello-webhook main.py]
+  D --> E[Durable run record]

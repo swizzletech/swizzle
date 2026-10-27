@@ -1,0 +1,2 @@
+ALTER TABLE "run_executions" ADD COLUMN "phase" varchar(32) DEFAULT 'preparing' NOT NULL;--> statement-breakpoint
+ALTER TABLE "run_executions" ADD CONSTRAINT "run_executions_phase_check" CHECK ("run_executions"."phase" IN ('preparing', 'executing'));

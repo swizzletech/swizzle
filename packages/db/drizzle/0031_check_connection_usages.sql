@@ -1,0 +1,1 @@
+ALTER TABLE "automation_checks" ADD COLUMN "last_connection_usages" jsonb DEFAULT '[]'::jsonb NOT NULL;

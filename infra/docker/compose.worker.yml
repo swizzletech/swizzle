@@ -1,0 +1,66 @@
+# Worker-only stack. Initialize its private credential volume with just worker <credential-file>.
+name: ${COMPOSE_PROJECT_NAME:-swizzle-worker}
+
+x-api: &api
+  SWIZZLE_WORKER_API_URL: ${SWIZZLE_WORKER_API_URL:?Pass the env file swizzle worker enroll wrote with --env-file}
+
+services:
+  worker:
+    extends: { file: execution.yml, service: worker }
+    depends_on:
+      control-egress-proxy:
+        condition: service_healthy
+      docker-broker:
+        condition: service_healthy
+      runner-base:
+        condition: service_completed_successfully
+      local-llm-gateway:
+        condition: service_healthy
+      runner-egress-proxy:
+        condition: service_healthy
+    environment:
+      <<: *api
+      SWIZZLE_WORKER_CREDENTIAL_FILE: /data/worker/worker.env
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-}
+      SWIZZLE_MAX_RUN_MEMORY_MB: ${SWIZZLE_MAX_RUN_MEMORY_MB:-1024}
+      SWIZZLE_MAX_RUN_CPUS: ${SWIZZLE_MAX_RUN_CPUS:-1}
+      SWIZZLE_RUNNER_IMAGE_DISK_MB: ${SWIZZLE_RUNNER_IMAGE_DISK_MB:-4096}
+    volumes:
+      - worker-credentials:/data/worker
+
+  docker-broker:
+    extends: { file: execution.yml, service: docker-broker }
+    environment:
+      SWIZZLE_MAX_RUN_MEMORY_MB: ${SWIZZLE_MAX_RUN_MEMORY_MB:-1024}
+      SWIZZLE_MAX_RUN_CPUS: ${SWIZZLE_MAX_RUN_CPUS:-1}
+
+  runner-base:
+    extends: { file: execution.yml, service: runner-base }
+
+  local-llm-gateway:
+    extends: { file: execution.yml, service: local-llm-gateway }
+
+  runner-egress-proxy:
+    extends: { file: execution.yml, service: runner-egress-proxy }
+
+  # The worker's route to the API. The API's host and port are its one exception to the
+  # private-address block, so an API on a tailnet or LAN address is reachable; the sandbox's
+  # proxy keeps blocking it.
+  control-egress-proxy:
+    extends: { file: execution.yml, service: control-egress-proxy }
+    environment:
+      <<: *api
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+
+volumes:
+  worker-credentials:
+  dep-cache-data:
+
+networks:
+  control-egress:
+    internal: true
+  outbound:
+  runner-control:
+    internal: true
+  runner-egress:
+    internal: true

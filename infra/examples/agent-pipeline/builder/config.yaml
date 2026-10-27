@@ -1,0 +1,23 @@
+name: agent-pipeline-builder
+version: 2.0.0
+description: Simulate a build block and emit a durable, self-contained workspace handoff
+entrypoint: main.ts
+trigger:
+  type: chain
+  source: agent-pipeline-intake
+  on: succeeded
+  payload: result
+runtime:
+  language: typescript
+  execution_mode: host
+  profile: host-default
+  timeout: 60s
+  permissions:
+    network: false
+    writable_dirs: []
+  retry:
+    max_attempts: 3
+    backoff: exponential
+  requirements:
+    binaries: []
+secrets: []

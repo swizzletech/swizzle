@@ -1,0 +1,321 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1792706655601,
+      "tag": "0000_baseline",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792835800023,
+      "tag": "0001_run_step_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792843463975,
+      "tag": "0002_api_checks",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792846547373,
+      "tag": "0003_chain_source_run_ids",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792852272396,
+      "tag": "0004_credential_revision",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792862584223,
+      "tag": "0005_check_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792863646401,
+      "tag": "0006_run_wait_details",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792867555666,
+      "tag": "0007_better_auth",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792872151394,
+      "tag": "0008_check_secret_usages",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792875354042,
+      "tag": "0009_projects_and_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792877648897,
+      "tag": "0010_project_resources",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792885362241,
+      "tag": "0011_people_and_invitations",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792891515096,
+      "tag": "0012_credential_rights",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792892729261,
+      "tag": "0013_service_accounts_and_token_scopes",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1792896455885,
+      "tag": "0014_worker_registry",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1792897166288,
+      "tag": "0015_worker_enrollment_budget_expiry",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1792901256886,
+      "tag": "0016_approvals_audit_and_notification_owners",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792904883128,
+      "tag": "0017_execution_leases",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792904943889,
+      "tag": "0018_durable_dispatch_followups",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792906437078,
+      "tag": "0019_execution_lease_start",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792913118560,
+      "tag": "0020_worker_services",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792918367898,
+      "tag": "0021_run_wait_value",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1792919345938,
+      "tag": "0022_totp_replay_ledger",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792920540585,
+      "tag": "0023_unified_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792921307720,
+      "tag": "0024_release_team",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792922259708,
+      "tag": "0025_worker_run_images",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792923156370,
+      "tag": "0026_worker_run_image_disk",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1792929976345,
+      "tag": "0027_worker_api_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1792932788751,
+      "tag": "0028_audit_host_actor",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1792937316633,
+      "tag": "0029_durable_attempt_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792938746112,
+      "tag": "0030_consolidate_grants_budgets_and_chain_origin",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792939734296,
+      "tag": "0031_check_connection_usages",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792939745092,
+      "tag": "0032_run_step_totals",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792941762213,
+      "tag": "0033_run_history_deletion",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1792945235087,
+      "tag": "0034_keep_issuer_names",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792945986882,
+      "tag": "0035_drop_audit_read_day",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1792948257622,
+      "tag": "0036_run_attempt_segment",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1792951205231,
+      "tag": "0037_run_placement_deadline",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1792951246129,
+      "tag": "0038_run_attempt_worker_name",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1792951326419,
+      "tag": "0039_worker_capabilities",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1792956548978,
+      "tag": "0040_run_executions",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1792960784602,
+      "tag": "0041_audit_anonymous_actor",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1792965484954,
+      "tag": "0042_execution_lease_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1792968549417,
+      "tag": "0043_automation_state_bytes",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1793049294992,
+      "tag": "0044_execution-phase",
+      "breakpoints": true
+    }
+  ]
+}

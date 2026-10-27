@@ -1,0 +1,8 @@
+name: invalid-json-output
+version: 1.0.0
+entrypoint: main.py
+trigger:
+  type: webhook
+  path: /invalid-json-output
+runtime:
+  timeout: 5s

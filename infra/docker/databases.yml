@@ -1,0 +1,34 @@
+# Postgres and Valkey as both stacks run them. compose.yml (the packaged stack) and
+# compose.dev.yml (the dev stack) extend these services and add their restart policy, network,
+# ports and health timing. They live apart from compose.yml because `extends` interpolates the
+# whole file it reads, and the dev stack has none of the packaged stack's other secrets.
+services:
+  postgres:
+    image: postgres:18.6-alpine3.24
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-swizzle}
+      POSTGRES_USER: ${POSTGRES_USER:-swizzle}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a unique URL-safe PostgreSQL password}
+    volumes:
+      # PostgreSQL 18 images keep the cluster in a major-version directory under this path.
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      # Over TCP: the image's first-start init runs a temporary server on the unix socket only, then
+      # restarts. A socket probe turns healthy during that init and a client connects into the restart.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U swizzle -d swizzle"]
+      timeout: 5s
+
+  valkey:
+    image: valkey/valkey:9.1.2-alpine3.24
+    command: ["valkey-server", "--requirepass", "${VALKEY_PASSWORD:?Set a unique URL-safe Valkey password}"]
+    environment:
+      VALKEY_PASSWORD: ${VALKEY_PASSWORD:?Set a unique URL-safe Valkey password}
+    volumes:
+      - valkey-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli --no-auth-warning -a \"$${VALKEY_PASSWORD}\" ping"]
+      timeout: 5s
+
+volumes:
+  postgres-data:
+  valkey-data:

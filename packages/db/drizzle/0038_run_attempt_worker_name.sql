@@ -1,0 +1,1 @@
+ALTER TABLE "run_attempts" ADD COLUMN "worker_name" varchar(120) NOT NULL;

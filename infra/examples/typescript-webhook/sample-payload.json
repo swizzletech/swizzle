@@ -1,0 +1,10 @@
+{
+  "customer": {
+    "email": "ops@example.com",
+    "id": "cust-123"
+  },
+  "event": "invoice.created",
+  "occurred_at": "2026-04-14T10:00:00.000Z",
+  "payload_version": 3,
+  "source": "partner-platform"
+}

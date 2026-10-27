@@ -1,0 +1,9 @@
+name: vars-snapshot
+version: 1.0.0
+entrypoint: main.py
+trigger:
+  type: webhook
+vars:
+  FEATURE_MODE: dry-run
+  MAX_ITEMS: 5
+  ENABLE_CREATE: false

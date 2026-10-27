@@ -1,0 +1,8 @@
+name: timeout-exceeds-platform-max
+version: 1.0.0
+entrypoint: main.js
+trigger:
+  type: webhook
+  path: /timeout-exceeds-platform-max
+runtime:
+  timeout: 2h

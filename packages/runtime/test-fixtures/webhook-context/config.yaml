@@ -1,0 +1,6 @@
+name: webhook-context
+version: 1.0.0
+trigger:
+  type: webhook
+  path: /webhook-context
+entrypoint: main.js

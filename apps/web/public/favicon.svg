@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <title>Swizzle</title>
+  <!-- The dashboard's mark (Mark in src/components/ui.tsx) on a dark rounded square. -->
+  <rect width="32" height="32" rx="7" fill="#18181b"/>
+  <g fill="none" stroke-width="4.2" transform="translate(4 4)">
+    <path d="M24 24A20 20 0 0 1 4 4" stroke="#ff8b61"/>
+    <path d="M24 24A13 13 0 0 1 11 11" stroke="#ffd8bd"/>
+    <path d="M24 24A6 6 0 0 1 18 18" stroke="#ff8b61"/>
+  </g>
+</svg>

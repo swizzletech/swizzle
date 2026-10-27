@@ -1,0 +1,12 @@
+# The toolchain every just recipe runs under. Node matches the Node images in
+# infra/docker/Dockerfile and the run image fallback in packages/runtime/src/run-image.ts, and pnpm
+# matches packageManager; the toolchain-pins convention fails on drift.
+[tools]
+node = "26.12.1"
+pnpm = "12.15.0"
+# just runs the recipes; CI installs it from this pin like every other tool.
+just = "1.59.0"
+# The git hooks: lefthook runs them and gitleaks scans the staged changes for secrets.
+# They are binaries, so mise pins them; the git hooks find lefthook through mise too.
+lefthook = "2.2.2"
+gitleaks = "8.30.1"

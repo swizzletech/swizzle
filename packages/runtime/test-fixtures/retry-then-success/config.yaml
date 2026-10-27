@@ -1,0 +1,12 @@
+name: retry-then-success
+version: 1.0.0
+entrypoint: main.py
+trigger:
+  type: webhook
+  path: /retry-then-success
+runtime:
+  timeout: 30s
+  retry:
+    max_attempts: 3
+    backoff: exponential
+secrets: []

@@ -1,0 +1,11 @@
+name: large-stdout
+version: 1.0.0
+description: Emits too much stdout for runner output-limit tests.
+entrypoint: main.py
+runtime:
+  language: python
+  timeout: 30s
+trigger:
+  type: webhook
+  path: /large-stdout
+secrets: []

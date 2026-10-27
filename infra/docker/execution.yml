@@ -1,0 +1,187 @@
+# The services that execute automations, as every worker host runs them: the worker, its Docker
+# broker, the runner base image and the two egress proxies. compose.yml (the packaged stack) and
+# compose.worker.yml (a worker on another machine) extend these and add how the worker reaches the
+# API, its dependencies and, for the packaged stack, its profile. They live apart from compose.yml
+# because `extends` interpolates the whole file it reads, and a worker host has none of the
+# packaged stack's secrets. Each file that extends them declares the networks and volumes below.
+
+x-build: &build
+  context: ../..
+  dockerfile: infra/docker/Dockerfile
+
+x-hardened: &hardened
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
+x-proxy: &proxy
+  <<: [*hardened, *logging]
+  restart: unless-stopped
+  expose:
+    - "3128"
+  pids_limit: 128
+  mem_limit: 256m
+  tmpfs:
+    - "/tmp:rw,noexec,nosuid,size=16m"
+    - "/var/cache/squid:rw,noexec,nosuid,size=32m"
+    - "/var/log/squid:rw,noexec,nosuid,size=16m"
+    - "/var/run/squid:rw,noexec,nosuid,size=4m"
+  healthcheck:
+    test: ["CMD-SHELL", "nc -z 127.0.0.1 3128"]
+    interval: 10s
+    timeout: 5s
+    retries: 5
+
+services:
+  # The worker holds one machine credential and no database, queue, storage or encryption key.
+  # The file that extends it says which API it pulls from and with which token.
+  worker:
+    <<: [*hardened, *logging]
+    restart: unless-stopped
+    build:
+      <<: *build
+      target: service-automation
+      args:
+        WORKSPACE: "@swizzle/worker"
+    # The worker drains for 30 s on SIGTERM, then removes its sandboxes. The grace covers both, so
+    # Docker does not kill it mid-drain. A worker that dies anyway removes what it left at its
+    # next start: the label tells it which workers of the stack are still running.
+    stop_grace_period: 45s
+    labels:
+      swizzle.worker-of: ${COMPOSE_PROJECT_NAME}
+    environment:
+      SWIZZLE_SHUTDOWN_TIMEOUT_MS: 30000
+      SWIZZLE_MAX_RUN_TIMEOUT: ${SWIZZLE_MAX_RUN_TIMEOUT:-1h}
+      SWIZZLE_MAX_RUN_MEMORY_MB: ${SWIZZLE_MAX_RUN_MEMORY_MB:-2048}
+      SWIZZLE_MAX_RUN_CPUS: ${SWIZZLE_MAX_RUN_CPUS:-2}
+      SWIZZLE_MAX_INSTALL_DISK_MB: ${SWIZZLE_MAX_INSTALL_DISK_MB:-4096}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      NODE_ENV: production
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      HOME: /home/swizzle
+      SWIZZLE_DEP_CACHE_DIR: ${SWIZZLE_DEP_CACHE_DIR:-/data/dep-cache}
+      SWIZZLE_REQUIRE_SANDBOX: "true"
+      SWIZZLE_CONTROL_EGRESS_PROXY: http://control-egress-proxy:3128
+      # Compose names the network and the image after the project, as below. The worker labels
+      # the run images it assembles with the project, so it prunes only this stack's images.
+      SWIZZLE_STACK: ${COMPOSE_PROJECT_NAME}
+      SWIZZLE_RUNNER_NETWORK: ${COMPOSE_PROJECT_NAME}_runner-egress
+      SWIZZLE_RUNNER_EGRESS_PROXY: http://runner-egress-proxy:3128
+      SWIZZLE_LOCAL_LLM_CONTROL_TOKEN: ${SWIZZLE_LOCAL_LLM_CONTROL_TOKEN:?Set a separate random local LLM control token for each worker host}
+      SWIZZLE_RUNNER_BASE_IMAGE: ${COMPOSE_PROJECT_NAME}-runner-base
+      SWIZZLE_RUNNER_IMAGE_RETENTION_HOURS: ${SWIZZLE_RUNNER_IMAGE_RETENTION_HOURS:-24}
+      SWIZZLE_RUNNER_IMAGE_DISK_MB: ${SWIZZLE_RUNNER_IMAGE_DISK_MB:-20480}
+      DOCKER_HOST: tcp://docker-broker:2375
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-}
+      WORKER_HEALTH_PORT: 19828
+      HEALTHCHECK_PORT: 19828
+    volumes:
+      - dep-cache-data:/data/dep-cache
+    networks: [control-egress, runner-control]
+    cpus: ${SWIZZLE_WORKER_CPUS:-2}
+    pids_limit: ${SWIZZLE_WORKER_PIDS_LIMIT:-512}
+    mem_limit: ${SWIZZLE_WORKER_MEMORY_LIMIT:-2g}
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=256m"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:19828/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # The worker's only route to the Docker socket. It passes on the Docker calls the worker makes
+  # and refuses the rest: a create must be a sandbox or an image assembly (no host mounts, no
+  # privileges), and it acts only on containers and images labelled with this stack
+  # (apps/docker-broker, docs/explanation/security-model.md).
+  docker-broker:
+    <<: [*hardened, *logging]
+    build:
+      <<: *build
+      target: docker-broker
+    restart: unless-stopped
+    environment:
+      SWIZZLE_STACK: ${COMPOSE_PROJECT_NAME}
+      SWIZZLE_RUNNER_NETWORK: ${COMPOSE_PROJECT_NAME}_runner-egress
+      # The same maximums as the worker's, so a create above them is refused here too.
+      SWIZZLE_MAX_RUN_MEMORY_MB: ${SWIZZLE_MAX_RUN_MEMORY_MB:-2048}
+      SWIZZLE_MAX_RUN_CPUS: ${SWIZZLE_MAX_RUN_CPUS:-2}
+    expose:
+      - "2375"
+    networks: [runner-control]
+    pids_limit: 128
+    mem_limit: 128m
+    tmpfs:
+      - "/tmp:rw,noexec,nosuid,size=16m"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2375/_ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Builds the base the worker assembles each deployment's run image from, for this host's
+  # architecture; compose names it <project>-runner-base.
+  runner-base:
+    <<: *hardened
+    build:
+      <<: *build
+      target: runner-base
+    command: ["true"]
+    network_mode: none
+    restart: "no"
+
+  runner-egress-proxy:
+    <<: *proxy
+    build:
+      <<: *build
+      target: runner-egress-proxy
+    networks: [outbound, runner-egress]
+
+  control-egress-proxy:
+    <<: *proxy
+    build:
+      <<: *build
+      target: control-egress-proxy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [control-egress, outbound]
+
+  # The sandbox can reach only the inference listener. Grant control binds a different interface.
+  local-llm-gateway:
+    <<: [*hardened, *logging]
+    restart: unless-stopped
+    build:
+      <<: *build
+      target: service
+      args:
+        WORKSPACE: "@swizzle/llm-gateway"
+    command: ["node", "dist/main.js"]
+    environment:
+      SWIZZLE_LOCAL_LLM_CONTROL_TOKEN: ${SWIZZLE_LOCAL_LLM_CONTROL_TOKEN:?Set a separate random local LLM control token for each worker host}
+      SWIZZLE_LOCAL_LLM_UPSTREAM: ${SWIZZLE_LOCAL_LLM_UPSTREAM:-}
+      SWIZZLE_LOCAL_LLM_API_KEY: ${SWIZZLE_LOCAL_LLM_API_KEY:-}
+      SWIZZLE_LOCAL_LLM_MODEL: ${SWIZZLE_LOCAL_LLM_MODEL:-}
+      SWIZZLE_LOCAL_LLM_CONCURRENCY: ${SWIZZLE_LOCAL_LLM_CONCURRENCY:-2}
+      SWIZZLE_LOCAL_LLM_REQUESTS: ${SWIZZLE_LOCAL_LLM_REQUESTS:-10}
+      SWIZZLE_LOCAL_LLM_MAX_TOKENS: ${SWIZZLE_LOCAL_LLM_MAX_TOKENS:-512}
+    networks:
+      outbound:
+      runner-control:
+        aliases: [local-llm-control]
+      runner-egress:
+        aliases: [local-llm-inference]
+    pids_limit: 128
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD", "node", "-e", "const n=require('net').connect(8080,'local-llm-inference',()=>{n.end();});n.on('error',()=>process.exit(1));"]
+      interval: 10s
+      timeout: 5s
+      retries: 5

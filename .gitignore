@@ -1,0 +1,29 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+.turbo/
+
+# env — never commit secrets, local state only
+.env
+.env.local
+.env.*.local
+.env.draft
+.env.lock
+
+# runtime artifacts
+.swizzle/artifacts/
+.swizzle/automation-home/
+**/.swizzle/artifacts/
+**/.swizzle/automation-home/
+__pycache__/
+
+# misc
+.DS_Store
+*.log
+
+# Forgemate worker notes stay out of the repository
+/NOTES.md

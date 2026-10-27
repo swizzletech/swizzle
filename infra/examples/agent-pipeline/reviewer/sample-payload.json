@@ -1,0 +1,15 @@
+{
+  "repoUrl": "https://example.invalid/acme/service.git",
+  "baseBranch": "main",
+  "specRef": "docs/specs/healthcheck.md",
+  "options": {
+    "reviewProfile": "standard",
+    "runE2e": true
+  },
+  "branch": "agent/work-a11ec5a33413",
+  "sha": "1e00a859c8622ef15c86a6a8d6e69059d84e406e612736bc3036aec310c1f654",
+  "summary": {
+    "filesChanged": ["src/feature.ts", "src/routes.ts", "tests/feature.test.ts"],
+    "notes": ["Synthetic build generated from docs/specs/healthcheck.md"]
+  }
+}

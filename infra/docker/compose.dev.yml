@@ -1,0 +1,22 @@
+# Postgres and Valkey for one worktree's dev stack, from databases.yml. scripts/dev-stack.mts
+# runs this file as a compose project of its own per worktree and mode (`just dev`,
+# `just dev-fresh`), so the file names no container and no host port: Docker assigns a free
+# loopback port, and the script reads it back.
+services:
+  postgres:
+    extends: { file: databases.yml, service: postgres }
+    ports: ["127.0.0.1::5432"]
+    healthcheck:
+      interval: 1s
+      retries: 30
+
+  valkey:
+    extends: { file: databases.yml, service: valkey }
+    ports: ["127.0.0.1::6379"]
+    healthcheck:
+      interval: 1s
+      retries: 30
+
+volumes:
+  postgres-data:
+  valkey-data:

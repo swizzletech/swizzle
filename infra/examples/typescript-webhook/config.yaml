@@ -1,0 +1,21 @@
+name: typescript-webhook
+version: 1.0.0
+description: Normalize partner webhook payloads in TypeScript using the helper SDK
+entrypoint: main.ts
+trigger:
+  type: webhook
+  path: /typescript-webhook
+runtime:
+  language: typescript
+  execution_mode: host
+  profile: host-default
+  timeout: 30s
+  permissions:
+    network: true
+    writable_dirs: []
+  retry:
+    max_attempts: 3
+    backoff: exponential
+  requirements:
+    binaries: []
+secrets: []

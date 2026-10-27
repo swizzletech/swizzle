@@ -1,0 +1,7 @@
+/* The pipeline graph under an Overview row. */
+@layer components {
+  .pgraph {
+    padding: 4px 10px 10px;
+    background: var(--bg);
+  }
+}

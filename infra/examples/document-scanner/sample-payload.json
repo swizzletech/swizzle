@@ -1,0 +1,6 @@
+{
+  "document_id": "doc-1001",
+  "mime_type": "text/plain",
+  "content": "Invoice 4821 for ACME GmbH. Amount due by Friday. Please send the billing summary to finance@example.com.",
+  "received_at": "2026-04-14T09:00:00Z"
+}
