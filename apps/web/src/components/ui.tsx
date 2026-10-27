@@ -156,22 +156,6 @@ export function useNow(intervalMs = 30_000): Date {
   return now;
 }
 
-/** The brand mark: three arcs around the bottom-right corner, from the landing page's swirl. */
-export function Mark(props: { readonly className?: string }) {
-  return (
-    <svg
-      aria-hidden="true"
-      className={`mark ${props.className ?? ""}`}
-      fill="none"
-      viewBox="0 0 24 24"
-    >
-      <path className="a1" d="M24 24A20 20 0 0 1 4 4" strokeWidth="4.2" />
-      <path className="a2" d="M24 24A13 13 0 0 1 11 11" strokeWidth="4.2" />
-      <path className="a1" d="M24 24A6 6 0 0 1 18 18" strokeWidth="4.2" />
-    </svg>
-  );
-}
-
 /** Text whose `backticked` parts are commands, set in mono. */
 export function WithCode(props: { readonly text: string }) {
   return props.text.split("`").map((part, index) =>

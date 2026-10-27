@@ -1,4 +1,8 @@
-flowchart TD
-  A[Webhook document payload] --> B[Parse text]
-  B --> C[Detect topics]
-  C --> D[Return structured scan result]
+flowchart LR
+  trigger([Document webhook]) --> parse[Parse text]
+  parse --> classify[Detect topics]
+  classify --> extract[Extract fields]
+  extract --> known{Topic found?}
+  known -->|yes| route[Route to a team]
+  known -->|no| review[Ask for review]
+  review --> route

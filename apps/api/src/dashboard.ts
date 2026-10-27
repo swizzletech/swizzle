@@ -40,8 +40,10 @@ import {
   servesProject,
 } from "@swizzle/runtime";
 import type {
+  CronNextRun,
   JudgedAutomationDetail,
   JudgedAutomationSummary,
+  JudgedTriggerSummary,
 } from "@swizzle/runtime/http-contract";
 import type {
   PlatformMaintenanceRunRecord,
@@ -153,19 +155,25 @@ export function createDashboardDataProvider(
     deploymentId === undefined
       ? detail.activeDeployment
       : detail.deploymentHistory.find((entry) => entry.deploymentId === deploymentId);
-  const readinessContext = async (environment: string): Promise<ReadinessContext> => {
+  const liveSchedulerEnvironments = async (): Promise<ReadonlySet<string>> => {
     const observedAt = new Date();
-    const [workers, grants, schedulers] = await Promise.all([
+    const schedulers = await dashboardStore.listServiceHeartbeats(null, "scheduler");
+    return new Set(
+      schedulers
+        .filter((heartbeat) => isAlive(heartbeat, observedAt, heartbeatTtlMs))
+        .map((heartbeat) => heartbeat.environment),
+    );
+  };
+  const readinessContext = async (environment: string): Promise<ReadinessContext> => {
+    const [workers, grants, schedulerEnvironments] = await Promise.all([
       listRegisteredReadinessWorkers(options.workerRegistry, environment),
       options.platform.listAutomationTimeoutGrants(environment),
-      dashboardStore.listServiceHeartbeats(environment, "scheduler"),
+      liveSchedulerEnvironments(),
     ]);
     return {
       environment,
       grants: new Map(grants.map((grant) => [grant.automationId, grant.maxTimeoutMs])),
-      schedulerServes: schedulers.some((heartbeat) =>
-        isAlive(heartbeat, observedAt, heartbeatTtlMs),
-      ),
+      schedulerEnvironments,
       workers,
     };
   };
@@ -321,7 +329,7 @@ export function createDashboardDataProvider(
 
     async getOverview(environment, scope, viewer) {
       const observedAt = new Date();
-      const schedulers = await dashboardStore.listServiceHeartbeats(null, "scheduler");
+      const schedulerEnvironments = await liveSchedulerEnvironments();
       const workers = await reachingWorkers(options.workerRegistry, environment);
       const dayAgo = new Date(observedAt.getTime() - DAY_MS);
       const [
@@ -402,10 +410,7 @@ export function createDashboardDataProvider(
           automations: editable,
           deliveries,
           environment,
-          schedulers: schedulers.map((heartbeat) => ({
-            alive: isAlive(heartbeat, observedAt, heartbeatTtlMs),
-            environment: heartbeat.environment,
-          })),
+          schedulerEnvironments,
           latestMaintenanceRun: maintenance,
           observedAt,
           queueCounts,
@@ -494,8 +499,8 @@ interface ReadinessContext {
   readonly environment: string;
   /** Each automation's timeout grant in ms, by automation id. */
   readonly grants: ReadonlyMap<string, number>;
-  /** Whether a live scheduler serves the environment, which a cron trigger needs to fire. */
-  readonly schedulerServes: boolean;
+  /** The environments a live scheduler serves. */
+  readonly schedulerEnvironments: ReadonlySet<string>;
   readonly workers: readonly RegisteredReadinessWorker[];
 }
 
@@ -541,10 +546,29 @@ export function withReadiness(
   return {
     ...automation,
     activeDeployment: { ...automation.activeDeployment, readiness },
-    trigger:
-      automation.trigger === null
-        ? null
-        : { ...automation.trigger, schedulerServes: context.schedulerServes },
+    trigger: judgeTrigger(automation.trigger, context.schedulerEnvironments),
+  };
+}
+
+function judgeTrigger(
+  trigger: DashboardAutomationSummary["trigger"],
+  schedulerEnvironments: ReadonlySet<string>,
+): JudgedTriggerSummary | null {
+  if (trigger === null) return null;
+  const { nextRunAt, triggerType, ...summary } = trigger;
+  if (triggerType !== "cron") return { ...summary, triggerType };
+  let nextRun: CronNextRun;
+  if (!schedulerEnvironments.has(trigger.environment)) {
+    nextRun = { kind: "unserved", environment: trigger.environment };
+  } else if (nextRunAt === null) {
+    nextRun = null;
+  } else {
+    nextRun = { kind: "at", at: nextRunAt };
+  }
+  return {
+    ...summary,
+    triggerType,
+    nextRun,
   };
 }
 

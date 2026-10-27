@@ -179,20 +179,33 @@ describe("withReadiness", () => {
   const context = (grants: Record<string, number> = {}) => ({
     environment: "staging",
     grants: new Map(Object.entries(grants)),
-    schedulerServes: true,
+    schedulerEnvironments: new Set(["staging"]),
     workers: [{ ...worker, projectIds: ["project-a"] }],
   });
 
-  it("says on the trigger whether a live scheduler serves its environment", () => {
-    const cron = deployed("  language: node", { trigger: { triggerType: "cron" } });
+  it("judges cron next runs and omits scheduler state from webhook triggers", () => {
+    const at = "2026-04-18T22:05:00.000Z";
+    const cron = deployed("  language: node", {
+      trigger: { triggerType: "cron", environment: "staging", nextRunAt: at },
+    });
     expect(withReadiness(cron, context()).trigger).toEqual({
-      schedulerServes: true,
+      environment: "staging",
+      nextRun: { kind: "at", at },
       triggerType: "cron",
     });
-    expect(withReadiness(cron, { ...context(), schedulerServes: false }).trigger).toEqual({
-      schedulerServes: false,
-      triggerType: "cron",
-    });
+    expect(withReadiness(cron, { ...context(), schedulerEnvironments: new Set() }).trigger).toEqual(
+      {
+        environment: "staging",
+        nextRun: { kind: "unserved", environment: "staging" },
+        triggerType: "cron",
+      },
+    );
+    expect(
+      withReadiness(
+        deployed("  language: node", { trigger: { triggerType: "webhook", nextRunAt: null } }),
+        context(),
+      ).trigger,
+    ).toEqual({ triggerType: "webhook" });
     expect(withReadiness(deployed("  language: node"), context()).trigger).toBeNull();
   });
 

@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 /* The dashboard's tokens and components. A neutral software surface: zinc greys in light, near
-   black in dark, hairlines instead of fills, one brand accent (coral) for the mark, counts, focus
-   and the selected row, and status colours only where a state needs them. Light and dark follow
+   black in dark, hairlines instead of fills, one brand accent (coral) for counts, focus and the
+   selected row, and status colours only where a state needs them. Light and dark follow
    the operating system; components use only the semantic roles below. Classes that one component
    alone draws, such as the track or the Play, live in a stylesheet beside that component, which
    imports it; main.tsx imports this file first. */
@@ -41,10 +41,9 @@
 
 :root {
   color-scheme: light dark;
-  /* The brand, kept from the landing page: the mark's two arcs. Coral marks; it never fills an
-     area behind text. */
+  /* The brand accent, kept from the landing page. Coral marks; it never fills an area behind
+     text. */
   --coral: #ff8b61;
-  --peach: #ffd8bd;
 
   /* Light: a near-white canvas, white cards, zinc lines and text */
   --bg: #fcfcfc;
@@ -221,27 +220,24 @@
     font-size: 0.88em;
   }
 
-  /* ---------- brand: the swirl mark and the name; the dashboard's one link to the landing page */
+  /* ---------- brand: the logo from logo.tsx, in the sidebar and above the sign-in screens */
   .brand {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
-    color: var(--ink);
-    font-weight: 600;
-    font-size: 15px;
-    letter-spacing: -0.01em;
     text-decoration: none;
   }
-  .brand .mark {
-    width: 20px;
-    height: 20px;
+  .logo {
+    height: 28px;
+    width: auto;
     flex: none;
   }
-  .mark .a1 {
-    stroke: var(--coral);
+  .logo-edge {
+    display: none;
   }
-  .mark .a2 {
-    stroke: var(--peach);
+  @media (prefers-color-scheme: dark) {
+    .logo-edge {
+      display: inline;
+    }
   }
 
   /* ---------- icons: drawn at 24, shown at 16 (14 in dense rows), stroked in currentColor ---------- */

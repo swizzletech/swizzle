@@ -9,7 +9,7 @@ import { useState } from "react";
 
 import { ActionError } from "../components/actions";
 import { Chip, ErrorNote, Skeleton, useNow } from "../components/ui";
-import type { CredentialRef, ListedCredentialShare, Project } from "../lib/api";
+import type { CredentialRef, CredentialShare, Project } from "../lib/api";
 import { useDashboardClient } from "../lib/dashboard-client";
 import { refreshAll, useProjects } from "../lib/queries";
 import { credentialShareInWords } from "../lib/words/credentials";
@@ -59,13 +59,11 @@ function Offered({ project }: { readonly project: Project }) {
     queryKey: ["credential-shares", project.slug, authRevision],
   });
   const accept = useMutation({
-    mutationFn: (share: ListedCredentialShare) =>
-      api.acceptCredentialShare(project.slug, share.shareId),
+    mutationFn: (share: CredentialShare) => api.acceptCredentialShare(project.slug, share.shareId),
     onSettled: () => refreshAll(queryClient),
   });
   const decline = useMutation({
-    mutationFn: (share: ListedCredentialShare) =>
-      api.declineCredentialShare(project.slug, share.shareId),
+    mutationFn: (share: CredentialShare) => api.declineCredentialShare(project.slug, share.shareId),
     onSettled: () => refreshAll(queryClient),
   });
   if (shares.isError) {
@@ -176,7 +174,7 @@ function Shared({ project }: { readonly project: Project }) {
 function SharedCredentialRow(props: {
   readonly credential: CredentialRef;
   readonly project: Project;
-  readonly shares: readonly ListedCredentialShare[];
+  readonly shares: readonly CredentialShare[];
 }) {
   const { credential, project, shares } = props;
   const { api } = useDashboardClient();
@@ -192,12 +190,12 @@ function SharedCredentialRow(props: {
     },
   });
   const withdraw = useMutation({
-    mutationFn: (share: ListedCredentialShare) =>
-      api.withdrawCredentialShare(credential, share.projectId),
+    mutationFn: (share: CredentialShare) =>
+      api.withdrawCredentialShare(credential, share.project.id),
     onSettled: () => refreshAll(queryClient),
   });
   const offerable = others.filter(
-    (candidate) => !shares.some((share) => share.projectId === candidate.id),
+    (candidate) => !shares.some((share) => share.project.id === candidate.id),
   );
   const failed = offer.error ?? withdraw.error;
   return (

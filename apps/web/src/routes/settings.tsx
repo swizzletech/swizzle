@@ -5,7 +5,7 @@
 // routes/settings/ that draws its own frame with its anchor; SECTIONS lists them once for the nav
 // beside them, which marks the one on screen, and for the page.
 
-import { useIsFetching, useQueryClient } from "@tanstack/react-query";
+import { type Query, useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { Fragment, type ReactNode, useEffect, useRef, useState } from "react";
 
 import type { AuthStatusResponse } from "../lib/api";
@@ -16,7 +16,7 @@ import { AgentAccess } from "./settings/agent-access";
 import { Instance } from "./settings/instance";
 import { Notifications } from "./settings/notifications";
 import { People } from "./settings/people";
-import { Section } from "./settings/section";
+import { SECTION_DATA, Section } from "./settings/section";
 import { Teams } from "./settings/teams";
 import { TwoFactor } from "./settings/two-factor";
 import { Workers } from "./settings/workers";
@@ -93,6 +93,16 @@ const SECTIONS: readonly {
   },
 ];
 
+// The keys that scroll the page, unless the focused control takes them: a field takes them all, a
+// button or summary takes Space to press or open itself.
+const SCROLL_KEYS = new Set([" ", "ArrowDown", "ArrowUp", "End", "Home", "PageDown", "PageUp"]);
+const FIELD = "input, select, textarea, [contenteditable]";
+const TAKES_SPACE = `${FIELD}, button, summary`;
+
+// The sections' own queries, and the shared project list People, Workers and Agent access list.
+const isSectionData = (query: Query) =>
+  query.meta?.sectionData === SECTION_DATA.sectionData || query.queryKey[0] === "projects";
+
 export function SettingsPage() {
   const { queryScope } = useDashboardClient();
   const status = useAuthStatus();
@@ -146,11 +156,13 @@ export function SettingsPage() {
  * last one. A section the address names wins until the reader scrolls, because a short section near
  * the end can never reach the upper third.
  *
- * The sections fetch their own data and grow when it arrives, so the page jumps to the named one
- * once nothing is loading, and only then: no section above it changes height after the jump, and
- * any later scroll away from where it left the page is the reader's. Before the jump the page has
- * not moved, so a scroll is the reader's too; one that leaves the named section off screen goes
- * elsewhere and cancels the jump.
+ * The sections fetch their own data (queries marked `SECTION_DATA`) and grow when it arrives, so
+ * the page jumps to the named one once none of that is loading, whatever else the app fetches, and
+ * only then: no section above it changes height after the jump. Only the reader's wheel, touch,
+ * scroll keys or scrollbar end the named section's win, and one before the jump also cancels the
+ * jump. The page moves without the reader too, as when a window resized at the end of the page
+ * lowers the bottom. The scroll position cannot tell that from the reader's scroll, so the hook
+ * reads their input instead.
  */
 function useSectionOnScreen(ids: readonly string[]): {
   readonly onScreen: string | undefined;
@@ -158,7 +170,7 @@ function useSectionOnScreen(ids: readonly string[]): {
 } {
   const queryClient = useQueryClient();
   // Renders in the same batch as the data a section's query brings.
-  const fetching = useIsFetching();
+  const fetching = useIsFetching({ predicate: isSectionData });
   const [onScreen, setOnScreen] = useState<string>();
   const page = useRef<{ jumpTo(id: string): void; loaded(): void } | undefined>(undefined);
   const key = ids.join(" ");
@@ -169,15 +181,8 @@ function useSectionOnScreen(ids: readonly string[]): {
       .filter((section) => section !== null);
     if (sections.length === 0) return;
     let named: HTMLElement | undefined;
-    // Where the last jump left the page; undefined until the sections have loaded.
-    let jumpedTo: number | undefined;
-    const opened = window.scrollY;
+    let loaded = false;
     const mark = () => {
-      if (jumpedTo !== undefined && Math.abs(window.scrollY - jumpedTo) >= 1) named = undefined;
-      if (jumpedTo === undefined && named !== undefined && Math.abs(window.scrollY - opened) >= 1) {
-        const { bottom, top } = named.getBoundingClientRect();
-        if (bottom <= 0 || top >= window.innerHeight) named = undefined;
-      }
       const line = window.innerHeight / 3;
       const atBottom =
         window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 1;
@@ -189,33 +194,53 @@ function useSectionOnScreen(ids: readonly string[]): {
     };
     const jump = () => {
       named?.scrollIntoView();
-      jumpedTo = window.scrollY;
       mark();
     };
     const name = (hash: string) => {
       named = sections.find((section) => `#${section.id}` === hash);
-      if (jumpedTo === undefined) mark();
-      else jump();
+      if (loaded) jump();
+      else mark();
     };
     const navigated = () => name(window.location.hash);
+    const readerScrolls = () => {
+      named = undefined;
+    };
+    const readerKeys = (event: KeyboardEvent) => {
+      const { key, target } = event;
+      const control = key === " " ? TAKES_SPACE : FIELD;
+      if (SCROLL_KEYS.has(key) && !(target instanceof Element && target.closest(control)))
+        readerScrolls();
+    };
+    // A press on the page's own scrollbar lands on the root element.
+    const readerDrags = (event: PointerEvent) => {
+      if (event.target === document.documentElement) readerScrolls();
+    };
     page.current = {
       jumpTo: (id) => name(`#${id}`),
       loaded: () => {
-        if (jumpedTo === undefined) jump();
+        if (loaded) return;
+        loaded = true;
+        jump();
       },
     };
     navigated();
-    window.addEventListener("scroll", mark, { passive: true });
-    window.addEventListener("hashchange", navigated);
+    const listening = new AbortController();
+    const { signal } = listening;
+    window.addEventListener("scroll", mark, { passive: true, signal });
+    window.addEventListener("hashchange", navigated, { signal });
+    window.addEventListener("wheel", readerScrolls, { passive: true, signal });
+    window.addEventListener("touchmove", readerScrolls, { passive: true, signal });
+    window.addEventListener("keydown", readerKeys, { signal });
+    window.addEventListener("pointerdown", readerDrags, { signal });
     return () => {
       page.current = undefined;
-      window.removeEventListener("scroll", mark);
-      window.removeEventListener("hashchange", navigated);
+      listening.abort();
     };
   }, [key]);
   useEffect(() => {
     // On the first render no section has started its fetch yet; this effect runs after theirs.
-    if (fetching === 0 && queryClient.isFetching() === 0) page.current?.loaded();
+    if (fetching === 0 && queryClient.isFetching({ predicate: isSectionData }) === 0)
+      page.current?.loaded();
   }, [fetching, queryClient]);
   return { jumpTo: (id) => page.current?.jumpTo(id), onScreen };
 }

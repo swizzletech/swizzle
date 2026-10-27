@@ -1,6 +1,6 @@
 name: document-scanner
 version: 1.0.0
-description: Extract structured metadata from incoming document text
+description: Read incoming document text, find its topics, amounts, dates and emails, and ask a person when no topic matches
 entrypoint: main.py
 trigger:
   type: webhook

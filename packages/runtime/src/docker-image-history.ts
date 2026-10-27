@@ -4,6 +4,7 @@ import { StringDecoder } from "node:string_decoder";
 import { z } from "zod";
 import { BoundedOutput } from "./bounded-output.js";
 import type { DockerScope } from "./docker-cli.js";
+import { AutomationRuntimeError } from "./errors.js";
 
 const descriptor = z.object({ digest: z.string().regex(/^sha256:[a-f0-9]{64}$/u) });
 const metadata = z.union([
@@ -16,19 +17,23 @@ const metadata = z.union([
 ]);
 type Metadata = z.infer<typeof metadata>;
 
+type ImageHistoryRead =
+  | { readonly state: "read"; readonly histories: ReadonlyMap<string, readonly boolean[]> }
+  | { readonly state: "unreadable" };
+
 /**
  * Reads available config entries from one export; missing configs are absent from the map.
- * Layers pass through without writing to disk. Export and archive errors reject the whole read.
+ * Layers pass through without writing to disk. A transfer timeout or invalid archive leaves
+ * the batch unmeasured. Caller cancellation and other Docker failures reject the read.
  */
 export async function readImageLayerHistory(
   images: readonly { readonly id: string; readonly layers: readonly string[] }[],
   owner: DockerScope,
-): Promise<ReadonlyMap<string, readonly boolean[]>> {
+): Promise<ImageHistoryRead> {
   const { Parser } = await import("tar");
   const records = new Map<string, Metadata>();
   const histories = new Map<string, readonly boolean[]>();
-  let failure: { readonly error: unknown } | undefined;
-  const complete = new Error("Image config entries read.");
+  let unreadable = false;
   const parser = new Parser({
     strict: true,
     onReadEntry: (entry) => {
@@ -60,24 +65,28 @@ export async function readImageLayerHistory(
       });
     },
   });
-  parser.on("error", (error) => {
-    failure = { error };
+  parser.on("error", () => {
+    unreadable = true;
   });
   try {
     await owner.run(["image", "save", ...images.map((image) => image.id)], {
+      deadline: "transfer",
       outputLimitBytes: 4096,
       onStdoutBytes: (chunk) => {
-        if (failure !== undefined) throw failure.error;
         parser.write(chunk);
-        if (histories.size === images.length) throw complete;
+        if (unreadable || histories.size === images.length) return "stop";
+        return undefined;
       },
     });
-    parser.end();
+    if (histories.size !== images.length) parser.end();
   } catch (error) {
-    if (error !== complete) throw error;
+    if (owner.signal.aborted) throw error;
+    if (!(error instanceof AutomationRuntimeError && error.code === "DOCKER_TRANSFER_TIMEOUT"))
+      throw error;
+    unreadable = true;
   }
-  if (failure !== undefined) throw failure.error;
-  return histories;
+  owner.signal.throwIfAborted();
+  return unreadable ? { state: "unreadable" } : { state: "read", histories };
 }
 
 /** Classic IDs name configs; containerd IDs can name manifests or multi-platform indexes. */

@@ -95,12 +95,22 @@ export function unservedProjectMessage(input: {
   return `No live worker served project "${input.project.name}" in ${input.environment} for group "${input.profile}" within ${input.within}. An owner or admin grants a worker under Settings > Workers, or with swizzle worker create <name> --project ${input.project.id} --environment ${input.environment} --groups ${input.profile}.`;
 }
 
-/**
- * The warning for a worker whose active run images pass its disk budget (see
- * `runImageDiskOverBudget`). Those images are always kept, so only the owner can bring the total
- * down.
- */
+/** The warning for active images whose measured bytes exceed the budget or whose usage is unknown. */
 export function runImageDiskWarning(worker: string, disk: RunImageDisk): WorkerWarning {
+  if (disk.unmeasuredActiveImages.length > 0 || disk.unmeasuredActiveImagesOmitted > 0) {
+    const images = [
+      ...disk.unmeasuredActiveImages.map(({ id, tags }) =>
+        tags.length === 0 ? id : `${id} (${tags.join(", ")})`,
+      ),
+      ...(disk.unmeasuredActiveImagesOmitted > 0
+        ? [`${disk.unmeasuredActiveImagesOmitted} more unmeasured active images`]
+        : []),
+    ].join(", ");
+    return {
+      title: `${worker} keeps unmeasured run images for active deployments: ${images}. Their disk usage is unknown. Swizzle keeps them so those deployments keep running.`,
+      todo: "Check this worker's Docker image history and prune logs, or remove the deployments that use these images.",
+    };
+  }
   return {
     title: `${worker} keeps ${bytesInWords(disk.activeBytes)} of run images for active deployments, more than its disk budget of ${bytesInWords(disk.budgetBytes)}. Swizzle keeps them so those deployments keep running.`,
     todo: "Remove deployments this worker runs, or raise SWIZZLE_RUNNER_IMAGE_DISK_MB on it and restart it.",

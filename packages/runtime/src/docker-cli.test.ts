@@ -10,7 +10,7 @@ import {
   removeLeftoverContainers,
   sandboxProcessLabel,
 } from "./docker-cli.js";
-import { pruneRunImages } from "./run-image.js";
+import { pruneRunImages } from "./run-image-prune.js";
 
 // f-431: a killed worker's sandboxes outlive it until their hold process ends, up to an hour.
 it("removes what a restarted or gone worker left, and keeps a live replica's", () => {
@@ -286,7 +286,9 @@ exec sleep 1000
 
   const transfer = new DockerScope({ timeoutMs: 10_000, containerName: null });
   try {
-    expect(await transfer.run(["commit"], { outputLimitBytes: 4096 })).toMatchObject({
+    expect(
+      await transfer.run(["commit"], { outputLimitBytes: 4096, deadline: "transfer" }),
+    ).toMatchObject({
       stdout: "sha256:committed\n",
     });
   } finally {

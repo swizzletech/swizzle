@@ -4,11 +4,15 @@ import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Chip, ErrorNote, Skeleton } from "../../components/ui";
 import { useDashboardClient } from "../../lib/dashboard-client";
-import { Section } from "./section";
+import { SECTION_DATA, Section } from "./section";
 
 export function Instance({ operator }: { readonly operator: boolean }) {
   const { api, environment, environments } = useDashboardClient();
-  const health = useQuery({ queryFn: () => api.getHealth(), queryKey: ["health"] });
+  const health = useQuery({
+    meta: SECTION_DATA,
+    queryFn: () => api.getHealth(),
+    queryKey: ["health"],
+  });
   return (
     <Section
       id="instance"
@@ -43,6 +47,7 @@ export function Instance({ operator }: { readonly operator: boolean }) {
 function PlatformState() {
   const { api, queryScope } = useDashboardClient();
   const operations = useQuery({
+    meta: SECTION_DATA,
     queryFn: () => api.getOperationsSummary(),
     queryKey: ["operations", ...queryScope],
     refetchInterval: 30_000,

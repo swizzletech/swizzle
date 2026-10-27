@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, type Route, test } from "@playwright/test";
 
 import { mockDashboardApi, seededState } from "./dashboard-mock";
 
@@ -15,8 +15,8 @@ const OWNER = {
   twoFactorEnabled: false,
 } as const;
 
-async function asOwner(page: Page) {
-  await mockDashboardApi(page, seededState());
+async function asOwner(page: Page, state = seededState()) {
+  await mockDashboardApi(page, state);
   await page.route(
     (url) => url.pathname === "/api/auth/status",
     (route) =>
@@ -87,6 +87,8 @@ test("the section nav marks the section on screen", async ({ page }) => {
   await page.goto("/settings#teams");
 
   const nav = page.getByRole("navigation", { name: "Settings" });
+  // The linked section is marked from the start; its heading on screen shows the jump happened.
+  await expect(page.locator("#teams h2")).toBeInViewport();
   await expect(nav.locator("[aria-current]")).toHaveText(["Teams"]);
 
   // Instance is the last section, so the reader scrolls to the end of the page to read it.
@@ -99,8 +101,31 @@ test("the section nav marks the section on screen", async ({ page }) => {
   await expect(nav.locator("[aria-current]")).toHaveText(["Workers"]);
 });
 
-/** Settings as an owner whose People list of 30 answers late, with scroll anchoring `auto` or `none`. */
-async function withPeopleLoadingLate(page: Page, anchoring: string) {
+/** Holds the answers to `pathname` until the returned function lets them through. */
+async function holdAnswers(
+  page: Page,
+  pathname: string,
+  answer = (route: Route) => route.fallback(),
+) {
+  let release = () => {};
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(
+    (url) => url.pathname === pathname,
+    async (route) => {
+      await released;
+      await answer(route);
+    },
+  );
+  return release;
+}
+
+/**
+ * Settings as an owner whose People list of 30 answers once the returned function lets it through,
+ * with scroll anchoring `auto` or `none`.
+ */
+async function withPeopleHeld(page: Page, anchoring: string) {
   await asOwner(page);
   const people = Array.from({ length: 30 }, (_, index) => ({
     ...OWNER,
@@ -108,18 +133,15 @@ async function withPeopleLoadingLate(page: Page, anchoring: string) {
     id: `person-${index}`,
     name: `Person ${index}`,
   }));
-  await page.route(
-    (url) => url.pathname === "/api/users",
-    async (route) => {
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
-      await route.fulfill({ json: { users: people } });
-    },
+  const release = await holdAnswers(page, "/api/users", (route) =>
+    route.fulfill({ json: { users: people } }),
   );
   await page.addInitScript((value) => {
     document.addEventListener("DOMContentLoaded", () => {
       document.documentElement.style.overflowAnchor = value;
     });
   }, anchoring);
+  return release;
 }
 
 // Safari keeps no scroll anchor, so a section that grows above the target pushes it away unless the
@@ -128,9 +150,11 @@ for (const anchoring of ["auto", "none"]) {
   test(`/settings#workers stays at Workers while People above it loads (scroll anchoring ${anchoring})`, async ({
     page,
   }) => {
-    await withPeopleLoadingLate(page, anchoring);
+    const answerPeople = await withPeopleHeld(page, anchoring);
     await page.goto("/settings#workers");
+    await expect(page.locator("#workers h2")).toBeAttached();
 
+    answerPeople();
     await expect(page.getByText("person-29@example.com")).toBeAttached();
     const nav = page.getByRole("navigation", { name: "Settings" });
     await expect(page.locator("#workers h2")).toBeInViewport();
@@ -141,7 +165,7 @@ for (const anchoring of ["auto", "none"]) {
 test("typing in the Workers form while People loads keeps the page at Workers", async ({
   page,
 }) => {
-  await withPeopleLoadingLate(page, "none");
+  const answerPeople = await withPeopleHeld(page, "none");
   await page.goto("/settings#workers");
 
   // A click and keys that scroll nothing are no scrolling away.
@@ -149,8 +173,8 @@ test("typing in the Workers form while People loads keeps the page at Workers", 
   await name.click();
   await page.keyboard.press("Shift+KeyG");
   await page.keyboard.type("pu-box");
-  await expect(page.getByText("person-29@example.com")).not.toBeAttached();
 
+  answerPeople();
   await expect(page.getByText("person-29@example.com")).toBeAttached();
   await expect(name).toBeInViewport();
   await expect(name).toHaveValue("Gpu-box");
@@ -158,27 +182,94 @@ test("typing in the Workers form while People loads keeps the page at Workers", 
   await expect(nav.locator("[aria-current]")).toHaveText(["Workers"]);
 });
 
+test("Space on a focused control while People loads keeps the jump to Workers", async ({
+  page,
+}) => {
+  const answerPeople = await withPeopleHeld(page, "none");
+  await page.goto("/settings#workers");
+
+  // Space opens a summary, or presses a button, and scrolls nothing.
+  const history = page.locator("summary", { hasText: "Delivery history" });
+  await history.focus();
+  await page.keyboard.press("Space");
+  await expect(page.locator("details", { has: history })).toHaveAttribute("open");
+
+  answerPeople();
+  await expect(page.getByText("person-29@example.com")).toBeAttached();
+  await expect(page.locator("#workers h2")).toBeInViewport();
+  const nav = page.getByRole("navigation", { name: "Settings" });
+  await expect(nav.locator("[aria-current]")).toHaveText(["Workers"]);
+});
+
 test("scrolling elsewhere while the sections load cancels the jump to the linked one", async ({
   page,
 }) => {
-  await withPeopleLoadingLate(page, "auto");
+  const answerPeople = await withPeopleHeld(page, "auto");
   await page.goto("/settings#workers");
   const nav = page.getByRole("navigation", { name: "Settings" });
   await expect(nav.locator("[aria-current]")).toHaveText(["Workers"]);
 
   await page.mouse.move(640, 400);
   await page.mouse.wheel(0, 400);
-  await expect(page.getByText("person-29@example.com")).not.toBeAttached();
+  // The wheel moved the page before People answered.
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
 
+  answerPeople();
   await expect(page.getByText("person-29@example.com")).toBeAttached();
   await expect(page.locator("#workers h2")).not.toBeInViewport();
   await expect(nav.locator("[aria-current]")).toHaveText(["Notifications"]);
+});
+
+test("/settings#workers scrolls to Workers while an unrelated query is still in flight", async ({
+  page,
+}) => {
+  await asOwner(page);
+  // The sidebar's Overview count has nothing to do with the sections' data, and never answers.
+  await holdAnswers(page, "/api/dashboard/overview");
+  await page.goto("/settings#workers");
+
+  await expect(page.locator("#workers h2")).toBeInViewport();
+  const nav = page.getByRole("navigation", { name: "Settings" });
+  await expect(nav.locator("[aria-current]")).toHaveText(["Workers"]);
+});
+
+test("/settings#workers stays at Workers while the project list answers late (scroll anchoring none)", async ({
+  page,
+}) => {
+  const state = seededState();
+  state.projects = state.projects.flatMap((project) =>
+    Array.from({ length: 8 }, (_, index) => ({
+      ...project,
+      id: `project-${index}`,
+      name: `Project ${index}`,
+    })),
+  );
+  await asOwner(page, state);
+  await page.addInitScript(() => {
+    document.addEventListener("DOMContentLoaded", () => {
+      document.documentElement.style.overflowAnchor = "none";
+    });
+  });
+  const answerProjects = await holdAnswers(page, "/api/projects");
+  await page.goto("/settings#workers");
+  await expect(page.getByText("owner@example.com").first()).toBeAttached();
+
+  answerProjects();
+  // People's invitation form lists the projects above Workers once they arrive.
+  await expect(page.getByLabel("Project 7").first()).toBeAttached();
+  // The jump left Workers at the top of the page; it is still there.
+  await expect
+    .poll(async () => (await page.locator("#workers h2").boundingBox())?.y ?? 9_999)
+    .toBeLessThan(150);
+  const nav = page.getByRole("navigation", { name: "Settings" });
+  await expect(nav.locator("[aria-current]")).toHaveText(["Workers"]);
 });
 
 test("a click on the section the address already names marks it again", async ({ page }) => {
   await asOwner(page);
   await page.goto("/settings#workers");
   const nav = page.getByRole("navigation", { name: "Settings" });
+  await expect(page.locator("#workers h2")).toBeInViewport();
   await expect(nav.locator("[aria-current]")).toHaveText(["Workers"]);
 
   await page.mouse.move(640, 400);
@@ -187,6 +278,44 @@ test("a click on the section the address already names marks it again", async ({
 
   // The address stays #workers, so no hashchange follows this click.
   await nav.getByRole("link", { name: "Workers" }).click();
+  await expect(nav.locator("[aria-current]")).toHaveText(["Workers"]);
+});
+
+test("a reader who scrolls with the keyboard leaves the linked section", async ({ page }) => {
+  await asOwner(page);
+  await page.goto("/settings#workers");
+  const nav = page.getByRole("navigation", { name: "Settings" });
+  await expect(page.locator("#workers h2")).toBeInViewport();
+  await expect(nav.locator("[aria-current]")).toHaveText(["Workers"]);
+
+  await page.keyboard.press("Home");
+  await expect(nav.locator("[aria-current]")).toHaveText(["Agent access"]);
+});
+
+test("/settings#workers stays marked when the page moves without the reader", async ({ page }) => {
+  await asOwner(page);
+  await page.goto("/settings#workers");
+  const nav = page.getByRole("navigation", { name: "Settings" });
+  await expect(page.locator("#workers h2")).toBeInViewport();
+  await expect(nav.locator("[aria-current]")).toHaveText(["Workers"]);
+  const scrollY = () => page.evaluate(() => window.scrollY);
+  const belowBottom = () =>
+    page.evaluate(
+      () => document.documentElement.scrollHeight - window.innerHeight - window.scrollY,
+    );
+  // Workers sits near the end, so the jump stopped at the bottom of the page.
+  await expect.poll(belowBottom).toBe(0);
+  const jumpedTo = await scrollY();
+
+  // A taller window lowers the bottom, and the page follows it up without a scroll by the reader.
+  await page.setViewportSize({ width: 1280, height: 820 });
+  await expect.poll(scrollY).toBeLessThan(jumpedTo);
+  await expect.poll(belowBottom).toBe(0);
+  // The scroll event that move fires runs before the frame after next draws.
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+  await expect(page.locator("#workers h2")).toBeInViewport();
   await expect(nav.locator("[aria-current]")).toHaveText(["Workers"]);
 });
 

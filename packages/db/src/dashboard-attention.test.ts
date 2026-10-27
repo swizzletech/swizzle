@@ -22,7 +22,7 @@ describe("buildAttention", () => {
     approvals: [],
     deliveries: [],
     environment: "local",
-    schedulers: [{ alive: true, environment: "local" }],
+    schedulerEnvironments: new Set(["local"]),
     latestMaintenanceRun: MAINTENANCE_OK,
     observedAt: new Date(NOW),
     queueCounts: EMPTY_QUEUE,
@@ -70,7 +70,7 @@ describe("buildAttention", () => {
       buildAttention({
         ...base,
         automations: [],
-        schedulers: [],
+        schedulerEnvironments: new Set(),
         latestMaintenanceRun: null,
         workers: [],
       }),
@@ -307,10 +307,7 @@ describe("buildAttention", () => {
       ...base,
       automations: [automation("probe")],
       environment: "production",
-      schedulers: [
-        { alive: true, environment: "staging" },
-        { alive: false, environment: "production" },
-      ],
+      schedulerEnvironments: new Set(["staging"]),
     });
 
     expect(items).toEqual([
@@ -332,7 +329,12 @@ describe("buildAttention", () => {
   });
 
   it("lists each worker whose active run images pass its disk budget", () => {
-    const disk = { activeBytes: 3 * 1024 * 1_048_576, budgetBytes: 1024 * 1_048_576 };
+    const disk = {
+      activeBytes: 3 * 1024 * 1_048_576,
+      unmeasuredActiveImagesOmitted: 0,
+      unmeasuredActiveImages: [],
+      budgetBytes: 1024 * 1_048_576,
+    };
     const items = buildAttention({
       ...base,
       automations: [automation("probe")],

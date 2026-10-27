@@ -183,7 +183,7 @@ export function registerCredentialRoutes(
       const credential = await managed(request);
       const target = await sharedTo(request, credential);
       const [access] = await platform.credentials.credentialAccess([credential]);
-      const share = access?.shares.find((candidate) => candidate.projectId === target);
+      const share = access?.shares.find((candidate) => candidate.project.id === target);
       if (
         share === undefined ||
         !(await platform.credentials.removeCredentialShare(share.shareId))

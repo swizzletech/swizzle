@@ -112,7 +112,12 @@ export async function verifyRunImages(client: DatabaseClient): Promise<void> {
     assert.deepEqual(await keep(a), [tagA], "a stale heartbeat keeps the worker's active images");
     console.log("Run images: a worker whose heartbeat is an hour old keeps its active images.");
 
-    const disk = { activeBytes: 3 * 1_048_576, budgetBytes: 1_048_576 };
+    const disk = {
+      activeBytes: 3 * 1_048_576,
+      unmeasuredActiveImagesOmitted: 0,
+      unmeasuredActiveImages: [],
+      budgetBytes: 1_048_576,
+    };
     await call(a, "runtime", { capabilities, services: {}, runImageDisk: disk });
     const listed = await registry.list();
     assert.deepEqual(

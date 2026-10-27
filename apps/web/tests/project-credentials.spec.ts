@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import type { ListedCredentialShare, Project, SharedCredential } from "../src/lib/api";
+import type { CredentialShare, Project, SharedCredential } from "../src/lib/api";
 import { mockDashboardApi, PROJECT_ID, seededState } from "./dashboard-mock";
 
 // A project's Credentials tab: its admin accepts a credential another project offers it, and offers
@@ -26,7 +26,7 @@ function share(input: {
   readonly name: string;
   readonly from: Project;
   readonly to: Project;
-}): ListedCredentialShare {
+}): CredentialShare {
   return {
     acceptedAt: null,
     acceptedBy: null,
@@ -36,11 +36,9 @@ function share(input: {
       id: `secret-${input.name}`,
       kind: "secret",
       name: input.name,
-      projectId: input.from.id,
     },
     credentialProject: { id: input.from.id, name: input.from.name, slug: input.from.slug },
     offeredBy: "user-olga",
-    projectId: input.to.id,
     project: { id: input.to.id, name: input.to.name, slug: input.to.slug },
     shareId: input.id,
   };
@@ -55,7 +53,9 @@ test("a project admin accepts an offer, offers a credential and withdraws it", a
 
   let offered = share({ from: FINANCE, id: "share-in", name: "LEDGER_KEY", to: DEFAULT });
   const outgoing = share({ from: DEFAULT, id: "share-out", name: "CRM_TOKEN", to: FINANCE });
-  const shared: SharedCredential[] = [{ credential: outgoing.credential, shares: [outgoing] }];
+  const shared: SharedCredential[] = [
+    { credential: { ...outgoing.credential, projectId: DEFAULT.id }, shares: [outgoing] },
+  ];
   // Each change the page sends: method, path, and the credential's project.
   const sent: (string | null)[][] = [];
   await page.route(

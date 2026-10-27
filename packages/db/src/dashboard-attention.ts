@@ -28,8 +28,8 @@ export interface BuildAttentionInput {
   readonly deliveries: readonly StoredNotificationDelivery[];
   /** The environment the Overview shows. */
   readonly environment: string;
-  /** The scheduler heartbeats of every environment, since a scheduler serves only its own. */
-  readonly schedulers: readonly { readonly alive: boolean; readonly environment: string }[];
+  /** The environments a live scheduler serves, judged by the API. */
+  readonly schedulerEnvironments: ReadonlySet<string>;
   /** The environment's queued runs with their placement against `workers`. */
   readonly queued: readonly (DashboardQueuedRuns & { readonly placement: RunPlacement })[];
   readonly latestMaintenanceRun: StoredMaintenanceRun | null;
@@ -179,7 +179,7 @@ export function buildAttention(input: BuildAttentionInput): readonly DashboardAt
       problem: { code: "queue-backlog", waitingJobs: input.queueCounts.waiting },
     });
   }
-  const served = new Set(input.schedulers.filter((s) => s.alive).map((s) => s.environment));
+  const served = input.schedulerEnvironments;
   if (!served.has(input.environment)) {
     items.push({
       kind: "platform",

@@ -149,7 +149,7 @@ services:
       SWIZZLE_LOCAL_WORKER_TOKEN: ${SWIZZLE_LOCAL_WORKER_TOKEN:?Run just init-env to provision the local worker token}
       SWIZZLE_LOCAL_WORKER_API_HOST: local-worker-api
       SWIZZLE_LOCAL_WORKER_API_PORT: 19821
-      SWIZZLE_LOCAL_WORKER_CAPACITY: ${WORKER_CONCURRENCY:-}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-}
       SWIZZLE_LINK_URL: ${SWIZZLE_LINK_URL:-${SWIZZLE_LINK_ORIGIN:-http://links.localhost:${SWIZZLE_HTTP_PORT:-19826}}}
       SWIZZLE_SETUP_TOKEN: ${SWIZZLE_SETUP_TOKEN:?Set a unique one-time owner setup token of at least 32 bytes}
       SWIZZLE_PLATFORM_VERSION: ${SWIZZLE_IMAGE_TAG:-dev}

@@ -92,7 +92,7 @@ async function main() {
         ? null
         : await provisionLocalWorker({
             token: localToken,
-            capacity: readWorkerConcurrency(process.env.SWIZZLE_LOCAL_WORKER_CAPACITY),
+            capacity: readWorkerConcurrency(process.env.WORKER_CONCURRENCY),
           });
     const dashboardStore = createDashboardStore();
     const platform = await createPlatformServices({ dashboardStore });

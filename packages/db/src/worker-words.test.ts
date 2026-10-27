@@ -5,6 +5,8 @@ describe("runImageDiskWarning", () => {
   it("names the worker, the total, the budget and the fix", () => {
     const { title, todo } = runImageDiskWarning("gpu-home", {
       activeBytes: 3.25 * 1024 * 1_048_576,
+      unmeasuredActiveImagesOmitted: 0,
+      unmeasuredActiveImages: [],
       budgetBytes: 1024 * 1_048_576,
     });
     expect(`${title} ${todo}`).toBe(

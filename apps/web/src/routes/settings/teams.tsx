@@ -9,13 +9,22 @@ import { accessChanged } from "../../components/share-form";
 import { ErrorNote, Skeleton } from "../../components/ui";
 import type { Person, Team } from "../../lib/api";
 import { useDashboardClient } from "../../lib/dashboard-client";
+import { SECTION_DATA } from "./section";
 
 export function Teams() {
   const { api, authRevision } = useDashboardClient();
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
-  const teams = useQuery({ queryFn: () => api.listTeams(), queryKey: ["teams", authRevision] });
-  const people = useQuery({ queryFn: () => api.listPeople(), queryKey: ["people", authRevision] });
+  const teams = useQuery({
+    meta: SECTION_DATA,
+    queryFn: () => api.listTeams(),
+    queryKey: ["teams", authRevision],
+  });
+  const people = useQuery({
+    meta: SECTION_DATA,
+    queryFn: () => api.listPeople(),
+    queryKey: ["people", authRevision],
+  });
   const changed = async () => {
     await queryClient.invalidateQueries({ queryKey: ["teams"] });
     await accessChanged(queryClient);

@@ -491,7 +491,6 @@ async function start(worktree: Worktree, mode: Mode): Promise<number> {
       ...serviceEnvironment(record),
       // The local identity's admission budget matches the worker's execution slots.
       WORKER_CONCURRENCY: workerConcurrency,
-      SWIZZLE_LOCAL_WORKER_CAPACITY: workerConcurrency,
       SWIZZLE_LOCAL_WORKER_TOKEN: local.SWIZZLE_LOCAL_WORKER_TOKEN,
       SWIZZLE_LOCAL_WORKER_API_HOST: "127.0.0.1",
       SWIZZLE_LOCAL_WORKER_API_PORT: String(localWorker),

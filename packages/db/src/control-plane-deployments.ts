@@ -1,6 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { recordDeploymentChange } from "./audit-resources.js";
-import type { DatabaseClient } from "./client.js";
+import { causeViolation, type DatabaseClient, PG_ERROR } from "./client.js";
 import { CodedError } from "./coded-error.js";
 import { syncDeploymentCheckInTransaction } from "./control-plane-checks.js";
 import {
@@ -668,17 +668,11 @@ async function insertDeploymentAuditEventInTransaction(
 }
 
 function isWebhookPathConflict(error: unknown): boolean {
-  for (let current = error; current instanceof Error; current = current.cause) {
-    if (
-      "code" in current &&
-      current.code === "23505" &&
-      "constraint" in current &&
-      current.constraint === "automation_triggers_webhook_path_unique"
-    ) {
-      return true;
-    }
-  }
-  return false;
+  const violation = causeViolation(error);
+  return (
+    violation?.code === PG_ERROR.uniqueViolation &&
+    violation.constraint === "automation_triggers_webhook_path_unique"
+  );
 }
 
 async function getChainTriggersForSourceInTransaction(

@@ -73,11 +73,29 @@ export const PG_ERROR = {
   uniqueViolation: "23505",
 } as const;
 
-/** The PostgreSQL error code somewhere in the cause chain Drizzle wraps it in. */
-export function causeCode(error: unknown): unknown {
-  for (let current = error; current instanceof Error; current = current.cause) {
-    const { code } = current as { code?: unknown };
-    if (code !== undefined) return code;
+/** PostgreSQL metadata from the cause chain Drizzle wraps it in. */
+export function causeViolation(
+  error: unknown,
+): { readonly code: string; readonly constraint: string | undefined } | undefined {
+  for (
+    let current = error;
+    typeof current === "object" && current !== null;
+    current = "cause" in current ? current.cause : undefined
+  ) {
+    if ("code" in current && typeof current.code === "string") {
+      return {
+        code: current.code,
+        constraint:
+          "constraint" in current && typeof current.constraint === "string"
+            ? current.constraint
+            : undefined,
+      };
+    }
   }
   return undefined;
+}
+
+/** The PostgreSQL error code somewhere in the cause chain Drizzle wraps it in. */
+export function causeCode(error: unknown): string | undefined {
+  return causeViolation(error)?.code;
 }

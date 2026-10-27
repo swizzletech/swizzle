@@ -8,12 +8,13 @@ import {
   AUTOMATION_RUNTIME_LANGUAGES,
   WORKER_SERVICES,
 } from "@swizzle/config";
-import type {
-  ExecutionLease,
-  LeaseRef,
-  RunImageDisk,
-  ServiceHealthReport,
-  WorkerCapabilities,
+import {
+  type ExecutionLease,
+  type LeaseRef,
+  RUN_IMAGE_DISK_DETAILS_LIMIT,
+  type RunImageDisk,
+  type ServiceHealthReport,
+  type WorkerCapabilities,
 } from "@swizzle/db";
 import { z } from "zod";
 
@@ -160,6 +161,18 @@ const accepted = z.strictObject({ accepted: z.literal(true) });
 const runImageTag = z.string().regex(RUN_IMAGE_TAG);
 const runImageDisk = z.strictObject({
   activeBytes: count,
+  unmeasuredActiveImagesOmitted: count,
+  unmeasuredActiveImages: z
+    .array(
+      z
+        .strictObject({
+          id: z.string().regex(/^sha256:[a-f0-9]{64}$/u),
+          tags: z.array(runImageTag).max(1).readonly(),
+        })
+        .readonly(),
+    )
+    .max(RUN_IMAGE_DISK_DETAILS_LIMIT)
+    .readonly(),
   budgetBytes: z.int().min(1),
 }) satisfies z.ZodType<RunImageDisk>;
 
@@ -218,8 +231,10 @@ export const WORKER_ROUTES = {
       runImageDisk: runImageDisk.nullable(),
     }),
     accepted,
-    // Every tool at the bound, its name and version escaped sixfold in JSON, and the rest.
-    (MAX_LANGUAGES + MAX_BINARIES) * (2 * 6 * TOOL_FIELD_LENGTH + 32) + 4_096,
+    // Tool names/versions escape sixfold; image IDs and run tags contain only ASCII.
+    (MAX_LANGUAGES + MAX_BINARIES) * (2 * 6 * TOOL_FIELD_LENGTH + 32) +
+      RUN_IMAGE_DISK_DETAILS_LIMIT * (71 + 36 + 64) +
+      4_096,
   ),
   preparations: route(
     "/worker/preparations",

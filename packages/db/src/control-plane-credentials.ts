@@ -12,9 +12,9 @@ import { CodedError } from "./coded-error.js";
 import type {
   CredentialAccess,
   CredentialPlace,
+  CredentialShare,
   DeclaredCredentials,
   DeploymentCredential,
-  ListedCredentialShare,
   StoredCredential,
 } from "./control-plane-types.js";
 import { namesSubject, subjectColumn, subjectOfRow, subjectValues } from "./grant-subject.js";
@@ -164,7 +164,7 @@ export async function offerCredentialShare(
     readonly offeredBy: string | null;
     readonly accepted: boolean;
   },
-): Promise<ListedCredentialShare> {
+): Promise<CredentialShare> {
   const matches = and(
     credentialIs(credentialShares, input.credential),
     eq(credentialShares.projectId, input.projectId),
@@ -195,7 +195,7 @@ export async function acceptCredentialShare(
     readonly projectId: string;
     readonly acceptedBy: string | null;
   },
-): Promise<ListedCredentialShare | null> {
+): Promise<CredentialShare | null> {
   const matches = and(
     eq(credentialShares.id, input.shareId),
     eq(credentialShares.projectId, input.projectId),
@@ -225,7 +225,7 @@ export async function removeCredentialShare(
 export async function listCredentialShares(
   client: DatabaseClient,
   projectId: string,
-): Promise<readonly ListedCredentialShare[]> {
+): Promise<readonly CredentialShare[]> {
   return await loadShares(client.db, eq(credentialShares.projectId, projectId));
 }
 
@@ -357,10 +357,7 @@ export async function copyDeploymentCredentials(
     .values(rows.map((row) => ({ ...row, deploymentId: toDeploymentId })));
 }
 
-async function loadShares(
-  db: Executor,
-  where: ReturnType<typeof and>,
-): Promise<ListedCredentialShare[]> {
+async function loadShares(db: Executor, where: ReturnType<typeof and>): Promise<CredentialShare[]> {
   const credentialProjects = alias(projects, "credential_projects");
   const load = async (kind: CredentialKind) => {
     const table = TABLES[kind];
@@ -369,11 +366,10 @@ async function loadShares(
         acceptedAt: credentialShares.acceptedAt,
         acceptedBy: credentialShares.acceptedBy,
         createdAt: credentialShares.createdAt,
-        credential: credentialColumns(kind),
+        credential: { environment: table.environment, id: table.id, name: table.name },
         credentialProject: projectRefColumns(credentialProjects),
         project: projectRefColumns(projects),
         offeredBy: credentialShares.offeredBy,
-        projectId: credentialShares.projectId,
         shareId: credentialShares.id,
       })
       .from(credentialShares)
@@ -382,15 +378,14 @@ async function loadShares(
       .innerJoin(credentialProjects, eq(credentialProjects.id, table.projectId))
       .where(where);
     return rows.map(
-      (row): ListedCredentialShare => ({
+      (row): CredentialShare => ({
         acceptedAt: row.acceptedAt?.toISOString() ?? null,
         acceptedBy: row.acceptedBy,
         createdAt: row.createdAt.toISOString(),
-        credential: asCredential(kind, row.credential),
+        credential: { ...row.credential, kind },
         credentialProject: row.credentialProject,
         project: row.project,
         offeredBy: row.offeredBy,
-        projectId: row.projectId,
         shareId: row.shareId,
       }),
     );

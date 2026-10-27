@@ -63,3 +63,4 @@ CI accepts the types `feat`, `fix`, `perf`, `test`, `docs`, `refactor`, `build`,
 
 The maintainers squash pull requests, so the title becomes the commit subject.
 Pull requests must pass verification, dependency review, and security checks before merge.
+An automated review comments on every pull request against the rules that [`.coderabbit.yaml`](.coderabbit.yaml) points at. Resolve each of its threads with a fix or a reply, as you would a maintainer's.

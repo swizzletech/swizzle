@@ -22,7 +22,8 @@ For container runs, image preparation logs and process stderr share that limit. 
 | `PROCESS_EXIT_NON_ZERO` | The process exited with a code other than `0`. |
 | `PROCESS_STDOUT_EMPTY` | Exit code `0`, but stdout was empty after trimming. |
 | `PROCESS_STDOUT_INVALID_JSON` | Exit code `0`, but stdout was not one JSON document. |
-| `DOCKER_CONTROL_TIMEOUT` | A Docker command exceeded its deadline: five seconds for control, sixty seconds for copy or commit. Cleanup uses separate deadlines. See [Docker lifecycle limits](../explanation/security-model.md#docker-lifecycle-limits). |
+| `DOCKER_CONTROL_TIMEOUT` | A Docker control command exceeded its five-second deadline. Cleanup uses separate deadlines. See [Docker lifecycle limits](../explanation/security-model.md#docker-lifecycle-limits). |
+| `DOCKER_TRANSFER_TIMEOUT` | A Docker copy, commit, or image export exceeded its sixty-second deadline. See [Docker lifecycle limits](../explanation/security-model.md#docker-lifecycle-limits). |
 | `CONTAINER_RUNTIME_UNAVAILABLE` | Docker failed the platform: the CLI or daemon is unreachable, or a step of the run image assembly, such as the commit, failed twice. |
 | `PLATFORM_CONFIG_INVALID` | An operator setting the worker reads before the run is invalid, such as a `SWIZZLE_MAX_RUN_MEMORY_MB` that is not a positive number. Every attempt would meet the same setting, so the run fails at once. |
 | `CONTAINER_BUILD_FAILED` | The automation's dependency install failed, ran past the assembly deadline, or wrote more than `SWIZZLE_MAX_INSTALL_DISK_MB`. |
@@ -35,7 +36,7 @@ For container runs, image preparation logs and process stderr share that limit. 
 | `AUTOMATION_STEP_LIMIT_EXCEEDED` | A step event broke a step limit. |
 | `UPSTREAM_CONTRACT_CHANGED` | The process exited with a code other than `0` after a `contract_changed` event. The message names the API and the field. The run is not retried, because the next attempt meets the same answer. |
 
-A deployed run retries `PROCESS_EXIT_NON_ZERO`, `PROCESS_SIGNAL`, `PROCESS_TIMEOUT`, `DOCKER_CONTROL_TIMEOUT`, `CONTAINER_RUNTIME_UNAVAILABLE` and `UNEXPECTED_RUNTIME_ERROR` up to `runtime.retry.max_attempts` ([`classifyFailure`](../../packages/runtime/src/run-lifecycle/failure.ts)). Every other code fails the run on its first attempt.
+A deployed run retries these codes up to `runtime.retry.max_attempts` ([`classifyFailure`](../../packages/runtime/src/run-lifecycle/failure.ts)): `PROCESS_EXIT_NON_ZERO`, `PROCESS_SIGNAL`, `PROCESS_TIMEOUT`, `DOCKER_CONTROL_TIMEOUT`, `DOCKER_TRANSFER_TIMEOUT`, `CONTAINER_RUNTIME_UNAVAILABLE` and `UNEXPECTED_RUNTIME_ERROR`. The run fails on its first attempt for every other code.
 
 ## Environment variables
 

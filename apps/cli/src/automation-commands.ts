@@ -5,6 +5,7 @@ import { formatIntervalMs } from "@swizzle/config";
 import { formatRuntimeTimeoutMs } from "@swizzle/runtime";
 import type {
   AutomationDetailResponse as AutomationDetailRecord,
+  CronNextRun,
   DeleteStateResponse,
   SetStateResponse,
   StateListResponse,
@@ -155,12 +156,23 @@ function registerInspect(program: Command, io: CliIO, runHandler: RunHandler): v
   );
 }
 
+function inspectNextRun(nextRun: CronNextRun) {
+  if (nextRun?.kind === "unserved") {
+    return { scheduler: `none serves ${nextRun.environment}; this trigger starts no runs` };
+  }
+  if (nextRun?.kind === "at") {
+    return { nextRunAt: nextRun.at };
+  }
+  return {};
+}
+
 function automationDetail(
   detail: AutomationDetailRecord,
   timeoutGrant: InspectTimeoutGrant | null,
 ) {
   const deployment = detail.activeDeployment;
   const trigger = detail.trigger;
+  const nextRun = trigger && "nextRun" in trigger ? trigger.nextRun : null;
   const runs = detail.recentRuns;
   const runtime = deployment.runtimeSnapshot;
   return {
@@ -174,11 +186,7 @@ function automationDetail(
     ...(trigger?.webhookUrl ? { webhookUrl: trigger.webhookUrl } : {}),
     ...(trigger?.cronSchedule ? { schedule: trigger.cronSchedule } : {}),
     ...(trigger?.cronIntervalMs ? { every: formatIntervalMs(trigger.cronIntervalMs) } : {}),
-    ...(trigger?.triggerType === "cron" && !trigger.schedulerServes
-      ? { scheduler: `none serves ${trigger.environment}; this trigger starts no runs` }
-      : trigger?.nextRunAt
-        ? { nextRunAt: trigger.nextRunAt }
-        : {}),
+    ...inspectNextRun(nextRun),
     ...(trigger?.triggerType === "chain"
       ? {
           chain: `after ${chainSourcesText(trigger)} ${trigger.chainOnStatus ?? "succeeded"}, payload ${trigger.chainPayloadMode ?? "result"}`,

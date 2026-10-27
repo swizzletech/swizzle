@@ -95,8 +95,8 @@ describe("dashboard commands", () => {
         ...detail,
         trigger: {
           ...detail.trigger,
-          nextRunAt: "2026-04-18T22:05:00.000Z",
-          schedulerServes: false,
+          triggerType: "cron",
+          nextRun: { kind: "unserved", environment: "local" },
         },
       };
     };

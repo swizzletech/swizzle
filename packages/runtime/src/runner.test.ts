@@ -210,7 +210,7 @@ describe("runAutomation", () => {
       },
       status: "ok",
     });
-    expect(pythonResult.stderr).toContain('"type": "step"');
+    expect(pythonResult.stderr).toContain('"type": "step_start"');
     expect(typescriptResult.result).toMatchObject({
       normalized: {
         event: "invoice.created",

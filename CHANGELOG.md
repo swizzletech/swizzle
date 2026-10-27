@@ -3,6 +3,18 @@
 Each release lists changes for people who run Swizzle and write automations.
 Versions follow Semantic Versioning. Tags use `vX.Y.Z`; pre-releases use `X.Y.Z-rc.N`.
 
+## 1.0.2
+
+### Changed
+
+- The dashboard, its sign-in pages and the README show the Swizzle logo from the project website.
+- The `document-scanner` example runs as durable steps, so its page shows each step on the flowchart and in the code while a run moves through it.
+
+### Fixed
+
+- A run image whose size cannot be measured appears as unmeasured in the worker disk warning, instead of as an invented byte count. A failed or timed-out image history export no longer stops the worker from pruning other images.
+- A link to a section of Settings scrolls there once that section's data has loaded, instead of waiting until every request in the dashboard has finished.
+
 ## 1.0.1
 
 ### Fixed

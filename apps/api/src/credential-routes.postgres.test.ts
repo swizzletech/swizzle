@@ -209,7 +209,10 @@ describe("credential rights", { timeout: 60_000 }, () => {
 
     // Olga offers the secret to finance; it binds there once Carl accepts.
     const offered = await olga.send("PUT", `${TOKEN}/shares/finance?${IN_OFFICE}`);
-    expect(offered.json()).toMatchObject({ acceptedAt: null, projectId: expect.any(String) });
+    expect(offered.json()).toMatchObject({
+      acceptedAt: null,
+      project: expect.objectContaining({ id: expect.any(String) }),
+    });
     // Office lists what it shares to those who manage it; Anna, who no longer holds a right, sees none.
     const sharedBy = (who: typeof olga) =>
       who.send("GET", "/projects/office/shared-credentials?environment=staging");

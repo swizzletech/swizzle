@@ -106,8 +106,18 @@ it("prints the API's disk warning for a worker whose active run images pass its 
     capacity: 2,
     slotsInUse: 0,
     currentRuns: [],
-    runImageDisk: { activeBytes: 3 * 1024 * 1_048_576, budgetBytes: 1024 * 1_048_576 },
-    runImageDiskOverBudget: { activeBytes: 3 * 1024 * 1_048_576, budgetBytes: 1024 * 1_048_576 },
+    runImageDisk: {
+      activeBytes: 3 * 1024 * 1_048_576,
+      unmeasuredActiveImagesOmitted: 0,
+      unmeasuredActiveImages: [],
+      budgetBytes: 1024 * 1_048_576,
+    },
+    runImageDiskOverBudget: {
+      activeBytes: 3 * 1024 * 1_048_576,
+      unmeasuredActiveImagesOmitted: 0,
+      unmeasuredActiveImages: [],
+      budgetBytes: 1024 * 1_048_576,
+    },
     runImageDiskWarning: { title: "gpu-home keeps 3.0 GiB.", todo: "Remove deployments." },
   };
   vi.stubGlobal(

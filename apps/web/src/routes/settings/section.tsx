@@ -2,6 +2,12 @@
 
 import type { ReactNode } from "react";
 
+/**
+ * Query `meta` for the data a section draws itself from. The page jumps to a linked section once
+ * every query so marked has settled, and not for any other query running in the app.
+ */
+export const SECTION_DATA = { sectionData: true } as const;
+
 export function Section(props: {
   readonly id: string;
   readonly title: string;

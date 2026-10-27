@@ -8,8 +8,8 @@
 import type { CredentialKind, CredentialRight } from "@swizzle/db";
 import type {
   CredentialAccessResponse as CredentialAccessView,
+  CredentialShareResponse,
   CredentialSharesResponse,
-  CredentialShareResponse as StoredCredentialShare,
 } from "@swizzle/runtime/http-contract";
 import { Argument, type Command, Option } from "commander";
 
@@ -217,7 +217,7 @@ export function registerCredentialCommands(
         options: CommandOptions & { readonly to: string },
       ) => {
         await runHandler(async () => {
-          const share = await apiRequest<StoredCredentialShare>(
+          const share = await apiRequest<CredentialShareResponse>(
             await credentialUrl(kind, name, options, `/shares/${encodeURIComponent(options.to)}`),
             { method: "PUT" },
           );
@@ -338,7 +338,7 @@ export function registerCredentialCommands(
     ],
   ).action(async (shareId: string, options: ReceivingOptions) => {
     await runHandler(async () => {
-      const share = await apiRequest<StoredCredentialShare>(
+      const share = await apiRequest<CredentialShareResponse>(
         sharesUrl(options.project, options, shareId),
         { method: "PUT" },
       );

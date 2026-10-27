@@ -27,14 +27,16 @@ describe("the public approval page", () => {
     );
   });
 
-  it("follows the visitor's colour scheme and carries the Swizzle mark", () => {
+  it("follows the visitor's colour scheme and carries the Swizzle logo", () => {
     for (const html of [
       approvalPage({ wait: { ...wait, details: "Ship it?" } }),
       messagePage({ heading: "No longer open", message: "The link no longer works." }),
     ]) {
       expect(html).toContain("color-scheme: light dark");
       expect(html).toContain("@media (prefers-color-scheme: dark)");
-      expect(html).toContain('class="mark"');
+      expect(html).toContain(
+        '<svg class="logo" viewBox="34 -2 624 148" role="img" aria-label="Swizzle">',
+      );
     }
   });
 

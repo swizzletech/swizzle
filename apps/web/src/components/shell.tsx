@@ -25,7 +25,8 @@ import {
   TwoFactorOnboarding,
   type TwoFactorStart,
 } from "./auth-screen";
-import { Mark, Skeleton } from "./ui";
+import { Logo } from "./logo";
+import { Skeleton } from "./ui";
 import "./shell.css";
 
 export function AppShell({ children }: { readonly children: ReactNode }) {
@@ -142,16 +143,13 @@ export function Trail(props: {
   );
 }
 
-// The name is text beside the mark, so the first contentful paint happens before sign-in status is
-// known.
+// The logo is drawn inline, not loaded, so the first contentful paint happens before sign-in status
+// is known.
 function Connecting() {
   return (
     <div className="grid min-h-screen place-items-center">
       <div className="grid w-64 gap-3">
-        <span className="brand justify-self-center">
-          <Mark />
-          swizzle
-        </span>
+        <Logo className="brand justify-self-center" />
         <Skeleton label="Connecting to Swizzle" lines={2} />
       </div>
     </div>
@@ -243,8 +241,7 @@ function Sidebar() {
   return (
     <aside className="side">
       <Link aria-label="Swizzle overview" className="brand side-brand" to="/">
-        <Mark />
-        swizzle
+        <Logo />
       </Link>
       <div className="side-env">
         <label className="env">

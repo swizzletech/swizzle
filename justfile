@@ -239,11 +239,6 @@ worker credential_file *args:
 verify-local-llm:
     {{ tsx }} scripts/verify-local-llm.mts
 
-# Build a standalone CLI tarball into an existing directory, without publishing it.
-cli-pack destination:
-    pnpm --dir apps/cli build
-    npm pack ./apps/cli/build/npm --pack-destination {{ quote(destination) }}
-
 # Install and exercise a CLI tarball outside the checkout; optionally target an HTTPS API with SWIZZLE_TOKEN.
 [positional-arguments]
 verify-cli-package tarball *args:

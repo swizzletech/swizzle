@@ -70,8 +70,13 @@ export interface MockState {
   readonly unhandled: string[];
 }
 
-function trigger(overrides: Partial<TriggerSummary>): TriggerSummary {
-  return {
+function trigger(
+  overrides: Partial<TriggerSummary> & {
+    nextRun?: Extract<TriggerSummary, { triggerType: "cron" }>["nextRun"];
+  },
+): TriggerSummary {
+  const { nextRun = null, ...summary } = overrides;
+  const base: Omit<TriggerSummary, "triggerType"> = {
     chainOnStatus: null,
     chainHiddenSourceCount: 0,
     chainPayloadMode: null,
@@ -83,12 +88,9 @@ function trigger(overrides: Partial<TriggerSummary>): TriggerSummary {
     environment: "staging",
     errorCode: null,
     errorMessage: null,
-    nextRunAt: null,
     pausedAt: null,
-    schedulerServes: true,
     status: "active",
     triggerId: "trigger-1",
-    triggerType: "webhook",
     updatedAt: ago(60 * MINUTE),
     versionId: "version-1",
     webhookPath: null,
@@ -96,8 +98,11 @@ function trigger(overrides: Partial<TriggerSummary>): TriggerSummary {
       overrides.webhookPath === undefined || overrides.webhookPath === null
         ? null
         : `https://swizzle.example.com/api${overrides.webhookPath}?environment=staging`,
-    ...overrides,
+    ...summary,
   };
+  return overrides.triggerType === "cron"
+    ? { ...base, triggerType: "cron", nextRun }
+    : { ...base, triggerType: overrides.triggerType ?? "webhook" };
 }
 
 function run(
@@ -279,7 +284,7 @@ export function seededState(): MockState {
       recentRuns: [glance(running)],
       trigger: trigger({
         cronIntervalMs: 30_000,
-        nextRunAt: new Date(Date.now() + 18_000).toISOString(),
+        nextRun: { kind: "at", at: new Date(Date.now() + 18_000).toISOString() },
         triggerType: "cron",
       }),
     }),
