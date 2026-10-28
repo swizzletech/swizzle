@@ -132,6 +132,7 @@ function auditChangeInWords(change: NonNullable<AuditEvent["change"]>): string {
         trigger_paused: "Paused trigger",
         trigger_resumed: "Resumed trigger",
         webhook_rejected: "Refused webhook",
+        cron_missed: "Missed scheduled runs",
         cron_skipped: "Skipped scheduled run",
         chain_join_skipped: "Skipped joined run",
       }[change.eventType];

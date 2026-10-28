@@ -84,10 +84,14 @@ const binaryRequirementSchema = z.strictObject({
     ),
   version: z
     .string()
-    .min(1)
+    .trim()
+    .regex(
+      /^(?:>=|<=|>|<|=)?\s*\d+(?:\.\d+)*$/u,
+      "Invalid version rule. Use a numeric version prefix such as 25 or 25.3, or a comparison: >=25, <=25, >25, <25, =25.3.0.",
+    )
     .optional()
     .describe(
-      "Version rule, for example `>=5`. A binary whose version the worker cannot tell fails it.",
+      "A bare numeric version matches a dotted prefix: `25` matches `25.03.0`, and `25.3` matches `25.03.0`. Comparisons `>=`, `<=`, `>`, `<` and `=` compare numeric components, treating omitted components as zero; `=25` means exactly `25.0.0`. Forms such as `^25` are invalid. A binary whose version the worker cannot tell fails every rule.",
     ),
 });
 
@@ -217,6 +221,19 @@ export const runtimeConfigSchema = runtimeInputSchema.default(
   runtimeInputSchema.parse({ on_overlap: "queue" }),
 );
 
+// Installed artifacts retain the binary-rule grammar accepted by earlier 1.x releases.
+const deployedRequirementsSchema = runtimeRequirementsSchema.extend({
+  binaries: z
+    .array(binaryRequirementSchema.extend({ version: z.string().min(1).optional() }))
+    .default([]),
+});
+export const deployedRuntimeConfigSchema = runtimeInputSchema
+  .extend({
+    binary_version_matching: z.literal("numeric-prefix").optional(),
+    requirements: deployedRequirementsSchema.default(deployedRequirementsSchema.parse({})),
+  })
+  .default(runtimeConfigSchema.parse(undefined));
+
 const runtimeSchema = runtimeInputSchema.extend({
   language: runtimeInputSchema.shape.language.nonoptional(),
   on_overlap: runtimeInputSchema.shape.on_overlap.nonoptional(),
@@ -234,7 +251,10 @@ export type AutomationRuntimeRequirements = z.output<typeof runtimeRequirementsS
 
 export type AutomationRuntimePermissions = z.output<typeof runtimePermissionSchema>;
 
-export type AutomationRuntimeConfig = z.output<typeof runtimeSchema>;
+export type AutomationRuntimeConfig = z.output<typeof runtimeSchema> & {
+  /** Absent in artifacts saved before numeric prefix matching was introduced. */
+  readonly binary_version_matching?: "numeric-prefix";
+};
 
 export function inferAutomationLanguage(entrypoint: string): AutomationRuntimeConfig["language"] {
   const extension = path.extname(entrypoint).toLowerCase();

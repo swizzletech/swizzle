@@ -39,8 +39,9 @@ const directory = await mkdtemp(path.join(os.tmpdir(), "swizzle-upgrade-"));
 const checkout = path.join(directory, "checkout");
 const origin = path.join(directory, "origin.git");
 const evidence = process.argv[2] ? path.resolve(process.argv[2]) : undefined;
-const targetTag = "v99.0.0";
+const targetTag = `v${APP_VERSION}`;
 let stack: PackagedStack | undefined;
+const registry = `swizzle-upgrade-registry-${randomBytes(6).toString("hex")}`;
 
 async function command(program: string, args: string[], cwd = checkout): Promise<string> {
   const result = await execute(program, args, { cwd, maxBuffer: 64 * 1024 * 1024 });
@@ -186,12 +187,27 @@ async function screenshot(
 }
 
 cleanUpOnSignal(async () => {
+  await command("docker", ["rm", "--force", "--volumes", registry], source).catch(() => undefined);
   await rm(directory, { recursive: true, force: true });
 });
 try {
   const head = (await command("git", ["rev-parse", "HEAD"], source)).trim();
   await command("git", ["clone", "--bare", "--shared", source, origin], source);
-  await command("git", ["--git-dir", origin, "tag", targetTag, head], source);
+  const unrelated = (await command("git", ["--git-dir", origin, "tag", "--list"], source))
+    .trim()
+    .split("\n")
+    .filter((tag) => tag !== "v1.0.2" && tag !== targetTag);
+  if (unrelated.length > 0)
+    await command("git", ["--git-dir", origin, "tag", "--delete", ...unrelated], source);
+  await command("git", ["--git-dir", origin, "tag", "--force", targetTag, head], source);
+  await command(
+    "docker",
+    ["run", "--detach", "--name", registry, "--publish", "127.0.0.1::5000", "registry:3"],
+    source,
+  );
+  const registryAddress = (await command("docker", ["port", registry, "5000/tcp"], source)).trim();
+  process.env.SWIZZLE_IMAGE_REGISTRY = `${registryAddress}/swizzletech`;
+
   await command("git", ["clone", "--shared", "--branch", "v1.0.2", origin, checkout], source);
   log(`source v1.0.2; target ${head}; local test tag ${targetTag}; code version ${APP_VERSION}`);
   stack = await startPackagedStack("smoke", log, checkout, { SWIZZLE_ENVIRONMENT: "staging" });
@@ -348,6 +364,10 @@ api_check:
   await command("git", ["tag", "--force", targetTag, "v1.0.2^{commit}"]);
   await command("git", ["fetch", "--no-tags", "origin", `refs/tags/${targetTag}`]);
   await writeFile(bootstrap, await command("git", ["show", "FETCH_HEAD:scripts/upgrade.ts"]));
+  await writeFile(
+    path.join(checkout, ".git", "stack-images.ts"),
+    await command("git", ["show", "FETCH_HEAD:scripts/stack-images.ts"]),
+  );
   const beforeRef = await command("git", ["rev-parse", "HEAD"]);
   const beforeContainers = await command("docker", [
     "compose",
@@ -544,22 +564,12 @@ api_check:
         `SWIZZLE_API_ORIGIN=${privateApiBase}`,
       )}SWIZZLE_IMAGE_TAG=v0.0.0\n`,
   );
-  await command("docker", [
-    "compose",
-    "--env-file",
-    ".env",
-    "-f",
-    "infra/docker/compose.yml",
-    "--profile",
-    "stack",
-    "up",
-    "-d",
-    "--wait",
-    "api",
-  ]);
+  // Configuration changes use the same release image selection as an operator's restart.
+  await command("just", ["stack"]);
+  assert.doesNotMatch(await readFile(path.join(checkout, ".env"), "utf8"), /^SWIZZLE_IMAGE_TAG=/mu);
   const health: HealthResponse = JSON.parse((await get(`${stack.dashboard}/api/health`)) ?? "null");
   assert.equal(health.version, APP_VERSION);
-  log(`/health reports code version ${health.version} with a deliberately stale .env value v0.0.0`);
+  log(`just stack removed stale image tag v0.0.0; /health reports code version ${health.version}`);
   const doctor = JSON.parse(await stack.cli("doctor")) as { serverVersion: string };
   assert.equal(doctor.serverVersion, APP_VERSION);
   log(`swizzle doctor reports serverVersion ${doctor.serverVersion}`);
@@ -604,6 +614,18 @@ api_check:
     "with PUBLIC_URL on the restricted listener, root webhook URLs use the private API and every printed URL runs",
   );
   await screenshot(stack.dashboard, password, oldRun, newRun, "private-");
+  const restore = /^Restore with: (.+)$/mu.exec(upgraded)?.[1];
+  assert.ok(restore);
+  process.stdout.write(await command("bash", ["-euo", "pipefail", "-c", restore]));
+  assert.equal((await command("git", ["rev-parse", "HEAD"])).trim(), beforeRef.trim());
+  const restoredHealth: HealthResponse = JSON.parse(
+    (await get(`${stack.dashboard}/api/health`)) ?? "null",
+  );
+  assert.equal(restoredHealth.version, "1.0.2");
+  const restoredRun = await runWithSecret(hash);
+  log(
+    `printed restore command returned to 1.0.2; original secret still works in run ${restoredRun}`,
+  );
   log("passed");
 } catch (error) {
   if (stack !== undefined)
@@ -611,5 +633,6 @@ api_check:
   throw error;
 } finally {
   await stack?.remove();
+  await command("docker", ["rm", "--force", "--volumes", registry], source).catch(() => undefined);
   await rm(directory, { recursive: true, force: true });
 }

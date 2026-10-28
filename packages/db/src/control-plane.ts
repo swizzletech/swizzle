@@ -5,6 +5,7 @@ import {
   countProjectContents as countStoredProjectContents,
   deleteAutomation as deleteStoredAutomation,
   deleteProject as deleteStoredProject,
+  listAutomationChainDependents as listStoredAutomationChainDependents,
   moveAutomation as moveStoredAutomation,
 } from "./control-plane-automations.js";
 import {
@@ -442,6 +443,9 @@ export function createPostgresControlPlaneStore(
       return row ?? null;
     },
 
+    async listAutomationChainDependents(automationSlug) {
+      return await listStoredAutomationChainDependents(client, automationSlug);
+    },
     async deleteAutomation(input) {
       return await deleteStoredAutomation(client, input);
     },

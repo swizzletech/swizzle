@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AutomationSummary, RuntimeReadiness } from "../api";
-import { automationHealth, readinessInWords } from "./health";
+import { automationHealth, readinessInWords, readinessLabel } from "./health";
 
 const NOW = new Date("2026-10-23T12:00:00.000Z");
 
@@ -44,6 +44,12 @@ describe("automationHealth", () => {
 describe("readinessInWords", () => {
   const notReady = (...errors: { code: string; subject: string }[]) =>
     ({ errors, status: "not-ready" }) as unknown as RuntimeReadiness;
+
+  it("names a broken trigger instead of blaming the workers", () => {
+    const readiness = notReady({ code: "TRIGGER_CONFIGURATION_INVALID", subject: "chain" });
+    expect(readinessInWords(readiness)).toBe("Trigger does not work");
+    expect(readinessLabel(readiness)).toBe("Trigger invalid");
+  });
 
   it("names the credentials a deployment waits for before blaming the workers", () => {
     expect(readinessInWords(notReady({ code: "SECRET_MISSING", subject: "VERIFY_SECRET" }))).toBe(

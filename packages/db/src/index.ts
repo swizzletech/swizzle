@@ -305,6 +305,7 @@ export { computeDeploymentDiff } from "./deployment-diff.js";
 export {
   buildDeploymentTriggerInput,
   getNextCronOccurrence,
+  iterateCronOccurrences,
   resolveChainSources,
 } from "./deployment-trigger-input.js";
 export {

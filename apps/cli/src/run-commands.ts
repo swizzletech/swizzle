@@ -90,7 +90,10 @@ function logWindowOptions(): Option[] {
     new Option("--tail <lines>", "Only the last N lines of each stream")
       .argParser(parseCount)
       .conflicts(["full"]),
-    new Option("--full", "Print both streams whole (can be large)"),
+    new Option(
+      "--full",
+      "Print both streams whole with real line breaks (--json keeps strings; can be large)",
+    ),
   ];
 }
 
@@ -127,7 +130,7 @@ function registerLogs(program: Command, io: CliIO, runHandler: RunHandler): void
         const stdout = windowLog(run.stdout ?? "", options);
         const stderr = windowLog(runStderr(run), options);
         const terminal = isFinishedRun(run.status);
-        const terminalBlocks = process.stdout.isTTY === true && outputFormat() !== "json";
+        const textBlocks = outputFormat() !== "json";
         respond(
           io,
           {
@@ -139,10 +142,8 @@ function registerLogs(program: Command, io: CliIO, runHandler: RunHandler): void
                 ? { error: `${run.errorCode}: ${run.errorMessage ?? ""}`.trim() }
                 : {}),
             },
-            ...(options.follow === true || terminalBlocks
-              ? {}
-              : { stderr: stderr.text || "(empty)" }),
-            ...(terminalBlocks ? {} : { stdout: stdout.text || "(empty)" }),
+            ...(options.follow === true || textBlocks ? {} : { stderr: stderr.text || "(empty)" }),
+            ...(textBlocks ? {} : { stdout: stdout.text || "(empty)" }),
           },
           [
             ...(stdout.truncated || stderr.truncated
@@ -155,7 +156,7 @@ function registerLogs(program: Command, io: CliIO, runHandler: RunHandler): void
               : [`Run \`swizzle logs --run ${run.runId} --follow\` to watch it to the end`]),
           ],
         );
-        if (terminalBlocks) {
+        if (textBlocks) {
           if (options.follow !== true) io.stdout(`stderr:\n${stderr.text || "(empty)"}\n`);
           io.stdout(`stdout:\n${stdout.text || "(empty)"}\n`);
         }

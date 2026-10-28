@@ -8,7 +8,7 @@ import type {
   StoredAutomationCheck,
 } from "@swizzle/db";
 
-import { findContractChange } from "./api-signals.js";
+import { findContractChange, readStructuredEvents } from "./api-signals.js";
 import { exceptionSummary, findRunException } from "./run-exception.js";
 
 import type { AutomationRunFailure, AutomationRunSuccess } from "./run-result.js";
@@ -42,31 +42,49 @@ export function checkOutcome(
   const output = boundedOutput(execution.stdout);
   const result = execution.success ? execution.result : parseOutput(execution.stdout);
   const report = { ...checkReport(result), change: findContractChange(execution.stderr) };
-  if (execution.success) {
-    if (report.ok) {
-      return { output: output ?? "", report, status: "green" };
+  if (execution.success && report.ok) return { output: output ?? "", report, status: "green" };
+  let lastContactStatus: number | null = null;
+  readStructuredEvents("", `${execution.stderr}\n`, (event) => {
+    if (
+      event.type === "api_contact" &&
+      typeof event.status === "number" &&
+      Number.isInteger(event.status) &&
+      event.status >= 100 &&
+      event.status <= 599
+    ) {
+      lastContactStatus = event.status;
     }
+  });
+  let credentials: string | undefined;
+  if (lastContactStatus === 401 || lastContactStatus === 403) {
+    credentials = `HTTP ${lastContactStatus}`;
+  } else if (lastContactStatus === null) {
+    credentials = execution.stderr.split(/\r?\n/u).findLast((line) => {
+      if (
+        /AUTHENTICATIONFAILED|authentication failed|invalid credentials|invalid password|login failed|\b(?:401 Unauthorized|403 Forbidden)\b/iu.test(
+          line,
+        )
+      )
+        return true;
+      return /(?:^|[ \t])(?:(?:HTTP)+(?:Error)?(?:\/[0-9]+(?:\.[0-9]+)?)?|status(?:[ \t]+code)?|response)[ \t:]+(?:401|403)\b/iu.test(
+        line,
+      );
+    });
+  }
+  if (execution.success)
     return {
       exitCode: 0,
-      failure: "execution",
-      message: 'The check exited 0 without "ok": true on stdout.',
+      failure: credentials === undefined ? "execution" : "credentials",
+      message:
+        credentials === undefined
+          ? 'The check exited 0 without "ok": true on stdout.'
+          : `API check credentials failed: ${credentials.trim()}`.slice(0, MAX_MESSAGE_CHARS),
       output,
       report,
       status: "error",
     };
-  }
-  if (report.change !== null) return { output, report, status: "drift" };
-  const credentials = execution.stderr.split(/\r?\n/u).findLast((line) => {
-    if (
-      /AUTHENTICATIONFAILED|authentication failed|invalid credentials|invalid password|login failed|\b(?:401 Unauthorized|403 Forbidden)\b/iu.test(
-        line,
-      )
-    )
-      return true;
-    return /(?:^|[ \t])(?:(?:HTTP)+(?:Error)?(?:\/[0-9]+(?:\.[0-9]+)?)?|status(?:[ \t]+code)?|response)[ \t:]+(?:401|403)\b/iu.test(
-      line,
-    );
-  });
+  if (credentials === undefined && report.change !== null)
+    return { output, report, status: "drift" };
   const exception = findRunException(execution.stderr);
   if (
     credentials !== undefined ||
@@ -122,7 +140,10 @@ export function nextCheckState(
     nextCheckAt: new Date(checkedAt.getTime() + previous.everyMs).toISOString(),
     output: outcome.output,
     report: outcome.report,
-    status: outcome.status,
+    status:
+      outcome.status === "error" && outcome.failure === "credentials"
+        ? "credentials"
+        : outcome.status,
   };
 }
 

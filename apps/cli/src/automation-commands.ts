@@ -181,7 +181,7 @@ function automationDetail(
     environment: detail.environment,
     deployment: `#${deployment.seq} v${deployment.version} ${deployment.deploymentId}`,
     deployedAt: deployment.deployedAt,
-    runtime: `${runtime.language} / sandbox (container) / ${runtime.profile}`,
+    runtime: `${runtime.language} / ${runtime.execution_mode === "container" ? "sandbox (container)" : runtime.execution_mode} / ${runtime.profile}`,
     apiCheck:
       detail.apiCheck?.mode === "active"
         ? {

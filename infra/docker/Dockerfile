@@ -49,7 +49,8 @@ ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 COPY . .
 RUN --mount=type=cache,id=pnpm-${TARGETARCH},target=/pnpm/store \
     pnpm install --frozen-lockfile --offline
-RUN pnpm exec turbo run build
+# Source upgrades share small hosts with the running stack. Compile one workspace at a time.
+RUN pnpm exec turbo run build --concurrency=1
 
 # Extract a self-contained prod package for a single backend workspace.
 FROM build AS deploy-service

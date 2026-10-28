@@ -79,6 +79,14 @@ export function ApprovalActions(props: {
       />
     );
   }
+  const reassignButton = may.reassign ? (
+    <button className="btn quiet" onClick={() => setReassigning(true)} type="button">
+      Reassign
+    </button>
+  ) : null;
+  // The buttons are one group, so when the row is too narrow they wrap together under the comment
+  // field and none is left alone on a line. Below the width of the three side by side, as at 200%
+  // zoom, the group itself wraps so the run panel never clips one.
   return (
     <>
       {may.decide ? (
@@ -90,29 +98,29 @@ export function ApprovalActions(props: {
             placeholder="Comment (optional)"
             value={comment}
           />
-          <button
-            className="btn ok"
-            disabled={decide.isPending}
-            onClick={() => decide.mutate(true)}
-            type="button"
-          >
-            Approve
-          </button>
-          <button
-            className="btn quiet"
-            disabled={decide.isPending}
-            onClick={() => decide.mutate(false)}
-            type="button"
-          >
-            Reject
-          </button>
+          <span className="flex flex-wrap gap-2">
+            <button
+              className="btn ok"
+              disabled={decide.isPending}
+              onClick={() => decide.mutate(true)}
+              type="button"
+            >
+              Approve
+            </button>
+            <button
+              className="btn quiet"
+              disabled={decide.isPending}
+              onClick={() => decide.mutate(false)}
+              type="button"
+            >
+              Reject
+            </button>
+            {reassignButton}
+          </span>
         </>
-      ) : null}
-      {may.reassign ? (
-        <button className="btn quiet" onClick={() => setReassigning(true)} type="button">
-          Reassign
-        </button>
-      ) : null}
+      ) : (
+        reassignButton
+      )}
       {decide.isError ? <ActionError error={decide.error} /> : null}
     </>
   );

@@ -96,11 +96,11 @@ The API publishes each `step_start` and `step_result` it stores as a `step` even
 
 ## Diagnosis and replay
 
-`GET /runs/:runId` and `swizzle runs inspect <runId>` include the original payload, with the same read permission as the dashboard's Payload tab. `swizzle diagnose <runId>` names the last Python exception or Node exception in stderr. When stderr includes a traceback or stack with a source frame, the diagnosis includes its source file and line. Overview's Failing card uses the stored error message without loading the run's stdout or stderr on each poll. The run panel's **Hand to agent** text preserves the stored error and adds the diagnosis summary when the two differ. Both handoffs give advice for the run's trigger. They tell the agent to start a chain run through its source because replay cannot start a chain run. They also say that webhook replay has no signed delivery and tell the agent to ask the sender to redeliver if the automation checks the signature. `swizzle logs --run <runId> --full` prints streams with real line breaks on a terminal. `--json` keeps each stream as a JSON string.
+`GET /runs/:runId` and `swizzle runs inspect <runId>` include the original payload, with the same read permission as the dashboard's Payload tab. `swizzle diagnose <runId>` names the last Python exception or Node exception in stderr. When stderr includes a traceback or stack with a source frame, the diagnosis includes its source file and line. Overview's Failing card uses the stored error message without loading the run's stdout or stderr on each poll. The run panel's **Hand to agent** text preserves the stored error and adds the diagnosis summary when the two differ. Both handoffs give advice for the run's trigger. They tell the agent to start a chain run through its source because replay cannot start a chain run. They also say that webhook replay has no signed delivery and tell the agent to ask the sender to redeliver if the automation checks the signature. `swizzle logs --run <runId> --full` writes stderr and stdout as text blocks after its TOON response, preserving line breaks when stdout is piped. With `--json`, it keeps each stream as a JSON string.
 
 `swizzle runs replay <runId>`, `POST /runs/:runId/replay`, and **Run again** in the dashboard start a new manual run with the original payload on the active deployment. Replay requires read permission on the source run and run permission for its automation in the source environment. Code that requires a signed webhook delivery rejects a manual replay. Request redelivery from the sender for those runs. The audit event names the source run and does not contain its payload. Start a chain run through its source rather than replaying it manually.
 
-`validate` and `inspect` label a deployment's runtime as `sandbox (container)`. `validate` reports the configured local execution mode separately as `localRun`.
+`validate` labels the configured runtime as `sandbox (container)` and reports its local execution mode as `localRun`. `inspect` shows the active deployment's execution mode: `host` or `sandbox (container)`.
 
 ## API checks
 
@@ -116,15 +116,17 @@ An automation with `api_check.mode: active` ships a check script beside its entr
 | Limits | The automation's image, timeout and `runtime.rate_limits`. The record keeps up to 8,192 characters of stdout and the last 4,096 characters of stderr, both redacted. Diagnostic messages and stored warnings keep their first 4,096 characters. |
 | Secret and connection usage | The record keeps the name and version of each secret and the name and token version of each connection the latest check received, never a value, as a run execution records its own. |
 
-Numeric credential statuses must follow a status marker, as in `HTTP 401`, `HTTPError: 403`, `HTTP/1.1 401`, `status code: 403`, or `response: 401`. The marker starts the line or follows a space or tab. A code or marker inside a request URL, such as `HTTP 200 GET /orders/401` or `HTTP 200 GET /status:401`, does not identify a credential failure. Explicit `401 Unauthorized` and `403 Forbidden` messages also count as credential failures.
+The last structured `api_contact` status of `401` or `403` makes a failing check report `credentials`, including a bare exit `1`. This takes precedence over drift. A check that reports drift after its latest successful API call stays `drift`.
 
-`swizzle inspect <name>` shows the last check status, its check time, and any warning. `swizzle run --check <dir>` runs the check locally ([`checkOutcome`](../../packages/runtime/src/check-contract.ts)). Credential failures report `API_CHECK_CREDENTIALS`. Other runtime failures keep their runtime code, such as `MISSING_REQUIRED_SECRETS`. A successful process whose output lacks `"ok": true` reports `API_CHECK_ERROR`.
+When no structured `api_contact` event appears, numeric credential statuses in stderr must follow a status marker, as in `HTTP 401`, `HTTPError: 403`, `HTTP/1.1 401`, `status code: 403`, or `response: 401`. The marker starts the line or follows a space or tab. A code inside a request URL, such as `HTTP 200 GET /orders/401`, does not identify a credential failure. Explicit `401 Unauthorized` and `403 Forbidden` messages also count as credential failures. A later successful SDK contact supersedes earlier authentication diagnostics, so a recovered check can still report drift.
 
-Drift shows under Overview > Needs you at once. An undecided check shows after 3 consecutive failures. A deploy resets the count and runs the check again.
+`swizzle inspect <name>` shows the last check status, its check time, and any warning. `swizzle run --check <dir>` runs the check locally ([`checkOutcome`](../../packages/runtime/src/check-contract.ts)). Credential failures report `API_CHECK_CREDENTIALS`. Other runtime failures keep their runtime code, recovery hint, and retryability. For example, `MISSING_REQUIRED_SECRETS` tells you to export the missing secrets in your shell. A successful process whose output lacks `"ok": true` reports `API_CHECK_ERROR`.
+
+Drift and credential failures show under Overview > Needs you at once. An undecided check shows after 3 consecutive failures. A deploy resets the count and runs the check again.
 
 TypeScript `contractChanged` and Python `contract_changed` always write a `contract_changed` event to stderr and exit with code `1`. Checks and runs read the change from that event. Stdout carries only the check's `ok` and `checked` report.
 
-Overview > Needs you lists API check failures, retirement notices and untested passive APIs as warnings separate from failed runs. The Hand to agent text for a failed check includes its latest output and the last green output.
+Overview > Needs you lists API check failures, retirement notices and untested passive APIs as warnings separate from failed runs. The Hand to agent text for a failed check includes its latest output and the last green output. It reports when the failure streak began separately from how the latest check ended. A later credentials failure therefore does not make an earlier drift look like a credentials failure.
 
 ## Suspend sentinel
 

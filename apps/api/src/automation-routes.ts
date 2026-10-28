@@ -1,5 +1,6 @@
 import { AutomationRuntimeError } from "@swizzle/runtime";
 import type {
+  AutomationDeletePreviewResponse,
   AutomationDeploymentResponse,
   AutomationSecretsResponse,
   DeleteAutomationResponse,
@@ -111,6 +112,30 @@ export function registerAutomationRoutes(app: ApiServer, platform: PlatformServi
       });
 
       return serializeDeploymentResponse(deployment);
+    },
+  );
+
+  app.get<{ Reply: AutomationDeletePreviewResponse }>(
+    "/automations/:automationName/delete-preview",
+    async (request) => {
+      const params = request.params as { automationName: string };
+      await request.access.automation(params.automationName, { action: "delete" });
+      const dependents = await platform.listAutomationChainDependents(params.automationName);
+      const visible: AutomationDeletePreviewResponse["dependents"][number][] = [];
+      for (const dependent of dependents) {
+        if (
+          (await request.access.refusal(dependent, {
+            action: "read",
+            environment: dependent.environment,
+          })) === null
+        ) {
+          visible.push({
+            automationSlug: dependent.automationSlug,
+            environment: dependent.environment,
+          });
+        }
+      }
+      return { dependents: visible, hiddenDependents: dependents.length - visible.length };
     },
   );
 

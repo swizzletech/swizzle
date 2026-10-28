@@ -3,8 +3,8 @@ import { type ApiErrorCode, isApiErrorCode } from "@swizzle/core";
  * The CLI's one output boundary, by the AXI contract. A command answers with an `Output` object,
  * and `respond` prints it on stdout as TOON, or as one line of JSON under the global `--json`. An
  * error takes the same path as `{ error, code, help }`: what went wrong, a stable code, and the
- * next step. Logs, progress and debug lines go to stderr; `swizzle logs --follow` is the one
- * command that prints a run's log lines on stdout before its answer.
+ * next step. Logs, progress and debug lines go to stderr. `swizzle logs` prints the run's streams
+ * as text blocks on stdout unless `--json` is set; `--follow` streams log lines before its answer.
  */
 import { encode } from "@toon-format/toon";
 

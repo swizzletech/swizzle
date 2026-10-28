@@ -5,6 +5,7 @@ import {
   loadAutomationDefinition,
 } from "@swizzle/runtime";
 import type {
+  AutomationDeletePreviewResponse,
   DeleteAutomationResponse as DeleteAutomationResult,
   DeploymentsResponse,
   MoveAutomationResponse as MoveAutomationResult,
@@ -15,7 +16,6 @@ import type { Command } from "commander";
 
 import { apiRequest } from "./api.js";
 import {
-  listAutomations,
   packAutomationOrThrow,
   postDeployment,
   postDeploymentCheck,
@@ -34,7 +34,7 @@ import {
 } from "./command-support.js";
 import { changeRows, deploymentChangesOutput } from "./deployment-output.js";
 import { buildUnservedEnvironmentWarning, resolveCommandEnvironment } from "./environment-guard.js";
-import { AgentError, type CliIO, respond, warn } from "./output.js";
+import { AgentError, type CliIO, EXIT_CODES, respond, warn } from "./output.js";
 
 export function registerDeploymentCommands(
   program: Command,
@@ -334,7 +334,7 @@ function registerDelete(program: Command, io: CliIO, runHandler: RunHandler): vo
   const command = program
     .command("delete")
     .description(
-      "Delete an automation with its deployments, triggers, state, artifacts and runs. Its audit events stay. Pause the trigger and let runs finish first",
+      "Delete an automation with its deployments, triggers, state, artifacts and runs. Names dependent chains before confirmation; their triggers become invalid. Its audit events stay. Pause the trigger and let runs finish first",
     )
     .argument("<automationName>", "Automation name")
     .option("--yes", "Confirm the delete (required)")
@@ -353,29 +353,46 @@ function registerDelete(program: Command, io: CliIO, runHandler: RunHandler): vo
         const resolved = await resolveAutomationNameOrDie(automationName, options, {
           destructive: true,
         });
+        const impact = await apiRequest<AutomationDeletePreviewResponse>(
+          buildApiUrl(`/automations/${resolved.slug}/delete-preview`, options),
+        ).catch((error: unknown) => {
+          if (error instanceof AgentError && error.code === "AUTOMATION_NOT_FOUND") return null;
+          if (error instanceof AgentError && error.details?.httpStatus === 404) {
+            throw new AgentError({
+              code: "DELETE_PREVIEW_UNAVAILABLE",
+              message: "Cannot delete without a preview of the dependent chain triggers.",
+              hint: "Upgrade the server to support deletion previews, then rerun the delete command.",
+              exitCode: EXIT_CODES.backend,
+            });
+          }
+          throw error;
+        });
+        const dependents = [
+          ...(impact?.dependents ?? []).map(
+            (entry) => `${entry.automationSlug} (${entry.environment})`,
+          ),
+          ...((impact?.hiddenDependents ?? 0) === 0
+            ? []
+            : [`${impact?.hiddenDependents} dependent chain triggers you cannot see`]),
+        ];
+        const chainWarning =
+          dependents.length === 0
+            ? null
+            : `Chain source ${resolved.slug} will be deleted; these dependent automations will have invalid chain triggers: ${dependents.join(", ")}.`;
         requireYes(
           options.yes,
           `swizzle delete ${resolved.slug} -e ${options.environment}`,
-          `this deletes ${resolved.slug} in every environment with its deployments, triggers, state, artifacts and runs; only its audit events stay.`,
+          `this deletes ${resolved.slug} in every environment with its deployments, triggers, state, artifacts and runs; only its audit events stay.${chainWarning === null ? "" : ` ${chainWarning}`}`,
         );
+        if (chainWarning !== null) warn(chainWarning);
 
-        // The delete removes the chain triggers that name this automation. Match on slug: the
-        // chain source name mirrors the display name, which can differ from it.
-        const downstreamChains = (await listAutomations(options)).filter(
-          (automation) =>
-            automation.trigger?.triggerType === "chain" &&
-            automation.trigger?.chainSourceAutomationSlugs.includes(resolved.slug),
-        );
-        if (downstreamChains.length > 0) {
-          warn(
-            `${downstreamChains.length} chain automation(s) depend on "${resolved.slug}"; the delete removes their chain trigger, so they never fire again: ${downstreamChains.map((automation) => automation.automationSlug).join(", ")}`,
-          );
-        }
-
-        const result = await apiRequest<DeleteAutomationResult | undefined>(
-          buildApiUrl(`/automations/${resolved.slug}`, options),
-          { acceptNotFound: true, method: "DELETE" },
-        );
+        const result =
+          impact === null
+            ? undefined
+            : await apiRequest<DeleteAutomationResult | undefined>(
+                buildApiUrl(`/automations/${resolved.slug}`, options),
+                { acceptNotFound: true, method: "DELETE" },
+              );
         if (result === undefined) {
           respond(io, {
             automation: resolved.slug,

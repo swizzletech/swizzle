@@ -69,6 +69,72 @@ describe("SDK contract changes", () => {
 });
 
 describe("checkOutcome", () => {
+  it("keeps drift after a successful retry supersedes an earlier credential diagnostic", () => {
+    expect(
+      checkOutcome({
+        success: false,
+        code: "PROCESS_EXIT_NON_ZERO",
+        exitCode: 1,
+        message: "exit 1",
+        stdout: "",
+        stderr: [
+          "HTTP 401 Unauthorized",
+          JSON.stringify({ type: "api_contact", status: 200 }),
+          JSON.stringify({ type: "contract_changed", ...change }),
+        ].join("\n"),
+      }),
+    ).toMatchObject({ status: "drift", report: { change } });
+  });
+
+  it.each([0, 1, 2])("uses the last SDK API contact for credentials after exit %i", (exitCode) => {
+    for (const status of [401, 403, 200]) {
+      const stderr = [
+        JSON.stringify({ type: "api_contact", host: "api.example.com", status: 401 }),
+        JSON.stringify({ type: "api_contact", host: "api.example.com", status }),
+      ].join("\n");
+      expect(
+        checkOutcome({
+          success: false,
+          code: "PROCESS_EXIT_NON_ZERO",
+          exitCode,
+          message: `exit ${exitCode}`,
+          stdout: '{"ok":false,"checked":["GET /deals"]}',
+          stderr,
+        }),
+      ).toMatchObject(
+        status === 200
+          ? { status: exitCode === 1 ? "drift" : "error" }
+          : { status: "error", failure: "credentials" },
+      );
+    }
+  });
+
+  it("keeps an explicit contract change with a rejected API call in credentials", () => {
+    expect(
+      checkOutcome({
+        success: false,
+        code: "PROCESS_EXIT_NON_ZERO",
+        exitCode: 1,
+        message: "exit 1",
+        stdout: "",
+        stderr: [
+          JSON.stringify({ type: "api_contact", status: 401 }),
+          JSON.stringify({ type: "contract_changed", ...change }),
+        ].join("\n"),
+      }),
+    ).toMatchObject({ status: "error", failure: "credentials" });
+  });
+  it("reports credentials when a check answers ok false after a rejected call", () => {
+    expect(
+      checkOutcome({
+        success: true,
+        result: { ok: false },
+        stdout: '{"ok":false}',
+        stderr: JSON.stringify({ type: "api_contact", status: 403 }),
+      }),
+    ).toMatchObject({ status: "error", failure: "credentials", exitCode: 0 });
+  });
+
   it("keeps the typed report whole when diagnostic output is truncated", () => {
     const result = {
       ok: true,

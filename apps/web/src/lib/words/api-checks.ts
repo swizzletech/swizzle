@@ -18,6 +18,7 @@ export const UPSTREAM_CONTRACT_CHANGED = "UPSTREAM_CONTRACT_CHANGED";
 /** "crm-export's check of api.hubapi.com fails", "crm-export's API check could not decide 3 times in a row". */
 export function apiCheckInWords(item: ApiCheckItem): string {
   const name = item.automation.automationName;
+  if (item.check.status === "credentials") return `${name}'s API check credentials failed`;
   if (item.check.status === "error") {
     return `${name}'s API check could not decide ${item.check.consecutiveFailures} times in a row`;
   }
@@ -72,6 +73,7 @@ type CheckStatus = NonNullable<Extract<ApiCheck, { readonly mode: "active" }>["r
 
 /** An active check's latest result as the About tab's chip shows it. */
 export const CHECK_STATUS: Record<CheckStatus, { readonly label: string; readonly tone: Tone }> = {
+  credentials: { label: "Credentials failed", tone: "warn" },
   drift: { label: "Drift", tone: "warn" },
   error: { label: "Undecided", tone: "warn" },
   green: { label: "Green", tone: "ok" },
@@ -79,18 +81,20 @@ export const CHECK_STATUS: Record<CheckStatus, { readonly label: string; readonl
 };
 
 /**
- * What "Hand to agent" copies for an API check under Needs you: what fails since when, whether the
- * runs feel it yet, the latest and the last green output side by side, and the commands to act.
+ * What "Hand to agent" copies for an API check under Needs you: since when checks fail and how the
+ * latest one ended, whether the runs feel it yet, the latest and the last green output side by side,
+ * and the commands to act.
  */
 export function apiCheckHandoff(item: ApiCheckItem): string {
   const { check } = item;
   const name = item.automation.automationName;
-  const drift = check.status === "drift";
+  const words = checkHandoffWords(check);
   const failures =
     check.consecutiveFailures === 1 ? "1 check" : `${check.consecutiveFailures} checks in a row`;
   const lines = [
-    `${name}'s API check ${drift ? "fails" : "could not decide"} since ` +
-      `${utcTime(check.failingSince ?? check.lastCheckedAt ?? "")} (${failures}). ${runsLine(item)}`,
+    `${name}'s API check has failed since ` +
+      `${utcTime(check.failingSince ?? check.lastCheckedAt ?? "")} (${failures}); ` +
+      `the latest check, ${utcTime(check.lastCheckedAt ?? "")}, ${words.outcome}. ${runsLine(item)}`,
     `The check is ${check.entrypoint} in deployment ${check.deploymentId.slice(0, 8)}, every ` +
       `${formatIntervalMs(check.everyMs)} and after each deploy` +
       `${item.change?.api ? `, against ${item.change.api}` : ""}.`,
@@ -102,12 +106,27 @@ export function apiCheckHandoff(item: ApiCheckItem): string {
     ...(check.lastGreenOutput === null || check.lastGreenAt === null
       ? ["No check was green yet."]
       : [`Last green check, ${utcTime(check.lastGreenAt)}, exit 0:`, check.lastGreenOutput]),
-    drift
-      ? `Compare the two outputs, then update the response parsing that the automation and ${check.entrypoint} share to the new shape.`
-      : "Find out from the output and stderr why the check could not decide, such as an outage, a timeout or an expired key.",
+    words.fix,
     "Reproduce with `swizzle run --check .`, run the automation locally with `swizzle run .` and redeploy with `swizzle apply .`.",
   );
   return lines.join("\n");
+}
+
+function checkHandoffWords(check: Pick<ApiCheckItem["check"], "status" | "entrypoint">) {
+  if (check.status === "credentials")
+    return {
+      outcome: "failed on credentials",
+      fix: "Fix the check's credentials or connection, then rerun the check.",
+    };
+  if (check.status === "drift")
+    return {
+      outcome: "found drift",
+      fix: `Compare the two outputs, then update the response parsing that the automation and ${check.entrypoint} share to the new shape.`,
+    };
+  return {
+    outcome: "could not decide",
+    fix: "Find out from the output and stderr why the check could not decide, such as an outage, a timeout or an expired key.",
+  };
 }
 
 function runsLine(item: ApiCheckItem): string {

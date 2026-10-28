@@ -2,9 +2,89 @@ import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { expect, it } from "vitest";
 import { testPlatform } from "../../../test/platform.js";
+import { testDatabase, untilLockWaiters } from "../../../test/postgres.js";
 import { testAccessStore } from "../../../test/stores.js";
 import { temporaryDirectory } from "../../../test/support.js";
 import { createAutomationFixture } from "../test/platform-harness.js";
+
+it("refuses a resume that read a valid join before its source was deleted", async () => {
+  const platform = await testPlatform();
+  for (const [name, triggerLines] of [
+    ["race-source", ["  type: webhook", "  path: /race-source"]],
+    ["race-other", ["  type: webhook", "  path: /race-other"]],
+    ["race-join", ["  type: chain", "  sources: [race-source, race-other]"]],
+  ] as const)
+    await platform.deployAutomationToPlatform({
+      automationDirectory: await createAutomationFixture({ name, triggerLines }),
+      environment: "local",
+    });
+  await platform.pauseAutomationTrigger("race-source", "local");
+  const join = await platform.pauseAutomationTrigger("race-join", "local");
+  const client = testDatabase();
+  const holder = await client.pool.connect();
+  const pending: Promise<unknown>[] = [];
+  try {
+    await holder.query("BEGIN");
+    await holder.query("SELECT id FROM automation_triggers WHERE id = $1 FOR UPDATE", [
+      join.triggerId,
+    ]);
+    const deleting = platform.deleteAutomation({
+      automationName: "race-source",
+      environment: "local",
+    });
+    pending.push(deleting);
+    deleting.catch(() => {});
+    await untilLockWaiters(client, 1);
+    const resuming = platform.resumeAutomationTrigger("race-join", "local").then(
+      (trigger) => ({ status: trigger.status }),
+      (error: unknown) => ({ error }),
+    );
+    pending.push(resuming);
+    await untilLockWaiters(client, 2);
+    await holder.query("COMMIT");
+    await deleting;
+    expect(await resuming).toMatchObject({ error: { code: "TRIGGER_CONFIGURATION_INVALID" } });
+    expect(await platform.getAutomationTrigger("race-join", "local")).toMatchObject({
+      status: "invalid",
+      errorCode: "TRIGGER_CHAIN_SOURCE_DELETED",
+      chainSourceAutomationIds: [(await platform.findAutomation("race-other"))?.automationId],
+    });
+  } finally {
+    await holder.query("ROLLBACK");
+    holder.release();
+    await Promise.allSettled(pending);
+  }
+});
+
+it.each(["source: deleted-source", "sources: [deleted-source, other-source]"])(
+  "keeps a chain invalid when its %s is deleted",
+  async (chain) => {
+    const platform = await testPlatform();
+    for (const [name, triggerLines] of [
+      ["deleted-source", ["  type: webhook", "  path: /deleted-source"]],
+      ["other-source", ["  type: webhook", "  path: /other-source"]],
+      ["dependent", ["  type: chain", `  ${chain}`]],
+    ] as const) {
+      await platform.deployAutomationToPlatform({
+        automationDirectory: await createAutomationFixture({ name, triggerLines }),
+        environment: "local",
+      });
+    }
+    await platform.pauseAutomationTrigger("deleted-source", "local");
+    await platform.deleteAutomation({ automationName: "deleted-source", environment: "local" });
+    expect(await platform.getAutomationTrigger("dependent", "local")).toMatchObject({
+      triggerType: "chain",
+      status: "invalid",
+      errorCode: "TRIGGER_CHAIN_SOURCE_DELETED",
+      errorMessage: "Chain source automation was deleted: deleted-source",
+    });
+    await platform.pauseAutomationTrigger("dependent", "local");
+    await expect(platform.resumeAutomationTrigger("dependent", "local")).rejects.toMatchObject({
+      code: "TRIGGER_CONFIGURATION_INVALID",
+      message: "Chain source automation was deleted: deleted-source",
+    });
+  },
+);
 
 it("persists webhook, cron, interval and chain trigger inputs through the PostgreSQL store", async () => {
   const directory = await temporaryDirectory("swizzle-deployment-triggers-");

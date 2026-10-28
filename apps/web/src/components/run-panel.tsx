@@ -5,7 +5,7 @@
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import { type ExplainedPlacement, isOpenRun, type RunDetail, type RunListItem } from "../lib/api";
 import { useDashboardClient } from "../lib/dashboard-client";
@@ -171,33 +171,34 @@ function LoadedRun(props: {
           )}
         </div>
         <div className="rp-acts">
-          {handsOff ? (
-            <CopyButton
-              label="Hand to agent"
-              text={failedRunHandoff({
-                attemptsMade: run.attemptsMade,
-                automationName: run.automationName,
-                diagnosisSummary: diagnosisQuery.data?.likelyCause.summary,
-                errorMessage: run.errorMessage,
-                runId: run.runId,
-                triggerType: run.triggerType,
-              })}
-            />
+          {runAgainRefusal === null ? (
+            <ReservedSlot active={!open}>
+              <button
+                className="btn quiet"
+                disabled={runAgain.isPending || run.triggerType === "chain"}
+                onClick={() => runAgain.mutate()}
+                title={
+                  run.triggerType === "chain"
+                    ? "A chained run starts when its source finishes."
+                    : "Starts a new run with the same payload."
+                }
+                type="button"
+              >
+                {runAgain.isPending ? "Starting…" : "Run again"}
+              </button>
+            </ReservedSlot>
           ) : null}
-          {!open && runAgainRefusal === null ? (
-            <button
-              className="btn quiet"
-              disabled={runAgain.isPending || run.triggerType === "chain"}
-              onClick={() => runAgain.mutate()}
-              title={
-                run.triggerType === "chain"
-                  ? "A chained run starts when its source finishes."
-                  : "Starts a new run with the same payload."
-              }
-              type="button"
-            >
-              {runAgain.isPending ? "Starting…" : "Run again"}
-            </button>
+          {cancelRefusal === null ? (
+            <ReservedSlot active={open}>
+              <button
+                className="btn danger"
+                disabled={cancel.isPending}
+                onClick={() => cancel.mutate()}
+                type="button"
+              >
+                {cancel.isPending ? "Cancelling…" : "Cancel run"}
+              </button>
+            </ReservedSlot>
           ) : null}
           {props.showAutomationLink ? (
             <Link
@@ -207,16 +208,6 @@ function LoadedRun(props: {
             >
               Open automation
             </Link>
-          ) : null}
-          {open && cancelRefusal === null ? (
-            <button
-              className="btn danger"
-              disabled={cancel.isPending}
-              onClick={() => cancel.mutate()}
-              type="button"
-            >
-              {cancel.isPending ? "Cancelling…" : "Cancel run"}
-            </button>
           ) : null}
         </div>
       </div>
@@ -272,6 +263,19 @@ function LoadedRun(props: {
                   </p>
                 ))}
               </>
+            ) : null}
+            {handsOff ? (
+              <CopyButton
+                label="Hand to agent"
+                text={failedRunHandoff({
+                  attemptsMade: run.attemptsMade,
+                  automationName: run.automationName,
+                  diagnosisSummary: diagnosisQuery.data?.likelyCause.summary,
+                  errorMessage: run.errorMessage,
+                  runId: run.runId,
+                  triggerType: run.triggerType,
+                })}
+              />
             ) : null}
           </div>
         ) : null}
@@ -354,6 +358,23 @@ function LoadedRun(props: {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * A header action that exists in only some run states. The other states keep its space, empty, so
+ * the actions beside it stay put when the run changes state and a click aimed at one of them never
+ * lands on another.
+ */
+function ReservedSlot(props: { readonly active: boolean; readonly children: ReactNode }) {
+  return (
+    <span
+      aria-hidden={!props.active}
+      className={props.active ? undefined : "invisible"}
+      inert={!props.active}
+    >
+      {props.children}
+    </span>
   );
 }
 

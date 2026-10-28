@@ -7,6 +7,7 @@
 
 import assert from "node:assert/strict";
 import { get, type PackagedStack, startPackagedStack, until } from "./packaged-stack.mts";
+import { smokeRunnerEgress } from "./smoke-egress.mts";
 import { smokePdfRecipe } from "./smoke-recipe.mts";
 import { type SmokeTracing, startSmokeTracing } from "./smoke-tracing.mts";
 
@@ -123,6 +124,7 @@ try {
   stack = await startPackagedStack("smoke", log, ".", {
     OTEL_EXPORTER_OTLP_ENDPOINT: tracing.endpoint,
   });
+  await smokeRunnerEgress(stack, log);
   await smoke(stack, tracing);
   log("passed");
 } catch (error) {

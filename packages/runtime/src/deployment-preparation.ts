@@ -141,7 +141,7 @@ async function prepare(
   onRunImage: (tag: string) => Promise<void>,
 ): Promise<boolean> {
   return await withExecutionSource(deployment.files, async (directory) => {
-    const definition = await loadAutomationDefinition(directory);
+    const definition = await loadAutomationDefinition(directory, "deployment");
     if (!runsInSandbox(definition, true)) return false;
     await onRunImage(await runImageTag(definition.directory, runImageRecipe(definition)));
     await prepareContainerAutomation({

@@ -56,13 +56,27 @@ async function deployCheckedAutomation(checkJs: string) {
 }
 
 describe("API checks", () => {
+  it.each([401, 403, 200])(
+    "persists the last API contact status %i for a failing check",
+    async (status) => {
+      const { due, environment, platform } = await deployCheckedAutomation(
+        CHECK_JS(
+          `log({ type: 'api_contact', host: 'api.example.com', status: ${status} }); process.exit(1);`,
+        ),
+      );
+      const [check] = due;
+      if (check === undefined) throw new Error("Expected a due check");
+      expect(
+        await platform.processPlatformCheck(check.checkId, check.nextCheckAt, { environment }),
+      ).toMatchObject({ status: status === 200 ? "drift" : "credentials" });
+    },
+  );
+
   it.each(["HTTP 401 ", "Error: "])(
     "stores a bounded warning and delivers a bounded Telegram alert for %s",
     async (prefix) => {
       const { due, environment, platform } = await deployCheckedAutomation(
-        CHECK_JS(
-          `console.error(${JSON.stringify(prefix)} + 'x'.repeat(10_000)); console.log('y'.repeat(1000)); process.exit(1);`,
-        ),
+        `console.error(${JSON.stringify(prefix)} + 'x'.repeat(10_000)); console.log('y'.repeat(1000)); process.exit(1);`,
       );
       const userId = "00000000-0000-4000-8000-0000000000ab";
       await testDatabase().pool.query(
@@ -88,7 +102,10 @@ describe("API checks", () => {
             environment,
           })) ?? undefined;
       }
-      expect(check).toMatchObject({ status: "error", consecutiveFailures: 3 });
+      expect(check).toMatchObject({
+        status: prefix === "HTTP 401 " ? "credentials" : "error",
+        consecutiveFailures: 3,
+      });
       expect(check?.lastWarning).toContain(prefix);
       expect.soft(check?.lastWarning?.length).toBeLessThanOrEqual(4096);
       const [delivery] = await platform.listNotificationDeliveries({ environment: "local" });
@@ -291,7 +308,7 @@ describe("API checks", () => {
     expect(drift?.failingSince).not.toBeNull();
   });
 
-  it("records a failed login as an error with a credential diagnosis", async () => {
+  it("records a failed login as credentials with a diagnosis", async () => {
     const { due, environment, platform } = await deployCheckedAutomation(
       "throw new Error('HTTP 401 Unauthorized');",
     );
@@ -302,7 +319,7 @@ describe("API checks", () => {
       { environment },
     );
     expect(recorded).toMatchObject({
-      status: "error",
+      status: "credentials",
       lastExitCode: 1,
       lastWarning: "API check credentials failed: Error: HTTP 401 Unauthorized",
     });

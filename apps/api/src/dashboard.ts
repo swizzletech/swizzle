@@ -535,7 +535,7 @@ export function withReadiness(
   automation: DashboardAutomationSummary,
   context: ReadinessContext,
 ): JudgedAutomationSummary {
-  const readiness = addCredentialIssues(
+  let readiness = addCredentialIssues(
     runtimeReadiness(automation, automation.activeDeployment, context),
     {
       connections: automation.requiredConnections,
@@ -543,6 +543,19 @@ export function withReadiness(
       secrets: automation.requiredSecrets,
     },
   );
+  if (automation.trigger?.errorCode !== null && automation.trigger?.errorCode !== undefined) {
+    readiness = {
+      ...readiness,
+      status: "not-ready",
+      errors: [
+        ...readiness.errors,
+        {
+          code: "TRIGGER_CONFIGURATION_INVALID",
+          message: automation.trigger.errorMessage ?? "The trigger configuration is invalid.",
+        },
+      ],
+    };
+  }
   return {
     ...automation,
     activeDeployment: { ...automation.activeDeployment, readiness },

@@ -75,6 +75,9 @@ export function createQueueNameForProfile(profile: string): string {
 
 export function createRuntimeSnapshot(config: AutomationConfig): RuntimeSnapshot {
   return {
+    ...(config.runtime.binary_version_matching === undefined
+      ? {}
+      : { binary_version_matching: config.runtime.binary_version_matching }),
     ...(config.runtime.container !== undefined
       ? { container: { ...config.runtime.container } }
       : {}),
@@ -362,7 +365,12 @@ export function workerGaps(
     if (found === undefined) gaps.push({ kind: "binary-missing", name: required.name });
     else if (
       required.version !== undefined &&
-      (found.version === null || !matchesVersionRequirement(found.version, required.version))
+      (found.version === null ||
+        !matchesVersionRequirement(
+          found.version,
+          required.version,
+          runtime.binary_version_matching,
+        ))
     ) {
       gaps.push({
         kind: "binary-version",
@@ -665,12 +673,16 @@ function extractVersionFromOutput(output: string): string | null {
   return match?.[1] ?? null;
 }
 
-function matchesVersionRequirement(actualVersion: string, requirement: string): boolean {
+function matchesVersionRequirement(
+  actualVersion: string,
+  requirement: string,
+  matching: AutomationRuntimeConfig["binary_version_matching"],
+): boolean {
   const trimmedRequirement = requirement.trim();
   const actualParts = parseVersion(actualVersion);
   const requiredParts = parseVersion(trimmedRequirement.replace(/^[^\d]*/, ""));
   if (requiredParts.length === 0 || actualParts.length === 0) {
-    return true;
+    return matching === undefined;
   }
 
   if (trimmedRequirement.startsWith(">=")) {
@@ -693,7 +705,9 @@ function matchesVersionRequirement(actualVersion: string, requirement: string): 
     return compareVersions(actualParts, requiredParts) === 0;
   }
 
-  return compareVersions(actualParts, requiredParts) === 0;
+  return matching === undefined
+    ? compareVersions(actualParts, requiredParts) === 0
+    : requiredParts.every((part, index) => part === (actualParts[index] ?? 0));
 }
 
 function compareVersions(left: readonly number[], right: readonly number[]): number {

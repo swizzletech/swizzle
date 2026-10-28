@@ -171,7 +171,7 @@ swizzle rollback hello-webhook dep_01J9 -e production
 
 ## `swizzle delete`
 
-Delete an automation with its deployments, triggers, state, artifacts and runs. Its audit events stay. Pause the trigger and let runs finish first
+Delete an automation with its deployments, triggers, state, artifacts and runs. Names dependent chains before confirmation; their triggers become invalid. Its audit events stay. Pause the trigger and let runs finish first
 
 Source: [deployment-commands.ts](../../apps/cli/src/deployment-commands.ts)
 
@@ -443,7 +443,7 @@ Usage: `swizzle logs [automationName] [options]`
 | `--exact` | Disable fuzzy name matching | - |
 | `--head <lines>` | Only the first N lines of each stream | - |
 | `--tail <lines>` | Only the last N lines of each stream | - |
-| `--full` | Print both streams whole (can be large) | - |
+| `--full` | Print both streams whole with real line breaks (--json keeps strings; can be large) | - |
 
 ```bash
 swizzle logs --run 0193b1d2-7f0c-7e55-9d5a-3c1f0b2a9e41 --follow

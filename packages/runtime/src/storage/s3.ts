@@ -5,6 +5,7 @@ import https from "node:https";
 import path from "node:path";
 import { Readable } from "node:stream";
 import type { S3Client } from "@aws-sdk/client-s3";
+import { stringifyAutomationConfig } from "@swizzle/config";
 import { controlEgressAgentOptions, createDisplayName } from "@swizzle/core";
 import { AutomationRuntimeError } from "../errors.js";
 import { createArtifactStorageNotWritableError } from "./errors.js";
@@ -131,7 +132,10 @@ export function createS3ArtifactStorage(options: {
       const reference = buildS3Reference(locator);
 
       for (const relativePath of input.includedFiles) {
-        const body = await readFile(path.join(input.automationDirectory, relativePath));
+        const body =
+          relativePath === "config.yaml"
+            ? stringifyAutomationConfig(input.config)
+            : await readFile(path.join(input.automationDirectory, relativePath));
         try {
           await s3.client.send(
             new s3.sdk.PutObjectCommand({

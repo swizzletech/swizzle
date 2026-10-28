@@ -33,6 +33,7 @@ export const NO_AUDIT_TARGET: AuditTarget = {
 
 export type TriggerAuditEventType =
   | "chain_join_skipped"
+  | "cron_missed"
   | "cron_skipped"
   | "trigger_paused"
   | "trigger_resumed"

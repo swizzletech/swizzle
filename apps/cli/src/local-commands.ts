@@ -348,19 +348,24 @@ async function runApiCheck(
     });
   }
   if (outcome.status === "error") {
-    let code = "API_CHECK_ERROR";
-    if (outcome.failure === "credentials") {
-      code = "API_CHECK_CREDENTIALS";
-    } else if (!result.success) {
-      code = result.code;
+    if (outcome.failure !== "credentials" && !result.success) {
+      const mapped = buildRunFailureError(result);
+      throw new AgentError({
+        code: mapped.code,
+        details: { ...mapped.details, output: outcome.output },
+        hint: mapped.hint ?? "The check's log is above on stderr.",
+        message: `The API check failed: ${outcome.message}`,
+        retryable: mapped.retryable,
+        exitCode: mapped.exitCode,
+      });
     }
     throw new AgentError({
-      code,
+      code: outcome.failure === "credentials" ? "API_CHECK_CREDENTIALS" : "API_CHECK_ERROR",
       details: { exitCode: outcome.exitCode, output: outcome.output },
       hint:
         outcome.failure === "credentials"
           ? "Fix the check's credentials or connection, then rerun `swizzle run --check .`."
-          : "Read the exception in stderr and fix the check. Signal drift with contract_changed; a bare exit 1 also signals drift, but a traceback or credential failure is an error.",
+          : 'Print a JSON object with "ok": true when the check passes. Signal drift with contract_changed or a bare exit 1.',
       message: `The API check failed: ${outcome.message}`,
     });
   }

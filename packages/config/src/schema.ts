@@ -16,6 +16,7 @@ import {
   AUTOMATION_RUNTIME_EXECUTION_MODES,
   AUTOMATION_RUNTIME_LANGUAGES,
   type AutomationRuntimeConfig,
+  deployedRuntimeConfigSchema,
   inferAutomationLanguage,
   runtimeConfigSchema,
 } from "./schema/runtime.js";
@@ -243,8 +244,10 @@ export type AutomationConfigInput = Omit<z.input<typeof automationConfigRawSchem
   readonly trigger: z.input<typeof triggerSchema>;
 };
 
-/** config.yaml for `config`, keys in the order given; `swizzle init` writes its scaffolds with it. */
-export function stringifyAutomationConfig(config: AutomationConfigInput): string {
+/** config.yaml for source scaffolds and normalized deployment artifacts, in the given key order. */
+export function stringifyAutomationConfig(
+  config: AutomationConfigInput | AutomationConfig,
+): string {
   return stringifyYaml(config);
 }
 
@@ -286,7 +289,10 @@ export function createAutomationConfigJsonSchema(): Record<string, unknown> {
   };
 }
 
-export function normalizeAutomationConfig(config: AutomationConfigRaw): AutomationConfig {
+export function normalizeAutomationConfig(
+  config: AutomationConfigRaw,
+  source: "source" | "deployment" = "source",
+): AutomationConfig {
   const triggerType = config.trigger.type;
   const onOverlapDefault = triggerType === "cron" ? "skip" : "queue";
   const { api_check: apiCheck, ...rest } = config;
@@ -297,6 +303,7 @@ export function normalizeAutomationConfig(config: AutomationConfigRaw): Automati
       : { api_check: normalizeApiCheck(apiCheck, config.entrypoint) }),
     runtime: {
       ...config.runtime,
+      ...(source === "source" ? { binary_version_matching: "numeric-prefix" as const } : {}),
       language: config.runtime.language ?? inferAutomationLanguage(config.entrypoint),
       on_overlap: config.runtime.on_overlap ?? onOverlapDefault,
       permissions: {
@@ -322,12 +329,20 @@ export function normalizeAutomationConfig(config: AutomationConfigRaw): Automati
   };
 }
 
-export function parseAutomationConfig(input: string): AutomationConfig {
-  const parsed = automationConfigRawSchema.safeParse(parseYaml(input));
+const deployedConfigSchema = automationConfigRawSchema.safeExtend({
+  runtime: deployedRuntimeConfigSchema,
+});
+
+export function parseAutomationConfig(
+  input: string,
+  source: "source" | "deployment" = "source",
+): AutomationConfig {
+  const schema = source === "deployment" ? deployedConfigSchema : automationConfigRawSchema;
+  const parsed = schema.safeParse(parseYaml(input));
   if (!parsed.success) {
     throw new Error(formatConfigIssues(parsed.error.issues));
   }
-  const config = normalizeAutomationConfig(parsed.data);
+  const config = normalizeAutomationConfig(parsed.data, source);
   assertAutomationPayloadSchemasAreValid(config);
   return config;
 }

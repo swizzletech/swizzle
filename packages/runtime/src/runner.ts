@@ -99,7 +99,10 @@ async function execute(
   let dependencyStderr = "";
 
   try {
-    const definition = await loadAutomationDefinition(options.automationDirectory);
+    const definition = await loadAutomationDefinition(
+      options.automationDirectory,
+      options.runtimeMetadata === undefined ? "source" : "deployment",
+    );
     const script = await resolveScript(definition);
     const payload = script.payload;
 

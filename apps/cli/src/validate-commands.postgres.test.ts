@@ -23,6 +23,30 @@ useCliTestEnvironment();
 beforeEach(withoutProfile);
 
 describe("swizzle validate", () => {
+  it("refuses unknown binary version rules before checking the machine", async () => {
+    const directory = await temporaryDirectory("swizzle-cli-version-rule-");
+    await writeFile(
+      path.join(directory, "config.yaml"),
+      [
+        "name: pdf",
+        "version: 1.0.0",
+        "entrypoint: main.py",
+        "trigger: { type: webhook }",
+        "runtime:",
+        "  requirements:",
+        "    binaries:",
+        '      - { name: pdftoppm, version: "^25" }',
+      ].join("\n"),
+    );
+    await writeFile(path.join(directory, "main.py"), "print('{}')\n");
+    const io = createBufferIO();
+    expect(await runCli(["validate", directory, "--json"], io)).toBe(3);
+    expect(JSON.parse(io.stdoutText)).toMatchObject({
+      code: "AUTOMATION_CONFIG_INVALID",
+      error: expect.stringMatching(/Invalid.*>=.*<=.*>.*<.*=/),
+    });
+  });
+
   it("validates an automation folder with a richer authoring summary", async () => {
     const io = createBufferIO();
     // A path inside the working directory prints relative to it.

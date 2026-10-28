@@ -1,14 +1,20 @@
 # Install Swizzle on a server
 
-Swizzle runs from a checkout of this repository. `just stack` builds the images from the checkout in Docker and starts the Compose stack in [`infra/docker/compose.yml`](../../infra/docker/compose.yml) behind Caddy. The server needs no Node.js package dependencies of its own. The `swizzle` CLI installs from npm on any machine that reaches the API. Caddy's image contains [`infra/docker/Caddyfile`](../../infra/docker/Caddyfile), so after you edit that file, `just stack` rebuilds the image and replaces the Caddy container. What the stack defends against, and how, is in [the security model](../explanation/security-model.md).
+Swizzle runs from a checkout of this repository. `just stack` prepares the images and starts the Compose stack in [`infra/docker/compose.yml`](../../infra/docker/compose.yml) behind Caddy. A clean release checkout pulls published images. A development checkout or tracked local changes build from source. Source builds from `just stack` reuse the `local` tag for each service, so rerunning the recipe does not retain another tagged image set. Upgrade preparation keeps separate tags for recovery. Each preparation starts its own built images even if another preparation moves those tags. The server needs no Node.js package dependencies of its own. The `swizzle` CLI installs from npm on any machine that reaches the API. Caddy's image contains [`infra/docker/Caddyfile`](../../infra/docker/Caddyfile), so a local edit makes `just stack` rebuild it. What the stack defends against, and how, is in [the security model](../explanation/security-model.md).
 
 You need:
 
-- Docker Engine with the Docker Compose v2 plugin on the server. Install both with [Docker's guide for your distribution](https://docs.docker.com/engine/install/). A distribution package such as Ubuntu's `docker.io` can lack the plugin. `docker compose version` must print a version.
+- Docker Engine with the Docker Compose and Buildx plugins on the server. Install both with [Docker's guide for your distribution](https://docs.docker.com/engine/install/). A distribution package such as Ubuntu's `docker.io` can lack the plugin. `docker compose version` and `docker buildx version` must each print a version.
 - `git` and [mise](https://mise.jdx.dev). `mise install` in the checkout installs the pinned toolchain from [`mise.toml`](../../mise.toml), so you install no `just` of your own. The stack recipes use its `just` and Node.js.
 - On Debian and Ubuntu, the `libatomic1` package. The Node.js that mise installs needs it, and minimal server images lack it. Without it, `mise install` fails with `libatomic.so.1: cannot open shared object file`.
 
-With mise activated in your shell, run recipes as `just stack`. In a shell without it, such as a command passed to `ssh`, prefix each recipe with `mise x --`: `ssh you@server 'cd /opt/swizzle && mise x -- just stack'`.
+With mise activated in your shell, run recipes as `just stack`. In a plain SSH shell, put mise itself on PATH and prefix recipes with `mise x --`. For the default mise installation:
+
+```bash
+ssh you@server 'export PATH="$HOME/.local/bin:$PATH"; cd /opt/swizzle && mise x -- just stack'
+```
+
+If you installed mise elsewhere, use its directory instead. `mise x` supplies the pinned Node.js and `just`, but does not add mise itself to PATH. The recipe's shell needs mise too.
 
 You need neither a domain nor a mail server. Without a mail server, you copy each invitation link from the dashboard and send it to the person yourself.
 
@@ -18,15 +24,20 @@ Clone the repository and write `.env`:
 
 ```bash
 sudo apt-get install -y git libatomic1   # Debian and Ubuntu
-git clone https://github.com/swizzletech/swizzle.git /opt/swizzle
+git clone --branch v1.0.5 https://github.com/swizzletech/swizzle.git /opt/swizzle
 cd /opt/swizzle
+export PATH="$HOME/.local/bin:$PATH"
 mise trust && mise install
-just init-env
+mise x -- just init-env
 ```
 
 `just init-env` writes `.env` with unique credentials for Postgres, Valkey, encryption and the first account's setup. The file has mode 0600. It also sets a unique `COMPOSE_PROJECT_NAME` for the stack's containers, networks and volumes, and sizes the CPU limits to the Docker host (see [Configure the instance](#configure-the-instance)). A rerun keeps credentials and operator settings, removes the obsolete `SWIZZLE_IMAGE_TAG` line, and sizes legacy CPU defaults to the host. If a required credential or project name is missing or blank, or `SWIZZLE_LOCAL_WORKER_TOKEN` has a format from before 1.0.0, the recipe fails before any build and names the key. Restore the value or replace the token as the message shows, or delete `.env` and rerun `just init-env` to generate fresh credentials. `just stack` runs `just init-env` first, so a stack never starts without `.env`.
 
-The first `just stack` builds every image on the server, which takes minutes: about 20 on a 1-vCPU server. Later runs reuse Docker's build cache and rebuild only what changed.
+Choose the release tag you intend to install. On a release with published images, `just stack` pulls versioned images from `ghcr.io/swizzletech` for `linux/amd64` or `linux/arm64`, then starts the stack without building. Keep at least 5 GiB free in Docker's data directory for the images and backup. You need no registry login for the public packages.
+
+Releases without published images, 1.0.4 and earlier, build one service image at a time, with Turbo compiling one workspace at a time. A development checkout without a matching release tag also builds from source. Source builds need at least 12 GiB free. An existing custom `SWIZZLE_WEB_API_BASE_URL` builds the web image from source while pulling the other release images. Registry access failures and incomplete publications stop the command before services change.
+
+Before installing a release with published images, [verify its image signature](upgrade.md#verify-release-images). If you use a registry mirror, set `SWIZZLE_IMAGE_REGISTRY` in the shell to its namespace, such as `registry.example.com/swizzletech`. It applies to stack and upgrade commands.
 
 ## Choose who can reach the dashboard
 
@@ -144,6 +155,8 @@ Deployed runs can call only binaries in the `runner-base` image from [infra/dock
 
 ## Run the stack
 
+Dependency images such as Postgres and Valkey are pulled only when missing locally. A cached dependency image remains usable during a registry outage.
+
 Only `docker-broker` mounts the Docker socket, and only Caddy binds host ports. Caddy stores certificates in the `caddy-data` and `caddy-config` volumes.
 
 Run `just stack-down` to stop the packaged stack and remove its volumes, the service images `just stack` built and the run images its worker built. Pulled images such as Postgres and Valkey stay, because other stacks on the host may share them.
@@ -152,7 +165,7 @@ Compose allows the API and scheduler 45 seconds to stop, covering their default 
 
 A webhook with a generated path such as `/hooks/hello-<random>` answers at `<SWIZZLE_PUBLIC_URL>/hooks/hello-<random>`, by default `http://api.localhost:19826/hooks/hello-<random>`. The scaffold adds a random suffix and verifies the request signature. See [check webhook input](write-an-automation.md#check-webhook-input) for the signature setup.
 
-Run `just smoke` on a development machine to check the full path. The recipe writes `.env` and installs the development dependencies first. Do not run it on the server. The recipe starts a throwaway stack with its own credentials, Compose project, and free ports. It deploys `infra/examples/hello-webhook`, posts to its webhook URL, and checks the successful run and exported trace. It also deploys the shipped skill's PDF recipe as the skill writes it and checks that its run renders a page with `pdftoppm`. Then it removes the project's labelled containers, networks, volumes, and images, including resources left by a failed start. At startup, `just smoke` and `just perf` remove old throwaways when their recorded process identity no longer matches. [The local stack guide](run-a-local-stack.md) explains how cleanup checks process ownership.
+Run `just smoke` on a development machine to check the packaged stack. The recipe writes `.env` and installs the development dependencies first. Do not run it on the server. It starts a throwaway stack with its own credentials, Compose project, and free ports. The recipe deploys `infra/examples/hello-webhook`, posts to its webhook URL, and checks the successful run and exported trace. It deploys Python and TypeScript automations that check public HTTPS access and verify that the runner egress proxy denies a loopback HTTP request. It also deploys the shipped skill's PDF recipe and checks that its run renders a page with `pdftoppm`. The recipe removes the project's labelled containers, networks, volumes, and images, including resources left by a failed start. At startup, `just smoke` and `just perf` remove old throwaways when their recorded process identity no longer matches. [The local stack guide](run-a-local-stack.md) explains how cleanup checks process ownership.
 
 If another service uses a default host port, change that port to a free value. Set `SWIZZLE_HTTP_PORT` for HTTP, `SWIZZLE_HTTPS_PORT` for HTTPS, and `SWIZZLE_LINK_PORT` for the public listener. Keep all three ports distinct. When you change HTTP or HTTPS, put the new port in `SWIZZLE_DASHBOARD_SITE` and `SWIZZLE_API_SITE`. If a site setting is empty, put its port in the matching origin instead. The CLI's default API URL is `http://api.localhost:19826`, so also set `SWIZZLE_API_URL` to the new address, or register a profile with `swizzle profile add <name> --url <api origin>`.
 
@@ -239,7 +252,7 @@ This guide covers Tailscale Funnel, Cloudflare Tunnel, and a separate public hos
 
 ### Through Tailscale Funnel on a private server
 
-Funnel publishes a port of the machine's `ts.net` name on the internet. The dashboard keeps its private tailnet origin from [the Tailscale install path](#on-a-private-network-over-tailscale).
+Funnel publishes a port of the machine's `ts.net` name on the internet. After you enable Funnel, HTTPS can take up to a minute to answer. The dashboard keeps its private tailnet origin from [the Tailscale install path](#on-a-private-network-over-tailscale).
 
 1. Set these values in `.env`, with your machine's name:
 

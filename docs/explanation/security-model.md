@@ -107,7 +107,7 @@ A chain trigger can name sources only in the consumer's project. This keeps depl
 
 History stays in the project where it was written. Runs and automation audit events keep that project when an automation moves, so earlier rows stay in the old project's run list and change feed. An automation share reaches rows for that automation in its current project only. The automation page, step counts, diagnosis and audit lists follow the same rule.
 
-`swizzle delete` deletes the automation with its deployments, triggers, state and every run in every project, and frees its name. It refuses while a trigger is active or a run is unfinished. A chain trigger of another automation that names it as a source is removed with it, so that automation never waits for a source that cannot run again. Its audit events stay.
+`swizzle delete` deletes the automation with its deployments, triggers, state and every run in every project, and frees its name. It refuses while a trigger is active or a run is unfinished. Its audit events stay. See [deleting a chain source](deployments-and-rollback.md#deleting-a-source-leaves-its-chains-invalid) for the effect on dependent chains and recovery steps.
 
 Deleting a project moves its automations, credentials and runs to another project, or deletes them with the project ([`deleteProject`](../../packages/db/src/control-plane-automations.ts)). The [project deletion guide](../how-to/give-people-access.md#delete-a-project) covers the dashboard choices. The API takes them on `DELETE /projects/:project`:
 

@@ -39,6 +39,14 @@ function trigger(
 
 describe("triggerInWords", () => {
   it.each([
+    [
+      trigger({
+        triggerType: "chain",
+        status: "invalid",
+        errorCode: "TRIGGER_CHAIN_SOURCE_DELETED",
+      }),
+      "Chain source deleted",
+    ],
     [trigger({}), "Webhook `/hello`"],
     [trigger({ cronIntervalMs: 30_000, triggerType: "cron" }), "Every 30 seconds"],
     [trigger({ cronIntervalMs: 3_600_000, triggerType: "cron" }), "Every hour"],
