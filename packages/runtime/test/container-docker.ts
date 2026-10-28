@@ -63,7 +63,7 @@ interface FakeDockerOptions {
  * result. With `layerMiB`, the install step runs until `docker kill` and the container's writable
  * layer holds that many MiB. With `sizeUnknown`, the layer's size cannot be read; a stalled install
  * stalls the size reading too. With `execHangs`, exec ignores every signal but SIGKILL and never
- * ends, like a CLI whose daemon stopped answering, and `execPid` reads its process id. `inputs`
+ * ends, like a CLI whose daemon stopped answering. `execPid` reads the last exec's process id. `inputs`
  * lists the files of the last exec's input archive.
  */
 export async function fakeDocker(input: FakeDockerOptions) {
@@ -172,7 +172,11 @@ function layerSizeCommand(input: FakeDockerOptions): string {
 function execCommand(input: FakeDockerOptions, bin: string): string {
   if (input.execHangs)
     return `trap '' HUP INT TERM; echo $$ > '${bin}/exec.pid'; cat >/dev/null; while :; do sleep 1; done`;
-  const commands = [`cat > '${bin}/inputs.tar'`, `echo '${input.execStdout ?? '{"ok":true}'}'`];
+  const commands = [
+    `echo $$ > '${bin}/exec.pid'`,
+    `cat > '${bin}/inputs.tar'`,
+    `echo '${input.execStdout ?? '{"ok":true}'}'`,
+  ];
   if (input.execStderr)
     commands.push(
       `while [ ! -e '${bin}/stderr-release' ]; do sleep 0.01; done`,
@@ -180,27 +184,6 @@ function execCommand(input: FakeDockerOptions, bin: string): string {
     );
   if (input.execAfterOutputStalls) commands.push("exec sleep 30");
   return commands.join("; ");
-}
-
-/**
- * Hands the test every Docker deadline of `ms`. `expireNewest` ends the newest one as its timer
- * would, so a test expires the deadline of the step it stalls, and no other step races a short timer.
- */
-export function controlledDeadlines(ms: number) {
-  const timeout = AbortSignal.timeout.bind(AbortSignal);
-  const deadlines: AbortController[] = [];
-  vi.spyOn(AbortSignal, "timeout").mockImplementation((value) => {
-    if (value !== ms) return timeout(value);
-    const deadline = new AbortController();
-    deadlines.push(deadline);
-    return deadline.signal;
-  });
-  return {
-    expireNewest: () =>
-      deadlines
-        .at(-1)
-        ?.abort(new DOMException("The operation was aborted due to timeout", "TimeoutError")),
-  };
 }
 
 export function isRunning(pid: number): boolean {

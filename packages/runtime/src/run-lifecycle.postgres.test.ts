@@ -92,9 +92,7 @@ describe("structured stderr step events", () => {
     expect(run.failure).toMatchObject({ code: "AUTOMATION_STEP_LIMIT_EXCEEDED" });
   });
 
-  it("stops a stream of starts at the run's step count limit, but lets a known step restart", {
-    timeout: 30_000,
-  }, async () => {
+  it("stops a stream of starts at the run's step count limit, but lets a known step restart", async () => {
     const run = await createRun();
     const lines = Array.from({ length: 2_000 }, (_, i) => startLine(`start-${i}`)).join("");
     run.consume(lines);

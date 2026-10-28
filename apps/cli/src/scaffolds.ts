@@ -387,8 +387,9 @@ const CHECK_RULES = [
   "",
   "Parse the answer with the same function the entrypoint uses, so a changed API fails here and",
   'in the next run on the same field. Exit 0 and print {"ok": true, "checked": [...]} when the',
-  "answer matches. Exit 1 when it does not (drift). Any other ending counts as undecided, such as",
-  "a 503, and shows after 3 in a row.",
+  "answer matches. Use contract_changed/contractChanged for drift, or exit 1 intentionally.",
+  "Tracebacks, exceptions and failed logins count as errors even with exit 1. Other endings",
+  "count as undecided, such as a 503, and show after 3 in a row.",
 ];
 
 const TYPESCRIPT_CHECK_STUB = `${CHECK_RULES.map((line) => `// ${line}`.trimEnd()).join("\n")}

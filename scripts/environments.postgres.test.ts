@@ -37,7 +37,7 @@ async function verifyEnvironments(client: DatabaseClient): Promise<void> {
   );
 }
 
-it("environments", { timeout: 60_000 }, async () => {
+it("environments", async () => {
   const client = testDatabase();
   await commitDeploymentFixture(testControlPlaneStore(), "discovered");
   await verifyEnvironments(client);

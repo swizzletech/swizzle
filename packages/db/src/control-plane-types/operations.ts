@@ -198,6 +198,7 @@ export interface CleanupMaintenanceResult {
 }
 
 export interface ExpireRunsInput {
+  readonly environment: string;
   /** Finished runs whose finished_at is at or before this instant expire. */
   readonly cutoff: string;
 }

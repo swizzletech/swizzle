@@ -19,6 +19,7 @@ import {
   scrypt as scryptCallback,
   timingSafeEqual,
 } from "node:crypto";
+import { PASSWORD_LENGTH } from "@swizzle/config";
 import { API_ERROR_STATUS, type ApiErrorCode, createLogger, isApiErrorCode } from "@swizzle/core";
 import type { BetterAuthOptions, DBAdapterInstance } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -226,7 +227,6 @@ export interface SwizzleAuthOptions {
 
 const DEFAULT_SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_SESSION_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
-const PASSWORD_LENGTH = { max: 128, min: 15 } as const;
 
 export function createPostgresSwizzleAuth(
   options: SwizzleAuthOptions & {

@@ -1,7 +1,8 @@
 import { createServer, type Server } from "node:http";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { heldDeadlines } from "../../../test/support.js";
 import { parseCustomOAuth2ProviderConfig } from "./custom-oauth2.js";
-import { ConnectionProviderError } from "./errors.js";
+import { ConnectionProviderError, PROVIDER_REQUEST_TIMEOUT_MS } from "./errors.js";
 import { parseMicrosoftProviderConfig } from "./microsoft.js";
 import { getConnectionProviderAdapter } from "./registry.js";
 import type { ConnectionProviderAdapter } from "./types.js";
@@ -466,6 +467,9 @@ describe.each(["custom-oauth2", "clickup"] as const)("%s request timeout", (prov
   let server: Server;
   let origin: string;
   let stallBody: boolean;
+  // The provider's deadline ends once the stall is in place: at the request for the headers, and
+  // once the headers arrived for the body.
+  let deadlines: ReturnType<typeof heldDeadlines>;
 
   beforeEach(async () => {
     stallBody = false;
@@ -473,7 +477,7 @@ describe.each(["custom-oauth2", "clickup"] as const)("%s request timeout", (prov
       if (stallBody) {
         response.writeHead(200, { "content-type": "application/json" });
         response.write('{"access_token":');
-      }
+      } else deadlines.expire();
     });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
@@ -481,11 +485,12 @@ describe.each(["custom-oauth2", "clickup"] as const)("%s request timeout", (prov
     origin = `http://127.0.0.1:${address.port}`;
     vi.stubEnv("SWIZZLE_ALLOW_INSECURE_OAUTH_ENDPOINTS", "true");
     const nativeFetch = globalThis.fetch;
-    vi.stubGlobal("fetch", (_input: Parameters<typeof fetch>[0], init?: RequestInit) =>
-      nativeFetch(origin, init),
-    );
-    const nativeTimeout = AbortSignal.timeout.bind(AbortSignal);
-    vi.spyOn(AbortSignal, "timeout").mockImplementation(() => nativeTimeout(250));
+    vi.stubGlobal("fetch", async (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+      const response = await nativeFetch(origin, init);
+      if (stallBody) deadlines.expire();
+      return response;
+    });
+    deadlines = heldDeadlines(PROVIDER_REQUEST_TIMEOUT_MS);
   });
 
   afterEach(async () => {
@@ -509,6 +514,5 @@ describe.each(["custom-oauth2", "clickup"] as const)("%s request timeout", (prov
         message: "OAuth provider code exchange timed out after 10000ms",
       });
     },
-    2_000,
   );
 });

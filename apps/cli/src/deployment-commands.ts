@@ -115,7 +115,7 @@ function runApply(
             registered: false,
             readiness: deployment.readiness.status,
             build: deployment.buildSnapshot.status,
-            runtime: `${deployment.runtimeSnapshot.language} / ${deployment.runtimeSnapshot.execution_mode} / ${deployment.runtimeSnapshot.profile}`,
+            runtime: `${deployment.runtimeSnapshot.language} / sandbox (container) / ${deployment.runtimeSnapshot.profile}`,
             sourceHash: deployment.sourceHash,
             artifactRoot: deployment.artifactRootPath,
             manifest: deployment.manifestPath,

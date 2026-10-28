@@ -242,3 +242,37 @@ test("at 1280x720 a seven-station track fits its card", async ({ page }) => {
     await track.locator(".track-scroll").evaluate((area) => area.scrollWidth - area.clientWidth),
   ).toBeLessThanOrEqual(0);
 });
+
+// The track lays stations out before it renders, so it estimates how tall the details grow. A
+// full-width heading wraps at about half the characters a Latin one does.
+test("an approval with long CJK details keeps its buttons inside the station", async ({ page }) => {
+  const state = seededState();
+  const details = {
+    message: "このご注文の返金を承認しますか？お客様はすでに商品を返送済みで、金額は確認済みです。",
+    顧客メモ:
+      "返品された商品は倉庫で検品され、傷や汚れは見つかりませんでした。全額返金で問題ありません。",
+  };
+  const waiting = state.runDetails.get(APPROVAL_RUN_ID);
+  if (waiting?.approval)
+    state.runDetails.set(APPROVAL_RUN_ID, {
+      ...waiting,
+      approval: { ...waiting.approval, details },
+    });
+  await mockDashboardApi(page, state);
+  await page.goto(`/automations/verify-probe?run=${APPROVAL_RUN_ID}`);
+
+  const track = page.getByTestId("flow-track");
+  const gate = track.locator('[data-testid="station"][data-step="gate"]');
+  await expect(gate).toContainText("このご注文の返金を承認しますか");
+  await track.screenshot({
+    path: `${process.env.SWIZZLE_PROOF_DIR ?? process.env.SWIZZLE_E2E_OUTPUT_DIR}/cjk-station.png`,
+  });
+  // The buttons sit inside the station's frame, not below it.
+  const { approveBottom, stationBottom } = await gate.evaluate((station) => ({
+    approveBottom: [...station.querySelectorAll("button")]
+      .find((button) => button.textContent === "Approve")
+      ?.getBoundingClientRect().bottom,
+    stationBottom: station.getBoundingClientRect().bottom,
+  }));
+  expect(approveBottom).toBeLessThanOrEqual(stationBottom);
+});

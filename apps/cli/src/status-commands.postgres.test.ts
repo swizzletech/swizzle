@@ -1,10 +1,8 @@
 import { rm, writeFile } from "node:fs/promises";
-
 import path from "node:path";
-
 import { FULL_SCOPE } from "@swizzle/db";
-
 import { describe, expect, it, vi } from "vitest";
+import { version as releaseVersion } from "../../../package.json";
 
 import { testPlatform } from "../../../test/platform.js";
 
@@ -27,7 +25,6 @@ useCliTestEnvironment();
 
 describe("status commands", () => {
   it("doctor reports per-check preflight status and fails when one check fails", async () => {
-    vi.stubEnv("SWIZZLE_PLATFORM_VERSION", "v2.3.4");
     const stateDirectory = await temporaryDirectory("swizzle-cli-doctor-");
     const artifactsDirectory = path.join(stateDirectory, "artifacts");
 
@@ -47,7 +44,7 @@ describe("status commands", () => {
           name,
           status: "pass",
         })),
-        serverVersion: "2.3.4",
+        serverVersion: releaseVersion,
       });
 
       // A regular file where the artifacts directory belongs fails the probe, root included.
@@ -62,7 +59,6 @@ describe("status commands", () => {
         ]),
       });
     } finally {
-      vi.stubEnv("SWIZZLE_PLATFORM_VERSION", undefined);
       await app.close();
     }
   });

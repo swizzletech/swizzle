@@ -16,7 +16,6 @@ import { RUN_TONE, type Tone } from "../lib/words/health";
 import { failedRunHandoff } from "../lib/words/overview";
 import {
   approvalDecisionInWords,
-  approvalDetailsInWords,
   assigneeInWords,
   ranOnInWords,
   runDetailStatusInWords,
@@ -26,7 +25,7 @@ import {
 } from "../lib/words/runs";
 import { ageInWords, deadlineInWords, durationInWords } from "../lib/words/time";
 import { workerStateInWords } from "../lib/words/workers";
-import { ActionError, ApprovalActions } from "./actions";
+import { ActionError, ApprovalActions, ApprovalDetails } from "./actions";
 import { CopyButton, Dot, ErrorNote, Skeleton, useNow, WithCode } from "./ui";
 import "./run-panel.css";
 
@@ -129,7 +128,7 @@ function LoadedRun(props: {
       open || query.state.data?.runs.some((child) => isOpenRun(child.status)) ? 5_000 : false,
   });
   const runAgain = useMutation({
-    mutationFn: () => api.startRun(run.automationSlug, run.payload),
+    mutationFn: () => api.replayRun(run.runId),
     onSuccess: async (started) => {
       props.onSelectRun(started.runId);
       await refreshAll(queryClient);
@@ -178,8 +177,10 @@ function LoadedRun(props: {
               text={failedRunHandoff({
                 attemptsMade: run.attemptsMade,
                 automationName: run.automationName,
+                diagnosisSummary: diagnosisQuery.data?.likelyCause.summary,
                 errorMessage: run.errorMessage,
                 runId: run.runId,
+                triggerType: run.triggerType,
               })}
             />
           ) : null}
@@ -281,9 +282,7 @@ function LoadedRun(props: {
           <div className="notice grid gap-2.5" data-testid="approval-card">
             <div>
               <b>{run.automationName}</b> asks: <b>{approval.stepKey}</b>
-              {approvalDetailsInWords(approval.details) === null ? null : (
-                <div className="t-meta">{approvalDetailsInWords(approval.details)}</div>
-              )}
+              <ApprovalDetails details={approval.details} />
               {approval.assignee === null ? null : (
                 <div className="t-meta">Assigned to {assigneeInWords(approval.assignee)}</div>
               )}

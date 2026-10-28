@@ -109,50 +109,42 @@ export function TwoFactor() {
     const ready = password !== "" && code.trim() !== "" && !disable.isPending;
     body = (
       <form
-        className="setting"
+        className="setting-form"
         onSubmit={(event) => {
           event.preventDefault();
           if (ready) disable.mutate();
         }}
       >
-        <div className="grid gap-3">
-          <span className="t-meta">
-            <Chip tone="ok">On</Chip> {recoveryCodesLeft}{" "}
-            {recoveryCodesLeft === 1 ? "recovery code" : "recovery codes"} left.
-          </span>
-          <div className="flex flex-wrap items-end gap-3">
-            {passwordField}
-            {codeField("Code or recovery code")}
-            {disable.isError ? <AuthActionError error={disable.error} /> : null}
-          </div>
-        </div>
+        <span className="t-meta basis-full">
+          <Chip tone="ok">On</Chip> {recoveryCodesLeft}{" "}
+          {recoveryCodesLeft === 1 ? "recovery code" : "recovery codes"} left.
+        </span>
+        {passwordField}
+        {codeField("Code or recovery code")}
         <button className="btn danger" disabled={!ready} type="submit">
           {disable.isPending ? "Turning off…" : "Turn off"}
         </button>
+        {disable.isError ? <AuthActionError error={disable.error} /> : null}
       </form>
     );
   } else {
     const ready = password !== "" && !start.isPending;
     body = (
       <form
-        className="setting"
+        className="setting-form"
         onSubmit={(event) => {
           event.preventDefault();
           if (ready) start.mutate();
         }}
       >
-        <div className="grid gap-3">
-          <span className="t-meta">
-            Off. Turn it on when this instance is reachable from the internet.
-          </span>
-          <div className="flex flex-wrap items-end gap-3">
-            {passwordField}
-            {start.isError ? <AuthActionError error={start.error} /> : null}
-          </div>
-        </div>
+        <span className="t-meta basis-full">
+          Off. Turn it on when this instance is reachable from the internet.
+        </span>
+        {passwordField}
         <button className="btn" disabled={!ready} type="submit">
           {start.isPending ? "Preparing…" : "Set up two-factor sign-in"}
         </button>
+        {start.isError ? <AuthActionError error={start.error} /> : null}
       </form>
     );
   }

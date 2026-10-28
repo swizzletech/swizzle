@@ -9,7 +9,7 @@ export const ciRunsJustRecipes: Rule = {
       .map(({ file, line, words }) => ({
         file,
         line,
-        message: `CI runs \`${words.join(" ")}\` instead of a just recipe. CI runs what a developer runs, so a green CI means a green \`just verify\` anywhere.`,
+        message: `CI runs \`${words.join(" ")}\` instead of a just recipe. CI uses the same recipes as local checks so their behavior stays in one place.`,
       }));
   },
 };

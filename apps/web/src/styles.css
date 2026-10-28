@@ -356,6 +356,9 @@
     border-color: var(--ring);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--coral) 22%, transparent);
   }
+  .field[aria-invalid="true"] {
+    border-color: var(--fail);
+  }
   .form-label {
     display: grid;
     gap: 6px;
@@ -470,6 +473,21 @@
   .rows > * + * {
     border-top: 1px solid var(--line-soft);
   }
+  /* A modal <dialog> over the page: the confirmation in components/confirm.tsx and Delete project. */
+  .sheet {
+    width: min(560px, calc(100vw - 24px));
+    margin: auto;
+    padding: 20px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    color: var(--ink);
+    box-shadow: var(--shadow-pop);
+  }
+  .sheet::backdrop {
+    background: color-mix(in srgb, var(--bg) 60%, transparent);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+  }
   .screen {
     margin: 0;
     background: var(--screen);
@@ -552,18 +570,19 @@
     color: var(--ink-3);
     font-variant-numeric: tabular-nums;
   }
+  /* The bar's line is drawn inside its box and the selected tab's underline covers it, so no tab
+     reaches past the bar: a bar that only scrolls sideways when tabs overflow it, never up and down. */
   .dtabs {
     display: flex;
     gap: 20px;
     margin: 18px 0 18px;
-    border-bottom: 1px solid var(--line);
+    box-shadow: inset 0 -1px var(--line);
     overflow-x: auto;
   }
   .dtab {
     padding: 0 0 10px;
     border: 0;
     border-bottom: 1.5px solid transparent;
-    margin-bottom: -1px;
     background: none;
     font: 500 13.5px var(--font-sans);
     color: var(--ink-3);
@@ -701,6 +720,18 @@
     gap: 16px;
     align-items: center;
     padding: 12px 16px;
+  }
+  /* A setting that is a form: the button shares the row of the inputs it submits, bottoms aligned,
+     at the row's right end. Notes and errors take full rows of their own. */
+  .setting-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 12px;
+    padding: 12px 16px;
+  }
+  .setting-form > .btn {
+    margin-left: auto;
   }
   .switch {
     appearance: none;

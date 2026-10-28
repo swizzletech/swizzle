@@ -11,12 +11,7 @@ The runtime contract is tiny: read JSON from stdin, write one JSON object to std
 | Node.js (plain JS) | none | Raw contract is fine — fewer moving parts |
 | Shell | none | Raw contract only |
 
-If you're authoring by hand instead of scaffolding, copy the helper from the repo:
-
-```bash
-cp packages/sdk-ts/src/index.ts  my-automation/swizzle-sdk.ts
-cp packages/sdk-py/swizzle_sdk.py  my-automation/swizzle_sdk.py
-```
+To write an automation by hand, scaffold it with `swizzle init <name> --template typescript` for TypeScript or `swizzle init <name> --template python` for Python, then replace the entrypoint so the folder keeps the vendored SDK.
 
 ## TypeScript with SDK
 
@@ -164,7 +159,7 @@ if claim(f"order:{order['id']}"):
 - The first `claim` call for a key suspends the run for a moment, then the entrypoint starts again from the top with the answer. Code before the claim runs again, so keep it free of side effects.
 - `claim` keeps other runs out, not the holder's own retries: they get true again. Put the side effect in a step named for the item, so a retry after the send returns the stored result instead of sending again. In a loop, the same step keeps the restart after the next claim from repeating earlier items.
 - A crash inside the step, after the send and before its result is stored, still sends twice. Pass the item's key to the receiving system as its idempotency key when it accepts one.
-- The claim stays under the state key `claim:<key>` after the run ends. If the holder dead-lettered before its side effect, run `swizzle state delete <name> claim:<key>`, then replay.
+- The claim stays under the state key `claim:<key>` after the run ends. If the holder dead-lettered before its side effect, delete the claim in the source run's environment with `swizzle state delete <name> claim:<key> --environment <source-environment>`. For a manual or cron run, use `swizzle runs replay <runId>` to start a new run with the same payload on the active deployment. For signed webhook runs, request redelivery from the sender. Replay creates a manual run, which the [signed-delivery guard](webhook-security.md) rejects. For chain runs, start through the source automation.
 - A local `swizzle run` holds no platform state, so `claim` returns true there.
 
 ## Durable execution primitives
@@ -238,6 +233,26 @@ swizzle runs resolve-event <runId> <stepKey> --payload-file event.json
 The helper returns `{ timedOut: false, value }`. If `timeoutMs` / `timeout_ms` or `until` expires first, the scheduler stores `{ timedOut: true, value: null }` and resumes the run. No timeout means wait indefinitely.
 
 `requestApproval` / `request_approval` is the approve/reject variant. Pass `assignee` to name who decides: `{ user: "<email>" }` for a Swizzle person or `{ team: "<name>" }` for any member of a Swizzle team. An assignee decides signed in to the dashboard, and an owner or admin can reassign the approval with a reason. Without an assignee, the approval link or anyone who may run the automation decides. An assignee that names no account fails the run with `APPROVAL_ASSIGNEE_NOT_FOUND`. It returns `{ approved, assignee, decidedBy, comment, decidedAt, timedOut }`; `decidedBy` is `{ kind: "person", userId, label }`, `{ kind: "link" }` for a decision through the approval page, and `null` after a timeout. A token never decides, so the CLI has no approve command.
+
+**Write `details` for the person who decides.** Besides the automation name, the step name and when the wait started or ends, the approver sees only `details`, and someone who decides through the link cannot open the payload, the logs or the code. The first non-empty string among `message`, `question`, `summary` and `title`, in that order, is the heading; without one, the approval page reads "Approve this step?". Every other field becomes a line labelled with its key, a nested object or array as compact JSON. The approval page and the dashboard's approval card, run panel and flowchart station all read `details` this way. So state the decision in the heading, and add the facts it rests on as flat fields with readable keys:
+
+```typescript
+await requestApproval("approve-payment", {
+  details: {
+    title: `Pay ${invoice.total} EUR to ${invoice.supplier} for invoice ${invoice.number}?`,
+    due: invoice.dueDate,
+    pdf: invoice.url,
+  },
+});
+```
+
+```python
+request_approval("approve-payment", details={
+    "summary": f"Pay {invoice['total']} EUR to {invoice['supplier']} for invoice {invoice['number']}?",
+    "due": invoice["due_date"],
+    "pdf": invoice["url"],
+})
+```
 
 The operator side — finding a waiting run's step key and resolving it — is in [Operations — waiting runs](operations.md#waiting-runs-and-durable-resumes).
 

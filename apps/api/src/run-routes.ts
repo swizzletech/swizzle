@@ -10,6 +10,7 @@ import type {
   RunLogStreamResponse,
   RunLogsResponse,
   RunResponse,
+  TriggerRunResponse,
 } from "@swizzle/runtime/http-contract";
 import {
   type PlatformServices,
@@ -70,6 +71,35 @@ export function registerRunRoutes(app: ApiServer, platform: PlatformServices): v
       platform.listAutomationDeployments(run.automationSlug, run.environment).catch(() => []),
     ]);
     return buildDiagnosis(run, deployment?.secretHealth, deployments);
+  });
+
+  app.post<{ Reply: TriggerRunResponse }>("/runs/:runId/replay", async (request) => {
+    const { runId } = request.params as { runId: string };
+    const source = await request.access.run(runId, "read");
+    const automation = await request.access.automation(source.automationSlug, {
+      action: "run",
+      environment: source.environment,
+    });
+    if (automation.automationId !== source.automationId) {
+      throw new AutomationRuntimeError(
+        "AUTOMATION_NOT_FOUND",
+        "The run's automation no longer exists.",
+      );
+    }
+    await request.audit.note({ sourceRunId: runId });
+    const run = await platform.startManualRun({
+      automationName: source.automationSlug,
+      environment: source.environment,
+      correlationId: request.id,
+      payload: source.payload,
+    });
+    return {
+      deploymentId: run.deploymentId,
+      queuedAt: run.queuedAt,
+      runId: run.runId,
+      status: run.status,
+      ...(run.warning === undefined ? {} : { warning: run.warning }),
+    };
   });
 
   app.post<{ Reply: CancelRunResponse }>("/runs/:runId/cancel", async (request) => {

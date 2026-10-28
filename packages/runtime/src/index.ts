@@ -41,6 +41,7 @@ export {
   evaluateAutomationReadiness,
   evaluateLocalAutomationReadiness,
   getDeclaredDependencyManifestPaths,
+  readRunnerTools,
   servesProject,
 } from "./runtime-requirements.js";
 export {

@@ -178,7 +178,8 @@ const runImageDisk = z.strictObject({
 
 const TOOL_FIELD_LENGTH = 80;
 const MAX_LANGUAGES = 8;
-const MAX_BINARIES = 256;
+// The runner image alone has over 400 executables (infra/docker/runner-tools.mjs).
+const MAX_BINARIES = 2048;
 const tools = <Name extends z.ZodType<string>>(name: Name, max: number) =>
   z
     .array(

@@ -3,6 +3,38 @@
 Each release lists changes for people who run Swizzle and write automations.
 Versions follow Semantic Versioning. Tags use `vX.Y.Z`; pre-releases use `X.Y.Z-rc.N`.
 
+## 1.0.3
+
+### Added
+
+- `just upgrade [release tag]` moves an installed server to a newer release. It refuses a checkout with uncommitted changes, takes a backup, keeps `.env`, checks out the release, restarts the stack, waits for `/health` to report the new version, and prints the command that restores the previous release. [Upgrade a server](docs/how-to/upgrade.md) covers the first upgrade from a release without the recipe, recovery, and CLI updates.
+- A private instance can receive webhooks from the internet without exposing its dashboard or API. The public listener that a tunnel forwards to serves `/hooks/*` alongside approval links, event links and OAuth callbacks, and answers nothing else. The install guide has steps for Tailscale Funnel and for a public links hostname.
+- `swizzle runs replay <runId>` and **Run again** in the dashboard start a new manual run with an earlier run's original payload on the active deployment, including a dead-lettered run. `swizzle runs inspect <runId>` shows the payload.
+- `swizzle diagnose`, the dashboard's failing-run card and **Hand to agent** name the exception and the file and line it was raised at, for Python and Node runs.
+- `swizzle inspect` shows the last API check outcome and its time.
+
+### Changed
+
+- One scheduler serves every environment of an instance. A cron deployed to production and one deployed to staging both run on schedule, and a cron deployed to both runs in both. Fresh installs default to production. A server upgraded from 1.0.x keeps the environment its `.env` names.
+- `swizzle init` writes webhook trigger paths under `/hooks/`. Webhooks deployed with other paths keep answering at the URL they had before, on the API's origin.
+- `requirements.binaries` is checked against the runner image that deployed runs use. A binary the runner image lacks fails `swizzle validate` with a message that the instance operator adds it to the runner image, and a version rule refuses a binary whose version is unknown.
+- The stack sizes its CPU limits to the Docker host, so a fresh stack starts on a 1-vCPU host. An explicit `SWIZZLE_WORKER_CPUS` larger than the host stops `just stack` before any image build and names the key and the host's CPU count.
+- An API check that fails with an authentication error reports an error or credentials outcome instead of drift.
+- `swizzle validate` and `swizzle inspect` describe a deployed runtime as the sandbox container.
+
+### Fixed
+
+- Webhooks deployed on 1.0.x keep starting runs at their original URLs after an upgrade and after redeploying unchanged source. `/health` and `/ready` report the version of the code that runs, not a version left in `.env`.
+- Revoking an agent token and other dashboard confirmations work in browsers that suppress `window.confirm`. The Agent access copy button selects the command for manual copy when the clipboard is unavailable.
+- The setup form says at the password field that 15 characters are needed. An invalid field is marked in the fail colour.
+- Approval details show as labelled fields in Overview > Needs you, the run panel and the approval page, instead of raw JSON.
+- `swizzle logs --run <id> --full` prints stderr with real line breaks.
+- The `document-scanner` example's email search no longer retries at every character of a long word, and documents over 65,536 characters fail with a clear error.
+- The README, the tutorial and the guides that `swizzle workspace init` writes store a webhook's signing secret before `swizzle validate`, and connect the CLI with one `swizzle profile add`.
+- The builder skill links public documentation instead of paths in a source checkout, names `just init-env` for credentials and `SWIZZLE_LINK_URL` for approval links, and lists the tools the runner image installs.
+- The install guide names `libatomic1` for Debian and Ubuntu, links Docker's install guide with the Compose version check, shows `mise x -- just` for a shell without mise activated, and says the first build takes minutes on a small host.
+- `just init-env` prints failures without a stack trace. It refuses a `SWIZZLE_LOCAL_WORKER_TOKEN` in the format of checkouts older than 1.0.0, which the API refuses, before any image build, and says how to replace it.
+
 ## 1.0.2
 
 ### Changed

@@ -136,6 +136,7 @@ export async function executeTestAssignment(
     abort.abort(error);
   };
   let renewing = Promise.resolve();
+  // conventions-allow tests-wait-on-state: renews on the worker's schedule, as the server's lease expires on the wall clock.
   const renewal = setInterval(() => {
     renewing = renewing
       .then(async () => {

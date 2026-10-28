@@ -6,8 +6,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
-
 import { ActionError } from "../components/actions";
+import { useConfirm } from "../components/confirm";
 import { HolderList } from "../components/holder-list";
 import { type Scope, ScopeFields, scopeInput } from "../components/scope-fields";
 import { ShareForm, subjectKey } from "../components/share-form";
@@ -101,6 +101,7 @@ function Account(props: {
 }) {
   const { access, account } = props;
   const { api } = useDashboardClient();
+  const confirm = useConfirm();
   const now = useNow();
   const project = access.project.slug;
   const [sharing, setSharing] = useState(false);
@@ -130,14 +131,9 @@ function Account(props: {
         <button
           className="btn danger small"
           disabled={remove.isPending}
-          onClick={() => {
-            if (
-              window.confirm(
-                `Delete ${account.name}? Its grants and tokens go with it; what it deployed keeps running.`,
-              )
-            ) {
-              remove.mutate();
-            }
+          onClick={async () => {
+            const question = `Delete ${account.name}? Its grants and tokens go with it; what it deployed keeps running.`;
+            if (await confirm({ action: "Delete account", question })) remove.mutate();
           }}
           type="button"
         >
@@ -181,6 +177,7 @@ function Tokens(props: {
 }) {
   const { account, project } = props;
   const { api } = useDashboardClient();
+  const confirm = useConfirm();
   const now = useNow();
   const [name, setName] = useState("");
   const [scope, setScope] = useState<Scope>({
@@ -237,7 +234,7 @@ function Tokens(props: {
             The value of {shown.name} shows only now. Store it in your CI's secret store.
           </span>
           <pre className="screen">{`SWIZZLE_URL=${publicApiUrl()}\nSWIZZLE_TOKEN=${shown.token}`}</pre>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <CopyButton label="Copy token" text={shown.token} />
             <button className="btn quiet" onClick={() => setShown(null)} type="button">
               Done
@@ -263,14 +260,9 @@ function Tokens(props: {
             <button
               className="btn quiet small"
               disabled={rotate.isPending}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    `Rotate ${token.name}? Its current value stops working at once; the new one shows once.`,
-                  )
-                ) {
-                  rotate.mutate(token.id);
-                }
+              onClick={async () => {
+                const question = `Rotate ${token.name}? Its current value stops working at once; the new one shows once.`;
+                if (await confirm({ action: "Rotate", question })) rotate.mutate(token.id);
               }}
               type="button"
             >
@@ -279,12 +271,9 @@ function Tokens(props: {
             <button
               className="btn danger small"
               disabled={revoke.isPending}
-              onClick={() => {
-                if (
-                  window.confirm(`Revoke ${token.name}? Whatever uses it loses access at once.`)
-                ) {
-                  revoke.mutate(token.id);
-                }
+              onClick={async () => {
+                const question = `Revoke ${token.name}? Whatever uses it loses access at once.`;
+                if (await confirm({ action: "Revoke", question })) revoke.mutate(token.id);
               }}
               type="button"
             >

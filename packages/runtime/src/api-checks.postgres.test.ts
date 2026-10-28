@@ -3,9 +3,11 @@ import path from "node:path";
 import { DEFAULT_PROJECT_ID } from "@swizzle/db";
 import { describe, expect, it, vi } from "vitest";
 import { testPlatform } from "../../../test/platform.js";
+import { testDatabase } from "../../../test/postgres.js";
 import { TEST_ENCRYPTION_KEY, temporaryDirectory } from "../../../test/support.js";
 import { createAutomationFixture } from "../test/platform-harness.js";
 import { enqueueDueChecks } from "./api-checks.js";
+import { deliverPendingNotification } from "./notifications.js";
 
 import type { RunQueueProducer } from "./run-queue.js";
 
@@ -54,6 +56,63 @@ async function deployCheckedAutomation(checkJs: string) {
 }
 
 describe("API checks", () => {
+  it.each(["HTTP 401 ", "Error: "])(
+    "stores a bounded warning and delivers a bounded Telegram alert for %s",
+    async (prefix) => {
+      const { due, environment, platform } = await deployCheckedAutomation(
+        CHECK_JS(
+          `console.error(${JSON.stringify(prefix)} + 'x'.repeat(10_000)); console.log('y'.repeat(1000)); process.exit(1);`,
+        ),
+      );
+      const userId = "00000000-0000-4000-8000-0000000000ab";
+      await testDatabase().pool.query(
+        "INSERT INTO auth_users (id, name, email, role) VALUES ($1, 'Reader', 'check-reader@example.test', 'owner')",
+        [userId],
+      );
+      await platform.upsertSecret("SWIZZLE_TELEGRAM_BOT_TOKEN", "telegram-token", {
+        environment: "local",
+        projectId: DEFAULT_PROJECT_ID,
+      });
+      await platform.createNotificationRule({
+        automationId: due[0]?.automationId ?? "",
+        projectId: DEFAULT_PROJECT_ID,
+        userId,
+        environment: "local",
+        chatId: "check-alerts",
+        eventType: "dead-lettered",
+      });
+      let check = due[0];
+      for (let attempt = 0; attempt < 3; attempt++) {
+        check =
+          (await platform.processPlatformCheck(check?.checkId ?? "", check?.nextCheckAt ?? "", {
+            environment,
+          })) ?? undefined;
+      }
+      expect(check).toMatchObject({ status: "error", consecutiveFailures: 3 });
+      expect(check?.lastWarning).toContain(prefix);
+      expect.soft(check?.lastWarning?.length).toBeLessThanOrEqual(4096);
+      const [delivery] = await platform.listNotificationDeliveries({ environment: "local" });
+      if (delivery === undefined) throw new Error("Expected an API check alert");
+      expect(delivery.eventType).toBe("api-check");
+      const texts: string[] = [];
+      vi.stubGlobal("fetch", async (_url: string, options: RequestInit) => {
+        const { text } = JSON.parse(String(options.body));
+        texts.push(text);
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 42 } }));
+      });
+      expect(await deliverPendingNotification(delivery, platform.store)).toMatchObject({
+        status: "sent",
+      });
+      expect(texts).toHaveLength(1);
+      expect(texts[0]).toContain("⚠️ Swizzle API check\nautomation: crm-export\nenvironment: local");
+      expect(texts[0]).toContain(
+        `note: ${prefix === "HTTP 401 " ? "API check credentials failed: " : ""}${prefix}`,
+      );
+      expect(texts[0]?.length).toBeLessThanOrEqual(4096);
+      await platform.close();
+    },
+  );
+
   it("runs a deployed check as its own record: no run, no state, secrets redacted", async () => {
     const { due, enqueued, environment, platform } = await deployCheckedAutomation(
       CHECK_JS("console.log(JSON.stringify({ ok: true, checked: ['GET /v1/deals'] }));"),
@@ -230,6 +289,24 @@ describe("API checks", () => {
       status: "drift",
     });
     expect(drift?.failingSince).not.toBeNull();
+  });
+
+  it("records a failed login as an error with a credential diagnosis", async () => {
+    const { due, environment, platform } = await deployCheckedAutomation(
+      "throw new Error('HTTP 401 Unauthorized');",
+    );
+    const check = due[0];
+    const recorded = await platform.processPlatformCheck(
+      check?.checkId ?? "",
+      check?.nextCheckAt ?? "",
+      { environment },
+    );
+    expect(recorded).toMatchObject({
+      status: "error",
+      lastExitCode: 1,
+      lastWarning: "API check credentials failed: Error: HTTP 401 Unauthorized",
+    });
+    await platform.close();
   });
 
   it("gives the check script payload {}, its own secrets, no state or step file and trigger type check", async () => {

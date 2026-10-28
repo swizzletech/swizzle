@@ -76,8 +76,19 @@ const bundleRelativePathSchema = z
   );
 
 const binaryRequirementSchema = z.strictObject({
-  name: z.string().min(1).describe("Executable name on the worker's `PATH`."),
-  version: z.string().min(1).optional().describe("Version rule, for example `>=5`."),
+  name: z
+    .string()
+    .min(1)
+    .describe(
+      "Executable name on the run's `PATH`: the runner image's for a deployed run, this machine's for `swizzle run`.",
+    ),
+  version: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Version rule, for example `>=5`. A binary whose version the worker cannot tell fails it.",
+    ),
 });
 
 const pythonDependencySchema = z.strictObject({
@@ -111,7 +122,7 @@ const containerSchema = z.strictObject({
     .refine((value) => Number(value) > 0, "Use more than 0 CPUs.")
     .optional()
     .describe(
-      "CPU limit of the run and its dependency install, for example `1.5`. Default `1.0`; deploy rejects a value above `SWIZZLE_MAX_RUN_CPUS` (default `2`).",
+      "CPU limit of the run and its dependency install, for example `1.5`. Default `1.0`; deploy rejects a value above `SWIZZLE_MAX_RUN_CPUS` (default `2`, or the host's CPU count when that is smaller).",
     ),
   memory_mb: z
     .number()
@@ -128,7 +139,7 @@ const runtimeRequirementsSchema = z.strictObject({
     .array(binaryRequirementSchema)
     .default([])
     .describe(
-      "Binaries the run needs. Deploy readiness needs one live worker of the group that has all of them in a matching version.",
+      "Binaries the run needs. Deploy readiness needs one live worker of the group whose runner image has all of them in a matching version; the instance operator adds a missing one to the runner image.",
     ),
   node: nodeDependencySchema
     .optional()

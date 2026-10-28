@@ -209,12 +209,12 @@ async function createSucceededSourceRun(
   });
 }
 
-it("parent child run retention", { timeout: 60_000 }, async () => {
+it("parent child run retention", async () => {
   const store = testControlPlaneStore();
   await verifyParentChildRunRetention(store);
 });
 
-it("chain join race arbiter", { timeout: 60_000 }, async () => {
+it("chain join race arbiter", async () => {
   const store = testControlPlaneStore();
   await verifyChainJoinRaceArbiter(store);
 });

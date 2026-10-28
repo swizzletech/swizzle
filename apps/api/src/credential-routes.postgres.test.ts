@@ -91,7 +91,7 @@ async function office() {
   return { anna, app, ben, carl, deploy, olga, owner, platform, run };
 }
 
-describe("credential rights", { timeout: 60_000 }, () => {
+describe("credential rights", () => {
   it("lets an editor with use deploy with a secret they cannot read, change or delete", async () => {
     const { anna, app, deploy, olga, run } = await office();
     expect(

@@ -458,12 +458,18 @@ describe("rate limit helpers", () => {
     });
 
     recordRateLimitUsage("api", 2);
-    const startedAt = Date.now();
+    vi.useFakeTimers();
     await pace("api");
-    await pace("api");
-    const elapsedMs = Date.now() - startedAt;
-
-    expect(elapsedMs).toBeGreaterThanOrEqual(35);
+    let paced = false;
+    const second = pace("api").then(() => {
+      paced = true;
+    });
+    // 20 calls a second leave 50 ms between two calls.
+    await vi.advanceTimersByTimeAsync(49);
+    expect(paced).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await second;
+    expect(paced).toBe(true);
     expect(JSON.parse(writes[0] ?? "{}")).toMatchObject({
       count: 2,
       group: "api",

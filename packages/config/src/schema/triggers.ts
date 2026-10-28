@@ -89,7 +89,7 @@ export const webhookTriggerSchema = z.strictObject({
     .min(1)
     .optional()
     .describe(
-      "Ingress path, unique per environment. Local `swizzle run` works without it; deploy fails without it (`TRIGGER_CONFIGURATION_INVALID`), a path another automation holds fails the deployment, and so does a path the API serves itself, such as `/auth/sign-in/email` (`TRIGGER_WEBHOOK_PATH_RESERVED`).",
+      "Ingress path, unique per environment. Local `swizzle run` works without it; deploy fails without it (`TRIGGER_CONFIGURATION_INVALID`), and a path another automation holds fails the deployment. The webhook answers at this exact path on the API. Use `/hooks/` for paths the public listener can receive.",
     ),
   payload_schema: webhookPayloadSchemaSchema
     .optional()

@@ -260,7 +260,7 @@ test("About shows the webhook URL the API names for the trigger", async ({ page 
   await page.goto("/automations/verify-probe?tab=about");
 
   await expect(
-    page.getByText("https://swizzle.example.com/api/verify-probe?environment=staging", {
+    page.getByText("https://swizzle.example.com/api/hooks/verify-probe?environment=staging", {
       exact: true,
     }),
   ).toBeVisible();

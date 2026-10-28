@@ -1,6 +1,8 @@
 // Access in words: what each role allows, why a request was refused, grants and token scopes, and
 // sign-in and account errors.
 
+import { PASSWORD_LENGTH } from "@swizzle/config/browser";
+
 import type { AccessGrant, AccessRefusal, ApiErrorCode, ProjectRole, TokenScope } from "../api";
 
 const SIGN_IN_PROBLEMS: Readonly<Partial<Record<ApiErrorCode, string>>> = {
@@ -14,7 +16,7 @@ const SIGN_IN_PROBLEMS: Readonly<Partial<Record<ApiErrorCode, string>>> = {
     "This invitation is used, revoked or expired, or it is for another address. Ask for a new one.",
   AUTH_INVITATION_REQUIRED:
     "This instance is already set up. Ask an owner or admin for an invitation.",
-  AUTH_PASSWORD_INVALID: "The password must have 15 to 128 characters.",
+  AUTH_PASSWORD_INVALID: `The password must have ${PASSWORD_LENGTH.min} to ${PASSWORD_LENGTH.max} characters.`,
   AUTH_RATE_LIMITED: "Too many attempts. Wait a moment and try again.",
   AUTH_RESET_LINK_INVALID:
     "This reset link is used or expired. Ask for a new one on the sign-in page or from an owner or admin.",
@@ -22,6 +24,24 @@ const SIGN_IN_PROBLEMS: Readonly<Partial<Record<ApiErrorCode, string>>> = {
   AUTH_SETUP_TOKEN_INVALID:
     "The setup token is wrong. Copy SWIZZLE_SETUP_TOKEN from the server's .env.",
 };
+
+/** The rule under a new password field. */
+export const PASSWORD_RULE = `At least ${PASSWORD_LENGTH.min} characters.`;
+
+/** Whether a new password has a length the API accepts. Forms enable their button on this. */
+export function passwordAccepted(password: string): boolean {
+  return password.length >= PASSWORD_LENGTH.min && password.length <= PASSWORD_LENGTH.max;
+}
+
+/** Why a typed new password cannot be sent; null while it is empty or has an accepted length. */
+export function passwordProblemInWords(password: string): string | null {
+  const { length } = password;
+  if (length === 0 || passwordAccepted(password)) return null;
+  const counted = `${length} character${length === 1 ? "" : "s"}.`;
+  return length < PASSWORD_LENGTH.min
+    ? `${counted} The password needs at least ${PASSWORD_LENGTH.min}.`
+    : `${counted} The password can have at most ${PASSWORD_LENGTH.max}.`;
+}
 
 /** The sentence for a sign-in or account error code; null leaves the API's own message. */
 export function signInProblemInWords(code: ApiErrorCode | undefined): string | null {

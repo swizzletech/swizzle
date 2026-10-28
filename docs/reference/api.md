@@ -88,6 +88,7 @@ After the auth check, each route checks its path parameters, query and JSON body
 | POST | `/environments` | instance | [environment-routes.ts](../../apps/api/src/environment-routes.ts) |
 | POST | `/events/:token` | public | [event-callback-routes.ts](../../apps/api/src/event-callback-routes.ts) |
 | GET | `/health` | public | [server.ts](../../apps/api/src/server.ts) |
+| POST | `/hooks/*` | public | [webhook-ingress.ts](../../apps/api/src/webhook-ingress.ts) |
 | GET | `/invitations` | instance | [people-routes.ts](../../apps/api/src/people-routes.ts) |
 | POST | `/invitations` | instance | [people-routes.ts](../../apps/api/src/people-routes.ts) |
 | DELETE | `/invitations/:invitationId` | instance | [people-routes.ts](../../apps/api/src/people-routes.ts) |
@@ -128,6 +129,7 @@ After the auth check, each route checks its path parameters, query and JSON body
 | POST | `/runs/:runId/events/:stepKey` | resource | [run-routes.ts](../../apps/api/src/run-routes.ts) |
 | GET | `/runs/:runId/logs` | resource | [run-routes.ts](../../apps/api/src/run-routes.ts) |
 | GET | `/runs/:runId/logs/stream` | resource | [run-routes.ts](../../apps/api/src/run-routes.ts) |
+| POST | `/runs/:runId/replay` | resource | [run-routes.ts](../../apps/api/src/run-routes.ts) |
 | GET | `/secrets` | resource | [secret-routes.ts](../../apps/api/src/secret-routes.ts) |
 | DELETE | `/secrets/:secretName` | resource | [secret-routes.ts](../../apps/api/src/secret-routes.ts) |
 | GET | `/secrets/:secretName` | resource | [secret-routes.ts](../../apps/api/src/secret-routes.ts) |

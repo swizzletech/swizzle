@@ -181,7 +181,16 @@ function automationDetail(
     environment: detail.environment,
     deployment: `#${deployment.seq} v${deployment.version} ${deployment.deploymentId}`,
     deployedAt: deployment.deployedAt,
-    runtime: `${runtime.language} / ${runtime.execution_mode} / ${runtime.profile}`,
+    runtime: `${runtime.language} / sandbox (container) / ${runtime.profile}`,
+    apiCheck:
+      detail.apiCheck?.mode === "active"
+        ? {
+            mode: "active",
+            status: detail.apiCheck.record?.status ?? "pending",
+            checkedAt: detail.apiCheck.record?.lastCheckedAt ?? null,
+            warning: detail.apiCheck.record?.lastWarning ?? null,
+          }
+        : detail.apiCheck,
     trigger: `${trigger?.triggerType ?? "none"} (${trigger?.status ?? "none"})`,
     ...(trigger?.webhookUrl ? { webhookUrl: trigger.webhookUrl } : {}),
     ...(trigger?.cronSchedule ? { schedule: trigger.cronSchedule } : {}),

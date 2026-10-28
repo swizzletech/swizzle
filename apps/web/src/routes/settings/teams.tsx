@@ -3,8 +3,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-
 import { ActionError } from "../../components/actions";
+import { useConfirm } from "../../components/confirm";
 import { accessChanged } from "../../components/share-form";
 import { ErrorNote, Skeleton } from "../../components/ui";
 import type { Person, Team } from "../../lib/api";
@@ -40,28 +40,26 @@ export function Teams() {
   return (
     <div className="card rows overflow-hidden" data-testid="teams">
       <form
-        className="setting"
+        className="setting-form"
         onSubmit={(event) => {
           event.preventDefault();
           if (name.trim() !== "" && !create.isPending) create.mutate();
         }}
       >
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="form-label min-w-0 flex-1">
-            Team name
-            <input
-              autoComplete="off"
-              className="field"
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Büro"
-              value={name}
-            />
-          </label>
-          {create.isError ? <ActionError error={create.error} /> : null}
-        </div>
+        <label className="form-label min-w-0 flex-1">
+          Team name
+          <input
+            autoComplete="off"
+            className="field"
+            onChange={(event) => setName(event.target.value)}
+            placeholder="Büro"
+            value={name}
+          />
+        </label>
         <button className="btn" disabled={name.trim() === "" || create.isPending} type="submit">
           Create team
         </button>
+        {create.isError ? <ActionError error={create.error} /> : null}
       </form>
       {teams.isError || people.isError ? (
         <div className="p-4">
@@ -88,6 +86,7 @@ function TeamRow(props: {
 }) {
   const { team, people } = props;
   const { api } = useDashboardClient();
+  const confirm = useConfirm();
   const change = useMutation({
     mutationFn: async (action: () => Promise<void>) => await action(),
     onSettled: props.onChanged,
@@ -139,12 +138,9 @@ function TeamRow(props: {
       <button
         className="btn danger small"
         disabled={change.isPending}
-        onClick={() => {
-          if (
-            window.confirm(
-              `Delete the team ${team.name}? Its members lose every role the team gave them.`,
-            )
-          ) {
+        onClick={async () => {
+          const question = `Delete the team ${team.name}? Its members lose every role the team gave them.`;
+          if (await confirm({ action: "Delete team", question })) {
             change.mutate(() => api.deleteTeam(team.id));
           }
         }}

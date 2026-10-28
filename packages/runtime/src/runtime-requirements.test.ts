@@ -1,10 +1,14 @@
+import { chmod, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { parseAutomationConfig } from "@swizzle/config";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { temporaryDirectory } from "../../../test/support.js";
 import type { ReadinessWorker } from "./platform-records.js";
 import {
   collectWorkerCapabilities,
   createQueueNameForProfile,
   evaluateAutomationReadiness,
+  evaluateLocalAutomationReadiness,
 } from "./runtime-requirements.js";
 
 function worker(executionModes: ReadinessWorker["capabilities"]["executionModes"]) {
@@ -55,6 +59,58 @@ describe("collectWorkerCapabilities", () => {
         expect.objectContaining({ name: "npm" }),
       ]),
     );
+  });
+});
+
+describe("evaluateLocalAutomationReadiness", () => {
+  it("finds a declared binary on PATH and its version without assuming --version", async () => {
+    // pdftoppm answers --version with exit 99 and prints its version only for -v.
+    const bin = await temporaryDirectory("swizzle-path-");
+    await writeFile(
+      path.join(bin, "pdftoppm"),
+      '#!/bin/sh\nif [ "$1" = "-v" ]; then echo "pdftoppm version 25.03.0" >&2; exit 0; fi\nexit 99\n',
+    );
+    await chmod(path.join(bin, "pdftoppm"), 0o755);
+    vi.stubEnv("PATH", `${bin}${path.delimiter}${process.env.PATH}`);
+    const readiness = (binaries: string) =>
+      evaluateLocalAutomationReadiness({
+        config: config(`  requirements:\n    binaries:\n${binaries}`),
+        directory: process.cwd(),
+      });
+
+    expect(await readiness('      - name: pdftoppm\n        version: ">=25"')).toMatchObject({
+      errors: [],
+      status: "ready",
+    });
+    expect(await readiness('      - name: pdftoppm\n        version: ">=26"')).toMatchObject({
+      errors: [
+        {
+          code: "BINARY_VERSION_UNSUPPORTED",
+          message: "This machine has pdftoppm 25.03.0 where >=26 is required.",
+        },
+      ],
+    });
+    // A binary that prints no version passes a bare declaration but no version rule.
+    await writeFile(path.join(bin, "swizzle-quiet"), "#!/bin/sh\nexit 0\n");
+    await chmod(path.join(bin, "swizzle-quiet"), 0o755);
+    expect(await readiness("      - name: swizzle-quiet")).toMatchObject({ status: "ready" });
+    expect(await readiness('      - name: swizzle-quiet\n        version: ">=1"')).toMatchObject({
+      errors: [
+        {
+          code: "BINARY_VERSION_UNSUPPORTED",
+          message:
+            "This machine has swizzle-quiet in a version it cannot tell where >=1 is required.",
+        },
+      ],
+    });
+    expect(await readiness("      - name: swizzle-absent-binary")).toMatchObject({
+      errors: [
+        {
+          code: "BINARY_REQUIREMENT_MISSING",
+          message: "This machine lacks the binary swizzle-absent-binary.",
+        },
+      ],
+    });
   });
 });
 

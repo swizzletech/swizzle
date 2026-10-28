@@ -2,13 +2,14 @@
 // with no run selected, every station with how many recent runs reached it. It folds away, and the
 // browser remembers the fold. A run waiting at an approval station is decided on that station.
 
+import { type ApprovalDetailsInWords, approvalDetailsInWords } from "@swizzle/config/browser";
 import { useEffect, useState } from "react";
 import type { RunDetail } from "../lib/api";
 import { activeStep, staticTrack, type TrackNode, trackForRun } from "../lib/track";
 import type { AutomationFlow } from "../lib/use-automation-flow";
 import { useRunPosition } from "../lib/use-run-track";
-import { approvalDetailsInWords, assigneeInWords, runStatusInWords } from "../lib/words/runs";
-import { ApprovalActions } from "./actions";
+import { assigneeInWords, runStatusInWords } from "../lib/words/runs";
+import { ApprovalActions, ApprovalDetails } from "./actions";
 import { Track } from "./track";
 import { usePhone } from "./ui";
 import "./flow-track.css";
@@ -123,11 +124,9 @@ export function approvalOnStation(node: TrackNode, run: RunDetail) {
   return {
     content: (
       <>
-        {asks === null ? null : (
-          <span className="st-ask" title={asks}>
-            {asks}
-          </span>
-        )}
+        <div className="st-details">
+          <ApprovalDetails details={run.approval.details} stacked />
+        </div>
         {assignee === null ? null : <span className="st-ask">Assigned to {assignee}</span>}
         <ApprovalActions may={run.approval.may} runId={run.runId} stepKey={run.approval.stepKey} />
       </>
@@ -137,10 +136,30 @@ export function approvalOnStation(node: TrackNode, run: RunDetail) {
     size: {
       height:
         88 +
-        (asks === null ? 0 : 34) +
+        detailsHeight(asks) +
         (assignee === null ? 0 : 18) +
         (run.approval.may.reassign ? 68 : 0),
       width: 220,
     },
   };
+}
+
+/**
+ * The height of the details on a station, whose text column is 200 px of 11.5 px type. The track
+ * lays out before it renders, so lines are estimated from characters, generously, as for labels.
+ */
+function detailsHeight(asks: ApprovalDetailsInWords): number {
+  // A full-width character (CJK, fullwidth forms, emoji) is about twice as wide as a Latin one.
+  const lines = (text: string, charWidth: number) => {
+    let width = 0;
+    for (const char of text)
+      width += (char.codePointAt(0) ?? 0) >= 0x1100 ? 2 * charWidth : charWidth;
+    return Math.max(1, Math.ceil(width / 180));
+  };
+  const heading = asks.heading === null ? 0 : lines(asks.heading, 6.2) * 15 + 4;
+  const fields = asks.fields.reduce(
+    (sum, field) => sum + (lines(field.label, 6.2) + lines(field.value, field.json ? 7 : 6.2)) * 15,
+    0,
+  );
+  return heading + fields;
 }

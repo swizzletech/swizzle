@@ -109,6 +109,9 @@ export type CronNextRun =
   | { readonly kind: "unserved"; readonly environment: string }
   | null;
 
+/** New scaffolds use this namespace, which the public listener forwards without rewriting. */
+export const WEBHOOK_PATH_PREFIX = "/hooks";
+
 /** Only cron triggers have a next run to judge against the live schedulers. */
 export type JudgedTriggerSummary = Omit<DashboardTriggerSummary, "triggerType" | "nextRunAt"> &
   (
@@ -117,8 +120,8 @@ export type JudgedTriggerSummary = Omit<DashboardTriggerSummary, "triggerType" |
     | { readonly triggerType: "webhook" }
   );
 /**
- * A trigger with the URL its webhook answers at, which the API builds from its public URL (see
- * `publicApiUrl`); null for another trigger or where the API does not know where it is reached.
+ * A trigger with the URL its webhook answers at: /hooks/ uses the public base and root paths
+ * use the API base. Null for another trigger or where the API does not know where it is reached.
  */
 export type TriggerSummaryResponse = JudgedTriggerSummary & {
   readonly webhookUrl: string | null;
@@ -510,7 +513,10 @@ const ROUTE_POLICY = {
   "GET /approvals/:token": { access: "public", audit: false },
   "POST /approvals/:token": { access: "public", audit: true },
   "POST /events/:token": { access: "public", audit: true },
-  // Webhook ingress: the automation's trigger decides, by signature where it asks for one.
+  // Webhook ingress under WEBHOOK_PATH_PREFIX: the automation's trigger decides, by signature
+  // where it asks for one.
+  "POST /hooks/*": { access: "public", audit: false },
+  // Released 1.x sources may declare root paths; reserved namespaces are refused by ingress.
   "POST /*": { access: "public", audit: false },
   // CORS preflight.
   "OPTIONS *": { access: "public", audit: false },
@@ -617,6 +623,7 @@ const ROUTE_POLICY = {
   "GET /dashboard/runs/:runId/steps": { access: "resource", audit: false },
   "GET /runs/:runId": { access: "resource", audit: false },
   "GET /runs/:runId/diagnosis": { access: "resource", audit: false },
+  "POST /runs/:runId/replay": { access: "resource", audit: true },
   "POST /runs/:runId/cancel": { access: "resource", audit: true },
   "POST /runs/:runId/events/:stepKey": { access: "resource", audit: true },
   "POST /runs/:runId/approvals/:stepKey": { access: "resource", audit: true },
@@ -718,3 +725,15 @@ export type WorkerDispatchResponse<
 > = ReturnType<Route["reply"]["parse"]>;
 
 export type { DeploymentChange } from "./platform-records.js";
+
+// A root webhook must never turn an API namespace into an anonymous trigger lookup.
+const RESERVED_WEBHOOK_NAMESPACES = new Set([
+  "api",
+  ...Object.keys(ROUTE_POLICY)
+    .map((route) => route.split(" ")[1]?.split("/")[1])
+    .filter((part) => part !== undefined && part !== "*" && part !== "hooks"),
+]);
+
+export function isWebhookDeliveryPath(path: string): boolean {
+  return !RESERVED_WEBHOOK_NAMESPACES.has(path.split("/")[1] ?? "");
+}

@@ -19,6 +19,16 @@ const MORE: MenuCase = {
   field: (page) => page.getByLabel("Move to folder"),
 };
 
+const FOLDER_MENU: MenuCase = {
+  name: "the folder's ⋯",
+  open: async (page) => {
+    await page.goto("/");
+    await page.getByRole("tab", { name: /Reports/u }).click();
+  },
+  button: (page) => page.getByLabel("Folder actions"),
+  field: (page) => page.getByRole("textbox", { name: "Folder name" }),
+};
+
 const MENUS: readonly MenuCase[] = [
   {
     name: "Run now",
@@ -27,15 +37,7 @@ const MENUS: readonly MenuCase[] = [
     field: (page) => page.getByLabel("Payload (optional JSON)"),
   },
   MORE,
-  {
-    name: "the folder's ⋯",
-    open: async (page) => {
-      await page.goto("/");
-      await page.getByRole("tab", { name: /Reports/u }).click();
-    },
-    button: (page) => page.getByLabel("Folder actions"),
-    field: (page) => page.getByRole("textbox", { name: "Folder name" }),
-  },
+  FOLDER_MENU,
 ];
 
 async function load(page: Page, menu: MenuCase): Promise<void> {
@@ -140,4 +142,19 @@ test("the Delete project dialog closes on a click on its backdrop and on Escape"
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(button).toBeFocused();
+});
+
+test("a refused folder deletion shows its error after the menu closes", async ({ page }) => {
+  await load(page, FOLDER_MENU);
+  await page.route("**/automation-folders/folder-reports", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      json: { code: "FOLDER_NOT_FOUND", error: "FOLDER_NOT_FOUND", message: "No such folder." },
+      status: 404,
+    }),
+  );
+  await page.getByRole("button", { name: "Delete folder", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete folder" }).click();
+  await expect(page.getByLabel("Folder name")).toBeHidden();
+  await expect(page.getByRole("alert").filter({ hasText: "No such folder." })).toBeVisible();
 });

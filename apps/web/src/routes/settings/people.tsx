@@ -7,8 +7,8 @@
 
 import { type UseQueryResult, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-
 import { ActionError } from "../../components/actions";
+import { type ConfirmRequest, useConfirm } from "../../components/confirm";
 import { Chip, CopyButton, ErrorNote, Skeleton, useNow } from "../../components/ui";
 import type { InstanceRole, Person, ProjectRole, SentInvitationResponse } from "../../lib/api";
 import { useDashboardClient } from "../../lib/dashboard-client";
@@ -303,6 +303,7 @@ function PersonRow(props: {
 }) {
   const { api } = useDashboardClient();
   const { person, me } = props;
+  const confirm = useConfirm();
   const change = useMutation({
     mutationFn: async (action: () => Promise<unknown>) => await action(),
     onSettled: props.onChanged,
@@ -310,8 +311,8 @@ function PersonRow(props: {
   const resetLink = useMutation({ mutationFn: async () => await api.createResetLink(person.id) });
   const self = person.id === me.id;
   const manageable = mayManage(me.role, person.role);
-  const confirmThen = (question: string, action: () => Promise<unknown>) => {
-    if (window.confirm(question)) change.mutate(action);
+  const confirmThen = async (request: ConfirmRequest, action: () => Promise<unknown>) => {
+    if (await confirm(request)) change.mutate(action);
   };
 
   return (
@@ -367,7 +368,10 @@ function PersonRow(props: {
             disabled={change.isPending}
             onClick={() =>
               confirmThen(
-                `Turn off two-factor sign-in for ${person.name}? They sign in with the password alone until they set it up again.`,
+                {
+                  action: "Turn off",
+                  question: `Turn off two-factor sign-in for ${person.name}? They sign in with the password alone until they set it up again.`,
+                },
                 () => api.resetTwoFactor(person.id),
               )
             }
@@ -394,7 +398,10 @@ function PersonRow(props: {
               person.suspended
                 ? change.mutate(() => api.setSuspended(person.id, false))
                 : confirmThen(
-                    `Suspend ${person.name}? They are signed out at once and their agent tokens stop working.`,
+                    {
+                      action: "Suspend",
+                      question: `Suspend ${person.name}? They are signed out at once and their agent tokens stop working.`,
+                    },
                     () => api.setSuspended(person.id, true),
                   )
             }
@@ -409,7 +416,10 @@ function PersonRow(props: {
             disabled={change.isPending}
             onClick={() =>
               confirmThen(
-                `Remove ${person.name}? Their account, grants and agent tokens are deleted. Their automations and runs stay.`,
+                {
+                  action: "Remove",
+                  question: `Remove ${person.name}? Their account, grants and agent tokens are deleted. Their automations and runs stay.`,
+                },
                 () => api.removePerson(person.id),
               )
             }

@@ -17,7 +17,7 @@ const swizzle = (...args: string[]) =>
   ]);
 
 describe("swizzle --version", () => {
-  it("answers before the command graph loads", { timeout: 30_000 }, async () => {
+  it("answers before the command graph loads", async () => {
     expect(await swizzle("--version")).toEqual({ stdout: `${VERSION}\n`, stderr: "" });
     expect((await swizzle("list", "--help")).stderr).toContain("graph loaded");
   });

@@ -152,6 +152,7 @@ export interface DashboardRunGlance {
   readonly queuedAt: string;
   readonly runId: string;
   readonly status: DashboardRunListItem["status"];
+  readonly triggerType: RunTriggerType;
 }
 
 /** A connection an automation declares in config.yaml, with the state of the bound account. */
@@ -297,6 +298,8 @@ export type DashboardAttentionItem =
       readonly failedRuns: number;
       readonly lastFailedAt: string;
       readonly lastFailedRunId: string;
+      /** How the latest failed run started: a chain run cannot be replayed, a webhook one loses its signed delivery. */
+      readonly lastFailedTriggerType: RunTriggerType;
       /** How many recent runs `failedRuns` counts from. */
       readonly recentRuns: number;
     }

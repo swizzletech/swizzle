@@ -14,9 +14,9 @@ import {
   type StoredRun,
   type StoredTrigger,
 } from "@swizzle/db";
-
 import { boundCredentialsNamed } from "./deployment-credentials.js";
 import { AutomationRuntimeError, getErrorMessage } from "./errors.js";
+import { isWebhookDeliveryPath } from "./http-contract.js";
 
 interface TriggerRunEnqueueInput {
   readonly correlationId?: string | null;
@@ -406,7 +406,14 @@ export function normalizeConfiguredWebhookPath(path: string | undefined): string
     );
   }
 
-  return normalizeRuntimeWebhookPath(path);
+  const normalized = normalizeRuntimeWebhookPath(path);
+  if (!isWebhookDeliveryPath(normalized)) {
+    throw new AutomationRuntimeError(
+      "TRIGGER_CONFIGURATION_INVALID",
+      "Webhook paths must not use an API namespace. Use a path under /hooks/.",
+    );
+  }
+  return normalized;
 }
 
 function normalizeRuntimeWebhookPath(path: string): string {

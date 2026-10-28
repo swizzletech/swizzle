@@ -7,7 +7,7 @@ import {
   readWorkerConcurrency,
   shutdownTracing,
 } from "@swizzle/core";
-import { collectWorkerCapabilities, isDockerAvailable } from "@swizzle/runtime";
+import { collectWorkerCapabilities, isDockerAvailable, readRunnerTools } from "@swizzle/runtime";
 
 import { startWorkerHealthServer } from "./health-server.js";
 import { assertWorkerSecurityConfiguration } from "./security-config.js";
@@ -19,10 +19,13 @@ await bootService(logger, async () => {
   if (process.env.SWIZZLE_WORKER_LOCAL_HTTP !== "true") await configureOutboundHttpProxy();
   await assertWorkerSecurityConfiguration();
 });
-const discoveredBinaries = process.env.SWIZZLE_WORKER_DISCOVER_BINARIES?.split(",")
-  .map((entry) => entry.trim())
-  .filter((entry) => entry.length > 0);
-const capabilities = await collectWorkerCapabilities(discoveredBinaries ?? []);
+// A sandboxed run calls only what the runner image has. A host worker, for local development only,
+// reports the runtimes it measures.
+const capabilities = await collectWorkerCapabilities(
+  process.env.SWIZZLE_REQUIRE_SANDBOX?.trim().toLowerCase() === "true"
+    ? await readRunnerTools()
+    : [],
+);
 // Remote credentials live in a private file. The local identity is configured by the stack.
 const credential =
   process.env.SWIZZLE_WORKER_CREDENTIAL_FILE === undefined

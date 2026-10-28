@@ -12,7 +12,7 @@
 	# X-Forwarded-For Caddy passes on with the peer appended. From any other peer Caddy replaces the
 	# header, and the default trusts none. The API takes the rightmost address that is not a private
 	# hop, so a value a client put in front does not count. The dashboard and the API sites below
-	# overwrite the header with the TCP peer, so the trust reaches only the links origin.
+	# overwrite the header with the TCP peer, so the trust reaches only the public listener.
 	servers {
 		trusted_proxies static {$SWIZZLE_LINK_TRUSTED_PROXY}
 	}
@@ -25,8 +25,8 @@
 # without a second hostname.
 # SWIZZLE_PRIVATE_RANGES lists the client addresses the dashboard and the API answer; every other
 # client gets a bare 404 there. The default answers everyone. Narrow it, for example to
-# `private_ranges 100.64.0.0/10` (local networks and Tailscale), when only the links origin below
-# may be public.
+# `private_ranges 100.64.0.0/10` (local networks and Tailscale), when only the public listener
+# below may be public.
 
 {$SWIZZLE_DASHBOARD_SITE} {
 	encode zstd gzip
@@ -35,7 +35,7 @@
 	# none. The dashboard's static server sets none, so its pages get this one. The API sets its own
 	# on every answer, which the approval page and the OAuth callback page need: the approval page
 	# allows its one script by hash (apps/api/src/approval-page.ts), and it is reachable through
-	# /api/* here, the API site and the links origin alike.
+	# /api/* here, the API site and the public listener alike.
 	header {
 		?Content-Security-Policy "default-src 'self'; base-uri 'self'; connect-src 'self' {$SWIZZLE_API_ORIGIN}; font-src 'self' data:; form-action 'self'; frame-ancestors 'none'; img-src 'self' data: blob:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'"
 		Cross-Origin-Opener-Policy "same-origin"
@@ -61,7 +61,7 @@
 	}
 }
 
-# API (REST + webhooks). The site defaults to SWIZZLE_API_ORIGIN. Behind a tunnel it
+# API (REST, webhooks under /hooks). The site defaults to SWIZZLE_API_ORIGIN. Behind a tunnel it
 # listens locally while the public API base includes the dashboard's /api proxy path.
 {$SWIZZLE_API_SITE} {
 	encode zstd gzip
@@ -86,10 +86,14 @@
 	}
 }
 
-# Approval pages and event callbacks, and nothing else: the origin to expose to the internet when
-# the dashboard and the API stay private. Approval and event links start with it unless
-# SWIZZLE_LINK_URL names a tunnel in front of it, such as Tailscale Funnel. Every other path is a
-# bare 404. Tunnels forward to the separate HTTP listener, whose routes never depend on Host.
+# The public listener: the routes a party without a Swizzle credential calls, and nothing else.
+# Approval pages, event callbacks, webhooks and OAuth callbacks; every other path, including
+# sign-in, the API and the dashboard, is a bare 404. Expose this origin to the internet when the
+# dashboard and the API stay private. Approval and event links start with it unless
+# SWIZZLE_LINK_URL names a tunnel in front of it, such as Tailscale Funnel; webhook URLs and OAuth
+# redirects start with SWIZZLE_PUBLIC_URL. Tunnels forward to the separate HTTP listener, whose
+# routes never depend on Host. The paths match the public routes in ROUTE_ACCESS
+# (packages/runtime/src/http-contract.ts), where /hooks is WEBHOOK_PATH_PREFIX.
 {$SWIZZLE_LINK_ORIGIN}, http://:{$SWIZZLE_LINK_PORT:19828} {
 	encode zstd gzip
 
@@ -106,8 +110,8 @@
 		-Server
 	}
 
-	@links path /approvals/* /events/*
-	handle @links {
+	@public path /approvals/* /events/* /hooks/* /oauth/callback/*
+	handle @public {
 		reverse_proxy api:19820
 	}
 	handle {

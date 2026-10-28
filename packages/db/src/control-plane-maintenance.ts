@@ -14,6 +14,7 @@ import type {
 } from "./control-plane-types.js";
 import { FINISHED_RUN_STATUSES } from "./run-status.js";
 import {
+  deployments,
   maintenanceRuns,
   notificationDeliveries,
   queueMetricSamples,
@@ -209,8 +210,8 @@ export async function listQueueMetricSamples(
 const EXPIRE_BATCH = 500;
 
 /**
- * Deletes finished runs at or before the cutoff in batches, so no statement holds many rows
- * locked; attempts, steps, logs and usages cascade. A run whose terminal state is still being
+ * Deletes this environment's finished runs at or before the cutoff in batches, so no statement
+ * holds many rows locked; attempts, steps, logs and usages cascade. A run whose terminal state is still being
  * written (`terminal_pending`) waits for the next pass.
  */
 export async function expireRuns(
@@ -221,10 +222,16 @@ export async function expireRuns(
     inArray(runs.status, FINISHED_RUN_STATUSES),
     eq(runs.terminalPending, false),
     lte(runs.finishedAt, new Date(input.cutoff)),
+    eq(deployments.environment, input.environment),
   );
   let runsDeleted = 0;
   for (;;) {
-    const batch = client.db.select({ id: runs.id }).from(runs).where(expiring).limit(EXPIRE_BATCH);
+    const batch = client.db
+      .select({ id: runs.id })
+      .from(runs)
+      .innerJoin(deployments, eq(deployments.id, runs.deploymentId))
+      .where(expiring)
+      .limit(EXPIRE_BATCH);
     const deleted = await client.db
       .delete(runs)
       .where(inArray(runs.id, batch))

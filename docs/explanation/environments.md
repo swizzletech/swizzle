@@ -1,21 +1,44 @@
 # Environments
 
-An environment scopes deployments and runtime data inside one Swizzle instance. It lets the same automation run in staging and production without sharing secrets or state. Automation folders group automations within one project and do not change runtime data.
+One Swizzle instance serves staging and production. Staging is where you test an automation. Production is where it runs live. Each environment has its own deployments, secrets, state, and webhook URLs, so a staging test can use test credentials without changing production data. Outside services are separate only when you supply separate credentials or endpoints.
 
-Projects can protect the same environment name independently. Protection limits project access but does not create a separate runtime namespace. See [the security model](security-model.md) for how environment grants cap project roles.
+A fresh install defaults to production on every install path. The dashboard selects the API's default unless the browser has a saved environment choice. **Settings → Agent access** prints a CLI profile command for the selected environment. A CLI profile pins that environment with `--env`; `-e staging` or `-e production` overrides it for one command.
 
-## The dashboard offers the environments the instance lists
+An existing install keeps its `SWIZZLE_ENVIRONMENT` setting and all its data in place. If it uses staging for live automations, those automations keep running there after an upgrade. Changing the default does not move deployments, secrets, state, runs, or schedules.
 
-The dashboard's environment switch offers every entry from `GET /environments`, with the instance default first ([`registerEnvironmentRoutes`](../../apps/api/src/environment-routes.ts)). The API includes the default even when it has not been registered. The dashboard uses the browser's saved choice while the API still lists it. Otherwise, the dashboard selects the default.
+## Test in staging, then deploy to production
 
-## Environments scope data, not compute
+The environments already exist inside the instance. You do not need another stack or another scheduler. Deploy your source to staging and set its test secrets in that environment:
 
-A run resolves secrets from its automation's project and its environment. Connections still resolve by environment. Webhook paths are unique per environment, so two environments can serve the same path. Rollbacks, timeout grants, and notification rules also apply to one environment.
+```bash
+swizzle secret set SERVICE_TOKEN --value '<test-token>' -e staging
+swizzle apply ./my-automation -e staging
+swizzle trigger my-automation -e staging --payload '{"test":true}'
+swizzle inspect my-automation -e staging
+```
 
-Workers run queued runs across environments because queues are named by worker profile, not environment ([`createQueueNameForProfile`](../../packages/runtime/src/runtime-requirements.ts)). A scheduler fires cron triggers only for its configured `SWIZZLE_ENVIRONMENT` ([`materializeDueCronRuns`](../../packages/runtime/src/triggers.ts)). A cron automation with no scheduler for its environment does not fire. The API judges cron next runs against the live scheduler environments ([`JudgedTriggerSummary`](../../packages/runtime/src/http-contract.ts)), so the Overview and `swizzle inspect` name the missing scheduler instead of showing a next run time. If another environment has a live scheduler, the Overview names that environment ([`buildAttention`](../../packages/db/src/dashboard-attention.ts)). `swizzle apply` warns when no live scheduler heartbeat exists for that environment ([`environment-guard.ts`](../../apps/cli/src/environment-guard.ts)).
+For a webhook automation, `apply`, `inspect`, and the dashboard's **About** tab show its staging webhook URL. Post a test payload to that exact URL, including `?environment=staging`. The production URL uses `?environment=production`, even when both deployments use the same path. A staging webhook starts only a staging run and resolves only staging secrets and state.
 
-## Services require callers to name the environment
+Once the tests pass, deploy the same source to production with its live secrets:
 
-Callers must name the environment when they use a database store or runtime operation that acts on one environment. Those calls do not choose `local` when a caller omits the name. A local `swizzle run` passes `local` explicitly ([`local-commands.ts`](../../apps/cli/src/local-commands.ts)). Requiring the name keeps a missing value from selecting a different namespace.
+```bash
+swizzle secret set SERVICE_TOKEN --value '<live-token>' -e production
+swizzle apply ./my-automation -e production
+swizzle inspect my-automation -e production
+```
 
-The API and scheduler require `SWIZZLE_ENVIRONMENT` at startup ([`readConfiguredEnvironment`](../../packages/db/src/environments.ts)). The API uses it when a request omits the `environment` parameter ([`getEnvironment`](../../apps/api/src/http-shared.ts)). The scheduler uses it to select cron triggers. Workers report their approved environment grants and accept only matching assignments.
+Supply `--project <slug>` on these commands when the automation belongs to another project. Deploying source to production creates its production deployment. It does not copy staging secrets, state, or run history. For a webhook, configure the sender with the production URL that `inspect` returns.
+
+A cron deployed to both environments runs in both. Both runs can reach outside services, so pause the staging schedule when you want only production to run:
+
+```bash
+swizzle trigger pause my-automation -e staging
+```
+
+## One scheduler serves every environment
+
+The scheduler discovers environments from the instance on every pass. It starts cron runs and checks due APIs in each environment, including environments added after it starts. A busy environment skips its own next poll while its previous pass finishes. Other environments continue polling, even while that environment drains a cron backlog. `SWIZZLE_ENVIRONMENT` selects the API default. It does not limit scheduler coverage. Workers execute runs only in environments their grants allow.
+
+Runtime operations require an explicit environment, so a missing argument cannot select a different namespace. A local `swizzle run` names `local` explicitly.
+
+Projects can protect production independently. Protection limits who can change a project's production deployment, but does not create another runtime namespace. Automation folders group automations within a project and do not change runtime data. See [the security model](security-model.md) for project and environment grants.

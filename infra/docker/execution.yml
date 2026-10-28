@@ -85,7 +85,9 @@ services:
     volumes:
       - dep-cache-data:/data/dep-cache
     networks: [control-egress, runner-control]
-    cpus: ${SWIZZLE_WORKER_CPUS:-2}
+    # Docker refuses a limit above the host's CPU count, and 1 fits every host. `just init-env` and
+    # `just worker` set the host's count, up to 2 (scripts/env-file.ts).
+    cpus: ${SWIZZLE_WORKER_CPUS:-1}
     pids_limit: ${SWIZZLE_WORKER_PIDS_LIMIT:-512}
     mem_limit: ${SWIZZLE_WORKER_MEMORY_LIMIT:-2g}
     tmpfs: ["/tmp:rw,noexec,nosuid,size=256m"]

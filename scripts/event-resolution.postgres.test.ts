@@ -91,7 +91,7 @@ function createNoopQueue(): RunQueueProducer {
   };
 }
 
-it("event resolution single shot", { timeout: 60_000 }, async () => {
+it("event resolution single shot", async () => {
   const store = testControlPlaneStore();
   await verifyEventResolutionSingleShot(store);
 });

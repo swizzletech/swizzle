@@ -26,11 +26,10 @@ test("an invalid saved baseline exits with usage before Docker is called", async
         DOCKER_HOST: "unix:///unused.sock",
         PATH: `${directory}:${process.env.PATH}`,
       },
-      timeout: 20_000,
     },
   ).catch((error: { code: number; stdout: string; stderr: string }) => error);
   expect("code" in result ? result.code : 0).toBe(2);
   expect(result.stdout).toContain("cannot read the base result");
   expect(result.stdout).toContain("usage: just perf");
   expect(await readFile(calls, "utf8").catch(() => "no Docker calls")).toBe("no Docker calls");
-}, 30_000);
+});

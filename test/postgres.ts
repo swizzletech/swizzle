@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { createDatabaseClient, type DatabaseClient } from "@swizzle/db/postgres";
 import { afterAll, beforeAll, beforeEach, inject, onTestFinished, vi } from "vitest";
+import { waitFor } from "./support.js";
 
 // Docker lifecycle tests reload modules. Vitest isolates globals per file, so their client
 // survives vi.resetModules without reaching another file or worker.
@@ -37,6 +38,24 @@ export async function additionalDatabase(): Promise<DatabaseClient> {
   const owned = await cloneDatabase();
   onTestFinished(() => owned.close());
   return owned.client;
+}
+
+/** Sessions of the client's database that wait on a lock: a row, a table or an advisory lock. */
+export async function lockWaiters(client: DatabaseClient): Promise<number> {
+  const waiting = await client.pool.query<{ count: string }>(
+    "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'",
+  );
+  return Number(waiting.rows[0]?.count);
+}
+
+/**
+ * Resolves once at least `count` sessions wait on a lock: the state a race test needs before it
+ * lets the lock holder go. The test timeout bounds the wait, and the poll stops when the test ends.
+ */
+export async function untilLockWaiters(client: DatabaseClient, count: number): Promise<void> {
+  const finished = new AbortController();
+  onTestFinished(() => finished.abort());
+  await waitFor(finished.signal, async () => (await lockWaiters(client)) >= count);
 }
 
 async function cloneDatabase() {

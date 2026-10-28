@@ -15,7 +15,9 @@ vi.mock("@swizzle/runtime/platform", async (importOriginal) => ({
 const runId = "0f9c3a52-6d1e-4c53-9a77-3b5f3d6d1a10";
 
 describe("GET /runs/:runId/logs/stream", () => {
-  it("ends with 'end' when the run turns terminal before the subscription stands", async () => {
+  it("ends with 'end' when the run turns terminal before the subscription stands", async ({
+    signal,
+  }) => {
     const owner = await ownerHeaders();
     const platform = await testPlatform();
     const run = (status: string) => ({
@@ -41,20 +43,15 @@ describe("GET /runs/:runId/logs/stream", () => {
     });
     const address = await app.listen({ host: "127.0.0.1", port: 0 });
 
-    // An open stream never finishes by itself, so the read stops at a deadline.
-    const client = new AbortController();
-    const timer = setTimeout(() => client.abort(), 1_000);
-    let text = "";
+    // A stream that stays open never ends this read, and the test timeout aborts it.
+    let text: string;
     try {
       const response = await fetch(`${address}/runs/${runId}/logs/stream`, {
         headers: owner,
-        signal: client.signal,
+        signal,
       });
       text = await response.text();
-    } catch {
-      // Aborted at the deadline: the stream stayed open.
     } finally {
-      clearTimeout(timer);
       await app.close();
     }
 

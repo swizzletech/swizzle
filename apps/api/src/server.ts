@@ -77,7 +77,6 @@ import { registerTokenRoutes } from "./token-routes.js";
 import {
   createWebhookIngressLimiterFromEnvironment,
   registerWebhookIngressRoute,
-  trackApiPostRoutes,
 } from "./webhook-ingress.js";
 import { registerWorkerRoutes } from "./worker-routes.js";
 
@@ -166,7 +165,6 @@ export function buildServer(options: BuildServerOptions) {
     if (route !== undefined) trace.getActiveSpan()?.setAttribute("http.route", route);
   });
 
-  const isWebhookPathReserved = trackApiPostRoutes(app);
   registerRequestValidation(app);
 
   // Every answer is owner data or carries a credential, so no browser or proxy may keep a copy.
@@ -276,7 +274,7 @@ export function buildServer(options: BuildServerOptions) {
   app.get<{ Reply: HealthResponse }>("/health", async () => ({
     service: "api",
     status: "ok",
-    version: resolvePlatformVersion(),
+    version: APP_VERSION,
   }));
 
   app.get<{ Reply: ReadyResponse }>("/ready", async (_request, reply) => {
@@ -305,7 +303,7 @@ export function buildServer(options: BuildServerOptions) {
         : {}),
       service: "api",
       status: report.ok ? "ready" : "not-ready",
-      version: resolvePlatformVersion(),
+      version: APP_VERSION,
     };
   });
 
@@ -346,7 +344,6 @@ export function buildServer(options: BuildServerOptions) {
     ...(options.artifactsDirectory !== undefined
       ? { artifactsDirectory: options.artifactsDirectory }
       : {}),
-    isWebhookPathReserved,
     platform,
   });
   registerSecretRoutes(app, { platform });
@@ -360,26 +357,6 @@ export function buildServer(options: BuildServerOptions) {
   registerWebhookIngressRoute(app, { platform, webhookIngressLimiter });
 
   return app;
-}
-
-function resolvePlatformVersion(): string {
-  const platformVersion = process.env.SWIZZLE_PLATFORM_VERSION?.trim();
-  if (platformVersion !== undefined && platformVersion.length > 0) {
-    return normalizePlatformVersion(platformVersion);
-  }
-  const imageTag = process.env.SWIZZLE_IMAGE_TAG?.trim();
-  if (imageTag !== undefined && imageTag.length > 0) {
-    return normalizePlatformVersion(imageTag);
-  }
-  const explicit = process.env.SWIZZLE_VERSION?.trim();
-  if (explicit !== undefined && explicit.length > 0) {
-    return normalizePlatformVersion(explicit);
-  }
-  return APP_VERSION;
-}
-
-function normalizePlatformVersion(version: string): string {
-  return version.trim().replace(/^v/iu, "");
 }
 
 export function registerErrorHandler(app: ApiServer): void {

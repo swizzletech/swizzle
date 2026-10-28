@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { ActionError } from "../../components/actions";
 import { AuditHistory } from "../../components/audit-history";
+import { useConfirm } from "../../components/confirm";
 import { CopyButton, Dot, ErrorNote, Skeleton, useNow } from "../../components/ui";
 import type { WorkerEnrollment, WorkerListing } from "../../lib/api";
 import { useDashboardClient } from "../../lib/dashboard-client";
@@ -13,6 +14,7 @@ import { workerKindInWords, workerStateInWords, workerTone } from "../../lib/wor
 import { SECTION_DATA } from "./section";
 
 export function Workers() {
+  const confirm = useConfirm();
   const { api, environment, queryScope } = useDashboardClient();
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
@@ -117,8 +119,9 @@ export function Workers() {
             className="btn danger"
             type="button"
             disabled={revoke.isPending}
-            onClick={() => {
-              if (window.confirm(`Permanently revoke ${worker.name}?`)) revoke.mutate(worker.id);
+            onClick={async () => {
+              const question = `Permanently revoke ${worker.name}?`;
+              if (await confirm({ action: "Revoke", question })) revoke.mutate(worker.id);
             }}
           >
             Revoke

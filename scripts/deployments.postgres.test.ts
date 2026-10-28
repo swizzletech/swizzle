@@ -5,10 +5,9 @@ import {
   createPostgresAccessStore,
   type DatabaseClient,
 } from "@swizzle/db/postgres";
-import { it, vi } from "vitest";
-import { testDatabase } from "../test/postgres.js";
+import { it } from "vitest";
+import { testDatabase, untilLockWaiters } from "../test/postgres.js";
 import { testControlPlaneStore } from "../test/stores.js";
-import { lockWaiters } from "./verify-postgres-locks.js";
 import { commitDeploymentFixture } from "./verify-state-fixtures.js";
 
 async function verifyDeploymentCommit(store: ControlPlaneStore): Promise<StoredDeployment> {
@@ -125,7 +124,7 @@ async function verifyChainProjects(
   );
 }
 
-it("deployment commit", { timeout: 60_000 }, async () => {
+it("deployment commit", async () => {
   const store = testControlPlaneStore();
   await verifyDeploymentCommit(store);
 });
@@ -146,9 +145,7 @@ it("returns the deployment-check conflict code when concurrent commits claim one
         ),
       );
       try {
-        await vi.waitFor(async () => assert.equal(await lockWaiters(client), 2), {
-          timeout: 10_000,
-        });
+        await untilLockWaiters(client, 2);
       } finally {
         await blocker.query("ROLLBACK");
         await pending;
@@ -172,13 +169,13 @@ it("returns the deployment-check conflict code when concurrent commits claim one
   );
 });
 
-it("chain source order", { timeout: 60_000 }, async () => {
+it("chain source order", async () => {
   const client = testDatabase();
   const store = testControlPlaneStore();
   await verifyChainSourceOrder(client, store);
 });
 
-it("chain projects", { timeout: 60_000 }, async () => {
+it("chain projects", async () => {
   const client = testDatabase();
   const store = testControlPlaneStore();
   await verifyChainProjects(client, store);

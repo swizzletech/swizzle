@@ -96,7 +96,7 @@ export function RecoveryCodes(props: {
         </span>
       </div>
       <pre className="screen">{text}</pre>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <CopyButton label="Copy codes" text={text} />
         <button className="btn quiet" onClick={props.onDismiss} type="button">
           I saved them

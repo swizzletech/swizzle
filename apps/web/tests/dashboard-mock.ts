@@ -179,6 +179,7 @@ function glance(item: RunListItem): AutomationSummary["recentRuns"][number] {
     queuedAt: item.queuedAt,
     runId: item.runId,
     status: item.status,
+    triggerType: item.triggerType,
   };
 }
 
@@ -260,7 +261,7 @@ export function seededState(): MockState {
       description: "Answers the verification webhook and checks the payload.",
       lastRun: failed,
       recentRuns: [failed, waiting, ok].map(glance),
-      trigger: trigger({ webhookPath: "/verify-probe" }),
+      trigger: trigger({ webhookPath: "/hooks/verify-probe" }),
     }),
     automation("verify-vault", {
       description: "Reads a secret and proves it arrives.",
@@ -276,7 +277,7 @@ export function seededState(): MockState {
           updatedAt: null,
         },
       ],
-      trigger: trigger({ webhookPath: "/verify-vault" }),
+      trigger: trigger({ webhookPath: "/hooks/verify-vault" }),
     }),
     automation("verify-ticker", {
       description: "Ticks and records the time.",
@@ -324,6 +325,7 @@ export function seededState(): MockState {
         kind: "failing",
         lastFailedAt: failed.queuedAt,
         lastFailedRunId: FAILED_RUN_ID,
+        lastFailedTriggerType: failed.triggerType,
         recentRuns: 3,
       },
       {
@@ -834,6 +836,16 @@ export async function mockDashboardApi(
           ...token,
           token: `swz_${id}_one-time-plaintext`,
         } satisfies CreatedApiToken);
+      }
+      if (is("DELETE", /^\/auth\/tokens\/([^/]+)$/u)) {
+        const id = param(/^\/auth\/tokens\/([^/]+)$/u);
+        state.tokens = state.tokens.map((token) =>
+          token.id === id ? { ...token, revokedAt: ago(0) } : token,
+        );
+        const revoked = state.tokens.find((token) => token.id === id);
+        if (revoked === undefined)
+          return apiError(route, "API_TOKEN_NOT_FOUND", 404, "No such token.");
+        return json(route, revoked);
       }
       if (is("GET", /^\/auth\/sessions$/u)) return json(route, { sessions: [] });
       if (is("GET", /^\/auth\/two-factor$/u)) return json(route, { enabled: false });

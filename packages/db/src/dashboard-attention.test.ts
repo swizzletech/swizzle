@@ -61,6 +61,7 @@ describe("buildAttention", () => {
     queuedAt: NOW,
     runId,
     status,
+    triggerType: "manual",
   });
   const missing = (name: string) =>
     ({ name, state: "missing" }) as DashboardAutomationSummary["requiredSecrets"][number];

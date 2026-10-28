@@ -86,9 +86,18 @@ export function assertDeploymentRuntimeReadiness(
       automationIssues.length > 0
         ? automationIssues.map((issue) => issue.message).join(" ")
         : `No worker in group "${profile}" meets every requirement.`;
-    throw new AutomationRuntimeError("RUNTIME_REQUIREMENTS_UNMET", `${summary}${workerDetails}`, {
-      details: { readiness },
-    });
+    // A deployed run never sees the worker's own PATH, so neither the author nor the automation
+    // can supply a missing binary.
+    const binaryRemedy = readiness.errors.some(
+      (issue) => issue.code === "BINARY_REQUIREMENT_MISSING",
+    )
+      ? " A deployed run has only the binaries of its worker's runner image; the instance operator adds a missing one to the runner image (target runner-base of infra/docker/Dockerfile) and rebuilds the stack."
+      : "";
+    throw new AutomationRuntimeError(
+      "RUNTIME_REQUIREMENTS_UNMET",
+      `${summary}${workerDetails}${binaryRemedy}`,
+      { details: { readiness } },
+    );
   }
 }
 

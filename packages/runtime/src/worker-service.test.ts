@@ -1,7 +1,6 @@
 import { writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import type { ExecutionLease } from "@swizzle/db";
 import { expect, it, onTestFinished, vi } from "vitest";
 import { temporaryDirectory, waitFor } from "../../../test/support.js";
@@ -23,12 +22,15 @@ const lease: ExecutionLease = {
 interface Faults {
   /** Use a file credential and stall its candidate probe after the clock enters renewal time. */
   readonly stalledTokenRenewal?: boolean;
-  /** Renewal replies after the first wait this long. */
-  readonly delayedRenewal?: boolean;
+  /** The lease lasts 500 ms, and renewals after the first get no reply while the test runs. */
+  readonly heldRenewal?: boolean;
   /** The first source reply stops halfway through its body. */
   readonly cutSource?: boolean;
-  /** Renewals answer 503 for this long after the attempt starts, as during a network change. */
-  readonly renewalOutageMs?: number;
+  /**
+   * The first renewal after the attempt starts answers 503, as during a network change. The
+   * automation's request to `GATE` gets its reply once a later renewal succeeded.
+   */
+  readonly refusedRenewal?: boolean;
   /** From the first lease renewal on, replies carry a Date ten minutes later, as after host sleep. */
   readonly hostSlept?: boolean;
   /** Called as the pull hands out the assignment. */
@@ -42,21 +44,29 @@ async function api(script: string, faults: Faults = {}, expiresAt = lease.expire
     mainJs: script,
   });
   const serverLease = { ...lease, expiresAt };
-  const delivery = await createExecutionDelivery(serverLease, "run", {
-    automationDirectory: directory,
-    environmentName: "local",
-    environment: { DECLARED: "value" },
-  });
   let pulled = false;
-  let pulls = 0;
   let serverClockAhead = 0;
   let renewals = 0;
   let failedRenewals = 0;
   let sources = 0;
-  let startedAt: number | null = null;
+  let started = false;
   let accepted = false;
   const outputs: string[] = [];
   const reports: string[] = [];
+  let finishTest = () => {};
+  const testFinished = new Promise<void>((resolve) => {
+    finishTest = resolve;
+  });
+  onTestFinished(() => finishTest());
+  let renewalSucceeded = () => {};
+  const renewedAfterRefusal = new Promise<void>((resolve) => {
+    renewalSucceeded = resolve;
+  });
+  // The first time the worker gives up an execution or a pull, as it logs it.
+  let failed = (_error: Error) => {};
+  const failure = new Promise<Error>((resolve) => {
+    failed = resolve;
+  });
   let tokenProbeStarted = () => {};
   const tokenProbe = new Promise<void>((resolve) => {
     tokenProbeStarted = resolve;
@@ -72,7 +82,6 @@ async function api(script: string, faults: Faults = {}, expiresAt = lease.expire
     if (req.url === "/worker/preparations") body = { activeIds: [], deployments: [] };
     if (req.url === "/worker/run-images/keep") body = { keep: [] };
     if (req.url === "/worker/pull") {
-      pulls++;
       if (!pulled) faults.onAssignment?.();
       body = { assignment: pulled ? null : delivery.assignment };
       pulled = true;
@@ -87,23 +96,24 @@ async function api(script: string, faults: Faults = {}, expiresAt = lease.expire
         return;
       }
     }
+    if (req.url === "/gate") {
+      await renewedAfterRefusal;
+      res.end();
+      return;
+    }
     if (req.url === "/worker/start") {
-      startedAt ??= Date.now();
+      started = true;
       body = { secrets: delivery.secrets };
     }
     if (req.url === "/worker/lease/renew") {
       renewals++;
       if (faults.hostSlept) serverClockAhead = 10 * 60_000;
-      if (faults.delayedRenewal && renewals > 1) await delay(700);
-      if (
-        startedAt !== null &&
-        faults.renewalOutageMs !== undefined &&
-        Date.now() - startedAt < faults.renewalOutageMs
-      ) {
+      if (faults.heldRenewal && renewals > 1) await testFinished;
+      if (faults.refusedRenewal && started && failedRenewals === 0) {
         failedRenewals++;
         res.statusCode = 503;
-      }
-      body = { lease: { ...serverLease, remainingMs: faults.delayedRenewal ? 500 : 3_000 } };
+      } else if (failedRenewals > 0) renewalSucceeded();
+      body = { lease: { ...serverLease, remainingMs: faults.heldRenewal ? 500 : 3_000 } };
     }
     if (req.url === "/worker/output") {
       outputs.push(raw);
@@ -121,6 +131,11 @@ async function api(script: string, faults: Faults = {}, expiresAt = lease.expire
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("No HTTP port");
+  const delivery = await createExecutionDelivery(serverLease, "run", {
+    automationDirectory: directory,
+    environmentName: "local",
+    environment: { DECLARED: "value", GATE: `http://127.0.0.1:${address.port}/gate` },
+  });
   onTestFinished(
     () =>
       new Promise<void>((resolve, reject) => {
@@ -148,15 +163,23 @@ async function api(script: string, faults: Faults = {}, expiresAt = lease.expire
       dependencyPackaging: { node: false, python: false },
     },
     concurrency: 1,
+    logger: {
+      debug() {},
+      info() {},
+      error() {},
+      warn(fields: { error?: Error }, message: string) {
+        if (message === "Worker request failed; retrying." && fields.error) failed(fields.error);
+      },
+    },
   });
   onTestFinished(() => worker.close());
   return {
     outputs,
     reports,
     tokenProbe,
+    failure,
     close: () => worker.close(),
     accepted: () => accepted,
-    pulls: () => pulls,
     renewals: () => renewals,
     failedRenewals: () => failedRenewals,
     sources: () => sources,
@@ -180,15 +203,12 @@ it.for(["1970-01-01T00:00:00.000Z", "2099-01-01T00:00:00.000Z"])(
   },
 );
 
-it("stops before server expiry when a renewal acknowledgement is delayed", async ({ signal }) => {
-  const client = await api(
-    "await new Promise(resolve=>setTimeout(resolve,2000)); console.log('{}');",
-    { delayedRenewal: true },
-  );
-  await waitFor(signal, () => client.renewals() > 1);
-  await delay(1000);
+it("stops before server expiry when a renewal acknowledgement is delayed", async () => {
+  // The automation never ends by itself, so only the worker's local deadline stops it.
+  const client = await api("setInterval(() => {}, 60_000);", { heldRenewal: true });
+  expect((await client.failure).message).toBe("Execution lease was lost.");
+  expect(client.renewals()).toBeGreaterThan(1);
   expect(client.reports).toEqual([]);
-  expect(client.outputs).toEqual([]);
 });
 
 it("fetches the bundle again after a transfer breaks off", async ({ signal }) => {
@@ -204,11 +224,11 @@ it("fetches the bundle again after a transfer breaks off", async ({ signal }) =>
 
 it("keeps running through renewal failures shorter than the lease", async ({ signal }) => {
   const client = await api(
-    "await new Promise(resolve=>setTimeout(resolve,1500)); console.log(JSON.stringify({ok:true}));",
-    { renewalOutageMs: 1_500 },
+    "await fetch(process.env.GATE); console.log(JSON.stringify({ok:true}));",
+    { refusedRenewal: true },
   );
   await waitFor(signal, client.accepted);
-  expect(client.failedRenewals()).toBeGreaterThan(0);
+  expect(client.failedRenewals()).toBe(1);
   expect(JSON.parse(client.reports[1] ?? "{}").report).toMatchObject({ exitCode: 0 });
 });
 
@@ -220,24 +240,19 @@ it("closes the worker while shared token renewal is stalled", async () => {
     vi.restoreAllMocks();
   });
   await client.tokenProbe;
-  expect(await Promise.race([client.close().then(() => true), delay(1000).then(() => false)])).toBe(
-    true,
-  );
+  // The probe is still held, so close returns only when it stops waiting for it.
+  await client.close();
 });
 
-it("takes no work after the host slept until it has stayed awake", async ({ signal }) => {
+// wake-gate.test.ts proves how long the worker then stays closed.
+it("takes no work after the host slept until it has stayed awake", async () => {
   const client = await api("console.log('{}');", { hostSlept: true });
-  await waitFor(signal, () => client.renewals() > 0);
-  const pulls = client.pulls();
-  await delay(1_500);
+  expect((await client.failure).message).toBe("Host was asleep; leaving the assignment unstarted.");
   expect(client.sources()).toBe(0);
   expect(client.outputs).toEqual([]);
-  expect(client.pulls()).toBe(pulls);
 });
 
-it("leaves an assignment unstarted when Docker stopped while the pull waited", async ({
-  signal,
-}) => {
+it("leaves an assignment unstarted when Docker stopped while the pull waited", async () => {
   vi.stubEnv("SWIZZLE_REQUIRE_SANDBOX", "true");
   let dockerUp = true;
   vi.doMock("./container-runner.js", async (importOriginal) => ({
@@ -252,7 +267,9 @@ it("leaves an assignment unstarted when Docker stopped while the pull waited", a
       dockerUp = false;
     },
   });
-  await waitFor(signal, () => client.renewals() > 0);
+  expect((await client.failure).message).toBe(
+    "Docker broker unavailable; leaving the assignment unstarted.",
+  );
   expect(client.sources()).toBe(0);
   expect(client.outputs).toEqual([]);
 });

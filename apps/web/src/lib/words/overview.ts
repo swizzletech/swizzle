@@ -44,10 +44,7 @@ export function platformProblemInWords(problem: PlatformProblem): {
     case "scheduler-down":
       return {
         title: `No scheduler runs for ${problem.environment}, so its cron runs do not start and its waits do not end.`,
-        todo:
-          problem.served.length === 0
-            ? "Start it with `docker compose up -d scheduler` on the server."
-            : `The scheduler serves ${problem.served.join(" and ")}. Deploy to ${problem.served.join(" or ")}, or set \`SWIZZLE_ENVIRONMENT=${problem.environment}\` in \`.env\` and run \`just stack\` on the server.`,
+        todo: "Run `just stack` in the checkout on the server: it rebuilds the images and starts the scheduler from the current code. One scheduler serves every environment.",
       };
     case "queue-backlog":
       return {
@@ -93,18 +90,25 @@ export function attentionKey(item: AttentionItem): string {
 
 /**
  * What "Hand to agent" copies for a failed run: the situation and the commands the agent
- * investigates with, so the agent starts from the same facts the owner sees.
+ * investigates with, so the agent starts from the same facts the owner sees. The stored error
+ * stays; the diagnosis summary follows it when it says something else.
  */
 export function failedRunHandoff(run: {
   readonly attemptsMade: number;
   readonly automationName: string;
+  readonly diagnosisSummary?: string | undefined;
   readonly errorMessage: string | null;
   readonly runId: string;
+  readonly triggerType: string;
 }): string {
   const attempts = run.attemptsMade === 1 ? "1 attempt" : `${run.attemptsMade} attempts`;
+  const diagnosis =
+    run.diagnosisSummary === undefined || run.diagnosisSummary === run.errorMessage
+      ? ""
+      : ` Diagnosis: ${sentence(run.diagnosisSummary)}`;
   return (
     `Run ${run.runId} of ${run.automationName} failed after ${attempts}: ` +
-    `${sentence(run.errorMessage)} ${investigate(run.runId)}`
+    `${sentence(run.errorMessage)}${diagnosis} ${investigate(run.runId, run.triggerType)}`
   );
 }
 
@@ -115,7 +119,7 @@ export function failingAutomationHandoff(
   return (
     `${item.automation.automationName} is failing: ${item.failedRuns} of its last ` +
     `${item.recentRuns} runs failed. The latest failed run is ${item.lastFailedRunId}: ` +
-    `${sentence(item.errorMessage)} ${investigate(item.lastFailedRunId)}`
+    `${sentence(item.errorMessage)} ${investigate(item.lastFailedRunId, item.lastFailedTriggerType)}`
   );
 }
 
@@ -123,11 +127,28 @@ function sentence(errorMessage: string | null): string {
   return (errorMessage ?? "it ended without a result").replace(/\.?$/u, ".");
 }
 
-function investigate(runId: string): string {
+/**
+ * How to run a failed run again. A chain run cannot be replayed (TRIGGER_NOT_FIRABLE); it starts
+ * again through its source. A replay of a webhook run starts a manual run without the signed
+ * delivery, so an automation that checks the signature needs the sender to redeliver.
+ */
+function investigate(runId: string, triggerType: string): string {
   return (
     `Investigate with \`swizzle diagnose ${runId}\` and \`swizzle logs --run ${runId}\`, ` +
-    "fix the cause and redeploy."
+    `fix the cause, redeploy, then ${again(runId, triggerType)}.`
   );
+}
+
+function again(runId: string, triggerType: string): string {
+  const replay = `replay with \`swizzle runs replay ${runId}\``;
+  switch (triggerType) {
+    case "chain":
+      return "start it again through its source, because a chain run cannot be replayed";
+    case "webhook":
+      return `${replay}, which carries no signed delivery: if the automation checks the webhook signature, ask the sender to redeliver instead`;
+    default:
+      return replay;
+  }
 }
 
 /** "Deployed" with "1.0.0 → 1.1.0", "Rolled back" with "2.3.0 → 2.2.1", "First deploy" with "1.0.0". */

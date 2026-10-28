@@ -41,9 +41,7 @@ describe("python dependency cache", () => {
   // proves the worker reuses it through the cache root in its own process env. The build costs
   // about 3 s of CPU (ensurepip and pip) and the test up to 5 s with both runs. The budget lets a
   // loaded host give it a tenth of a core.
-  it("installs once, then a worker run with a sanitized child env reuses the cached venv", {
-    timeout: 50_000,
-  }, async () => {
+  it("installs once, then a worker run with a sanitized child env reuses the cached venv", async () => {
     const automationDirectory = await temporaryDirectory("swizzle-python-deps-");
     const cacheDirectory = await temporaryDirectory("swizzle-dep-cache-");
     await writeFile(

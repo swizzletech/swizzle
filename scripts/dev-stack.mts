@@ -105,7 +105,7 @@ const SECRET_NAMES = [
 ] as const;
 const OWNER_EMAIL = "owner@swizzle.test";
 const MEMBER_EMAIL = "member@swizzle.test";
-/** The environment the api and scheduler serve and the dashboard opens, as in the packaged stack. */
+/** The dev API's default environment; the scheduler serves every namespace. */
 const ENVIRONMENT = "staging";
 const COMPOSE_FILE = "infra/docker/compose.dev.yml";
 const READY_TIMEOUT_MS = 180_000;
@@ -237,6 +237,7 @@ function serviceEnvironment(record: StackRecord) {
     SWIZZLE_DASHBOARD_ORIGIN: tailnet?.origin ?? record.url,
     // Webhook URLs and OAuth callbacks go through the dashboard's /api proxy, so they work where
     // the dashboard does.
+    SWIZZLE_API_ORIGIN: `${tailnet?.origin ?? record.url}/api`,
     SWIZZLE_PUBLIC_URL: `${tailnet?.origin ?? record.url}/api`,
     SWIZZLE_MAIL_FROM: "Swizzle dev <swizzle@swizzle.test>",
     SWIZZLE_SMTP_URL: record.smtpUrl,

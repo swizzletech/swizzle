@@ -15,7 +15,7 @@ For starter configs, see [Recipes](recipes.md).
 4. **Capture both stdout and stderr.** Logging only stderr will hide the reason a run failed — include stdout in your error-path logging.
 5. **Plain output format, never the event stream.** `claude -p --output-format stream-json --include-partial-messages` and `codex exec --json` emit every token delta as a JSON event line — a one-hour session produces tens of MB. The platform **bounds total captured run output** and terminates the child when the cap is crossed (`PROCESS_OUTPUT_LIMIT_EXCEEDED`) — a healthy 52-minute build died exactly this way. Stream formats exist for *live supervisors* (a process that tails and reacts, like cdx, which writes the stream to its own disk file); an automation entrypoint that only awaits the final result must use plain `-p` / plain `exec` output. Belt and braces: cap what your entrypoint forwards to the run logs (e.g. keep the last 200KB with a truncation notice) so no chatty subprocess can ever hit the platform bound.
 
-Any CLI you invoke has to be installed in the runner image — the default ships `claude` and `codex`; check `infra/docker/Dockerfile` (build target `runner-base`) before assuming more.
+Any CLI you invoke has to be installed in the runner image — the default ships `claude` and `codex`, and [Execution environment](../SKILL.md#execution-environment-whats-actually-available) lists the rest. Declare it under `runtime.requirements.binaries`, so `validate` confirms it.
 
 ## IMAP: fetch-then-mutate in the same iteration deadlocks with Gmail
 

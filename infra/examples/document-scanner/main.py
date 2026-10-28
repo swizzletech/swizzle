@@ -49,10 +49,13 @@ TOPICS = {
 
 TEAMS = {"invoice": "finance", "contract": "legal", "support": "helpdesk"}
 
+MAX_CONTENT_CHARACTERS = 65_536
+
 FIELDS = {
     "amounts": r"(?:EUR|USD|€|\$)\s?\d(?:[\d,.]*\d)?",
     "dates": r"\b\d{4}-\d{2}-\d{2}\b",
-    "emails": r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+",
+    # The start guard prevents retries inside a word; possessive repeats cannot backtrack.
+    "emails": r"(?<![\w.+-])[\w.+-]++@[\w-]++\.[\w-](?:[\w-]|\.(?=[\w-]))*+",
 }
 
 
@@ -60,6 +63,8 @@ def normalize(document: dict[str, Any]) -> str:
     content = document.get("content")
     if not isinstance(content, str):
         raise ValueError("The payload's content must be a string of document text.")
+    if len(content) > MAX_CONTENT_CHARACTERS:
+        raise ValueError(f"The payload's content must not exceed {MAX_CONTENT_CHARACTERS} characters.")
     return re.sub(r"\s+", " ", content).strip()
 
 

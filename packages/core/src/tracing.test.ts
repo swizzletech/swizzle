@@ -24,4 +24,4 @@ it("exports spans through the control egress proxy", async () => {
   await shutdownTracing();
 
   expect(proxy.requests).toContain("POST http://collector.swizzle.invalid/v1/traces");
-}, 15_000);
+});

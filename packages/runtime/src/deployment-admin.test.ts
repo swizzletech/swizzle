@@ -57,7 +57,7 @@ runtime:
   expect(() =>
     assertDeploymentRuntimeReadiness({ config, directory: process.cwd(), workers }),
   ).toThrow(
-    /^No worker in group "gpu" meets every requirement\. Workers in group "gpu" here: gpu-box does not run python and lacks the binary ffmpeg\. gpu-laptop is offline, so it reports no languages or binaries\.$/u,
+    /^No worker in group "gpu" meets every requirement\. Workers in group "gpu" here: gpu-box does not run python and lacks the binary ffmpeg\. gpu-laptop is offline, so it reports no languages or binaries\. A deployed run has only the binaries of its worker's runner image; the instance operator adds a missing one to the runner image \(target runner-base of infra\/docker\/Dockerfile\) and rebuilds the stack\.$/u,
   );
 });
 

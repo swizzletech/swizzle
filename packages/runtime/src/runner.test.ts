@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { temporaryDirectory } from "../../../test/support.js";
+import { temporaryDirectory, waitFor } from "../../../test/support.js";
+import { isRunning } from "../test/container-docker.js";
 import { createAutomationFixture } from "../test/platform-harness.js";
 import { runAutomation } from "./index.js";
 
@@ -371,33 +371,49 @@ setInterval(() => {}, 1000);`,
   });
 });
 
-it("awaits output persistence before returning a completed execution", async () => {
+it("awaits output persistence before returning a completed execution", async ({ signal }) => {
+  const pidFile = path.join(await temporaryDirectory("swizzle-held-output-"), "pid");
   const automationDirectory = await createAutomationFixture({
     name: "async-output",
     triggerLines: ["  type: webhook", "  path: /output"],
-    mainJs: "process.stderr.write('log'); console.log('{}');",
+    mainJs: `require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); process.stderr.write('log'); console.log('{}');`,
   });
   const chunks: string[] = [];
-  const result = await runAutomation({
+  let releaseWrite = () => {};
+  const writeHeld = new Promise<void>((resolve) => {
+    releaseWrite = resolve;
+  });
+  let returned = false;
+  const running = runAutomation({
     automationDirectory,
     environmentName: "local",
     onStderrChunk: async (chunk) => {
-      await delay(50);
       chunks.push(chunk);
     },
     onStdoutChunk: async (chunk) => {
-      await delay(50);
+      await writeHeld;
       chunks.push(chunk);
     },
+  }).finally(() => {
+    returned = true;
   });
+  // The automation has exited with its stdout write still pending, so only that write holds the
+  // execution open.
+  await waitFor(signal, async () => {
+    const pid = Number(await readFile(pidFile, "utf8").catch(() => "0"));
+    return pid > 0 && !isRunning(pid);
+  });
+  expect(returned).toBe(false);
+  releaseWrite();
+  const result = await running;
   expect(result.success).toBe(true);
   expect(chunks.join("")).toContain("log");
   expect(chunks.join("")).toContain("{}");
+  // A rejected write fails the execution only when the runner awaits it.
   const failed = await runAutomation({
     automationDirectory,
     environmentName: "local",
     onStdoutChunk: async () => {
-      await delay(10);
       throw new Error("output write failed");
     },
   });

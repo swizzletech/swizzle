@@ -94,6 +94,14 @@ The worker reads stderr line by line for each process. A line that parses as a J
 
 The API publishes each `step_start` and `step_result` it stores as a `step` event on `GET /runs/:runId/logs/stream`. The event includes `key`, `status` (`started` or `done`), `attempt`, `executionNumber` and `timestamp`. A `chunk` event also includes `executionNumber`. A `status` event includes `status` and `terminal`. A terminal run sends `end` with the run status, then closes the stream. Only finished steps reach `SWIZZLE_STEPS_FILE`, so a step whose execution ended before its result was stored runs again.
 
+## Diagnosis and replay
+
+`GET /runs/:runId` and `swizzle runs inspect <runId>` include the original payload, with the same read permission as the dashboard's Payload tab. `swizzle diagnose <runId>` names the last Python exception or Node exception in stderr. When stderr includes a traceback or stack with a source frame, the diagnosis includes its source file and line. Overview's Failing card uses the stored error message without loading the run's stdout or stderr on each poll. The run panel's **Hand to agent** text preserves the stored error and adds the diagnosis summary when the two differ. Both handoffs give advice for the run's trigger. They tell the agent to start a chain run through its source because replay cannot start a chain run. They also say that webhook replay has no signed delivery and tell the agent to ask the sender to redeliver if the automation checks the signature. `swizzle logs --run <runId> --full` prints streams with real line breaks on a terminal. `--json` keeps each stream as a JSON string.
+
+`swizzle runs replay <runId>`, `POST /runs/:runId/replay`, and **Run again** in the dashboard start a new manual run with the original payload on the active deployment. Replay requires read permission on the source run and run permission for its automation in the source environment. Code that requires a signed webhook delivery rejects a manual replay. Request redelivery from the sender for those runs. The audit event names the source run and does not contain its payload. Start a chain run through its source rather than replaying it manually.
+
+`validate` and `inspect` label a deployment's runtime as `sandbox (container)`. `validate` reports the configured local execution mode separately as `localRun`.
+
 ## API checks
 
 An automation with `api_check.mode: active` ships a check script beside its entrypoint, `check.ts` by default. The platform runs it every `api_check.every` (default `7d`) and once after each deploy. The platform stores one `automation_checks` record per automation and environment. A check creates no run row and counts toward no run statistic. The record stores a parsed [`ApiCheckReport`](../../packages/db/src/check-report.ts) with `ok`, `checked`, and `change`, alongside raw output. Dashboard reads use the report fields. Raw output remains available for diagnostics and Hand to agent text.
@@ -102,13 +110,17 @@ An automation with `api_check.mode: active` ships a check script beside its entr
 |---|---|
 | stdin | `{}` |
 | stdout | `{"ok": true, "checked": [...]}` when the API answers as the code expects. `checked` lists the calls made, which the About tab shows. On drift, stdout may be empty; the `contract_changed` stderr event names the change. |
-| Exit code | `0` with `"ok": true` is green. `1` is drift. Any other ending is undecided, such as a 503, a timeout or `0` without `"ok": true`. |
+| Exit code | `0` with `"ok": true` is green. `contract_changed` signals drift. A bare exit `1` also signals drift for checks that use the exit convention. A Python traceback, Node exception, or credential failure is an error even with exit `1`. A standalone Node frame counts as an execution error only when spaces or tabs indent `at` on the same line. HTTP 401/403 in the status position and recognizable IMAP login failures report a credentials error. Any other ending is undecided, such as a 503, a timeout or `0` without `"ok": true`. |
 | Environment | As a run of the same deployment, with `SWIZZLE_TRIGGER_TYPE=check`. It receives the automation's secrets, or only `api_check.secrets` when set, and its connections. `SWIZZLE_STATE_FILE` and `SWIZZLE_STEPS_FILE` are not set. |
 | Events | `api_contact` events are recorded as in a run. State and step events are ignored, and the check record says so. |
-| Limits | The automation's image, timeout and `runtime.rate_limits`. The record keeps up to 8,192 characters of stdout and the last 4,096 characters of stderr, both redacted. |
+| Limits | The automation's image, timeout and `runtime.rate_limits`. The record keeps up to 8,192 characters of stdout and the last 4,096 characters of stderr, both redacted. Diagnostic messages and stored warnings keep their first 4,096 characters. |
 | Secret and connection usage | The record keeps the name and version of each secret and the name and token version of each connection the latest check received, never a value, as a run execution records its own. |
 
-Drift shows under Overview > Needs you at once. An undecided check shows after 3 consecutive failures. A deploy resets the count and runs the check again. `swizzle run --check <dir>` runs the check locally ([`checkOutcome`](../../packages/runtime/src/check-contract.ts)).
+Numeric credential statuses must follow a status marker, as in `HTTP 401`, `HTTPError: 403`, `HTTP/1.1 401`, `status code: 403`, or `response: 401`. The marker starts the line or follows a space or tab. A code or marker inside a request URL, such as `HTTP 200 GET /orders/401` or `HTTP 200 GET /status:401`, does not identify a credential failure. Explicit `401 Unauthorized` and `403 Forbidden` messages also count as credential failures.
+
+`swizzle inspect <name>` shows the last check status, its check time, and any warning. `swizzle run --check <dir>` runs the check locally ([`checkOutcome`](../../packages/runtime/src/check-contract.ts)). Credential failures report `API_CHECK_CREDENTIALS`. Other runtime failures keep their runtime code, such as `MISSING_REQUIRED_SECRETS`. A successful process whose output lacks `"ok": true` reports `API_CHECK_ERROR`.
+
+Drift shows under Overview > Needs you at once. An undecided check shows after 3 consecutive failures. A deploy resets the count and runs the check again.
 
 TypeScript `contractChanged` and Python `contract_changed` always write a `contract_changed` event to stderr and exit with code `1`. Checks and runs read the change from that event. Stdout carries only the check's `ok` and `checked` report.
 

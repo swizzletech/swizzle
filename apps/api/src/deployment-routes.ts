@@ -113,7 +113,6 @@ export function registerDeploymentRoutes(app: ApiServer, options: DeploymentRout
 
 interface DeploymentRouteOptions {
   readonly artifactsDirectory?: string;
-  readonly isWebhookPathReserved: (webhookPath: string) => boolean;
   readonly platform: PlatformServices;
 }
 
@@ -218,7 +217,6 @@ async function withUploadedAutomation<T>(
           ? { expectedSourceHash: meta.expectedContentHash }
           : {}),
         ...(meta.force === true ? { force: true } : {}),
-        isWebhookPathReserved: options.isWebhookPathReserved,
         project: async (automation) =>
           await request.access.place(automation, meta.project, environment),
         skipReadinessCheck: meta.force === true,

@@ -11,7 +11,7 @@ import { promisify } from "node:util";
 import { containerLimitArguments } from "@swizzle/runtime";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
-import { temporaryDirectory, waitFor } from "../../../test/support.js";
+import { heldDeadlines, temporaryDirectory, waitFor } from "../../../test/support.js";
 import { createBroker } from "./broker.js";
 import requests from "./cli-requests.json" with { type: "json" };
 import { readBrokerScope } from "./policy.js";
@@ -408,12 +408,15 @@ describe("docker-broker", () => {
     ]);
   });
 
-  it("passes on a wait's headers before its body, which docker start --attach waits for", async () => {
+  it("passes on a wait's headers before its body, which docker start --attach waits for", async ({
+    signal,
+  }) => {
     const broker = await startBroker();
 
+    // A broker that held the headers for the body would hold this fetch until the test timeout.
     const response = await fetch(`${broker.url}/v1.56/containers/swizzle-run-1/wait`, {
       method: "POST",
-      signal: AbortSignal.timeout(2_000),
+      signal,
     });
 
     expect(response.status).toBe(200);
@@ -529,15 +532,11 @@ describe("docker-broker", () => {
     signal,
   }) => {
     const broker = await startBroker();
-    const deadline = new AbortController();
-    const timeout = AbortSignal.timeout.bind(AbortSignal);
-    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) =>
-      ms === 5_000 ? deadline.signal : timeout(ms),
-    );
+    const lookups = heldDeadlines(5_000);
 
     const answer = fetch(`${broker.url}/v1.56/containers/${STALLED}/stop`, { method: "POST" });
     await waitFor(signal, () => broker.received.length === 1);
-    deadline.abort(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+    lookups.expire();
 
     const response = await answer;
     expect(response.status).toBe(504);

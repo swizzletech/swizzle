@@ -8,7 +8,7 @@ const ORIGIN = "https://swizzle.example.com";
 const PASSWORD = "correct horse battery staple";
 
 describe("security audit", () => {
-  it("reports a hardened public installation that is set up", { timeout: 30_000 }, async () => {
+  it("reports a hardened public installation that is set up", async () => {
     const auth = testAuth({ trustedOrigins: [ORIGIN] });
     const ada = new AuthBrowser(auth, ORIGIN);
     const created = await ada.post("/sign-up/email", {
@@ -51,7 +51,7 @@ describe("security audit", () => {
     await auth.close();
   });
 
-  it("counts the accounts that sign in with a password alone", { timeout: 30_000 }, async () => {
+  it("counts the accounts that sign in with a password alone", async () => {
     const auth = testAuth({ trustedOrigins: [ORIGIN] });
     await new AuthBrowser(auth, ORIGIN).post("/sign-up/email", {
       email: "ada@example.com",

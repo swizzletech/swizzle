@@ -4,7 +4,7 @@ description: Normalize partner webhook payloads into an internal event envelope
 entrypoint: main.js
 trigger:
   type: webhook
-  path: /transform-webhook
+  path: /hooks/transform-webhook
 runtime:
   language: node
   execution_mode: host

@@ -1,4 +1,8 @@
+import { spawnSync } from "node:child_process";
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { temporaryDirectory } from "../../../test/support.js";
 
 import { buildDiagnosis } from "./run-diagnosis.js";
 
@@ -93,3 +97,64 @@ function deadLetteredRun(stderr: string): Parameters<typeof buildDiagnosis>[0] {
     triggerType: "webhook",
   };
 }
+
+it.each([
+  [
+    'Traceback (most recent call last):\n  File "/app/main.py", line 9, in main\n    order = payload["order"]\nKeyError: \'order\'\n',
+    "KeyError: 'order' at main.py:9",
+  ],
+  [
+    "TypeError: order is undefined\n    at main (/app/main.js:9:12)\n    at /app/main.js:12:1\n",
+    "TypeError: order is undefined at main.js:9",
+  ],
+])("names the exception and its source location from stderr", (stderr, summary) => {
+  const diagnosis = buildDiagnosis(deadLetteredRun(stderr), [], []);
+  expect(diagnosis.likelyCause.summary).toBe(summary);
+  expect(diagnosis.evidence).toContainEqual({ kind: "exception", detail: summary });
+});
+
+it("uses a Node syntax error's source header rather than a loader frame", async () => {
+  const directory = await temporaryDirectory("swizzle-node-syntax-");
+  const entrypoint = path.join(directory, "main.js");
+  await writeFile(entrypoint, `${"\n".repeat(8)}const order = ;\n`);
+  const crashed = spawnSync(process.execPath, [entrypoint], {
+    encoding: "utf8",
+    env: { PATH: process.env.PATH },
+  });
+  expect(crashed.status).toBe(1);
+  const diagnosis = buildDiagnosis(deadLetteredRun(crashed.stderr), [], []);
+  expect(diagnosis.likelyCause.summary).toBe("SyntaxError: Unexpected token ';' at main.js:9");
+});
+
+it.each([
+  `${"\n".repeat(2)}class Rejected(Exception):\n    pass\n${"\n".repeat(4)}raise Rejected()\n`,
+  "\n\nclass Rejected(Exception):\n    pass\n\ntry:\n    raise ValueError('first')\nexcept ValueError:\n    raise Rejected()\n",
+])("names the final bare Python exception, including a chained traceback", async (source) => {
+  const directory = await temporaryDirectory("swizzle-python-rejected-");
+  const entrypoint = path.join(directory, "main.py");
+  await writeFile(entrypoint, source);
+  const crashed = spawnSync("python3", [entrypoint], {
+    encoding: "utf8",
+    env: { PATH: process.env.PATH },
+  });
+  expect(crashed.status).toBe(1);
+  const diagnosis = buildDiagnosis(deadLetteredRun(crashed.stderr), [], []);
+  expect(diagnosis.likelyCause.summary).toBe("Rejected at main.py:9");
+});
+
+it.each([1, 10_000])("ignores a malformed Node frame with %i opening parentheses", (count) => {
+  const diagnosis = buildDiagnosis(
+    deadLetteredRun(`Error: failed\n at ${"(a".repeat(count)}`),
+    [],
+    [],
+  );
+  expect(diagnosis.likelyCause.summary).toBe("Error: failed");
+});
+
+it.each(["    at handle (main.js:7:2)", "    at main.js:7:2", "    at handle (/app/main.js:7:2)"])(
+  "keeps the source location from a Node frame: %s",
+  (frame) => {
+    const diagnosis = buildDiagnosis(deadLetteredRun(`Error: failed\n${frame}`), [], []);
+    expect(diagnosis.likelyCause.summary).toBe("Error: failed at main.js:7");
+  },
+);

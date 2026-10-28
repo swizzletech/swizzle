@@ -187,7 +187,7 @@ describe("deployment commands", () => {
         ).toBe(0);
         const applyOutput = JSON.parse(applied.stdoutText);
         const { webhookUrl } = applyOutput;
-        expect(webhookUrl).toBe(`${profileUrl}/hello?environment=production`);
+        expect(webhookUrl).toBe(`${profileUrl}/hooks/hello?environment=production`);
         const webhook = await fetch(webhookUrl, { body: "{}", method: "POST" });
         expect(webhook.status).toBe(200);
         expect(await webhook.json()).toMatchObject({ status: "queued" });

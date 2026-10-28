@@ -27,9 +27,6 @@ it.each(["api", "worker"])(
     expect(result.output).toContain("EGRESS_PROXY_INVALID");
     expect(result.output).not.toMatch(/\n\s+at /u);
   },
-  // tsx loads the preload and its imports before it fails, up to 0.75 s of CPU. The budget lets a
-  // loaded host give it a tenth of a core.
-  10_000,
 );
 
 // The instrumentations see ESM imports only through the loader hook startTracing installs, and
@@ -63,7 +60,7 @@ it("tracing preload hooks ESM imports without a warning", async () => {
   expect(result.output).toContain("pg hooked: true");
   expect(result.output).not.toContain("Warning");
   expect(result.status).toBe(0);
-}, 20_000);
+});
 
 it.each(["api", "worker", "scheduler"])(
   "%s main reports invalid proxy configuration as a named fatal",
@@ -83,9 +80,6 @@ it.each(["api", "worker", "scheduler"])(
     expect(result.output).toContain("EGRESS_PROXY_INVALID");
     expect(result.output).not.toMatch(/\n\s+at |"stack":/u);
   },
-  // A main loads the service's whole import graph through tsx before it reads its configuration,
-  // 3 to 5 s of CPU. The budget lets a loaded host give it a tenth of a core.
-  50_000,
 );
 
 /** Runs Node with `env` over this process's environment and returns its exit status and output. */

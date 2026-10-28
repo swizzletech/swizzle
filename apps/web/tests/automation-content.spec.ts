@@ -65,6 +65,6 @@ test("a README cannot draw outside its box or reuse dashboard classes", async ({
   await page
     .getByRole("navigation", { name: "Dashboard" })
     .getByRole("link", { name: "Runs" })
-    .click({ timeout: 2_000 });
+    .click();
   await expect(page).toHaveURL(/\/runs$/u);
 });

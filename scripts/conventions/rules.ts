@@ -13,7 +13,9 @@ import { platformVersion } from "./rules/platform-version.js";
 import { recipesSayWhy } from "./rules/recipes-say-why.js";
 import { reviewConfigPaths } from "./rules/review-config-paths.js";
 import { sdkCopiesMatch } from "./rules/sdk-copies-match.js";
+import { skillNamesTheRunnerImage } from "./rules/skill-names-the-runner-image.js";
 import { skillTeachesTheProduct } from "./rules/skill-teaches-the-product.js";
+import { testsWaitOnState } from "./rules/tests-wait-on-state.js";
 import { toolchainPins } from "./rules/toolchain-pins.js";
 import { webReadsTheContract } from "./rules/web-reads-the-contract.js";
 
@@ -26,7 +28,9 @@ export const rules: readonly Rule[] = [
   envExampleReachesCompose,
   docsRunJustRecipes,
   noCoverageGate,
+  testsWaitOnState,
   skillTeachesTheProduct,
+  skillNamesTheRunnerImage,
   ciRunsJustRecipes,
   noRootPackageScripts,
   lockfileFrozen,

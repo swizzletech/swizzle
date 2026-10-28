@@ -135,7 +135,7 @@ describe("swizzle init", () => {
     const steps = help.flatMap((line) => [...line.matchAll(/`([^`]+)`/gu)].map((m) => m[1]));
     expect(steps.at(-1)).toBe(`swizzle apply ${helpTarget}`);
     await shell(steps.join("\n"), directory);
-  }, 120_000);
+  });
 
   it("scaffolds a node automation when requested", async () => {
     const io = createBufferIO();
@@ -285,10 +285,17 @@ describe("swizzle init", () => {
     expect(exitCode).toBe(0);
     expect(io.stdoutText).toContain(`workspace:\n  directory: ${workspace}\n`);
     expect(await readdir(path.join(workspace, "automations"))).toEqual([]);
-    expect(await readFile(path.join(workspace, "AGENTS.md"), "utf8")).toContain("<INSTANCE_URL>");
-    expect(await readFile(path.join(workspace, "README.md"), "utf8")).toContain(
-      "swizzle profile add",
-    );
+    const agents = await readFile(path.join(workspace, "AGENTS.md"), "utf8");
+    const readme = await readFile(path.join(workspace, "README.md"), "utf8");
+    expect(agents).toContain("<INSTANCE_URL>");
+    // The instance refuses validate while a declared secret is missing, so both guides store it first.
+    expect(readme.match(/swizzle profile add .*/gu)).toEqual([
+      "swizzle profile add <PROFILE_NAME> --url <INSTANCE_URL> --token-env SWIZZLE_TOKEN --env <ENVIRONMENT_NAME> --default",
+    ]);
+    for (const guide of [agents, readme]) {
+      expect(guide.indexOf("swizzle secret set")).toBeGreaterThan(-1);
+      expect(guide.indexOf("swizzle secret set")).toBeLessThan(guide.indexOf("swizzle validate"));
+    }
     expect(await readFile(path.join(workspace, "scripts/update-toolkit.sh"), "utf8")).toContain(
       "swizzle skill install --dir",
     );

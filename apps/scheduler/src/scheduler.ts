@@ -17,8 +17,8 @@ interface SchedulerLogger {
 export interface CreateSchedulerServiceOptions {
   readonly batchSize?: number;
   readonly enableLeaderLock?: boolean;
-  /** The one environment whose cron triggers, waiting runs and maintenance this scheduler serves. */
-  readonly environmentName: string;
+  /** Discovers the instance namespaces on each pass, including environments added after startup. */
+  readonly listEnvironments: () => Promise<readonly string[]>;
   readonly instanceId?: string;
   readonly intervalMs?: number;
   readonly leaderKey?: string;
@@ -49,14 +49,13 @@ const DEFAULT_RESUME_WAITING_INTERVAL_MS = 5_000;
 export async function createSchedulerService(
   options: CreateSchedulerServiceOptions,
 ): Promise<SchedulerService> {
-  const environment = options.environmentName;
   const platform = options.platform ?? (await createPlatformServices());
   const ownPlatform = options.platform === undefined;
   let intervalHandle: NodeJS.Timeout | null = null;
   let maintenanceHandle: NodeJS.Timeout | null = null;
   let reconcileHandle: NodeJS.Timeout | null = null;
   let resumeWaitingHandle: NodeJS.Timeout | null = null;
-  let polling = false;
+  const polling = new Set<string>();
   let maintaining = false;
   let reconciling = false;
   let resumingWaitingRuns = false;
@@ -79,49 +78,81 @@ export async function createSchedulerService(
       })
     : null;
 
-  const pollOnce = async (now = new Date()): Promise<readonly PlatformRunRecord[]> => {
-    if (polling) {
-      options.logger?.debug("Skipping scheduler poll because the previous poll is still running.");
-      return [];
+  // Wait for every namespace even if one pass fails.
+  const acrossEnvironments = async <T>(
+    operation: (environment: string) => Promise<T>,
+  ): Promise<T[]> => {
+    const results = await Promise.allSettled(
+      (await options.listEnvironments()).map(async (environment) => {
+        try {
+          return await operation(environment);
+        } catch (error) {
+          options.logger?.error({ environment, err: error }, "Scheduler environment pass failed.");
+          throw error;
+        }
+      }),
+    );
+    const values: T[] = [];
+    const errors: unknown[] = [];
+    for (const result of results) {
+      if (result.status === "fulfilled") values.push(result.value);
+      else errors.push(result.reason);
     }
+    if (errors.length > 0) throw new AggregateError(errors, "Scheduler environment pass failed.");
+    return values;
+  };
 
+  const pollOnce = async (now = new Date()): Promise<readonly PlatformRunRecord[]> => {
     if (leaderLock && !leaderLock.isLeader()) {
       options.logger?.debug("Skipping scheduler poll because this instance is not the leader.");
       return [];
     }
 
-    polling = true;
-    try {
-      const runs = await platform.materializeDueCronRuns({
-        environment,
-        limit: options.batchSize ?? DEFAULT_BATCH_SIZE,
-        now,
-      });
+    const runs = (
+      await acrossEnvironments(async (environment) => {
+        if (polling.has(environment)) {
+          options.logger?.debug(
+            { environment },
+            "Skipping scheduler poll because the previous poll is still running.",
+          );
+          return [];
+        }
 
-      if (runs.length > 0) {
-        options.logger?.info(
-          {
-            runIds: runs.map((run) => run.runId),
-            runs: runs.length,
-          },
-          "Materialized due cron runs.",
-        );
-      } else {
-        options.logger?.debug("No due cron runs found.");
-      }
+        polling.add(environment);
+        try {
+          const runs = await platform.materializeDueCronRuns({
+            environment,
+            limit: options.batchSize ?? DEFAULT_BATCH_SIZE,
+            now,
+          });
+          // A failing check query must not hold up cron runs; the next tick tries again.
+          try {
+            const checks = await platform.enqueueDueApiChecks({ environment, now });
+            if (checks > 0)
+              options.logger?.info({ environment, checks }, "Enqueued due API checks.");
+          } catch (error) {
+            options.logger?.error({ environment, err: error }, "Enqueueing due API checks failed.");
+          }
+          return runs;
+        } finally {
+          polling.delete(environment);
+        }
+      })
+    ).flat();
 
-      // A failing check query must not hold up cron runs; the next tick tries again.
-      try {
-        const checks = await platform.enqueueDueApiChecks({ environment, now });
-        if (checks > 0) options.logger?.info({ checks }, "Enqueued due API checks.");
-      } catch (error) {
-        options.logger?.error(error, "Enqueueing due API checks failed.");
-      }
-
-      return runs;
-    } finally {
-      polling = false;
+    if (runs.length > 0) {
+      options.logger?.info(
+        {
+          runIds: runs.map((run) => run.runId),
+          runs: runs.length,
+        },
+        "Materialized due cron runs.",
+      );
+    } else {
+      options.logger?.debug("No due cron runs found.");
     }
+
+    return runs;
   };
 
   // Reconstructs queued jobs lost with Valkey. Execution leases are reconciled by the API.
@@ -140,17 +171,19 @@ export async function createSchedulerService(
 
     reconciling = true;
     try {
-      const queued = await platform.reconcileQueuedRuns({ environment });
-      if (queued.requeuedCount > 0) {
-        options.logger?.warn(
-          {
-            event: "run_requeued_orphaned",
-            requeuedCount: queued.requeuedCount,
-            runIds: queued.requeuedRunIds,
-          },
-          "Requeued queued runs whose queue job was gone.",
-        );
-      }
+      await acrossEnvironments(async (environment) => {
+        const queued = await platform.reconcileQueuedRuns({ environment });
+        if (queued.requeuedCount > 0) {
+          options.logger?.warn(
+            {
+              event: "run_requeued_orphaned",
+              requeuedCount: queued.requeuedCount,
+              runIds: queued.requeuedRunIds,
+            },
+            "Requeued queued runs whose queue job was gone.",
+          );
+        }
+      });
     } finally {
       reconciling = false;
     }
@@ -171,17 +204,19 @@ export async function createSchedulerService(
 
     maintaining = true;
     try {
-      const result = await platform.runMaintenance({ environment, now });
-      options.logger?.debug(
-        {
-          maintenanceRunId: result.latestRun.maintenanceRunId,
-          artifactSweepDeleted: result.artifactSweep.deleted,
-          artifactSweepErrors: result.artifactSweep.errors.length,
-          artifactSweepSkipped: result.artifactSweep.skipped,
-          queueWaiting: result.queueSample.counts.waiting,
-        },
-        "Scheduler maintenance completed.",
-      );
+      await acrossEnvironments(async (environment) => {
+        const result = await platform.runMaintenance({ environment, now });
+        options.logger?.debug(
+          {
+            maintenanceRunId: result.latestRun.maintenanceRunId,
+            artifactSweepDeleted: result.artifactSweep.deleted,
+            artifactSweepErrors: result.artifactSweep.errors.length,
+            artifactSweepSkipped: result.artifactSweep.skipped,
+            queueWaiting: result.queueSample.counts.waiting,
+          },
+          "Scheduler maintenance completed.",
+        );
+      });
     } finally {
       maintaining = false;
     }
@@ -202,24 +237,27 @@ export async function createSchedulerService(
 
     resumingWaitingRuns = true;
     try {
-      const result = await platform.resumeDueWaitingRuns({
-        environment,
-        limit: options.batchSize ?? DEFAULT_BATCH_SIZE,
-        now,
+      const counts = await acrossEnvironments(async (environment) => {
+        const result = await platform.resumeDueWaitingRuns({
+          environment,
+          limit: options.batchSize ?? DEFAULT_BATCH_SIZE,
+          now,
+        });
+        if (result.resumedCount > 0) {
+          options.logger?.info(
+            {
+              event: "waiting_runs_resumed",
+              resumedCount: result.resumedCount,
+              runIds: result.resumedRunIds,
+            },
+            "Resumed due waiting runs.",
+          );
+        } else {
+          options.logger?.debug("No waiting runs due for resume.");
+        }
+        return result.resumedCount;
       });
-      if (result.resumedCount > 0) {
-        options.logger?.info(
-          {
-            event: "waiting_runs_resumed",
-            resumedCount: result.resumedCount,
-            runIds: result.resumedRunIds,
-          },
-          "Resumed due waiting runs.",
-        );
-      } else {
-        options.logger?.debug("No waiting runs due for resume.");
-      }
-      return result.resumedCount;
+      return counts.reduce((total, count) => total + count, 0);
     } finally {
       resumingWaitingRuns = false;
     }

@@ -15,6 +15,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useId, useRef, useState } from "react";
 
 import { ActionError } from "../components/actions";
+import { clickedBackdrop } from "../components/confirm";
 import { ErrorNote, Skeleton } from "../components/ui";
 import type { Project, ProjectContentCounts, ProjectContentsChoice } from "../lib/api";
 import { useDashboardClient } from "../lib/dashboard-client";
@@ -62,16 +63,7 @@ export function DeleteProject(props: {
           if (remove.isPending) event.preventDefault();
         }}
         onClick={(event) => {
-          // A click on the backdrop lands on the dialog itself, outside its box. A keyboard click
-          // on a button inside reports (0, 0), so the target check keeps it from closing the sheet.
-          const sheet = event.currentTarget;
-          const box = sheet.getBoundingClientRect();
-          const outside =
-            event.clientX < box.left ||
-            event.clientX > box.right ||
-            event.clientY < box.top ||
-            event.clientY > box.bottom;
-          if (event.target === sheet && outside && !remove.isPending) sheet.close();
+          if (clickedBackdrop(event) && !remove.isPending) event.currentTarget.close();
         }}
         onClose={() => setOpen(false)}
         ref={dialog}

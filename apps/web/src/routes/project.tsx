@@ -11,8 +11,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
-
 import { ActionError } from "../components/actions";
+import { useConfirm } from "../components/confirm";
 import { HolderList } from "../components/holder-list";
 import { accessChanged, ShareForm, subjectKey } from "../components/share-form";
 import { Trail } from "../components/shell";
@@ -261,6 +261,7 @@ function Access({ access }: { readonly access: ProjectAccess }) {
  * Only a protected environment holds grants; unprotecting one removes them.
  */
 function Environments({ access }: { readonly access: ProjectAccess }) {
+  const confirm = useConfirm();
   const { api } = useDashboardClient();
   const queryClient = useQueryClient();
   const [sharing, setSharing] = useState<string | null>(null);
@@ -308,18 +309,20 @@ function Environments({ access }: { readonly access: ProjectAccess }) {
                   checked={isProtected}
                   className="switch"
                   disabled={protect.isPending}
-                  onChange={(event) => {
+                  onChange={async (event) => {
+                    const isProtected = event.target.checked;
                     const grants = access.grants.filter(
                       (grant) => grant.on === "environment" && grant.environment === environment,
                     ).length;
                     if (
-                      event.target.checked ||
+                      isProtected ||
                       grants === 0 ||
-                      window.confirm(
-                        `Unprotect ${environment}? This removes its ${grants} environment grant${grants === 1 ? "" : "s"}.`,
-                      )
+                      (await confirm({
+                        action: "Unprotect",
+                        question: `Unprotect ${environment}? This removes its ${grants} environment grant${grants === 1 ? "" : "s"}.`,
+                      }))
                     )
-                      protect.mutate({ environment, isProtected: event.target.checked });
+                      protect.mutate({ environment, isProtected });
                   }}
                   type="checkbox"
                 />

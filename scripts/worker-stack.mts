@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
 import { parseEnv } from "node:util";
+import { cpuLimit, dockerCpus } from "./env-file.ts";
 
 const credentialFile = process.argv[2];
 if (!credentialFile || process.argv.length > 4) {
@@ -67,6 +68,21 @@ if (process.env.DOCKER_DEFAULT_PLATFORM && process.env.DOCKER_DEFAULT_PLATFORM !
     `DOCKER_DEFAULT_PLATFORM must match this engine (${platform}). Build native runner images.`,
   );
 environment.DOCKER_DEFAULT_PLATFORM = platform;
+// Compose reads the shell before the credential file, so these carry an explicit value of either.
+const hostCpus = dockerCpus();
+const configured = { ...settings, ...process.env };
+environment.SWIZZLE_WORKER_CPUS = cpuLimit(
+  "SWIZZLE_WORKER_CPUS",
+  configured.SWIZZLE_WORKER_CPUS,
+  hostCpus,
+  2,
+);
+environment.SWIZZLE_MAX_RUN_CPUS = cpuLimit(
+  "SWIZZLE_MAX_RUN_CPUS",
+  configured.SWIZZLE_MAX_RUN_CPUS,
+  hostCpus,
+  1,
+);
 console.log(
   `Worker engine: ${context}, ${platform}. Broker socket: /var/run/docker.sock inside the engine.`,
 );

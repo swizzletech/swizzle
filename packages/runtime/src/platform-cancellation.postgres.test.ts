@@ -323,5 +323,5 @@ describe("platform cancellation", () => {
       status: "dead-lettered",
     });
     expect(persistedRun.result).toBeNull();
-  }, 30_000);
+  });
 });

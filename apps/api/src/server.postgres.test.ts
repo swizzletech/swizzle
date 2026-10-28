@@ -1,8 +1,7 @@
 import { chmod } from "node:fs/promises";
-
 import path from "node:path";
-
 import { fileURLToPath } from "node:url";
+import { APP_VERSION } from "@swizzle/core";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -40,7 +39,7 @@ describe("server", () => {
       {},
       { headers: owner },
     );
-    const trigger = await app.inject({ method: "POST", url: "/hello", payload: {} });
+    const trigger = await app.inject({ method: "POST", url: "/hooks/hello", payload: {} });
     const runId: string = trigger.json().runId;
     const run = await platform.getPlatformRun(runId);
     const token = `0b1e7c2a-5f3d-4c6b-9a8e-1d2f3a4b5c6d.Z2F0ZQ.${"s".repeat(43)}`;
@@ -62,7 +61,7 @@ describe("server", () => {
     await app.close();
   });
 
-  it("reports health with SWIZZLE_PLATFORM_VERSION preferred and its v prefix stripped", async () => {
+  it("reports the running code version despite stale environment version values", async () => {
     vi.stubEnv("SWIZZLE_PLATFORM_VERSION", "v0.11.0");
     vi.stubEnv("SWIZZLE_IMAGE_TAG", "v0.10.0");
     vi.stubEnv("SWIZZLE_VERSION", "v0.9.0");
@@ -72,7 +71,7 @@ describe("server", () => {
     const response = await app.inject({ headers: owner, method: "GET", url: "/health" });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ service: "api", status: "ok", version: "0.11.0" });
+    expect(response.json()).toEqual({ service: "api", status: "ok", version: APP_VERSION });
 
     await app.close();
   });
@@ -115,7 +114,7 @@ describe("server", () => {
     const webhook = await app.inject({
       headers: owner,
       method: "POST",
-      url: "/hello",
+      url: "/hooks/hello",
       payload: { source: "test" },
     });
     expect(webhook.statusCode).toBe(200);

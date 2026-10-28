@@ -1,6 +1,26 @@
 import { describe, expect, it } from "vitest";
 
-import { accessProblemInWords, sessionDeviceInWords, signInProblemInWords } from "./access";
+import {
+  accessProblemInWords,
+  passwordProblemInWords,
+  sessionDeviceInWords,
+  signInProblemInWords,
+} from "./access";
+
+describe("passwordProblemInWords", () => {
+  it("says how far a typed password is outside the accepted length, and nothing before typing or within it", () => {
+    expect(passwordProblemInWords("twelve-chars")).toBe(
+      "12 characters. The password needs at least 15.",
+    );
+    expect(passwordProblemInWords("x")).toBe("1 character. The password needs at least 15.");
+    expect(passwordProblemInWords("")).toBeNull();
+    expect(passwordProblemInWords("fifteen-chars-x")).toBeNull();
+    expect(passwordProblemInWords("x".repeat(128))).toBeNull();
+    expect(passwordProblemInWords("x".repeat(129))).toBe(
+      "129 characters. The password can have at most 128.",
+    );
+  });
+});
 
 describe("signInProblemInWords", () => {
   it("leaves a code without words to the API's own message", () => {

@@ -103,11 +103,6 @@ export interface PlatformDeployOptions extends DeployAutomationOptions {
   readonly expectedSourceHash?: string;
   readonly force?: boolean;
   /**
-   * True for a path the hosting API serves itself. A webhook trigger on such a path would never
-   * receive a request, so the deployment is refused with `TRIGGER_WEBHOOK_PATH_RESERVED`.
-   */
-  readonly isWebhookPathReserved?: (path: string) => boolean;
-  /**
    * Picks the project the automation belongs to, given the project it already has, and throws to
    * refuse the deployment; the API checks the deployer's access here. Without it an existing
    * automation keeps its project and a new one joins DEFAULT_PROJECT_ID.

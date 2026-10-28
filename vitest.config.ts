@@ -42,7 +42,26 @@ export default defineConfig({
             ".agents/checks/**/*.test.ts",
             "test/**/*.test.ts",
           ],
-          exclude: ["**/*.postgres.test.ts", "**/dist/**", "**/node_modules/**"],
+          exclude: [
+            "**/*.postgres.test.ts",
+            "**/*.docker.test.ts",
+            "**/dist/**",
+            "**/node_modules/**",
+          ],
+          // The slowest start real processes, such as tracing startup and the dev stack's
+          // descendants, and take over half a minute on a host shared with other worktrees.
+          testTimeout: 60_000,
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: "docker",
+          include: ["**/*.docker.test.ts"],
+          exclude: ["**/dist/**", "**/node_modules/**"],
+          // These build and load real images on the host's Docker daemon, which other worktrees'
+          // runs share. They hold the code's Docker deadlines, so this ceiling is their only bound.
+          testTimeout: 600_000,
         },
       },
       {
@@ -57,15 +76,17 @@ export default defineConfig({
             // These fixtures fake Docker on PATH; a late call must never reach the host daemon.
             DOCKER_HOST: `unix://${path.join(runDirectory, "docker.sock")}`,
           },
+          // The slowest run several CLI processes or a state machine's checks against a migrated
+          // database; the README steps test takes 37 s on a host shared with other worktrees.
+          testTimeout: 120_000,
         },
       },
     ],
     // Four workers overlap process lifecycle and database tests while bounding the child
     // processes on a host shared with other worktrees and load tests.
     maxWorkers: 4,
-    // A scheduler test needs over 5 s under competing gates. These are hang tripwires,
-    // not performance assertions; successful tests finish as soon as their result arrives.
-    testTimeout: 30_000,
+    // With each project's testTimeout, the only timeouts: a test sets none of its own
+    // (tests-wait-on-state). They are hang tripwires, not performance assertions.
     hookTimeout: 30_000,
     // Before each test, undo every vi.stubEnv, vi.stubGlobal and vi.spyOn of the test before, so
     // no test file keeps its own list of what to put back.

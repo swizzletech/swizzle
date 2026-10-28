@@ -13,17 +13,19 @@ import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { runCli } from "@swizzle/cli";
-import { ensureEnvFile, packagedStackValues } from "./env-file.ts";
+import { dockerCpus, ensureEnvFile, packagedStackValues, sizeCpuLimits } from "./env-file.ts";
 import { processOwnerState, readProcessIdentity } from "./process-identity.ts";
 
 export interface PackagedStack {
   readonly project: string;
-  readonly environment: "staging";
+  /** The private env file, for checks that restart this same installed stack. */
+  readonly envFile: string;
+  readonly environment: string;
   /** The dashboard origin; `${dashboard}/api` reaches the api through the same ingress. */
   readonly dashboard: string;
-  /** The api hostname, where webhooks answer. */
+  /** The api hostname. */
   readonly api: string;
-  /** The loopback listener a tunnel forwards to; serves only approval and event links. */
+  /** The loopback listener a tunnel forwards to; serves only links, webhooks and OAuth callbacks. */
   readonly links: string;
   /** A bearer token minted by the first account. */
   readonly token: string;
@@ -36,7 +38,6 @@ export interface PackagedStack {
   remove(): Promise<void>;
 }
 
-const ENVIRONMENT = "staging";
 const STEP_TIMEOUT_MS = 180_000;
 
 let current: ChildProcess | undefined;
@@ -346,16 +347,22 @@ export async function startPackagedStack(
 
   try {
     const values = packagedStackValues(project);
-    await ensureEnvFile(envFile, await readFile(path.join(root, ".env.example"), "utf8"), {
-      ...values,
-      ...environment,
-      SWIZZLE_API_ORIGIN: api,
-      SWIZZLE_DASHBOARD_ORIGIN: dashboard,
-      SWIZZLE_ENVIRONMENT: ENVIRONMENT,
-      SWIZZLE_HTTP_PORT: String(httpPort),
-      SWIZZLE_HTTPS_PORT: String(httpsPort),
-      SWIZZLE_LINK_PORT: String(linkPort),
-    });
+    const initialized = await ensureEnvFile(
+      envFile,
+      await readFile(path.join(root, ".env.example"), "utf8"),
+      {
+        ...values,
+        ...environment,
+        SWIZZLE_API_ORIGIN: api,
+        SWIZZLE_DASHBOARD_ORIGIN: dashboard,
+        SWIZZLE_HTTP_PORT: String(httpPort),
+        SWIZZLE_HTTPS_PORT: String(httpsPort),
+        SWIZZLE_LINK_PORT: String(linkPort),
+      },
+    );
+    await sizeCpuLimits(envFile, dockerCpus());
+    const environmentName = initialized.values.SWIZZLE_ENVIRONMENT;
+    if (!environmentName) throw new Error("Packaged stack has no default environment.");
     log(`starting ${project} at ${dashboard}`);
     await compose("up", "--build", "--detach", "--wait", "--quiet-pull");
 
@@ -414,7 +421,10 @@ export async function startPackagedStack(
     await until(
       "the scheduler sends heartbeats and a worker is online",
       async () => {
-        const body = await get(`${dashboard}/api/ops/summary?environment=${ENVIRONMENT}`, token);
+        const body = await get(
+          `${dashboard}/api/ops/summary?environment=${environmentName}`,
+          token,
+        );
         if (body === undefined) return undefined;
         // The scheduler writes a service heartbeat; a worker's liveness lives on its workers row.
         const summary = JSON.parse(body) as {
@@ -438,7 +448,7 @@ export async function startPackagedStack(
       "--url",
       `${dashboard}/api`,
       "--env",
-      ENVIRONMENT,
+      environmentName,
       "--token-env",
       "SWIZZLE_STACK_TOKEN",
       "--default",
@@ -448,7 +458,8 @@ export async function startPackagedStack(
       cli: stackCli,
       compose,
       dashboard,
-      environment: ENVIRONMENT,
+      environment: environmentName,
+      envFile,
       links: `http://127.0.0.1:${linkPort}`,
       project,
       remove,

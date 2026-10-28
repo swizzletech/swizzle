@@ -61,6 +61,8 @@ just worker /private/path/worker.env
 
 The command uses Docker's selected context, checks for a Linux amd64 or arm64 engine, builds native images and waits for service health. If it cannot reach the engine, start your Docker runtime and check `docker context show`. Remove a conflicting `DOCKER_DEFAULT_PLATFORM` setting. The broker mounts `/var/run/docker.sock` inside the engine, so do not replace it with your macOS client's socket path.
 
+The worker stack defaults to two CPUs for the worker process, capped at the Docker host's CPU count, and one CPU per run. If `SWIZZLE_WORKER_CPUS` or `SWIZZLE_MAX_RUN_CPUS` exceeds that count, `just worker` stops before the image build and names the setting.
+
 The stack copies the enrollment credential into its private `worker-credentials` volume once. The worker renews its token automatically during its last seven days of validity, including at startup after time offline. Renewal survives a dropped response and stores the replacement in that volume with mode 0600. Keep the volume across restarts. The original `/private/path/worker.env` remains a bootstrap file; it does not receive later tokens. Do not start two stacks from the same worker credential.
 
 The control egress proxy allows the host and port of `SWIZZLE_WORKER_API_URL`, also on a private address, so the worker reaches the API while sandboxed runs cannot. When the API uses a certificate from a private CA, add a Compose override that mounts the CA certificate into the worker and sets `NODE_EXTRA_CA_CERTS` to its path. Pass the override as `just worker /private/path/worker.env /absolute/path/to/override.yml`.

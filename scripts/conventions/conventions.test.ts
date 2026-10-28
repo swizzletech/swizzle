@@ -30,7 +30,6 @@ it("platform-version names every release copy that disagrees with the root versi
     "apps/cli/package.json": '{ "version": "2.0.0" }',
     "packages/db/package.json": '{ "version": "2.0.0" }',
     "packages/core/src/version.ts": 'export const APP_VERSION = "2.0.0";',
-    ".env.example": "SWIZZLE_IMAGE_TAG=v2.0.0\n",
     "infra/examples/demo/package.json": '{ "version": "0.1.0" }',
   };
   expect(await reported("platform-version", tree)).toEqual([]);
@@ -42,7 +41,6 @@ it("platform-version names every release copy that disagrees with the root versi
     expect(await reported("platform-version", changed)).toEqual(
       file === "package.json"
         ? [
-            ".env.example:1",
             "apps/cli/package.json:1",
             "packages/core/src/version.ts:1",
             "packages/db/package.json:1",
@@ -54,9 +52,8 @@ it("platform-version names every release copy that disagrees with the root versi
     await reported("platform-version", {
       ...tree,
       "apps/cli/package.json": "{}",
-      ".env.example": "SWIZZLE_IMAGE_TAG=latest\n",
     }),
-  ).toEqual([".env.example:1", "apps/cli/package.json:1"]);
+  ).toEqual(["apps/cli/package.json:1"]);
 });
 
 it("no-env-example-copy reports cp .env.example in docs and scripts", async () => {
@@ -167,6 +164,164 @@ it("docs-run-just-recipes reads a span after a tilde fence that holds a backtick
   ).toEqual(["docs/fenced.md:7"]);
 });
 
+it("tests-wait-on-state reports a test that waits on time, sets its own budget or retries", async () => {
+  const lines = (...code: string[]) => `${code.join("\n")}\n`;
+  expect(
+    await reported("tests-wait-on-state", {
+      "apps/web/tests/flow.spec.ts": lines(
+        'import { expect, test } from "@playwright/test";',
+        'test("flow", async ({ page }) => {',
+        "  test.setTimeout(180_000);",
+        "  await page.waitForTimeout(2_000);",
+        '  await page.getByRole("link").click({ timeout: 2_000 });',
+        "  await new Promise((resolve) => setTimeout(resolve, 8_000));",
+        "});",
+        "test.describe.configure({ retries: 2 });",
+      ),
+      "packages/core/src/a.test.ts": lines(
+        'import { setTimeout as pause } from "node:timers/promises";',
+        'import { setImmediate } from "node:timers/promises";',
+        'it("a", async () => {',
+        "  await pause(50);",
+        "  const started = performance.now();",
+        "  expect(performance.now() - started).toBeLessThan(60_000);",
+        "  await vi.waitFor(() => ready);",
+        "  await expect.poll(() => ready).toBe(true);",
+        "  while (!ready) await setImmediate();",
+        "}, 10_000);",
+        'describe("b", { timeout: 60_000 }, () => {});',
+        "beforeAll(async () => {}, 20_000);",
+      ),
+      "test/helpers.ts": lines("export const tick = () => globalThis.setInterval(() => {}, 1);"),
+      "playwright.config.ts": lines("export default { timeout: 45_000, retries: 0 };"),
+    }),
+  ).toEqual([
+    "apps/web/tests/flow.spec.ts:3",
+    "apps/web/tests/flow.spec.ts:4",
+    "apps/web/tests/flow.spec.ts:5",
+    "apps/web/tests/flow.spec.ts:6",
+    "apps/web/tests/flow.spec.ts:8",
+    "packages/core/src/a.test.ts:10",
+    "packages/core/src/a.test.ts:11",
+    "packages/core/src/a.test.ts:12",
+    "packages/core/src/a.test.ts:4",
+    "packages/core/src/a.test.ts:6",
+    "packages/core/src/a.test.ts:7",
+    "packages/core/src/a.test.ts:8",
+    "packages/core/src/a.test.ts:9",
+    "playwright.config.ts:1",
+    "test/helpers.ts:1",
+  ]);
+  // A wait in the code a test writes for a child, a dated fixture, a web-first poll, the
+  // runners' own ceilings, code outside the tests and a reasoned allow stay.
+  expect(
+    await reported("tests-wait-on-state", {
+      "apps/web/tests/flow.spec.ts": lines(
+        'import { expect, test } from "@playwright/test";',
+        'test("flow", async ({ page }) => {',
+        "  await expect.poll(() => sent.length).toBe(2);",
+        "  await expect(page.getByRole('heading')).toBeVisible();",
+        "});",
+      ),
+      "packages/core/src/a.test.ts": lines(
+        'it("a", async ({ signal }) => {',
+        '  const child = "setTimeout(() => process.exit(0), 300)";',
+        "  const old = new Date(Date.now() - 11 * 60_000);",
+        "  await waitFor(signal, () => ready);",
+        "  // conventions-allow tests-wait-on-state: the lease under test expires on the wall clock.",
+        "  setInterval(renew, 2_000);",
+        "});",
+      ),
+      "packages/core/src/a.ts": lines("await new Promise((resolve) => setTimeout(resolve, 10));"),
+      "playwright.config.ts": lines(
+        "export default { timeout: 45_000, expect: { timeout: 15_000 } };",
+      ),
+      "vitest.config.ts": lines("export default { test: { testTimeout: 30_000 } };"),
+    }),
+  ).toEqual([]);
+});
+
+it("tests-wait-on-state reports the deadlines and durations a loaded runner fails", async () => {
+  const lines = (...code: string[]) => `${code.join("\n")}\n`;
+  expect(
+    await reported("tests-wait-on-state", {
+      "apps/web/tests/flow.spec.ts": lines(
+        'import { expect, test } from "@playwright/test";',
+        "test.use({ actionTimeout: 1_000, expect: { timeout } });",
+        'test("flow", async ({ page }) => {',
+        "  page.setDefaultTimeout(5_000);",
+        '  await expect(page.getByText("Saved")).toBeVisible({ timeout: SHORT });',
+        "});",
+      ),
+      "packages/core/src/a.test.ts": lines(
+        'it("a", async () => {',
+        "  await fetch(url, { signal: AbortSignal.timeout(2_000) });",
+        "  expect(result.durationMs).toBeLessThan(500);",
+        "  expect(process.hrtime(start)[0]).toBe(0);",
+        "  const opened = new Date();",
+        "  expect(new Date().getTime() - opened.getTime()).toBe(0);",
+        "});",
+      ),
+      "packages/core/src/b.test.ts": lines(
+        'import * as timers from "node:timers/promises";',
+        'import nodeTimers from "node:timers";',
+        'it("b", async () => {',
+        "  await timers.setTimeout(100);",
+        "  nodeTimers.setInterval(poll, 50);",
+        "}, TIMEOUT);",
+        'it("c", () => {}, budget());',
+        "beforeAll(() => {}, timeoutMs);",
+      ),
+      "packages/core/test/helpers.ts": lines("export const pause = () => setTimeout(() => {}, 5);"),
+    }),
+  ).toEqual([
+    "apps/web/tests/flow.spec.ts:2",
+    "apps/web/tests/flow.spec.ts:2",
+    "apps/web/tests/flow.spec.ts:4",
+    "apps/web/tests/flow.spec.ts:5",
+    "packages/core/src/a.test.ts:2",
+    "packages/core/src/a.test.ts:3",
+    "packages/core/src/a.test.ts:4",
+    "packages/core/src/a.test.ts:6",
+    "packages/core/src/b.test.ts:4",
+    "packages/core/src/b.test.ts:5",
+    "packages/core/src/b.test.ts:6",
+    "packages/core/src/b.test.ts:7",
+    "packages/core/src/b.test.ts:8",
+    "packages/core/test/helpers.ts:1",
+  ]);
+  // Data the test expects under a timeout key, an upper bound on anything but a duration, a
+  // duration in words, a fixture dated from one clock reading, a duration of a clock the test sets,
+  // and the options and body overloads of a test stay.
+  expect(
+    await reported("tests-wait-on-state", {
+      "packages/core/src/a.test.ts": lines(
+        'it("a", () => {',
+        '  expect(config).toMatchObject({ timeout: "60s", retry: { max_attempts: 3 } });',
+        "  expect(response.statusCode).toBeLessThan(300);",
+        '  expect(durationInWords(5_400_000)).toBe("1 h 30 min");',
+        "  const old = new Date(new Date().getTime() - 60_000);",
+        "});",
+      ),
+      "packages/core/src/clock.test.ts": lines(
+        'it("a", () => {',
+        "  vi.useFakeTimers({ now: 0 });",
+        "  const start = Date.now();",
+        "  vi.setSystemTime(100);",
+        "  expect(Date.now() - start).toBe(100);",
+        "});",
+      ),
+      "apps/web/tests/flow.spec.ts": lines(
+        'import { expect, test } from "@playwright/test";',
+        'test("a", { tag: "@slow" }, async ({ page }) => {',
+        '  await test.step("open", async () => {}, { box: true });',
+        "});",
+        'test.describe("b", () => {});',
+      ),
+    }),
+  ).toEqual([]);
+});
+
 it("no-coverage-gate reports a coverage threshold in test configuration", async () => {
   expect(
     await reported("no-coverage-gate", {
@@ -216,6 +371,63 @@ it("skill-teaches-the-product rejects home mounts and inferred webhook paths", a
       [`${SKILL}/SKILL.md`]: required,
       [file]:
         "writable_dirs: [./work, /tmp/tool-cache]\nWebhook deployment requires trigger.path.\n",
+    }),
+  ).toEqual([]);
+});
+
+it("skill-teaches-the-product reports a repository path that an author's laptop does not have", async () => {
+  const required = SKILL_REQUIRES.join("\n");
+  const file = `${SKILL}/references/sdk.md`;
+  expect(
+    await reported("skill-teaches-the-product", {
+      [`${SKILL}/SKILL.md`]: required,
+      "infra/docker/Dockerfile": "FROM debian\n",
+      "infra/examples/hello/config.yaml": "name: hello\n",
+      "docs/reference/config.md": "# Config\n",
+      [file]: [
+        "Check `infra/docker/Dockerfile` first.",
+        "Start from `infra/examples/`.",
+        "See [the reference](../../../../../../docs/reference/config.md).",
+        "Read [the Dockerfile](https://github.com/swizzletech/swizzle/blob/main/infra/docker/Dockerfile).",
+        "Write under `automations/hello` and read [SDK Usage](../SKILL.md#sdk).",
+        "Start from `infra/`.",
+      ].join("\n"),
+    }),
+  ).toEqual([`${file}:1`, `${file}:2`, `${file}:3`, `${file}:6`]);
+});
+
+it("skill-names-the-runner-image reports a runner-base package or Node major the skill does not name", async () => {
+  const tree = {
+    "infra/docker/Dockerfile": [
+      "FROM node:26.12.1-trixie-slim AS runner-base",
+      "RUN apt-get update \\",
+      "  && apt-get install -y --no-install-recommends git \\",
+      "    poppler-utils \\",
+      "  && rm -rf /var/lib/apt/lists/*",
+      "RUN npm install --global --no-audit --no-fund \\",
+      "  @openai/codex@0.163.0",
+      "FROM base AS deps",
+      "RUN npm install --global pnpm@12.15.0",
+      "",
+    ].join("\n"),
+    [`${SKILL}/SKILL.md`]:
+      "- Node.js 26 with npm\n\nThe exact packages: Debian `git`, `poppler-utils`; npm `@openai/codex`.\n",
+  };
+  expect(await reported("skill-names-the-runner-image", tree)).toEqual([]);
+  expect(
+    await reported("skill-names-the-runner-image", {
+      ...tree,
+      "infra/docker/Dockerfile": tree["infra/docker/Dockerfile"]
+        .replace("26.12.1", "28.0.0")
+        .replace("poppler-utils", "poppler-utils ffmpeg"),
+    }),
+  ).toEqual([`${SKILL}/SKILL.md:1`, `${SKILL}/SKILL.md:3`]);
+  // runner-base as the last stage, with the install on one line.
+  const [last = ""] = tree["infra/docker/Dockerfile"].split("FROM base AS deps");
+  expect(
+    await reported("skill-names-the-runner-image", {
+      ...tree,
+      "infra/docker/Dockerfile": last.replace("git \\\n    poppler-utils", "git poppler-utils"),
     }),
   ).toEqual([]);
 });

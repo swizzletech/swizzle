@@ -1,6 +1,6 @@
 # Operations
 
-Deploying automations, inspecting runs, diagnosing failures, managing secrets and notifications. The CLI talks to the API (default `http://api.localhost:19826` for the Caddy stack; a dev stack started from a checkout prints its own). Output is TOON on stdout; the global `--json` prints the same data as one line of JSON.
+Deploying automations, inspecting runs, diagnosing failures, managing secrets and notifications. The CLI talks to the API URL of its profile: the instance's HTTPS API URL from a laptop, or `http://api.localhost:19826` on the instance's host. Output is TOON on stdout; the global `--json` prints the same data as one line of JSON.
 
 Every command supports `-e <environment>` and `--json`. Without `-e`, the CLI takes the profile's `env`, then `SWIZZLE_ENVIRONMENT`, then for the implicit localhost profile the environment that instance serves. No command prompts: a destructive one fails with `CONFIRMATION_REQUIRED` (exit 2) until you pass `--yes`, and repeating a change that already holds answers with a `(no-op)` state and exit 0.
 
@@ -160,7 +160,7 @@ swizzle trigger resume my-automation
 
 Pausing before `swizzle delete ...` is **required** — delete rejects active automations with `AUTOMATION_NOT_PAUSED`. Manual `swizzle trigger <name>` is allowed while paused and returns a warning; automatic cron/webhook firing remains paused.
 
-Worker restart (`docker compose --env-file .env -f infra/docker/compose.yml --profile stack up -d --force-recreate worker`) is a last resort, not a standard debug step. It interrupts in-flight attempts, which the lease mechanism retries, and does not give you cleaner state than the cancel / pause commands.
+Recreating the worker container on the server is a last resort, not a standard debug step. It interrupts in-flight attempts, which the lease mechanism retries, and does not give you cleaner state than the cancel / pause commands.
 
 ## Lost worker leases
 
@@ -222,7 +222,7 @@ Fix: redeploy with the correct `-e`, or set `--env` on the profile and redeploy.
 - Every CLI/agent control-plane request requires `Authorization: Bearer <token>`, including localhost; missing → `401 UNAUTHORIZED`, invalid/revoked/expired → `403 FORBIDDEN`.
 - Revoke a leaked token under **Settings → Agent access**. An agent token cannot revoke itself or other connection tokens.
 
-The packaged dashboard proxies `/api/*` to the API, including webhooks. A CLI profile at `https://server.example-tailnet.ts.net/api` prints `/api/hello` for a webhook at `/hello`; it keeps the entire profile path. A public install can instead use a separate API hostname. Follow the install guide's local, Tailscale, or public path for the matching origin and Caddy site settings.
+The packaged dashboard proxies `/api/*` to the API, including webhooks. A webhook answers at its complete declared path. With `SWIZZLE_PUBLIC_URL=https://server.example-tailnet.ts.net/api`, a trigger declaring `/hooks/hello` prints `https://server.example-tailnet.ts.net/api/hooks/hello?environment=<env>`. Paths under `/hooks/` use `SWIZZLE_PUBLIC_URL`; root paths such as `/orders` use `SWIZZLE_API_ORIGIN` because the public listener does not forward them. Both bases keep any path prefix such as `/api`. A public install can instead use a separate API hostname. Follow the install guide's local, Tailscale, or public path for the matching origin and Caddy site settings.
 
 **Debug remote calls:** add `--debug` and the CLI logs method, URL, headers (token redacted), and body size to stderr.
 
@@ -290,15 +290,11 @@ Process exit codes are typed by failure class, so scripts and agents can branch 
 | 5 | backend | API unreachable, timeout, 5xx |
 | 6 | not found | automation/run/deployment/secret, 404 |
 | 7 | rate limit | 429 |
-| 8 | conflict | `SECRET_ALREADY_EXISTS`, `AUTOMATION_NOT_PAUSED`, `TRIGGER_WEBHOOK_PATH_CONFLICT`, `TRIGGER_WEBHOOK_PATH_RESERVED`, 409 |
+| 8 | conflict | `SECRET_ALREADY_EXISTS`, `AUTOMATION_NOT_PAUSED`, `TRIGGER_WEBHOOK_PATH_CONFLICT`, 409 |
 
 ## Secret management
 
-Secrets require `SWIZZLE_ENCRYPTION_KEY` set in `.env` **and** loaded by the running API. If you just set or changed the key, recreate containers before using secrets — `restart` does not reload `.env`:
-
-```bash
-docker compose --env-file .env -f infra/docker/compose.yml --profile stack up -d --force-recreate api scheduler
-```
+Secrets require `SWIZZLE_ENCRYPTION_KEY` set in `.env` **and** loaded by the running API. If the instance operator just set or changed the key, they run `just stack` again in the server's Swizzle checkout before anyone uses secrets: it recreates the containers whose configuration changed, while `docker compose restart` does not reload `.env`.
 
 Then:
 
@@ -318,12 +314,7 @@ swizzle secret set MY_API_KEY --value-env MY_API_KEY --overwrite
 
 All secret commands support `-e <environment>`. Plaintext is never returned by the API or CLI after storage — this is write-only by design. Agents and scripts should use `--value-env`; `--value` may expose plaintext through shell history or process arguments.
 
-**Setting up from scratch** (no encryption key yet):
-
-1. Generate a key: `python3 -c "import secrets; print(secrets.token_hex(16))"`
-2. Put it in `.env` as `SWIZZLE_ENCRYPTION_KEY=<key>`
-3. Recreate the api and scheduler containers (command above)
-4. Now `secret set` works
+**Setting up from scratch:** `just init-env` writes `.env` with a fresh `SWIZZLE_ENCRYPTION_KEY` and the other credentials, and `just stack` runs it first, so `secret set` works on a new stack right away. Never generate or replace the key by hand: the packaged stack has no re-encryption step, so a replaced key leaves every stored secret unreadable and breaks every approval and event link already sent.
 
 ## Notifications (Telegram)
 

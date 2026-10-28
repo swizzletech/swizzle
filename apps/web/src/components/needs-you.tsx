@@ -23,9 +23,9 @@ import {
   failingAutomationHandoff,
   platformProblemInWords,
 } from "../lib/words/overview";
-import { approvalDetailsInWords, assigneeInWords } from "../lib/words/runs";
+import { assigneeInWords } from "../lib/words/runs";
 import { ageInWords, deadlineInWords, durationInWords } from "../lib/words/time";
-import { ApprovalActions, ConnectLink, SecretField } from "./actions";
+import { ApprovalActions, ApprovalDetails, ConnectLink, SecretField } from "./actions";
 import { Chip, CopyButton, useNow, WithCode } from "./ui";
 
 export function NeedsYou(props: { readonly items: readonly AttentionItem[] }) {
@@ -41,15 +41,14 @@ export function NeedsYou(props: { readonly items: readonly AttentionItem[] }) {
 
 function NeedRow({ item, now }: { readonly item: AttentionItem; readonly now: Date }) {
   switch (item.kind) {
-    case "approval": {
-      const details = approvalDetailsInWords(item.details);
+    case "approval":
       return (
         <Need
           act={<ApprovalActions runId={item.runId} stepKey={item.stepKey} />}
+          detail={<ApprovalDetails details={item.details} />}
           kind={item.kind}
           label="Approval"
           meta={[
-            details,
             item.assignee === null ? null : `assigned to ${assigneeInWords(item.assignee)}`,
             `waiting ${durationInWords(Math.max(0, now.getTime() - Date.parse(item.waitingSince)))}`,
           ]}
@@ -58,7 +57,6 @@ function NeedRow({ item, now }: { readonly item: AttentionItem; readonly now: Da
           <AutomationName automation={item.automation} /> asks: <b>{item.stepKey}</b>
         </Need>
       );
-    }
     case "failing":
       return (
         <Need
@@ -309,6 +307,8 @@ function AutomationName({ automation }: { readonly automation: AutomationRef }) 
 function Need(props: {
   readonly act?: ReactNode;
   readonly children: ReactNode;
+  /** Shown whole under the title, before the meta line. */
+  readonly detail?: ReactNode;
   readonly kind: AttentionItem["kind"];
   readonly label: string;
   readonly meta: readonly ReactNode[];
@@ -322,6 +322,7 @@ function Need(props: {
       </span>
       <div className="what min-w-0">
         <div>{props.children}</div>
+        {props.detail}
         {meta.length > 0 ? (
           <div className="t-meta">
             {meta.map((part, index) => (

@@ -46,7 +46,7 @@ async function verifyPostgresStores(client: DatabaseClient): Promise<void> {
   );
 }
 
-it("postgres stores", { timeout: 60_000 }, async () => {
+it("postgres stores", async () => {
   const client = testDatabase();
   await verifyPostgresStores(client);
 });

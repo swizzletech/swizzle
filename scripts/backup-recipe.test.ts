@@ -60,12 +60,13 @@ it.each(["complete", "truncated", "existing destination"])(
       await mkdir(output);
       await writeFile(path.join(output, "metadata.json"), "previous backup");
     }
+    // A shell script, not Node: Node reads the recipe's `--env-file .env` argument as its own
+    // option and exits when the checkout has no .env.
     await writeFile(
       path.join(bin, "docker"),
-      `#!${process.execPath}
-const fs = require("node:fs");
-fs.appendFileSync(${JSON.stringify(dockerLog)}, process.argv.slice(2).join(" ") + "\\n");
-if (process.argv.includes("run")) process.stdout.write(fs.readFileSync(${JSON.stringify(archive)}));
+      `#!/bin/sh
+printf '%s\\n' "$*" >> '${dockerLog}'
+case " $* " in *" run "*) cat '${archive}' ;; esac
 `,
       { mode: 0o755 },
     );

@@ -24,7 +24,7 @@ Every automation folder holds one `config.yaml`. The parser rejects any field th
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `trigger.type` | `webhook` | yes | - |  |
-| `trigger.path` | non-empty string | no | - | Ingress path, unique per environment. Local `swizzle run` works without it; deploy fails without it (`TRIGGER_CONFIGURATION_INVALID`), a path another automation holds fails the deployment, and so does a path the API serves itself, such as `/auth/sign-in/email` (`TRIGGER_WEBHOOK_PATH_RESERVED`). |
+| `trigger.path` | non-empty string | no | - | Ingress path, unique per environment. Local `swizzle run` works without it; deploy fails without it (`TRIGGER_CONFIGURATION_INVALID`), and a path another automation holds fails the deployment. The webhook answers at this exact path on the API. Use `/hooks/` for paths the public listener can receive. |
 | `trigger.payload_schema` | map of JSON value | no | - | JSON Schema for the payload. `swizzle run` and webhook ingress reject a payload that does not match it (`WEBHOOK_PAYLOAD_INVALID`) before a run exists. |
 | `trigger.signature` | object | no | - | HMAC check over the raw request body, run before a run exists. Webhook ingress answers a missing or wrong signature with the opaque 404 `WEBHOOK_NOT_AVAILABLE` and records a `webhook_rejected` audit event. |
 
@@ -91,7 +91,7 @@ Every automation folder holds one `config.yaml`. The parser rejects any field th
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `runtime.requirements.binaries` | list of object | no | `[]` | Binaries the run needs. Deploy readiness needs one live worker of the group that has all of them in a matching version. |
+| `runtime.requirements.binaries` | list of object | no | `[]` | Binaries the run needs. Deploy readiness needs one live worker of the group whose runner image has all of them in a matching version; the instance operator adds a missing one to the runner image. |
 | `runtime.requirements.node` | object | no | - | Node dependencies the worker installs into the automation image before the run. |
 | `runtime.requirements.python` | object | no | - | Python dependencies the worker installs into the automation image before the run. |
 
@@ -99,8 +99,8 @@ Every automation folder holds one `config.yaml`. The parser rejects any field th
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `runtime.requirements.binaries[].name` | non-empty string | yes | - | Executable name on the worker's `PATH`. |
-| `runtime.requirements.binaries[].version` | non-empty string | no | - | Version rule, for example `>=5`. |
+| `runtime.requirements.binaries[].name` | non-empty string | yes | - | Executable name on the run's `PATH`: the runner image's for a deployed run, this machine's for `swizzle run`. |
+| `runtime.requirements.binaries[].version` | non-empty string | no | - | Version rule, for example `>=5`. A binary whose version the worker cannot tell fails it. |
 
 ## `runtime.requirements.node`
 
@@ -120,7 +120,7 @@ Every automation folder holds one `config.yaml`. The parser rejects any field th
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `runtime.container.base_image` | non-empty string | no | - | Image the automation's run image starts from. The operator trusts it; prefer a digest-pinned image. |
-| `runtime.container.cpus` | string matching `^\d+(\.\d+)?$` | no | - | CPU limit of the run and its dependency install, for example `1.5`. Default `1.0`; deploy rejects a value above `SWIZZLE_MAX_RUN_CPUS` (default `2`). |
+| `runtime.container.cpus` | string matching `^\d+(\.\d+)?$` | no | - | CPU limit of the run and its dependency install, for example `1.5`. Default `1.0`; deploy rejects a value above `SWIZZLE_MAX_RUN_CPUS` (default `2`, or the host's CPU count when that is smaller). |
 | `runtime.container.memory_mb` | positive integer | no | - | Memory limit in MiB of the run and its dependency install, without swap. Default `512`; deploy rejects a value above `SWIZZLE_MAX_RUN_MEMORY_MB` (default `2048`). |
 
 ## `api_check (mode: active)`

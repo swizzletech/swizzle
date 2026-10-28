@@ -73,7 +73,7 @@ async function accept(auth: SwizzleAuth, token: string, person = ANNA) {
 }
 
 // Sign-ins hash with production-cost scrypt; see auth.test.ts.
-describe("membership", { timeout: 30_000 }, () => {
+describe("membership", () => {
   it("refuses to mint links without a dashboard origin before storing them", async () => {
     const auth = testAuth({ links: null });
     await new AuthBrowser(auth, ORIGIN).post("/sign-up/email", OWNER);

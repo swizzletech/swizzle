@@ -9,7 +9,7 @@ import { buildTestServer } from "../test/server-harness.js";
 // Bearer tokens, token administration and the auth policy every route shares; sign-in.test.ts
 // covers browser sessions. Sign-ins hash with production-cost scrypt, about 180 ms per hash on an
 // idle core; 20 s leaves room for parallel worktrees on a loaded machine.
-describe("api auth", { timeout: 20_000 }, () => {
+describe("api auth", () => {
   it.each([
     { url: "/health", remoteAddress: "203.0.113.45", body: { service: "api", status: "ok" } },
     { url: "/auth/status", remoteAddress: "203.0.113.45", body: { authenticated: false } },

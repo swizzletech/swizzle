@@ -1,0 +1,37 @@
+{
+  "scripts/affected-tests.test.ts": [
+    ".github/workflows/ci.yml",
+    "justfile",
+    "mise.toml",
+    "scripts/affected-tests.{mts,ts}"
+  ],
+  "packages/core/src/tracing-startup.test.ts": [
+    "packages/*/src/**",
+    "apps/{api,worker,scheduler}/src/**"
+  ],
+  "apps/cli/src/bin.test.ts": ["apps/cli/src/**", "packages/*/src/**"],
+  "packages/db/rebase-migrations.test.ts": [
+    "packages/db/{rebase-migrations,migration-files,drizzle.config}.ts"
+  ],
+  "scripts/dev-stack-descendants.test.ts": [
+    "scripts/{dev-stack.mts,dev-stack-supervisor.mts,dev-stack-timeout.ts,env-file.ts,process-identity.ts}"
+  ],
+  "scripts/dev-stack-ownership.test.ts": [
+    "scripts/{dev-stack.mts,dev-stack-supervisor.mts,dev-stack-timeout.ts,env-file.ts,process-identity.ts}"
+  ],
+  "scripts/init-env.test.ts": ["scripts/{init-env,env-file}.ts"],
+  "scripts/export-public.test.ts": ["scripts/{export-public.mts,private-paths.ts}"],
+  "scripts/perf/cli.test.ts": [
+    "scripts/perf.mts",
+    "scripts/perf/**",
+    "scripts/packaged-stack.mts",
+    "scripts/env-file.ts",
+    "scripts/process-identity.ts",
+    "packages/*/src/**"
+  ],
+  "scripts/runner-tools.test.ts": ["infra/docker/runner-tools.mjs"],
+  "scripts/upgrade.test.ts": ["scripts/upgrade.ts"],
+  "**/.*/checks/dev-skill.test.ts": [
+    "scripts/{dev-stack.mts,dev-stack-supervisor.mts,dev-stack-timeout.ts,env-file.ts,process-identity.ts}"
+  ]
+}

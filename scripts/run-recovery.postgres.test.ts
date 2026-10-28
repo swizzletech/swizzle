@@ -179,19 +179,19 @@ async function verifyQueuedRunsWithAttemptsQuery(
   );
 }
 
-it("queued run recovery query", { timeout: 60_000 }, async () => {
+it("queued run recovery query", async () => {
   const store = testControlPlaneStore();
   const deployment = await commitDeploymentFixture(store, "state-machine");
   await verifyQueuedRunRecoveryQuery(store, deployment);
 });
 
-it("due sleeping runs cutoff", { timeout: 60_000 }, async () => {
+it("due sleeping runs cutoff", async () => {
   const store = testControlPlaneStore();
   const deployment = await commitDeploymentFixture(store, "state-machine");
   await verifyDueSleepingRunsCutoff(store, deployment);
 });
 
-it("queued runs with attempts query", { timeout: 60_000 }, async () => {
+it("queued runs with attempts query", async () => {
   const store = testControlPlaneStore();
   const deployment = await commitDeploymentFixture(store, "state-machine");
   await verifyQueuedRunsWithAttemptsQuery(store, deployment);

@@ -1,6 +1,6 @@
 import { CodedError } from "@swizzle/db";
 import { it } from "vitest";
-import { testDatabase } from "../test/postgres.js";
+import { testDatabase, untilLockWaiters } from "../test/postgres.js";
 import { testControlPlaneStore } from "../test/stores.js";
 // The ADR 0014 access model on PostgreSQL: grants
 // reach a person directly and through teams, a revocation shows on the next read, deletes cascade
@@ -762,8 +762,7 @@ async function verifyHistoryAcrossMoveAndDelete(input: {
       updatedAt: new Date().toISOString(),
     });
     starting.catch(() => {});
-    // Long enough for both to reach the row and wait on it.
-    await new Promise((resolve) => setTimeout(resolve, 200));
+    await untilLockWaiters(client, 2);
     await deleting.query("COMMIT");
     await assert.rejects(
       starting,
@@ -902,7 +901,7 @@ async function rejects(promise: Promise<unknown>, code: CodedError["code"]): Pro
   await assert.rejects(promise, (error) => error instanceof CodedError && error.code === code);
 }
 
-it("access", { timeout: 60_000 }, async () => {
+it("access", async () => {
   const client = testDatabase();
   const store = testControlPlaneStore();
   await verifyAccess(client, store);

@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { ActionError } from "../../components/actions";
+import { useConfirm } from "../../components/confirm";
 import { type Scope, ScopeFields, scopeInput } from "../../components/scope-fields";
 import { CopyButton, ErrorNote, Skeleton, useNow } from "../../components/ui";
 import type { CreatedApiToken, ProjectRole } from "../../lib/api";
@@ -22,6 +23,7 @@ const TOKEN_ROLES: readonly ProjectRole[] = ["viewer", "operator", "editor", "ad
 const FULL_SCOPE: Scope = { environments: new Set(), projects: new Set(), role: "admin" };
 
 export function AgentAccess() {
+  const confirm = useConfirm();
   const { api, queryScope } = useDashboardClient();
   const queryClient = useQueryClient();
   const now = useNow();
@@ -80,64 +82,62 @@ export function AgentAccess() {
       {created === null ? null : <GiveToAgent onDismiss={() => setCreated(null)} token={created} />}
       <div className="card rows overflow-hidden">
         <form
-          className="setting"
+          className="setting-form"
           onSubmit={(event) => {
             event.preventDefault();
             if (name.trim() !== "" && !create.isPending) create.mutate();
           }}
         >
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="form-label min-w-0 flex-1">
-              Token name
-              <input
-                autoComplete="off"
-                className="field"
-                maxLength={120}
-                onChange={(event) => setName(event.target.value)}
-                placeholder="Claude on my laptop"
-                value={name}
-              />
-            </label>
-            <label className="form-label">
-              Expires after
-              <select
-                className="field"
-                onChange={(event) => setDays(event.target.value)}
-                value={days}
-              >
-                <option value="30">30 days</option>
-                <option value="90">90 days</option>
-                <option value="365">1 year</option>
-              </select>
-            </label>
-            <details className="basis-full">
-              <summary className="t-meta cursor-pointer">
-                Limit what it may do. Without a limit it acts with all your rights.
-              </summary>
-              <div className="mt-2">
-                {projects.isError ? (
-                  <ErrorNote
-                    error={projects.error}
-                    title="The projects could not be loaded, so this token cannot be limited to some of them yet."
-                  />
-                ) : null}
-                <ScopeFields
-                  onChange={setScope}
-                  projects={projects.data ?? []}
-                  roles={TOKEN_ROLES}
-                  value={scope}
-                />
-                <span className="t-faint mt-2 block">
-                  A token never does more than your own roles allow, and its limit is fixed once
-                  created.
-                </span>
-              </div>
-            </details>
-            {create.isError ? <ActionError error={create.error} /> : null}
-          </div>
+          <label className="form-label min-w-0 flex-1">
+            Token name
+            <input
+              autoComplete="off"
+              className="field"
+              maxLength={120}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="Claude on my laptop"
+              value={name}
+            />
+          </label>
+          <label className="form-label">
+            Expires after
+            <select
+              className="field"
+              onChange={(event) => setDays(event.target.value)}
+              value={days}
+            >
+              <option value="30">30 days</option>
+              <option value="90">90 days</option>
+              <option value="365">1 year</option>
+            </select>
+          </label>
           <button className="btn" disabled={name.trim() === "" || create.isPending} type="submit">
             {create.isPending ? "Creating…" : "Create agent token"}
           </button>
+          <details className="basis-full">
+            <summary className="t-meta cursor-pointer">
+              Limit what it may do. Without a limit it acts with all your rights.
+            </summary>
+            <div className="mt-2">
+              {projects.isError ? (
+                <ErrorNote
+                  error={projects.error}
+                  title="The projects could not be loaded, so this token cannot be limited to some of them yet."
+                />
+              ) : null}
+              <ScopeFields
+                onChange={setScope}
+                projects={projects.data ?? []}
+                roles={TOKEN_ROLES}
+                value={scope}
+              />
+              <span className="t-faint mt-2 block">
+                A token never does more than your own roles allow, and its limit is fixed once
+                created.
+              </span>
+            </div>
+          </details>
+          {create.isError ? <ActionError error={create.error} /> : null}
         </form>
         {tokens.isError ? (
           <div className="p-4">
@@ -163,12 +163,9 @@ export function AgentAccess() {
               <button
                 className="btn danger small"
                 disabled={revoke.isPending}
-                onClick={() => {
-                  if (
-                    window.confirm(`Revoke ${token.name}? The agent using it loses access at once.`)
-                  ) {
-                    revoke.mutate(token.id);
-                  }
+                onClick={async () => {
+                  const question = `Revoke ${token.name}? The agent using it loses access at once.`;
+                  if (await confirm({ action: "Revoke", question })) revoke.mutate(token.id);
                 }}
                 type="button"
               >
@@ -208,7 +205,7 @@ function GiveToAgent(props: { readonly token: CreatedApiToken; readonly onDismis
         </span>
       </div>
       <pre className="screen">{block}</pre>
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <CopyButton label="Copy block" text={block} />
         <button className="btn quiet" onClick={props.onDismiss} type="button">
           Done

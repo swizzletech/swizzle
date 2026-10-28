@@ -157,12 +157,19 @@ Each wait helper suspends the run, frees the worker, and resumes the entrypoint 
 
 - To wait for a time, call `sleep_until(name, until)` or `sleep(name, seconds)`. In TypeScript, call `sleepUntil` or `sleep(name, milliseconds)`.
 - To wait for an external system, call `wait_for_event(name, timeout_ms=...)` or `waitForEvent`. To let a third-party system resolve it without a Swizzle credential, give it the URL from `get_event_callback_url(name)` (`getEventCallbackUrl`) inside a step. Its `POST` body becomes the event value. The owner resolves the wait with `swizzle runs resolve-event <run> <step> --payload '<json>'` or `POST /runs/:runId/events/:stepKey`. Check `timedOut` on the result.
-- To wait for a person, call `request_approval(name, details=..., assignee={"team": "Finance"}, timeout_ms=...)`. The TypeScript name is `requestApproval`. Set `assignee` to a person's email (`{"user": ...}`) or a team name. The assigned person or a current team member decides in the dashboard. Without an assignee, anyone who may run the automation can decide in the dashboard, or anyone with the step's link can decide. Send the link from `get_approval_url(name)` (`getApprovalUrl`) inside a step, then share it with the person who decides. Run readers see link tokens in logs, steps, state, child payloads, and approval details as `[REDACTED]`. A deployed run receives link settings when the API has `SWIZZLE_LINK_URL`; a local `swizzle run` does not receive them. The result names the assignee, the person who decided, and the comment. See [approval and event links](../explanation/approvals.md).
+- To wait for a person, call `request_approval(name, details=..., assignee={"team": "Finance"}, timeout_ms=...)`. The TypeScript name is `requestApproval`. Set `assignee` to a person's email (`{"user": ...}`) or a team name. The assigned person or a current team member decides in the dashboard. Without an assignee, anyone who may run the automation can decide in the dashboard, or anyone with the step's link can decide. Send the link from `get_approval_url(name)` (`getApprovalUrl`) inside a step, then share it with the person who decides. A deployed run receives link settings when the API has `SWIZZLE_LINK_URL`; a local `swizzle run` does not. See [approval and event links](../explanation/approvals.md).
 - To run another automation and use its result, call `invoke_automation(name, automation, payload)` or `invokeAutomation`. Branch on `status`, because a dead-lettered child returns as data and does not raise. The Overview groups linked automations into pipelines. It finds literal invoke targets in deployed bundles and adds child runs from the last seven days. It shows only child automations you can read.
+
+Put the decision in the heading and the facts needed to decide in flat fields. The first non-empty `message`, `question`, `summary`, or `title` field, in that order, is the heading. The approval link page and the dashboard's Needs you list, run panel and flowchart station show it, then the other fields with labels, and format nested values as compact JSON.
 
 ```ts
 await runStep("ask-finance", () => postMessage("A refund waits for Finance in Swizzle."));
 const decision = await requestApproval("publish", {
+  details: {
+    title: "Publish refund 1,240.00 EUR to ACME GmbH?",
+    invoice: "INV-1042",
+    due: "2026-11-03",
+  },
   assignee: { team: "Finance" },
   timeoutMs: 24 * 60 * 60 * 1000,
 });
@@ -196,7 +203,7 @@ Below 900 px, the track and pipeline stack top-down. The Play tab places each no
 
 Declare `trigger.payload_schema` when you know the payload's shape. Both `swizzle run` and webhook ingress reject a payload that does not match, before your code runs.
 
-A webhook path is public: anyone who knows it can POST to it. A webhook scaffold from `swizzle init` therefore gets a path that ends in a random token and a signature check over the raw body:
+New webhook scaffolds declare a path under `/hooks/` on the API's public URL. Anyone who knows the path can POST to it. A webhook scaffold from `swizzle init` therefore gets a path that ends in a random token and a signature check over the raw body:
 
 ```yaml
 trigger:

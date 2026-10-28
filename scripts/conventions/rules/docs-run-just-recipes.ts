@@ -18,8 +18,9 @@ const DIRECT_TOOLS = new Set([
   "yarn",
 ]);
 
-/** Authors install the published CLI without a checkout, so this is the one way to install it. */
-const CLI_INSTALL = "npm install --global @swizzletech/cli";
+/** Authors install the published CLI without a checkout, so published CLI installation and invocation run outside just. */
+const CLI_INSTALL =
+  /^(?:npm (?:install --global|i -g) @swizzletech\/cli(?:@[^ ]+)?|npx @swizzletech\/cli@[^ ]+(?: .*)?)$/u;
 
 export const docsRunJustRecipes: Rule = {
   id: "docs-run-just-recipes",
@@ -34,7 +35,7 @@ export const docsRunJustRecipes: Rule = {
         // A lone `tsx` in prose names the tool; a span with arguments or a block line runs it.
         if (
           DIRECT_TOOLS.has(command) &&
-          code !== CLI_INSTALL &&
+          !CLI_INSTALL.test(code) &&
           !(source === "markdown-span" && next === undefined)
         ) {
           return [

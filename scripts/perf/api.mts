@@ -26,7 +26,7 @@ export const API_PROFILE = {
 } as const;
 
 /** How long one route load, run trigger, run wait or run detail request may take. */
-const OPERATION_TIMEOUT_MS = 60_000;
+export const OPERATION_TIMEOUT_MS = 60_000;
 const POLL_MS = 50;
 /** How long a new deployment may take until every worker has prepared it. */
 const PREPARE_TIMEOUT_MS = 60_000;

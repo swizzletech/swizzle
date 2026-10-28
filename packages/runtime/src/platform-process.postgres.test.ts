@@ -325,7 +325,7 @@ describe("platform process", () => {
     await expect(
       platform.triggerWebhookByPath({
         environment: "local",
-        path: "/hello",
+        path: "/hooks/hello",
         payload: { via: "paused-trigger" },
       }),
     ).rejects.toMatchObject({

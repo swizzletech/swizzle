@@ -1,7 +1,6 @@
 import { readFile, rename, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import path from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
 import { parseEnv } from "node:util";
 import { expect, it, onTestFinished } from "vitest";
 import { temporaryDirectory } from "../../../test/support.js";
@@ -150,7 +149,8 @@ it("cancels one caller waiting for rotation while other callers finish that rota
   void continuing.catch(() => {});
   await host.stalled;
   caller.abort(new Error("caller canceled"));
-  expect(await Promise.race([canceled, delay(1000).then(() => false)])).toBe(true);
+  // The stalled request is still held, so only the cancellation can settle this.
+  expect(await canceled).toBe(true);
   host.release();
   await continuing;
   expect(host.renewals()).toBe(1);
@@ -169,7 +169,8 @@ it.for(["probe", "renewal"] as const)(
     );
     await host.stalled;
     shutdown.abort(new Error("worker closing"));
-    expect(await Promise.race([canceled, delay(1000).then(() => false)])).toBe(true);
+    // The stalled request is still held, so only the cancellation can settle this.
+    expect(await canceled).toBe(true);
     // Drain does not wait on or start another credential rotation during shutdown.
     await request("/worker/drain", { draining: true });
     expect(host.renewals()).toBe(0);

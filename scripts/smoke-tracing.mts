@@ -184,10 +184,10 @@ export async function startSmokeTracing(): Promise<SmokeTracing> {
               span.service === "swizzle-api" &&
               span.scope === "@opentelemetry/instrumentation-http" &&
               span.kind === 2 &&
-              span.route === "/*",
+              span.route === "/hooks/*",
           )
         ) {
-          missing.push('swizzle-api HTTP server span with http.route="/*"');
+          missing.push('swizzle-api HTTP server span with http.route="/hooks/*"');
         }
 
         if (
@@ -201,7 +201,7 @@ export async function startSmokeTracing(): Promise<SmokeTracing> {
         }
         if (missing.length === 0) {
           process.stdout.write(
-            `smoke: webhook trace ${execution?.traceId} contains worker automation.process, API automation.complete, HTTP server http.route="/*", pg and ioredis spans; scheduler exports pg spans\n`,
+            `smoke: webhook trace ${execution?.traceId} contains worker automation.process, API automation.complete, HTTP server http.route="/hooks/*", pg and ioredis spans; scheduler exports pg spans\n`,
           );
           return;
         }

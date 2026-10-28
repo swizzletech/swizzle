@@ -53,7 +53,7 @@ function dockerSocket(): string {
   return host.slice("unix://".length);
 }
 
-const STATS_TIMEOUT_MS = 5_000;
+export const STATS_TIMEOUT_MS = 5_000;
 const MAX_STATS_BYTES = 2 ** 20;
 
 /** One bounded read, including headers, body and decoding. No event callback parses JSON. */

@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { testPlatform } from "../../../test/platform.js";
 import { testDatabase } from "../../../test/postgres.js";
 import { testAccessStore, testApiTokenStore, testFolderStore } from "../../../test/stores.js";
-import { TEST_ENCRYPTION_KEY, temporaryDirectory } from "../../../test/support.js";
+import { TEST_ENCRYPTION_KEY, temporaryDirectory, waitFor } from "../../../test/support.js";
 import { createAutomationFixture, deployFixture } from "../test/automations.js";
 import { ownerHeaders, testPeople } from "../test/people.js";
 import { buildTestServer } from "../test/server-harness.js";
@@ -217,7 +217,7 @@ function probes(target: { automation: string; project: string; runId: string }) 
     });
 }
 
-describe("access over HTTP", { timeout: 60_000 }, () => {
+describe("access over HTTP", () => {
   it("gives a person without a grant nothing of a project on any route, list or count", async () => {
     const { app, as, asOwner, people, apiTokenStore, runs, scopes } = await office();
     const mia = await people.bearer(apiTokenStore, "mia@office.test");
@@ -574,7 +574,9 @@ describe("access over HTTP", { timeout: 60_000 }, () => {
     await app.close();
   });
 
-  it("names the target of a refused change in the audit, unless the target is hidden", async () => {
+  it("names the target of a refused change in the audit, unless the target is hidden", async ({
+    signal,
+  }) => {
     const { app, as, asOwner, people, apiTokenStore } = await office();
     const mia = await people.bearer(apiTokenStore, "mia@office.test");
     await asOwner.send("PUT", "/projects/office/grants", { role: "operator", user: mia.userId });
@@ -595,24 +597,23 @@ describe("access over HTTP", { timeout: 60_000 }, () => {
     const audit = async () =>
       (await asOwner.send("GET", `/audit?actor=${mia.userId}`)).json().events as {
         action: string;
-        status: number;
+        status: number | null;
         target: { automationSlug: string | null; environment: string | null };
       }[];
-
-    await expect
-      .poll(async () =>
-        (await audit()).map(({ status, target }) => [
-          status,
-          target.automationSlug,
-          target.environment,
-        ]),
-      )
-      .toEqual([
-        [403, "report", null],
-        [403, null, "staging"],
-        [404, null, null],
-        [403, "report", "staging"],
-      ]);
+    // The audit completes an event after the reply, so the four refusals land in their own time.
+    let events: Awaited<ReturnType<typeof audit>> = [];
+    await waitFor(signal, async () => {
+      events = await audit();
+      return events.length === 4 && events.every(({ status }) => status !== null);
+    });
+    expect(
+      events.map(({ status, target }) => [status, target.automationSlug, target.environment]),
+    ).toEqual([
+      [403, "report", null],
+      [403, null, "staging"],
+      [404, null, null],
+      [403, "report", "staging"],
+    ]);
     await app.close();
   });
 

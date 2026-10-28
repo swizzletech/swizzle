@@ -25,6 +25,9 @@ ENV HOME=/home/swizzle
 RUN mkdir -p /home/swizzle /run/swizzle \
   && chown -R 65532:65532 /home/swizzle /run/swizzle \
   && chmod 0755 /usr/local/bin/swizzle-entrypoint
+# What runs can call, recorded after the last install; the worker image copies it (runner-tools.mjs).
+RUN --mount=type=bind,source=infra/docker/runner-tools.mjs,target=/tmp/runner-tools.mjs \
+  mkdir -p /etc/swizzle && node /tmp/runner-tools.mjs > /etc/swizzle/runner-tools.json
 CMD ["true"]
 
 # Fetch every dependency straight from the lockfile — `pnpm fetch` ignores
@@ -100,6 +103,8 @@ RUN addgroup -S -g 10001 swizzle \
   && chmod 0700 /data/worker \
   && chown -R swizzle:swizzle /app /data /home/swizzle
 COPY --chown=swizzle:swizzle --from=deploy-service /out ./
+# The binaries deployed runs find in the runner image, which this worker reports (readRunnerTools).
+COPY --from=runner-base /etc/swizzle/runner-tools.json /etc/swizzle/runner-tools.json
 USER 10001:10001
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=3 \
   CMD wget -qO- "http://127.0.0.1:${HEALTHCHECK_PORT:-19820}/health" >/dev/null 2>&1 || exit 1

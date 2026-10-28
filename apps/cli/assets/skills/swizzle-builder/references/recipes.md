@@ -179,10 +179,10 @@ runtime:
   timeout: 120s
   requirements:
     binaries:
-      - name: pdftoppm     # already in the worker image
+      - name: pdftoppm     # in the runner image; validate checks it
 ```
 
-poppler-utils and fonts (FreeFonts, Liberation, Noto) ship with the worker image. For custom/proprietary fonts, add them to the Dockerfile.
+The runner image ships poppler-utils and the DejaVu fonts, and no other font ([Execution environment](../SKILL.md#execution-environment-whats-actually-available)). A PDF that embeds its fonts renders as designed; one that only names a font, such as a proprietary one, renders with DejaVu unless the instance operator adds that font to the runner image.
 
 ## 9. Polling external API with cursor
 
@@ -339,7 +339,12 @@ await runAutomation<Payload>(async ({ payload, logStep }) => {
   });
 
   const decision = await requestApproval("approve-invoice", {
-    details: { invoiceId: payload.invoiceId, invoice },
+    // The approver sees only these fields: the title as the heading, then one labelled
+    // line each, on the approval page and in the dashboard alike.
+    details: {
+      title: `Pay ${invoice.total} ${invoice.currency} to ${invoice.supplier} for invoice ${payload.invoiceId}?`,
+      due: invoice.dueDate,
+    },
     timeoutMs: 24 * 60 * 60 * 1000,
   });
 
@@ -364,7 +369,7 @@ await runAutomation<Payload>(async ({ payload, logStep }) => {
 });
 ```
 
-Approval URLs are only available in deployed worker runs with `SWIZZLE_PUBLIC_URL` and a valid encryption key. Deliver the URL yourself; Swizzle creates the capability URL, not the notification channel. Primitive semantics and caps: [SDK Usage — durable execution](sdk.md#durable-execution-primitives). Deciding the approval in the dashboard, assigning it to a person or team, and resolving an event with `runs resolve-event`: [Operations — waiting runs](operations.md#waiting-runs-and-durable-resumes).
+Approval URLs are only available in deployed worker runs, when the API has `SWIZZLE_LINK_URL` and a valid encryption key. Deliver the URL yourself; Swizzle creates the capability URL, not the notification channel. Primitive semantics and caps: [SDK Usage — durable execution](sdk.md#durable-execution-primitives). Deciding the approval in the dashboard, assigning it to a person or team, and resolving an event with `runs resolve-event`: [Operations — waiting runs](operations.md#waiting-runs-and-durable-resumes).
 
 ## 14. Composable agent delivery pipeline (intake → build → verify → triage)
 
@@ -489,7 +494,7 @@ Build the change described in ${specRef}. When done, stop."`);
 });
 ```
 
-The handoff preserves `{ repoUrl, baseBranch, specRef, options }` and appends `{ branch, sha }`; it is never a worker-local path. Review and e2e stages re-clone the SHA into their own scratch and return the pointer with their findings. To insert a validator, chain it from intake and change only the builder's `source`; to use external review, stop after builder. The full set of exact compose variants is the runnable `infra/examples/agent-pipeline` example in the Swizzle repository. `gh` is not in the worker image; open PRs via the provider REST API with `GIT_TOKEN` (see [Agent Workflows — sandbox doctrine](agent-workflows.md#sandbox-doctrine--repo-work-inside-stages)).
+The handoff preserves `{ repoUrl, baseBranch, specRef, options }` and appends `{ branch, sha }`; it is never a worker-local path. Review and e2e stages re-clone the SHA into their own scratch and return the pointer with their findings. To insert a validator, chain it from intake and change only the builder's `source`; to use external review, stop after builder. The full set of exact compose variants is the runnable [agent-pipeline](https://github.com/swizzletech/swizzle/tree/main/infra/examples/agent-pipeline) example in the Swizzle repository. `gh` is not in the runner image; open PRs via the provider REST API with `GIT_TOKEN` (see [Agent Workflows — sandbox doctrine](agent-workflows.md#sandbox-doctrine--repo-work-inside-stages)).
 
 ## Testing chain automations locally
 
