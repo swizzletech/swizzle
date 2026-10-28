@@ -134,3 +134,60 @@ it("shows a viewer neither the first-deploy steps nor a failing automation to fi
   expect((await deployFixture(app, memo, {}, { headers: viewer })).statusCode).toBe(403);
   await app.close();
 });
+
+it("keeps the failing overview item when its run is deleted after the overview read", async () => {
+  vi.spyOn(Queue.prototype, "getJobCounts").mockRejectedValue(new Error("no Valkey"));
+  const people = testPeople();
+  const apiTokenStore = testApiTokenStore();
+  const platform = await testPlatform();
+  const dashboard = createDashboardDataProvider({
+    dashboardStore: createDashboardStore({ client: testDatabase() }),
+    platform,
+    workerRegistry: createPostgresWorkerRegistry({ client: testDatabase() }),
+  });
+  const app = await buildTestServer({ apiTokenStore, auth: people.auth, dashboard, platform });
+  try {
+    const owner = await people.bearer(apiTokenStore, "owner@office.test", "owner");
+    const directory = await createAutomationFixture({
+      mainJs: "process.exit(1);",
+      name: "expired-failure",
+      path: "/expired-failure",
+    });
+    await appendFile(
+      path.join(directory, "config.yaml"),
+      "runtime:\n  retry:\n    max_attempts: 1\n",
+    );
+    expect((await deployFixture(app, directory, {}, { headers: owner })).statusCode).toBe(200);
+    const started = await app.inject({
+      method: "POST",
+      url: "/automations/expired-failure/runs",
+      headers: owner,
+      payload: {},
+    });
+    expect(started.statusCode).toBe(200);
+    const { runId } = started.json();
+    expect((await platform.processNextPlatformRun())?.status).toBe("dead-lettered");
+    const readOverview = dashboard.getOverview.bind(dashboard);
+    vi.spyOn(dashboard, "getOverview").mockImplementationOnce(async (...args) => {
+      const overview = await readOverview(...args);
+      await testDatabase().pool.query("DELETE FROM runs WHERE id = $1", [runId]);
+      return overview;
+    });
+    const response = await app.inject({
+      method: "GET",
+      url: "/dashboard/overview",
+      headers: owner,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().needsYou).toContainEqual(
+      expect.objectContaining({
+        kind: "failing",
+        lastFailedRunId: runId,
+        errorMessage: "Automation exited with code 1.",
+        automation: expect.objectContaining({ automationSlug: "expired-failure" }),
+      }),
+    );
+  } finally {
+    await app.close();
+  }
+});

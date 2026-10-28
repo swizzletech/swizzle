@@ -102,10 +102,14 @@ reviews:
         no coverage target, so do not ask for tests that only raise coverage. A test calls the code
         the way its users do and asserts a literal result. It owns its files, ports, processes and
         data: `temporaryDirectory()` from `test/support.ts`, port 0, and `vi.stubEnv` or
-        `vi.stubGlobal` for environment changes. A test waits on an observable state or event,
-        never on elapsed time, sleeps, polling loops, per-test timeouts or retries; a flaky test is
-        fixed, not retried. CI runs on hosted Ubuntu runners that ship the Docker CLI and daemon,
-        so tests that start containers run there.
+        `vi.stubGlobal` for environment changes. A test waits on an observable state or event; the
+        tests-wait-on-state convention in `scripts/conventions/rules/tests-wait-on-state.ts` states
+        the rule, refuses a wait on time and names its fix, so flag only what it cannot see: fake
+        timers advanced before an event shows the code armed its timer, or an assertion right
+        after an advance on work the code finishes only after real I/O; a test that sets the
+        code's own deadline or interval to a short real value; and an absence asserted before the
+        event that decides it. CI runs on hosted Ubuntu runners
+        that ship the Docker CLI and daemon, so tests that start containers run there.
     - path: "infra/examples/**"
       instructions: >-
         Examples are runnable automations that people and agents copy. They follow
@@ -115,10 +119,11 @@ reviews:
     - path: "**/*.md"
       instructions: >-
         Describe Swizzle and its behavior in its own terms. Never compare it with another
-        automation, workflow, job or container platform, or name one as an example; the
-        no-other-products convention in `scripts/conventions/rules/no-other-products.ts` lists the
-        names it rejects, and a name missing from that list is still a finding. Use plain,
-        specific sentences.
+        automation, workflow or job product, or name one as an example. Naming the software
+        Swizzle runs on (Docker, Docker Compose, PostgreSQL, Valkey, Caddy) as a requirement is
+        allowed. The no-other-products convention in `scripts/conventions/rules/no-other-products.ts`
+        lists the names it rejects, and a name missing from that list is still a finding. Use
+        plain, specific sentences.
     - path: "CHANGELOG.md"
       instructions: >-
         Each entry describes a change that people who run Swizzle or write automations can observe,

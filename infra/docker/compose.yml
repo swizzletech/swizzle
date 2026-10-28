@@ -67,7 +67,9 @@ x-control-plane-env: &control-plane-env
   <<: [*database-env, *artifact-env, *execution-env]
   SWIZZLE_ENCRYPTION_KEY: ${SWIZZLE_ENCRYPTION_KEY:?Set a unique 32-byte raw or base64 encryption key}
   SWIZZLE_ENCRYPTION_PREVIOUS_KEYS: ${SWIZZLE_ENCRYPTION_PREVIOUS_KEYS:-[]}
-  SWIZZLE_ENVIRONMENT: ${SWIZZLE_ENVIRONMENT:-staging}
+  SWIZZLE_ENVIRONMENT: ${SWIZZLE_ENVIRONMENT:-production}
+  # Root webhook paths remain on this API base when the public listener only forwards /hooks/.
+  SWIZZLE_API_ORIGIN: ${SWIZZLE_API_ORIGIN:-http://api.localhost:19826}
   # Externally reachable API base, including any proxy path, for OAuth callbacks.
   SWIZZLE_PUBLIC_URL: ${SWIZZLE_PUBLIC_URL:-${SWIZZLE_API_ORIGIN:-http://api.localhost:19826}}
   VALKEY_URL: redis://:${VALKEY_PASSWORD:?Set VALKEY_PASSWORD}@valkey:6379
@@ -152,7 +154,6 @@ services:
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-}
       SWIZZLE_LINK_URL: ${SWIZZLE_LINK_URL:-${SWIZZLE_LINK_ORIGIN:-http://links.localhost:${SWIZZLE_HTTP_PORT:-19826}}}
       SWIZZLE_SETUP_TOKEN: ${SWIZZLE_SETUP_TOKEN:?Set a unique one-time owner setup token of at least 32 bytes}
-      SWIZZLE_PLATFORM_VERSION: ${SWIZZLE_IMAGE_TAG:-dev}
       SWIZZLE_CORS_ORIGINS: ${SWIZZLE_CORS_ORIGINS:-${SWIZZLE_DASHBOARD_ORIGIN:-http://localhost}}
       # Invitations and password resets go out by mail through the control egress proxy; their
       # links open the dashboard. Without SWIZZLE_SMTP_URL the inviter passes the link on.
@@ -309,7 +310,7 @@ services:
       SWIZZLE_LINK_ORIGIN: ${SWIZZLE_LINK_ORIGIN:-http://links.localhost:${SWIZZLE_HTTP_PORT:-19826}}
       SWIZZLE_LINK_PORT: ${SWIZZLE_LINK_PORT:-19828}
       SWIZZLE_PRIVATE_RANGES: ${SWIZZLE_PRIVATE_RANGES:-0.0.0.0/0 ::/0}
-      # Empty trusts no proxy's X-Forwarded-For on the links origin.
+      # Empty trusts no proxy's X-Forwarded-For on the public listener.
       SWIZZLE_LINK_TRUSTED_PROXY: ${SWIZZLE_LINK_TRUSTED_PROXY:-}
       # Safe non-empty default so Caddy's `email` directive parses when the user
       # hasn't set a real ACME email (plain-HTTP local dev). ACME never engages
@@ -323,7 +324,8 @@ services:
       # Explicit IPv4 binds avoid Docker translating IPv6 clients to a private gateway address,
       # which would bypass SWIZZLE_PRIVATE_RANGES. Both edge ports use the same bind.
       - "${SWIZZLE_HTTP_BIND:-127.0.0.1}:${SWIZZLE_HTTPS_PORT:-19827}:${SWIZZLE_HTTPS_PORT:-19827}"
-      # A tunnel must target this links-only listener, never the shared HTTP/HTTPS ports.
+      # A tunnel must target this public listener (links, webhooks, OAuth callbacks only), never
+      # the shared HTTP/HTTPS ports.
       - "127.0.0.1:${SWIZZLE_LINK_PORT:-19828}:${SWIZZLE_LINK_PORT:-19828}"
     networks: [edge, outbound]
     cap_add: [NET_BIND_SERVICE]

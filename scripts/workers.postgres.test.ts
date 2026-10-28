@@ -194,7 +194,7 @@ async function verifyWorkers(client: DatabaseClient): Promise<void> {
   );
 }
 
-it("workers", { timeout: 60_000 }, async () => {
+it("workers", async () => {
   const client = testDatabase();
   await verifyWorkers(client);
 });

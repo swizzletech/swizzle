@@ -9,7 +9,7 @@ import {
   AUTOMATION_CONFIG_DECLARATIVE_FIELDS,
   createAutomationConfigJsonSchema,
 } from "@swizzle/config";
-import { ROUTE_ACCESS } from "@swizzle/runtime/http-contract";
+import { ROUTE_ACCESS, WEBHOOK_PATH_PREFIX } from "@swizzle/runtime/http-contract";
 import { WORKER_ROUTES } from "@swizzle/runtime/platform";
 import ts from "typescript";
 
@@ -302,9 +302,10 @@ const ROUTE_METHODS = new Set([
   "route",
 ]);
 const REFERENCE_METHODS = new Set(["get", "post", "put", "patch", "delete"]);
-/** Files that register routes from a route table instead of path literals: their POST paths. */
+/** Files that register routes from a route table or constant instead of path literals: their POST paths. */
 const TABLE_ROUTES: Readonly<Record<string, readonly string[]>> = {
   "apps/api/src/dispatch-routes.ts": Object.values(WORKER_ROUTES).map((route) => route.path),
+  "apps/api/src/webhook-ingress.ts": [`${WEBHOOK_PATH_PREFIX}/*`],
 };
 
 function renderApiReference(): string {

@@ -192,19 +192,19 @@ async function verifyRunStepMemoization(
   );
 }
 
-it("terminal run state guard", { timeout: 60_000 }, async () => {
+it("terminal run state guard", async () => {
   const store = testControlPlaneStore();
   const deployment = await commitDeploymentFixture(store, "state-machine");
   await verifyTerminalRunStateGuard(store, deployment);
 });
 
-it("waiting run resume guard", { timeout: 60_000 }, async () => {
+it("waiting run resume guard", async () => {
   const store = testControlPlaneStore();
   const deployment = await commitDeploymentFixture(store, "state-machine");
   await verifyWaitingRunResumeGuard(store, deployment);
 });
 
-it("run step memoization", { timeout: 60_000 }, async () => {
+it("run step memoization", async () => {
   const store = testControlPlaneStore();
   const deployment = await commitDeploymentFixture(store, "state-machine");
   await verifyRunStepMemoization(store, deployment);

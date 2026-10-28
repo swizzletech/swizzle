@@ -2,7 +2,7 @@ import type { Rule } from "../lint.js";
 
 const PACKAGE_VERSION = /"version"\s*:\s*"([^"]+)"/u;
 
-/** The CLI, API and default image tag must describe the same release. */
+/** The CLI, API and platform code must describe the same release. */
 export const platformVersion: Rule = {
   id: "platform-version",
   check(repo) {
@@ -16,7 +16,6 @@ export const platformVersion: Rule = {
         file: "packages/core/src/version.ts",
         pattern: /export const APP_VERSION = "([^"]+)";/u,
       },
-      { file: ".env.example", pattern: /^SWIZZLE_IMAGE_TAG=v(\S+)$/mu },
     ];
     return copies.flatMap(({ file, pattern }) => {
       const text = repo.exists(file) ? repo.read(file) : "";
@@ -26,7 +25,7 @@ export const platformVersion: Rule = {
         {
           file,
           line: match === null ? 1 : text.slice(0, match.index).split("\n").length,
-          message: `Version must match package.json (${version ?? "missing version"}); found ${match?.[1] ?? "no version"}. Update every workspace package.json, packages/core/src/version.ts and .env.example together.`,
+          message: `Version must match package.json (${version ?? "missing version"}); found ${match?.[1] ?? "no version"}. Update every workspace package.json and packages/core/src/version.ts together.`,
         },
       ];
     });

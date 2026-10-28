@@ -168,6 +168,7 @@ export async function runMaintenanceCycle(
     const runExpiry =
       retention.runRetentionDays !== null
         ? await input.store.expireRuns({
+            environment,
             cutoff: new Date(
               startedAt.getTime() - retention.runRetentionDays * 24 * 60 * 60 * 1000,
             ).toISOString(),

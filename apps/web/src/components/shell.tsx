@@ -17,8 +17,10 @@ import {
   useDashboardSession,
 } from "../lib/dashboard-client";
 import { useAuthStatus, useMe, useOverview, useProjects } from "../lib/queries";
+import { passwordAccepted } from "../lib/words/access";
 import {
   AuthScreen,
+  NewPasswordField,
   problemInWords,
   startTwoFactor,
   TwoFactorChoice,
@@ -391,7 +393,7 @@ function SignIn(props: {
   const ready = codeAsked
     ? code.trim() !== ""
     : email.trim().length > 3 &&
-      (props.setupRequired ? password.length >= 15 : password.length > 0) &&
+      (props.setupRequired ? passwordAccepted(password) : password.length > 0) &&
       (!props.setupTokenRequired || setupToken.trim().length >= 32) &&
       (!props.setupRequired || name.trim() !== "");
   let action = { busy: "Signing in…", idle: "Sign in" };
@@ -466,21 +468,25 @@ function SignIn(props: {
                 value={email}
               />
             </label>
-            <label className="form-label">
-              Password
-              <input
-                autoComplete={props.setupRequired ? "new-password" : "current-password"}
-                className="field h-10"
-                onChange={(event) => setPassword(event.target.value)}
-                type="password"
+            {props.setupRequired ? (
+              <NewPasswordField
+                label="Password"
+                note="This account controls the whole instance."
+                onChange={setPassword}
                 value={password}
               />
-              {props.setupRequired ? (
-                <span className="t-faint font-normal">
-                  At least 15 characters. This account controls the whole instance.
-                </span>
-              ) : null}
-            </label>
+            ) : (
+              <label className="form-label">
+                Password
+                <input
+                  autoComplete="current-password"
+                  className="field h-10"
+                  onChange={(event) => setPassword(event.target.value)}
+                  type="password"
+                  value={password}
+                />
+              </label>
+            )}
             {props.setupRequired ? (
               <TwoFactorChoice checked={offerTwoFactor} onChange={setOfferTwoFactor} />
             ) : null}

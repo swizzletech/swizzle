@@ -8,8 +8,8 @@ Treat the webhook URL as a secret. Put a long random token in `trigger.path` ins
 guessable word:
 
 ```yaml
-# weak — anyone can guess /orders
-trigger: { type: webhook, path: /orders }
+# weak: anyone can guess /hooks/orders
+trigger: { type: webhook, path: /hooks/orders }
 
 # strong — the path itself is the secret
 trigger: { type: webhook, path: /hooks/orders-7f3a9c2b8e1d4a6f }

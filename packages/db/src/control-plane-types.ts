@@ -246,7 +246,8 @@ export interface ControlPlaneStore {
   ): Promise<readonly AuditEventOf<"trigger">[]>;
   /**
    * Deletes finished runs (succeeded, failed, dead-lettered) that finished at or before the
-   * cutoff, with everything that hangs off them. Queued, running and waiting runs never expire.
+   * cutoff in the named environment, with everything that hangs off them. Queued, running and
+   * waiting runs never expire.
    */
   expireRuns(input: ExpireRunsInput): Promise<ExpireRunsResult>;
   recordNotificationDelivery(

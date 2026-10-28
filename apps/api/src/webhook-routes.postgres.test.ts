@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-
+import { cp, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { fileURLToPath } from "node:url";
@@ -14,7 +14,7 @@ import { testApiTokenStore } from "../../../test/stores.js";
 
 import { TEST_ENCRYPTION_KEY, temporaryDirectory } from "../../../test/support.js";
 
-import { deployFixture } from "../test/automations.js";
+import { createAutomationFixture, deployFixture } from "../test/automations.js";
 
 import { ownerHeaders, testPeople } from "../test/people.js";
 
@@ -33,6 +33,129 @@ beforeEach(async () => {
 });
 
 describe("webhook routes", () => {
+  it.each(["/hooks/legacy-a1b2c3", "/orders"])(
+    "keeps the signed 1.0.x delivery URL %s after an unchanged redeploy",
+    async (legacyPath) => {
+      const platform = await testPlatform();
+      const app = await buildTestServer({ platform });
+      const fixture = await temporaryDirectory("legacy-webhook-");
+      await cp(path.join(repoRoot, "packages/runtime/test-fixtures/webhook-signature"), fixture, {
+        recursive: true,
+      });
+      const configFile = path.join(fixture, "config.yaml");
+      await writeFile(
+        configFile,
+        (await readFile(configFile, "utf8")).replace("/signed-webhook", legacyPath),
+      );
+      await platform.upsertSecret("WEBHOOK_SIGNING_SECRET", "secret", {
+        environment: "local",
+        projectId: DEFAULT_PROJECT_ID,
+      });
+      try {
+        for (const payload of ['{"delivery":"original"}', '{"delivery":"redeployed"}']) {
+          const deployed = await deployFixture(app, fixture, {}, { headers: owner });
+          expect(deployed.statusCode).toBe(200);
+          const response = await app.inject({
+            method: "POST",
+            url: legacyPath,
+            headers: {
+              "content-type": "application/json",
+              "x-swizzle-signature": `sha256=${createHmac("sha256", "secret").update(payload).digest("hex")}`,
+            },
+            payload,
+          });
+          expect(response.statusCode).toBe(200);
+          const run = await platform.getPlatformRun(response.json().runId);
+          expect(run.payload).toEqual(JSON.parse(payload));
+          expect(run.triggerType).toBe("webhook");
+        }
+      } finally {
+        await app.close();
+      }
+    },
+  );
+
+  it("delivers /hooks/foo only to its owner when /foo also exists", async () => {
+    const platform = await testPlatform();
+    const app = await buildTestServer({ platform });
+    try {
+      for (const [name, path] of [
+        ["released", "/hooks/foo"],
+        ["other", "/foo"],
+      ] as const) {
+        const deployed = await deployFixture(
+          app,
+          await createAutomationFixture({
+            name,
+            path,
+            mainJs: "console.log('{}');",
+          }),
+          {},
+          { headers: owner },
+        );
+        expect(deployed.statusCode).toBe(200);
+      }
+      for (const [url, automationSlug] of [
+        ["/hooks/foo", "released"],
+        ["/foo", "other"],
+      ] as const) {
+        const response = await app.inject({ method: "POST", url, payload: {} });
+        expect(response.statusCode).toBe(200);
+        const run = await platform.getPlatformRun(response.json().runId);
+        expect(run.automationSlug).toBe(automationSlug);
+      }
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("refuses reserved API namespaces while an authored root webhook still queues", async () => {
+    const platform = await testPlatform();
+    const app = await buildTestServer({ platform });
+    const lookup = vi.spyOn(platform, "triggerWebhookByPath");
+    try {
+      const deployed = await deployFixture(
+        app,
+        await createAutomationFixture({
+          name: "root-orders",
+          path: "/orders",
+          mainJs: "console.log('{}');",
+        }),
+        {},
+        { headers: owner },
+      );
+      expect(deployed.statusCode).toBe(200);
+      for (const url of [
+        "/api/orders",
+        "/health",
+        "/auth/unknown",
+        "/automations/unknown/unknown",
+      ]) {
+        const response = await app.inject({ method: "POST", url, payload: {} });
+        expect(response.statusCode).toBe(404);
+      }
+      expect(lookup).not.toHaveBeenCalled();
+      const accepted = await app.inject({ method: "POST", url: "/orders", payload: {} });
+      expect(accepted.statusCode).toBe(200);
+      expect(accepted.json()).toMatchObject({ status: "queued" });
+      expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ path: "/orders" }));
+      const rejected = await deployFixture(
+        app,
+        await createAutomationFixture({
+          name: "invalid-root",
+          path: "/auth/sign-in/email",
+          mainJs: "console.log('{}');",
+        }),
+        {},
+        { headers: owner },
+      );
+      expect(rejected.statusCode).toBe(409);
+      expect(rejected.json()).toMatchObject({ code: "TRIGGER_CONFIGURATION_INVALID" });
+    } finally {
+      await app.close();
+    }
+  });
+
   it("returns an opaque 404 when triggering an unknown webhook path", async () => {
     const app = await buildTestServer({
       platform: await testPlatform(),
@@ -41,7 +164,7 @@ describe("webhook routes", () => {
       headers: owner,
       method: "POST",
       payload: { hello: "world" },
-      url: "/unknown-path",
+      url: "/hooks/unknown-path",
     });
 
     // The public ingress must not act as an existence oracle: unknown paths return
@@ -85,7 +208,7 @@ describe("webhook routes", () => {
       },
       method: "POST",
       payload: rawBody,
-      url: "/hello",
+      url: "/hooks/hello",
     });
 
     expect(response.statusCode).toBe(200);
@@ -136,7 +259,7 @@ describe("webhook routes", () => {
       },
       method: "POST",
       payload: rawBody,
-      url: "/hello",
+      url: "/hooks/hello",
     });
 
     expect(response.statusCode).toBe(200);
@@ -300,7 +423,7 @@ describe("webhook routes", () => {
     // Swizzle token — external callers (Stripe, GitHub, ...) never have one.
     const webhook = await app.inject({
       method: "POST",
-      url: "/hello",
+      url: "/hooks/hello",
       payload: { hello: "world" },
       headers: remoteHeaders,
       remoteAddress: "203.0.113.45",
@@ -311,7 +434,7 @@ describe("webhook routes", () => {
     // proves the request cleared the auth gate and reached the trigger resolver.
     const unknown = await app.inject({
       method: "POST",
-      url: "/no-such-hook",
+      url: "/hooks/no-such-hook",
       payload: {},
       headers: remoteHeaders,
       remoteAddress: "203.0.113.45",
@@ -353,7 +476,7 @@ describe("webhook routes", () => {
 
     const first = await app.inject({
       method: "POST",
-      url: "/no-such-hook",
+      url: "/hooks/no-such-hook",
       payload: {},
       ...remoteRequest,
     });
@@ -366,7 +489,7 @@ describe("webhook routes", () => {
 
     const second = await app.inject({
       method: "POST",
-      url: "/no-such-hook",
+      url: "/hooks/no-such-hook",
       payload: {},
       ...remoteRequest,
     });
@@ -374,7 +497,7 @@ describe("webhook routes", () => {
 
     const third = await app.inject({
       method: "POST",
-      url: "/no-such-hook",
+      url: "/hooks/no-such-hook",
       payload: {},
       ...remoteRequest,
     });
@@ -392,7 +515,7 @@ describe("webhook routes", () => {
     // (real) path is still throttled, so scanning many paths cannot bypass the limit.
     const sameClientOtherPath = await app.inject({
       method: "POST",
-      url: "/hello",
+      url: "/hooks/hello",
       payload: { hello: "world" },
       ...remoteRequest,
     });
@@ -401,7 +524,7 @@ describe("webhook routes", () => {
     // A different client has an independent budget.
     const otherClient = await app.inject({
       method: "POST",
-      url: "/hello",
+      url: "/hooks/hello",
       payload: { hello: "world" },
       headers: { host: "api.swizzle.example.com" },
       remoteAddress: "198.51.100.7",
@@ -435,8 +558,8 @@ describe("webhook routes", () => {
       });
 
     try {
-      const unknownEnvironment = await post("/hello?environment=made-up");
-      const unknownPath = await post("/no-such-hook");
+      const unknownEnvironment = await post("/hooks/hello?environment=made-up");
+      const unknownPath = await post("/hooks/no-such-hook");
       for (const response of [unknownEnvironment, unknownPath]) {
         expect(response.statusCode).toBe(404);
         expect(response.json()).toEqual({
@@ -446,7 +569,11 @@ describe("webhook routes", () => {
         });
       }
 
-      for (const url of ["/hello", "/hello?environment=another-made-up", "/no-such-hook"]) {
+      for (const url of [
+        "/hooks/hello",
+        "/hooks/hello?environment=another-made-up",
+        "/hooks/no-such-hook",
+      ]) {
         const limited = await post(url);
         expect(limited.statusCode).toBe(429);
         expect(limited.json()).toMatchObject({
@@ -460,7 +587,7 @@ describe("webhook routes", () => {
         method: "POST",
         payload: {},
         remoteAddress: "198.51.100.7",
-        url: "/hello",
+        url: "/hooks/hello",
       });
       expect(otherClient.statusCode).toBe(200);
       expect(otherClient.json()).toMatchObject({ status: "queued" });
@@ -481,7 +608,7 @@ describe("webhook routes", () => {
           headers: owner,
           method: "POST",
           payload: {},
-          url: `/hello?environment=made-up-${index}`,
+          url: `/hooks/hello?environment=made-up-${index}`,
         });
         statuses.push(response.statusCode);
       }

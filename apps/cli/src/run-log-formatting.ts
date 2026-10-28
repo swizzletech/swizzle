@@ -10,6 +10,7 @@ import type { RunDetailRecord as ApiRun } from "./run-records.js";
 
 type RunDetailRecord = Pick<
   ApiRun,
+  | "payload"
   | "runId"
   | "automationSlug"
   | "automationName"
@@ -160,6 +161,7 @@ export function runView(run: RunDetailRecord, full: boolean) {
   const history = run.executions;
   return {
     id: run.runId,
+    payload: run.payload,
     automation: run.automationSlug ?? run.automationName ?? null,
     ...(run.environment !== undefined ? { environment: run.environment } : {}),
     status: run.status,

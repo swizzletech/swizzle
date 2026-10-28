@@ -63,14 +63,14 @@ describe("deployment routes", () => {
     expect(triggerStateResponse.statusCode).toBe(200);
     expect(triggerStateResponse.json()).toMatchObject({
       status: "active",
-      webhookPath: "/hello",
+      webhookPath: "/hooks/hello",
     });
 
     const triggerResponse = await app.inject({
       headers: owner,
       method: "POST",
       payload: { source: "api-test" },
-      url: "/hello",
+      url: "/hooks/hello",
     });
 
     expect(triggerResponse.statusCode).toBe(200);
@@ -292,7 +292,7 @@ describe("deployment routes", () => {
       headers: owner,
       method: "POST",
       payload: { source: "post-rollback" },
-      url: "/hello",
+      url: "/hooks/hello",
     });
     expect(triggerAfter.statusCode).toBe(200);
 
@@ -413,16 +413,70 @@ describe("deployment routes", () => {
     vi.stubEnv("SWIZZLE_PUBLIC_URL", "https://swizzle.example.com/api/");
     const applied = await deployFixture(app, example, {}, { headers: owner });
     expect(applied.json().webhookUrl).toBe(
-      "https://swizzle.example.com/api/hello?environment=local",
+      "https://swizzle.example.com/api/hooks/hello?environment=local",
     );
     expect(await detail("attacker.example")).toBe(
-      "https://swizzle.example.com/api/hello?environment=local",
+      "https://swizzle.example.com/api/hooks/hello?environment=local",
     );
 
     vi.stubEnv("SWIZZLE_PUBLIC_URL", "");
-    expect(await detail("127.0.0.1:19826")).toBe("http://127.0.0.1:19826/hello?environment=local");
+    expect(await detail("127.0.0.1:19826")).toBe(
+      "http://127.0.0.1:19826/hooks/hello?environment=local",
+    );
     expect(await detail("attacker.example")).toBeNull();
     await app.close();
+  });
+
+  it("advertises a deliverable API URL for a root webhook when the public listener only serves hooks", async () => {
+    const platform = await testPlatform();
+    const app = await buildTestServer({
+      dashboard: createDashboardDataProvider({
+        dashboardStore: createDashboardStore({ client: testDatabase() }),
+        platform,
+        workerRegistry: createPostgresWorkerRegistry({ client: testDatabase() }),
+      }),
+      platform,
+    });
+    const privateBase = await app.listen({ host: "127.0.0.1", port: 0 });
+    vi.stubEnv("SWIZZLE_API_ORIGIN", `${privateBase}/`);
+    vi.stubEnv("SWIZZLE_PUBLIC_URL", "https://hooks.example.test/");
+    try {
+      const root = await createAutomationFixture({
+        name: "legacy-orders",
+        path: "/orders",
+        mainJs: "console.log('{}');",
+      });
+      const applied = await deployFixture(app, root, {}, { headers: owner });
+      expect(applied.statusCode).toBe(200);
+      expect(applied.json().webhookUrl).toBe(`${privateBase}/orders?environment=local`);
+      const detail = await app.inject({
+        method: "GET",
+        headers: owner,
+        url: "/dashboard/automations/legacy-orders?environment=local",
+      });
+      expect(detail.json().trigger.webhookUrl).toBe(`${privateBase}/orders?environment=local`);
+      const delivery = await fetch(applied.json().webhookUrl, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: '{"order":42}',
+      });
+      expect(delivery.status).toBe(200);
+      const queued = (await delivery.json()) as { runId: string };
+      const run = await platform.getPlatformRun(queued.runId);
+      expect(run.payload).toEqual({ order: 42 });
+      expect(run.automationSlug).toBe("legacy-orders");
+      const publicHook = await deployFixture(
+        app,
+        path.join(repoRoot, "infra/examples/hello-webhook"),
+        {},
+        { headers: owner },
+      );
+      expect(publicHook.json().webhookUrl).toBe(
+        "https://hooks.example.test/hooks/hello?environment=local",
+      );
+    } finally {
+      await app.close();
+    }
   });
 
   it("supports deleting a paused automation through the API", async () => {

@@ -40,7 +40,7 @@ A rollback is a deploy of old code, so it goes through the same checks:
 
 ## Retention expires finished runs and bounds bulk
 
-The scheduler's maintenance cycle ([`runMaintenanceCycle`](../../packages/runtime/src/maintenance.ts)) bounds what grows without limit. Each setting is an environment variable read by [`resolveMaintenanceRetentionPolicy`](../../packages/runtime/src/maintenance.ts):
+The scheduler's maintenance cycle ([`runMaintenanceCycle`](../../packages/runtime/src/maintenance.ts)) bounds what grows without limit. Each environment's pass expires only its own runs, so concurrent passes do not sweep the same history. Each setting is an environment variable read by [`resolveMaintenanceRetentionPolicy`](../../packages/runtime/src/maintenance.ts):
 
 | Data | Retention rule | Variable | Default |
 |---|---|---|---|

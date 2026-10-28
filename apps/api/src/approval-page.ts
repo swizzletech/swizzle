@@ -8,6 +8,7 @@
 // exactly that script. Every page works on any origin and path that serves it.
 
 import { createHash } from "node:crypto";
+import { approvalDetailsInWords } from "@swizzle/config";
 import { redactWaitLinks } from "@swizzle/runtime";
 
 import type { OpenWaitRecord } from "@swizzle/runtime/platform";
@@ -94,17 +95,17 @@ export function approvalPage(input: {
 }): string {
   const { wait } = input;
   // The holder decides one step; its details must not hand them another step's link.
-  const { lead, facts } = detailsInWords(wait.details);
+  const { heading, fields } = approvalDetailsInWords(wait.details);
   const detailHtml = (value: string) => escapeHtml(redactWaitLinks(value));
   return page(
     "Approval requested",
     `<p class="label">${escapeHtml(wait.automationName)} · approval ${escapeHtml(wait.stepKey)}</p>
-  <h1>${detailHtml(lead ?? "Approve this step?")}</h1>
+  <h1>${detailHtml(heading ?? "Approve this step?")}</h1>
   <p class="meta">Open until ${timeHtml(wait.expiresAt)}</p>
   ${
-    facts.length === 0
+    fields.length === 0
       ? ""
-      : `<dl>${facts.map(([key, value, mono]) => `<dt>${detailHtml(key)}</dt><dd${mono ? ' class="mono"' : ""}>${detailHtml(value)}</dd>`).join("")}</dl>`
+      : `<dl>${fields.map((field) => `<dt>${detailHtml(field.label)}</dt><dd${field.json ? ' class="mono"' : ""}>${detailHtml(field.value)}</dd>`).join("")}</dl>`
   }
   <form method="post">
     <label for="comment">Comment (optional)</label>
@@ -156,33 +157,6 @@ function timeHtml(iso: string): string {
     new Date(iso),
   );
   return `<time datetime="${escapeHtml(iso)}">${escapeHtml(utc)}</time>`;
-}
-
-/**
- * What an automation passed as details, as words: a string, or an object's message, question,
- * summary or title, is the heading (as the dashboard's approval card reads it); the other fields
- * become labelled lines, nested values in compact JSON.
- */
-function detailsInWords(details: unknown): {
-  readonly lead: string | null;
-  readonly facts: readonly (readonly [string, string, boolean])[];
-} {
-  if (details === null || details === undefined) return { facts: [], lead: null };
-  if (typeof details === "string") return { facts: [], lead: details };
-  if (typeof details !== "object" || Array.isArray(details))
-    return { facts: [["Details", JSON.stringify(details), true]], lead: null };
-  const record = details as Record<string, unknown>;
-  const leadKey = ["message", "question", "summary", "title"].find(
-    (key) => typeof record[key] === "string" && record[key] !== "",
-  );
-  const facts = Object.entries(record)
-    .filter(([key]) => key !== leadKey)
-    .map(([key, value]): readonly [string, string, boolean] =>
-      typeof value === "string" || typeof value === "number" || typeof value === "boolean"
-        ? [key, String(value), false]
-        : [key, JSON.stringify(value), true],
-    );
-  return { facts, lead: leadKey === undefined ? null : (record[leadKey] as string) };
 }
 
 function escapeHtml(value: string): string {

@@ -269,6 +269,7 @@ export async function listRecentRunGlances(
       queuedAt: runs.queuedAt,
       runId: runs.id,
       status: runs.status,
+      triggerType: runs.triggerType,
       runRank:
         sql<number>`row_number() over (partition by ${runs.automationId} order by ${runs.queuedAt} desc, ${runs.id} desc)`.as(
           "run_rank",
@@ -299,6 +300,7 @@ export async function listRecentRunGlances(
       queuedAt: row.queuedAt.toISOString(),
       runId: row.runId,
       status: row.status as DashboardRunGlance["status"],
+      triggerType: row.triggerType as DashboardRunGlance["triggerType"],
     };
     const list = glances.get(row.automationId);
     if (list) {

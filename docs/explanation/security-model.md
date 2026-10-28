@@ -223,7 +223,7 @@ Every route needs a session or a bearer token, except the routes below. They are
 | `POST /auth/sign-in/email` | Signing in | Durable sign-in budgets; allowed `Origin` |
 | `POST /auth/two-factor/verify-totp`, `POST /auth/two-factor/verify-backup-code` | The second sign-in step, before a session exists | The challenge cookie from the password step, code budget; allowed `Origin` |
 | `POST /auth/sign-out` | Signing out with an expired or revoked cookie | Ends only the presented session; allowed `Origin` |
-| `POST /*` webhook ingress | Senders hold no Swizzle credential | Rate limit, optional HMAC signature |
+| `POST /hooks/*` webhook ingress | Senders hold no Swizzle credential | Rate limit, optional HMAC signature |
 | `GET /oauth/callback/:provider` | The provider redirects a browser without a token | Hashed single-use state ([connections](connections.md)) |
 | `GET`, `POST /approvals/:token` | The approver has no account | Per-step capability token, rate limit ([approval and event links](approvals.md)) |
 | `POST /events/:token` | A third-party system holds no Swizzle credential | Per-step capability token, rate limit, 64 KiB body ([approval and event links](approvals.md)) |
@@ -231,6 +231,23 @@ Every route needs a session or a bearer token, except the routes below. They are
 The [API reference](../reference/api.md) lists every route and marks the public ones.
 
 The credentials these routes carry in the URL stay out of request logs. The logger writes the approval and event callback tokens and the OAuth callback's `code` and `state` as `[REDACTED]` ([`logger.ts`](../../packages/core/src/logger.ts)).
+
+## The public listener serves only public routes
+
+The packaged stack's Caddy has three sites ([Caddyfile](../../infra/docker/Caddyfile)). The dashboard site and the API site serve everything, sign-in included. `SWIZZLE_PRIVATE_RANGES` narrows the client addresses they answer, and every other client gets a bare 404 there. The public listener at `SWIZZLE_LINK_ORIGIN`, with its loopback port `SWIZZLE_LINK_PORT` for a tunnel on the server, forwards only the routes a party without a Swizzle credential calls:
+
+| Path | Route |
+|---|---|
+| `/hooks/*` | Webhook ingress |
+| `/approvals/*` | Approval pages and decisions |
+| `/events/*` | Event callbacks |
+| `/oauth/callback/*` | OAuth callbacks |
+
+At the dedicated loopback port, every other path gets a bare 404 from Caddy, whatever `Host` the caller sends. On a shared HTTPS port, Caddy selects a site by hostname before it checks the path. Set `SWIZZLE_PRIVATE_RANGES` to keep the dashboard and API sites private there. A private instance can then publish the listener through a tunnel or on a hostname of its own while the dashboard, the API and sign-in stay private ([receive webhooks on a private instance](../how-to/install.md#receive-webhooks-and-share-links-on-a-private-instance)).
+
+The public listener forwards the webhook namespace, `/hooks` (`WEBHOOK_PATH_PREFIX` in [`http-contract.ts`](../../packages/runtime/src/http-contract.ts)). The API registers no other route under it, so a request such as `POST /hooks/auth/sign-in/email` is a webhook lookup and never reaches sign-in. Webhook lookup uses the complete request path. Released root paths remain reachable on the API origin, while the public listener forwards only the paths above. API namespaces are refused before webhook lookup, and their registered handlers keep their authentication rules.
+
+Each forwarded route keeps its guard from the table above. Webhook signatures and the opaque 404 work on the public listener as they do on the API site. Webhook, approval and event requests keep their rate limits. OAuth callbacks require their hashed, single-use state token. Behind a tunnel on the server, every caller connects from the Docker gateway and shares one budget per rate-limited route, unless `SWIZZLE_LINK_TRUSTED_PROXY` names the tunnel. Caddy then passes the tunnel's `X-Forwarded-For` on the public listener only.
 
 ## Webhook ingress checks the client budget before the trigger
 
@@ -254,7 +271,7 @@ A deployed run starts with an empty environment. The API builds only what the at
 
 The container is the second boundary ([`sandboxSpec`](../../packages/runtime/src/sandbox.ts)). It runs as an unprivileged user with a read-only root filesystem, all capabilities dropped, `no-new-privileges`, and limits on processes, open files, memory and CPU. `/tmp`, the home directory and declared `writable_dirs` are size-limited tmpfs mounts, so nothing a run writes outlives it.
 
-[`containerLimitArguments`](../../packages/runtime/src/container-limits.ts) sets a PID limit of 128 per container and an open-file limit of 1024. It sets no per-user process limit (`--ulimit nproc`): every sandbox runs as the same user, and that limit counts the user's processes in all containers on the host, so one run holding processes would make every other run's fork fail. It also applies the memory and CPU values from `runtime.container`, which default to 512 MiB without swap and 1 CPU. The operator caps those values with `SWIZZLE_MAX_RUN_MEMORY_MB` (default `2048`) and `SWIZZLE_MAX_RUN_CPUS` (default `2`). A deploy above either cap fails with `RUNTIME_REQUIREMENTS_UNMET` and names the variable. The worker checks again before creating a container, so lowering a cap also stops older deployments above it. The maximum memory and CPU available to concurrent runs grows with `WORKER_CONCURRENCY`.
+[`containerLimitArguments`](../../packages/runtime/src/container-limits.ts) sets a PID limit of 128 per container and an open-file limit of 1024. It sets no per-user process limit (`--ulimit nproc`): every sandbox runs as the same user, and that limit counts the user's processes in all containers on the host, so one run holding processes would make every other run's fork fail. It also applies the memory and CPU values from `runtime.container`, which default to 512 MiB without swap and 1 CPU. The operator caps those values with `SWIZZLE_MAX_RUN_MEMORY_MB` (default `2048`) and `SWIZZLE_MAX_RUN_CPUS` (default `2`, or the host's CPU count when that is smaller). A deploy above either cap fails with `RUNTIME_REQUIREMENTS_UNMET` and names the variable. The worker checks again before creating a container, so lowering a cap also stops older deployments above it. The maximum memory and CPU available to concurrent runs grows with `WORKER_CONCURRENCY`.
 
 Every run gets a fresh container ([`claimSandbox`](../../packages/runtime/src/sandbox.ts)). The worker may start the container as a standby before a run needs it, so Docker does not create it on the run path. A standby has no run data or environment variables. Its create arguments match those of every run for the deployment. The worker passes secrets, metadata and inputs in the `docker exec` command that starts the automation ([`sandboxExecArguments`](../../packages/runtime/src/container-runner.ts)). A standby serves one run. Docker removes its container when the hold process exits, including after a run timeout. If the worker exits before Docker closes its sandbox hold processes, those sandboxes remain until the hold processes exit. At startup, the worker removes containers left by its previous container and by workers no longer running in the same Compose stack. The worker drains for 30 seconds on stop, and Compose gives it 45 seconds before it kills it ([`execution.yml`](../../infra/docker/execution.yml)).
 
@@ -338,7 +355,7 @@ Secret values use a text field with attributes that ask password managers to ign
 
 ## Caddy preserves API page policies
 
-In production, Caddy sends the dashboard a Content Security Policy with `script-src 'self'` and `frame-ancestors 'none'` ([Caddyfile](../../infra/docker/Caddyfile)). The API sets a policy on every response, and Caddy preserves it on the API origin, links origin, and dashboard's `/api/*` route. The approval page's policy allows its inline script by hash, so the script runs through each route.
+In production, Caddy sends the dashboard a Content Security Policy with `script-src 'self'` and `frame-ancestors 'none'` ([Caddyfile](../../infra/docker/Caddyfile)). The API sets a policy on every response, and Caddy preserves it on the API origin, the public listener, and the dashboard's `/api/*` route. The approval page's policy allows its inline script by hash, so the script runs through each route.
 
 The Vite dev server sends `frame-ancestors 'none'` and `X-Frame-Options: DENY` on every response, including the 304 that revalidates a cached page ([`vite.config.ts`](../../apps/web/vite.config.ts)). It does not send the full policy because that policy blocks Vite's inline HMR preamble. The framing headers also matter in development: browsers treat different ports on the same host as the same site, and a matching session cookie can reach a page that frames the dashboard.
 

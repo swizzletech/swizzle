@@ -84,6 +84,7 @@ export function buildAttention(input: BuildAttentionInput): readonly DashboardAt
         kind: "failing",
         lastFailedAt: latest.queuedAt,
         lastFailedRunId: latest.runId,
+        lastFailedTriggerType: latest.triggerType,
         recentRuns: automation.recentRuns.length,
       });
     }

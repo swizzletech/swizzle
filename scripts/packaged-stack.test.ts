@@ -25,6 +25,7 @@ const state = ${JSON.stringify(state)};
 const imageFile = ${JSON.stringify(images)};
 let images = JSON.parse(fs.readFileSync(imageFile, "utf8"));
 let networks = JSON.parse(fs.readFileSync(state, "utf8"));
+if (args[0] === "info") console.log(8);
 if (args[0] === "compose" && args.includes("up")) {
   const project = args[args.indexOf("--project-name") + 1];
   networks.push(project);

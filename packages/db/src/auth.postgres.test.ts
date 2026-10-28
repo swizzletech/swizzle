@@ -29,7 +29,7 @@ afterEach(() => {
 
 // Sign-ins hash with production-cost scrypt, about 180 ms per hash on an idle core; 30 s leaves
 // room for parallel worktrees on a loaded machine.
-describe("Swizzle auth", { timeout: 30_000 }, () => {
+describe("Swizzle auth", () => {
   it.each([
     {
       libraryCode: "INVALID_EMAIL_OR_PASSWORD",

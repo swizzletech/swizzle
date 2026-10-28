@@ -1,11 +1,13 @@
 // `just smoke`: proves the packaged stack end to end. It boots a throwaway packaged stack
 // (scripts/packaged-stack.mts), deploys infra/examples/hello-webhook through the CLI (in process,
-// from source), POSTs to its webhook URL as an outside caller would, and waits for the run to
+// from source), POSTs to its webhook on the public listener as an outside caller would, and waits for the run to
 // succeed with HTTP server route, PostgreSQL, Valkey, automation.process and automation.complete spans in one trace.
+// It then deploys the shipped skill's PDF recipe as written and runs it (scripts/smoke-recipe.mts).
 // On exit it removes the stack with its volumes and images, so runs follow each other and run beside any other stack.
 
 import assert from "node:assert/strict";
 import { get, type PackagedStack, startPackagedStack, until } from "./packaged-stack.mts";
+import { smokePdfRecipe } from "./smoke-recipe.mts";
 import { type SmokeTracing, startSmokeTracing } from "./smoke-tracing.mts";
 
 const RUN_FAILED = new Set(["failed", "dead-lettered"]);
@@ -19,31 +21,39 @@ async function smoke(stack: PackagedStack, tracing: SmokeTracing): Promise<void>
     for (const path of ["/", "/health", "/api/health", "/auth/sign-in/email", "/hello"]) {
       const response = await fetch(`${stack.links}${path}`, {
         headers: { host },
-        method: path === "/auth/sign-in/email" ? "POST" : "GET",
+        method: path === "/auth/sign-in/email" || path === "/hello" ? "POST" : "GET",
       });
-      assert.equal(response.status, 404, `links listener exposed ${host}${path}`);
-      assert.equal(await response.text(), "", `links listener forwarded ${host}${path}`);
+      assert.equal(response.status, 404, `public listener exposed ${host}${path}`);
+      assert.equal(await response.text(), "", `public listener forwarded ${host}${path}`);
     }
     const approval = await fetch(`${stack.links}/approvals/invalid`, { headers: { host } });
     assert.equal(approval.status, 404);
     assert.match(await approval.text(), /This approval link is not available/u);
+    // Under /hooks a sign-in path is a webhook lookup, never sign-in.
+    const hook = await fetch(`${stack.links}/hooks/auth/sign-in/email`, {
+      headers: { host },
+      method: "POST",
+    });
+    assert.equal(hook.status, 404);
+    assert.match(await hook.text(), /WEBHOOK_NOT_AVAILABLE/u);
   }
-  log("links listener refuses dashboard and API Host headers and serves approval routes");
+  log("public listener refuses dashboard and API routes and serves approvals and webhooks");
   await stack.cli("apply", "infra/examples/hello-webhook");
   log("deployed infra/examples/hello-webhook");
-  // The bare URL names no environment, so the api serves it from its SWIZZLE_ENVIRONMENT.
-  const response = await fetch(`${stack.api}/hello`, {
+  // A sender outside the private network reaches the webhook through the public listener. The bare
+  // URL names no environment, so the api serves it from its SWIZZLE_ENVIRONMENT.
+  const response = await fetch(`${stack.links}/hooks/hello`, {
     body: '{"source":"smoke"}',
     headers: { "content-type": "application/json" },
     method: "POST",
   });
   if (!response.ok) {
     throw new Error(
-      `POST ${stack.api}/hello answered ${response.status}: ${await response.text()}`,
+      `POST ${stack.links}/hooks/hello answered ${response.status}: ${await response.text()}`,
     );
   }
   const { runId } = (await response.json()) as { runId: string };
-  log(`POST ${stack.api}/hello queued run ${runId}`);
+  log(`POST ${stack.links}/hooks/hello queued run ${runId}`);
 
   await until(
     `run ${runId} succeeded`,
@@ -62,6 +72,7 @@ async function smoke(stack: PackagedStack, tracing: SmokeTracing): Promise<void>
     log,
   );
   await tracing.assertWebhookTrace(runId);
+  await smokePdfRecipe(stack, log);
   const workers = JSON.parse((await get(`${stack.api}/workers`, stack.token)) ?? "{}").workers as {
     id: string;
     kind: string;

@@ -91,45 +91,70 @@ export function ErrorNote(props: {
 
 /**
  * Copies `text` and says so for two seconds. Where the browser refuses (plain HTTP has no
- * clipboard, or permission is denied) it shows the text selected, so the owner copies it by hand.
+ * clipboard, or permission is denied) or does not answer within a second and a half, it shows the
+ * text selected with a note, so the owner copies it by hand. In a parent that wraps, the text
+ * takes the last row.
  */
 export function CopyButton(props: {
   readonly text: string;
   readonly label: string;
   readonly className?: string;
 }) {
-  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const [state, setState] = useState<"idle" | "copying" | "copied" | "by-hand">("idle");
   useEffect(() => {
     if (state !== "copied") return;
     const timer = window.setTimeout(() => setState("idle"), 2_000);
     return () => window.clearTimeout(timer);
   }, [state]);
   const copy = async () => {
+    setState("copying");
+    let timer = 0;
+    const silence = new Promise<never>((_, reject) => {
+      timer = window.setTimeout(() => reject(new Error("The clipboard did not answer.")), 1_500);
+    });
     try {
-      await navigator.clipboard.writeText(props.text);
+      await Promise.race([navigator.clipboard.writeText(props.text), silence]);
       setState("copied");
     } catch {
-      setState("failed");
+      setState("by-hand");
+    } finally {
+      window.clearTimeout(timer);
     }
   };
   return (
     <>
-      <button className={props.className ?? "btn"} onClick={() => void copy()} type="button">
+      {/* Disabled while the clipboard is asked, so a late answer cannot overwrite a newer one. */}
+      <button
+        className={props.className ?? "btn"}
+        disabled={state === "copying"}
+        onClick={() => void copy()}
+        type="button"
+      >
         {state === "copied" ? "Copied" : props.label}
       </button>
-      {state === "failed" ? (
-        <textarea
-          aria-label={`${props.label}: copy this text`}
-          className="field mono basis-full text-[12px]"
-          onFocus={(event) => event.currentTarget.select()}
-          readOnly
-          ref={(node) => node?.focus()}
-          rows={4}
-          value={props.text}
-        />
+      {state === "by-hand" ? (
+        <span className="order-last grid basis-full gap-1.5">
+          <span className="text-[12.5px]" role="alert">
+            The browser did not copy it. The text below is selected: press Ctrl+C or ⌘C.
+          </span>
+          <textarea
+            aria-label={`${props.label}: copy this text`}
+            className="field mono text-[12px]"
+            onFocus={(event) => event.currentTarget.select()}
+            readOnly
+            ref={focusOnMount}
+            rows={4}
+            value={props.text}
+          />
+        </span>
       ) : null}
     </>
   );
+}
+
+/** A ref callback that is the same function on every render, so it focuses only when the node mounts. */
+function focusOnMount(node: HTMLElement | null): void {
+  node?.focus();
 }
 
 /** True below the 900 px breakpoint the stylesheets use, where layouts go to one column. */

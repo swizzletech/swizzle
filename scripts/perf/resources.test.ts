@@ -1,8 +1,10 @@
+import { subscribe, unsubscribe } from "node:diagnostics_channel";
 import { EventEmitter, once } from "node:events";
 import { createServer, type RequestListener } from "node:http";
 import path from "node:path";
 import { expect, onTestFinished, test, vi } from "vitest";
-import { temporaryDirectory } from "../../test/support.ts";
+import { heldDeadlines, temporaryDirectory } from "../../test/support.ts";
+import { STATS_TIMEOUT_MS } from "./resources.mts";
 
 test("sampling preserves the workload value, cumulative CPU delta and cgroup v2 memory", async () => {
   const socket = path.join(await temporaryDirectory("perf-stats-"), "docker.sock");
@@ -117,21 +119,27 @@ test("a sampler failure cancels and drains a workload that has not finished", as
   expect(stopped).toBe(true);
 });
 
-test.each(["headers", "body"])(
-  "stats bounds a stalled %s read",
-  async (phase) => {
-    const { whileSampling } = await statsServer((_request, response) => {
-      if (phase === "body") {
-        response.writeHead(200);
-        response.write("{");
-      }
+test.each(["headers", "body"])("stats bounds a stalled %s read", async (phase) => {
+  // The read's deadline ends once the stall is in place: at the request for the headers, and right
+  // after the client took the response for the body.
+  const deadlines = heldDeadlines(STATS_TIMEOUT_MS);
+  if (phase === "body") {
+    const expire = () => queueMicrotask(() => deadlines.expire());
+    subscribe("http.client.response.finish", expire);
+    onTestFinished(() => {
+      unsubscribe("http.client.response.finish", expire);
     });
-    await expect(
-      whileSampling([{ containerId: "stalled", name: "worker" }], async () => 42),
-    ).rejects.toThrow("Docker stats stalled: timed out after 5000 ms");
-  },
-  10_000,
-);
+  }
+  const { whileSampling } = await statsServer((_request, response) => {
+    if (phase === "body") {
+      response.writeHead(200);
+      response.write("{");
+    } else deadlines.expire();
+  });
+  await expect(
+    whileSampling([{ containerId: "stalled", name: "worker" }], async () => 42),
+  ).rejects.toThrow("Docker stats stalled: timed out after 5000 ms");
+});
 
 test("a truncated stats response rejects through the adapter", async () => {
   const { whileSampling } = await statsServer((_request, response) => {

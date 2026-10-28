@@ -39,7 +39,7 @@ async function setUp(app: Awaited<ReturnType<typeof server>>["app"]) {
 
 // Sign-in hashes with production-cost scrypt, about 180 ms per hash on an idle core; 30 s leaves
 // room for parallel worktrees on a loaded machine.
-describe("sign-in over HTTP", { timeout: 30_000 }, () => {
+describe("sign-in over HTTP", () => {
   it("returns the public fallback for an unmapped library validation failure", async () => {
     const auth = testAuth({ trustedOrigins: [DASHBOARD_ORIGIN] });
     const handled = vi.spyOn(auth, "handle");

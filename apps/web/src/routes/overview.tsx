@@ -5,8 +5,8 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
-
 import { ActionError } from "../components/actions";
+import { useConfirm } from "../components/confirm";
 import { Menu } from "../components/menu";
 import { NeedsYou } from "../components/needs-you";
 import { PipelineGraph } from "../components/pipeline-graph";
@@ -395,6 +395,7 @@ function FolderTabs(props: {
 
 /** Rename or delete the selected folder. Its automations stay, without a folder. */
 function FolderMenu(props: { readonly folder: AutomationFolder; readonly onDeleted: () => void }) {
+  const confirm = useConfirm();
   const { api } = useDashboardClient();
   const queryClient = useQueryClient();
   const [name, setName] = useState(props.folder.name);
@@ -411,45 +412,51 @@ function FolderMenu(props: { readonly folder: AutomationFolder; readonly onDelet
   });
   const unchanged = name.trim() === "" || name.trim() === props.folder.name;
   return (
-    <Menu
-      alignStart
-      bodyClassName="grid gap-2.5"
-      button="⋯"
-      buttonClassName="tab"
-      label="Folder actions"
-    >
-      <form
-        className="flex items-center gap-1.5"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (!unchanged && !rename.isPending) rename.mutate();
-        }}
+    <>
+      <Menu
+        alignStart
+        bodyClassName="grid gap-2.5"
+        button="⋯"
+        buttonClassName="tab"
+        label="Folder actions"
       >
-        <input
-          aria-label="Folder name"
-          className="field"
-          onChange={(event) => setName(event.target.value)}
-          value={name}
-        />
-        <button className="btn small" disabled={unchanged || rename.isPending} type="submit">
-          Rename
+        <form
+          className="flex items-center gap-1.5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!unchanged && !rename.isPending) rename.mutate();
+          }}
+        >
+          <input
+            aria-label="Folder name"
+            className="field"
+            onChange={(event) => setName(event.target.value)}
+            value={name}
+          />
+          <button className="btn small" disabled={unchanged || rename.isPending} type="submit">
+            Rename
+          </button>
+        </form>
+        <button
+          className="btn danger small justify-self-start"
+          disabled={remove.isPending}
+          onClick={async () => {
+            const question = `Delete the folder ${props.folder.name}? Its automations stay.`;
+            if (await confirm({ action: "Delete folder", question })) remove.mutate();
+          }}
+          type="button"
+        >
+          Delete folder
         </button>
-      </form>
-      <button
-        className="btn danger small justify-self-start"
-        disabled={remove.isPending}
-        onClick={() => {
-          if (window.confirm(`Delete the folder ${props.folder.name}? Its automations stay.`)) {
-            remove.mutate();
-          }
-        }}
-        type="button"
-      >
-        Delete folder
-      </button>
-      {rename.isError ? <ActionError error={rename.error} /> : null}
-      {remove.isError ? <ActionError error={remove.error} /> : null}
-    </Menu>
+        {rename.isError ? <ActionError error={rename.error} /> : null}
+      </Menu>
+      {/* Outside the menu: the confirmation dialog's click closes it before the answer arrives. */}
+      {remove.isError ? (
+        <span className="t-faint text-fail" role="alert">
+          {errorText(remove.error)}
+        </span>
+      ) : null}
+    </>
   );
 }
 

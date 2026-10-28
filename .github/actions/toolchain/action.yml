@@ -1,5 +1,5 @@
 name: Toolchain
-description: Install the toolchain mise.toml pins, just included, and restore the pnpm store. Run it after checkout.
+description: Install the toolchain mise.toml pins, just included, and the locked dependencies from the cached pnpm store. Run it after checkout.
 
 runs:
   using: composite
@@ -14,3 +14,7 @@ runs:
         path: ~/.local/share/pnpm/store
         key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
         restore-keys: pnpm-store-${{ runner.os }}-
+
+    - name: Install the dependencies
+      shell: bash
+      run: just deps

@@ -6,6 +6,7 @@ type RunDetailRecord = Parameters<typeof runView>[0];
 
 function baseRun(overrides: Partial<RunDetailRecord> = {}): RunDetailRecord {
   return {
+    payload: { order: 42 },
     executions: [],
     environment: "staging",
     stdout: "",
@@ -188,4 +189,8 @@ describe("runView", () => {
       deadLetterReason: "retries-exhausted",
     });
   });
+});
+
+it("keeps the original payload in a run inspection", () => {
+  expect(runView(baseRun(), false)).toMatchObject({ payload: { order: 42 } });
 });

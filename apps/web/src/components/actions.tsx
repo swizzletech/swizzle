@@ -1,16 +1,49 @@
-// The inline actions an owner takes where a problem shows: decide or reassign an approval, set a
-// missing secret, connect a missing account. Needs you, the run panel, About › Needs and
+// The inline actions an owner takes where a problem shows: read and decide or reassign an approval,
+// set a missing secret, connect a missing account. Needs you, the run panel, About › Needs and
 // Credentials all use them, so each action behaves the same wherever it appears. Every success
 // refetches all reads.
 
+import { approvalDetailsInWords } from "@swizzle/config/browser";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
 import { useDashboardClient } from "../lib/dashboard-client";
 import { refreshAll, useDirectory } from "../lib/queries";
 import { SecretInput } from "./secret-input";
 import { errorText } from "./ui";
+
+/**
+ * What an approval asks, read the way the public approval page reads it: the heading, then the
+ * other fields labelled. Renders nothing for an approval without details.
+ */
+export function ApprovalDetails(props: {
+  readonly details: unknown;
+  /** Each label above its value, for a narrow column such as a station on the track. */
+  readonly stacked?: boolean;
+}) {
+  const { fields, heading } = approvalDetailsInWords(props.details);
+  if (heading === null && fields.length === 0) return null;
+  return (
+    <div className="t-meta grid gap-0.5">
+      {heading === null ? null : <div className="break-words">{heading}</div>}
+      {fields.length === 0 ? null : (
+        <dl
+          className={`m-0 grid gap-x-3 ${props.stacked ? "grid-cols-1" : "grid-cols-[auto_minmax(0,1fr)]"}`}
+        >
+          {fields.map((field) => (
+            <Fragment key={field.label}>
+              <dt className="t-faint">{field.label}</dt>
+              <dd className={`m-0 min-w-0 break-words ${field.json ? "mono" : ""}`}>
+                {field.value}
+              </dd>
+            </Fragment>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
 
 /** What the viewer may do with an open approval, as the API reports it on a run. */
 type ApprovalMay = { readonly decide: boolean; readonly reassign: boolean };

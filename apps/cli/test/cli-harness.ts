@@ -153,7 +153,14 @@ export function createDashboardStub(
     projectId: DEFAULT_PROJECT_ID,
     project: { id: DEFAULT_PROJECT_ID, slug: "default", name: "Default" },
     recentRuns: [
-      { errorCode: null, errorMessage: null, queuedAt: at, runId: "run-1", status: "succeeded" },
+      {
+        errorCode: null,
+        errorMessage: null,
+        queuedAt: at,
+        runId: "run-1",
+        status: "succeeded",
+        triggerType: "manual",
+      },
     ],
     requiredConnections: [],
     requiredSecrets: [secret("CLICKUP_TOKEN", true), secret("LEXOFFICE_API_KEY", false)],
@@ -175,7 +182,7 @@ export function createDashboardStub(
       ...(triggerType === "cron" ? { triggerType, nextRun: null } : { triggerType }),
       updatedAt: at,
       versionId: "ver-1",
-      webhookPath: triggerType === "webhook" ? "/hello" : null,
+      webhookPath: triggerType === "webhook" ? "/hooks/hello" : null,
     },
   };
   const counts = { active: 0, completed: 0, delayed: 0, failed: 0, waiting: 0 };

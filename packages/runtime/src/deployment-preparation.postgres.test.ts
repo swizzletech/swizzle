@@ -17,9 +17,9 @@ const HOUR_MS = 60 * MINUTE_MS;
 const IMAGE_MIB = 300;
 
 describe("run images of prepared deployments", () => {
-  it("keeps active deployments' run images past the retention window and holds the rest to the disk budget", {
-    timeout: 30_000,
-  }, async ({ signal }) => {
+  it("keeps active deployments' run images past the retention window and holds the rest to the disk budget", async ({
+    signal,
+  }) => {
     const budgetMiB = 2 * IMAGE_MIB + 100;
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", String(budgetMiB));
     const docker = await fakeDockerImages();
@@ -57,9 +57,9 @@ describe("run images of prepared deployments", () => {
   });
 });
 
-it("retains a shared released image while one-bundle polls learn other active tags", {
-  timeout: 30_000,
-}, async ({ signal }) => {
+it("retains a shared released image while one-bundle polls learn other active tags", async ({
+  signal,
+}) => {
   vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "1");
   const docker = await fakeDockerImages();
   const { deploy, logged } = await platformWithPreparation();
@@ -199,7 +199,7 @@ describe("a prune pass", () => {
 });
 
 describe("the recorded images of active deployments", () => {
-  it("stay kept while a preparation stalls", { timeout: 30_000 }, async ({ signal }) => {
+  it("stay kept while a preparation stalls", async ({ signal }) => {
     const docker = await fakeDockerImages();
     const { deploy, otherWorkerPass, run, recordedCount } = await platformWithPreparation();
     const jump = useMovableClock();
@@ -223,9 +223,9 @@ describe("the recorded images of active deployments", () => {
     expect(await run("kept")).toEqual({ image: undefined });
   });
 
-  it("include the image of a deployment whose preparation failed before it knew the tag", {
-    timeout: 30_000,
-  }, async ({ signal }) => {
+  it("include the image of a deployment whose preparation failed before it knew the tag", async ({
+    signal,
+  }) => {
     const docker = await fakeDockerImages();
     // The worker reads its artifact store from here; an empty one fails the source download.
     const environment = { ...process.env };
@@ -250,9 +250,7 @@ describe("the recorded images of active deployments", () => {
     expect(await run("late")).toEqual({ image: undefined });
   });
 
-  it("are known before the first pass of a restarted worker", { timeout: 30_000 }, async ({
-    signal,
-  }) => {
+  it("are known before the first pass of a restarted worker", async ({ signal }) => {
     const docker = await fakeDockerImages();
     const { deploy, logged, restart, recordedCount } = await platformWithPreparation();
     const jump = useMovableClock();
@@ -275,9 +273,7 @@ describe("the recorded images of active deployments", () => {
   });
 
   // The run image tag hashes the source and recipe, so a deploy of the same source shares it.
-  it("include an image that the next deployment of the same source reuses", {
-    timeout: 30_000,
-  }, async ({ signal }) => {
+  it("include an image that the next deployment of the same source reuses", async ({ signal }) => {
     const docker = await fakeDockerImages();
     const { deploy, logged, run, recordedCount } = await platformWithPreparation();
 

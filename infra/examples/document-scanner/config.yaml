@@ -4,7 +4,7 @@ description: Read incoming document text, find its topics, amounts, dates and em
 entrypoint: main.py
 trigger:
   type: webhook
-  path: /document-scan
+  path: /hooks/document-scan
 runtime:
   language: python
   execution_mode: host

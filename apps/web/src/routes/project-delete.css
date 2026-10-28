@@ -1,19 +1,5 @@
-/* A modal <dialog> for a decision that needs more than window.confirm. */
+/* The choices of the Delete project dialog, a .sheet from styles.css. */
 @layer components {
-  .sheet {
-    width: min(560px, calc(100vw - 24px));
-    margin: auto;
-    padding: 20px;
-    border: 1px solid var(--line);
-    border-radius: 14px;
-    color: var(--ink);
-    box-shadow: var(--shadow-pop);
-  }
-  .sheet::backdrop {
-    background: color-mix(in srgb, var(--bg) 60%, transparent);
-    -webkit-backdrop-filter: blur(4px);
-    backdrop-filter: blur(4px);
-  }
   .sheet-choice {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);

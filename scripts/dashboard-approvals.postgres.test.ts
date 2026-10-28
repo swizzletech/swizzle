@@ -141,7 +141,7 @@ async function verifyApprovalWaitQuery(
   assert.equal(forFinance.runs.length, 2, "a team member sees the team's approvals");
 }
 
-it("approval wait query", { timeout: 60_000 }, async () => {
+it("approval wait query", async () => {
   const client = testDatabase();
   const store = testControlPlaneStore();
   const deployment = await commitDeploymentFixture(store, "state-machine");

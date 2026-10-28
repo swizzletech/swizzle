@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { create as tarCreate } from "tar";
 import { expect, it, vi } from "vitest";
 import { z } from "zod";
-import { temporaryDirectory, waitFor } from "../../../test/support.js";
+import { heldDeadlines, temporaryDirectory, waitFor } from "../../../test/support.js";
 import { createInstallGate } from "../test/install-gate.js";
 import { pruneRunImages } from "./run-image-prune.js";
 import { runAutomation } from "./runner.js";
@@ -21,6 +21,8 @@ const inspectedImage = z.object({
 it("lets a healthy run finish when another run exceeds its shared assembly log budget", async ({
   signal,
 }) => {
+  // Other worktrees share this Docker daemon: its calls take as long as they need, up to the ceiling.
+  heldDeadlines();
   const directory = await temporaryDirectory("swizzle-image-isolation-");
   const stack = `image-isolation-${randomUUID()}`;
   vi.stubEnv("SWIZZLE_STACK", stack);
@@ -51,53 +53,51 @@ it("lets a healthy run finish when another run exceeds its shared assembly log b
     '{"name":"image-isolation","version":"1.0.0","private":true}',
   );
   await writeFile(path.join(directory, "main.js"), "console.log(JSON.stringify({ ok: true }));");
-  let healthyLogs = "";
-  let limitedLogs = "";
-  let healthyStarted = false;
-  let limitedStarted = false;
-  const healthy = runAutomation({
-    automationDirectory: directory,
-    environmentName: "local",
-    runId: randomUUID(),
-    onStderrChunk: (chunk) => {
-      healthyLogs += chunk;
-    },
-    onReady: async () => {
-      healthyStarted = true;
-    },
-  });
-  let limited: ReturnType<typeof runAutomation> | undefined;
-  try {
-    await waitFor(signal, () => healthyLogs === "install waiting\n");
-    limited = runAutomation({
+  // A run joins the gated assembly when it replays the install's marker; ending first fails the test.
+  const start = (limit?: { outputLimitBytes: number }) => {
+    let logs = "";
+    let started = false;
+    let join = () => {};
+    const marker = new Promise<void>((resolve) => {
+      join = resolve;
+    });
+    const result = runAutomation({
       automationDirectory: directory,
       environmentName: "local",
-      outputLimitBytes: 64,
       runId: randomUUID(),
+      abortSignal: signal,
+      ...limit,
       onStderrChunk: (chunk) => {
-        limitedLogs += chunk;
+        logs += chunk;
+        if (logs === "install waiting\n") join();
       },
       onReady: async () => {
-        limitedStarted = true;
+        started = true;
       },
     });
-    // The replay proves both runs joined the still-blocked assembly before it emits the overflow.
-    await waitFor(signal, () => limitedLogs === "install waiting\n");
-    await gate.release();
-    expect(await limited).toMatchObject({
-      success: false,
-      code: "PROCESS_OUTPUT_LIMIT_EXCEEDED",
-      message: "Image assembly stderr exceeded 64 bytes.",
-      stdout: "",
-    });
-    expect(await healthy).toMatchObject({ success: true, result: { ok: true } });
-    expect([healthyStarted, limitedStarted]).toEqual([true, false]);
-  } finally {
-    await gate.release().catch(() => {});
-    await Promise.allSettled([healthy, ...(limited === undefined ? [] : [limited])]);
-    const images = (
+    let ended = false;
+    const endedFirst = result.then(
+      (outcome) => {
+        ended = true;
+        throw new Error(`The run ended before it joined the assembly: ${JSON.stringify(outcome)}`);
+      },
+      (error: unknown) => {
+        ended = true;
+        throw error;
+      },
+    );
+    endedFirst.catch(() => {});
+    return {
+      result,
+      joined: Promise.race([marker, endedFirst]),
+      started: () => started,
+      ended: () => ended,
+    };
+  };
+  const owned = async (kind: "container" | "image") =>
+    (
       await exec("docker", [
-        "image",
+        kind,
         "ls",
         "--all",
         "--quiet",
@@ -108,31 +108,68 @@ it("lets a healthy run finish when another run exceeds its shared assembly log b
       .trim()
       .split("\n")
       .filter(Boolean);
+  // When a Docker step fails, the runtime reassembles once in a new container, gated again; it
+  // also outlives a run that ended before the release. Release whichever assembly waits until done.
+  const releaseUntil = (done: () => boolean | Promise<boolean>) =>
+    waitFor(signal, async () => {
+      await gate.release().catch(() => {});
+      return await done();
+    });
+  const healthy = start();
+  let limited: ReturnType<typeof start> | undefined;
+  const runsEnded = () => healthy.ended() && (limited?.ended() ?? true);
+  try {
+    await healthy.joined;
+    limited = start({ outputLimitBytes: 64 });
+    // Its replay proves both runs joined the still-blocked assembly before it emits the overflow.
+    await limited.joined;
+    await releaseUntil(runsEnded);
+    expect(await limited.result).toMatchObject({
+      success: false,
+      code: "PROCESS_OUTPUT_LIMIT_EXCEEDED",
+      message: "Image assembly stderr exceeded 64 bytes.",
+      stdout: "",
+    });
+    expect(await healthy.result).toMatchObject({ success: true, result: { ok: true } });
+    expect([healthy.started(), limited.started()]).toEqual([true, false]);
+  } finally {
+    // Removing a waiting assembly would make the runtime reassemble it: let it finish instead.
+    await releaseUntil(async () => runsEnded() && (await owned("container")).length === 0);
+    const images = await owned("image");
     if (images.length > 0) await exec("docker", ["image", "rm", "--force", ...images]);
     await gate.close();
   }
 });
 
-it("measures partially shared bases independently of excluded images, orphan commits and inventory size", async () => {
+it("measures partially shared bases independently of excluded images, orphan commits and inventory size", async ({
+  signal,
+}) => {
+  // Other worktrees share this Docker daemon: its calls take as long as they need, up to the ceiling.
+  heldDeadlines();
   const directory = await temporaryDirectory("swizzle-image-disk-docker-");
   const marker = randomUUID();
   const stack = `image-disk-${marker}`;
   const label = `swizzle.verify-image-disk=${marker}`;
-  const docker = async (...args: string[]) => {
-    try {
-      return (await exec("docker", args, { maxBuffer: 8 * MIB, timeout: 180_000 })).stdout;
-    } catch (error) {
-      // containerd drops the lease of every import and commit in flight when anything on this
-      // daemon runs `docker image prune`; the fixture cannot hold a lease of its own.
-      if (error instanceof Error && error.message.includes("lease does not exist")) {
-        throw new Error(
-          `docker ${args[0]} ${args[1] ?? ""} lost its containerd lease: a concurrent \`docker image prune\` on this daemon removed it. Rerun once no prune runs.`,
-          { cause: error },
-        );
+  // Fixture commands stop with the test; `cleanup` removes what they made also after a timeout.
+  const dockerUntil =
+    (stop?: AbortSignal) =>
+    async (...args: string[]) => {
+      try {
+        return (await exec("docker", args, { maxBuffer: 8 * MIB, signal: stop })).stdout;
+      } catch (error) {
+        // containerd drops the lease of every import and commit in flight when anything on this
+        // daemon runs `docker image prune`; the fixture cannot hold a lease of its own.
+        if (error instanceof Error && error.message.includes("lease does not exist")) {
+          throw new Error(
+            `docker ${args[0]} ${args[1] ?? ""} lost its containerd lease: a concurrent \`docker image prune\` on this daemon removed it. Rerun once no prune runs.`,
+            { cause: error },
+          );
+        }
+        throw error;
       }
-      throw error;
-    }
-  };
+    };
+  const docker = dockerUntil(signal);
+  const cleanup = dockerUntil();
   const inspect = async (reference: string) =>
     z.array(inspectedImage).parse(JSON.parse(await docker("image", "inspect", reference)))[0] ??
     (() => {
@@ -201,7 +238,7 @@ it("measures partially shared bases independently of excluded images, orphan com
     const expectedActive = 20 * MIB;
     vi.stubEnv("SWIZZLE_STACK", stack);
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "100");
-    const active = await pruneRunImages({ keep: new Set([a, b]) });
+    const active = await pruneRunImages({ keep: new Set([a, b]), signal });
     expect(active.removed).toBe(0);
     console.log(`Active union: measured=${active.disk.activeBytes}, independent=${expectedActive}`);
     closeToDisk(active.disk.activeBytes, expectedActive);
@@ -234,23 +271,23 @@ it("measures partially shared bases independently of excluded images, orphan com
       await docker("cp", source, `${assembly}:/untagged`);
       await docker("commit", assembly);
     } finally {
-      await docker("container", "rm", assembly);
+      await cleanup("container", "rm", assembly);
     }
     const cachedId = (await inspect(cached)).Id;
     const expectedRetained = expectedActive + 2 * MIB;
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", String(Math.ceil(expectedRetained / MIB) + 1));
-    const retained = await pruneRunImages({ keep: new Set([a, b]) });
+    const retained = await pruneRunImages({ keep: new Set([a, b]), signal });
     expect(retained.removed).toBe(0);
     expect((await inspect(cached)).Id).toBe(cachedId);
     closeToDisk(retained.disk.activeBytes, expectedActive);
 
     // The orphan also consumes private bytes: lowering the budget must evict the cached image.
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", String(Math.floor(expectedRetained / MIB) - 1));
-    expect((await pruneRunImages({ keep: new Set([a, b]) })).removed).toBe(1);
+    expect((await pruneRunImages({ keep: new Set([a, b]), signal })).removed).toBe(1);
 
     const largeStack = `${stack}-large`;
-    const inventory = Array.from({ length: 128 }, (_, i) => tag(`inventory-${i}`));
-    const importStarted = performance.now();
+    // Twenty images span two inspect batches and three rounds of history reads.
+    const inventory = Array.from({ length: 20 }, (_, i) => tag(`inventory-${i}`));
     for (const [i] of inventory.entries()) {
       await add(
         `inventory-${i}`,
@@ -263,28 +300,19 @@ it("measures partially shared bases independently of excluded images, orphan com
         largeStack,
         old,
       );
-      if ((i + 1) % 16 === 0) await load();
     }
-    console.log(
-      `Fixture import: 128 images in ${Math.round(performance.now() - importStarted)} ms.`,
-    );
+    await load();
     vi.stubEnv("SWIZZLE_STACK", largeStack);
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "100");
-    const started = performance.now();
-    const large = await pruneRunImages({ keep: new Set(inventory) });
-    const elapsed = performance.now() - started;
+    const large = await pruneRunImages({ keep: new Set(inventory), signal });
     expect(large.removed).toBe(0);
-    expect(large.disk.activeBytes).toBeGreaterThan(12 * MIB);
-    expect(large.disk.activeBytes).toBeLessThan(100 * MIB);
-    expect(elapsed).toBeLessThan(60_000);
-    console.log(
-      `Real Docker: excluded-image sharing and fresh untagged commits pass; 128 images measured in ${Math.round(elapsed)} ms.`,
-    );
+    // Each image adds a source of a few bytes to the common and custom-a layers they all share.
+    closeToDisk(large.disk.activeBytes, 12 * MIB);
   } finally {
     const ids = [
       ...new Set(
         (
-          await docker(
+          await cleanup(
             "image",
             "ls",
             "--all",
@@ -299,9 +327,9 @@ it("measures partially shared bases independently of excluded images, orphan com
           .filter(Boolean),
       ),
     ];
-    if (ids.length > 0) await docker("image", "rm", ...ids);
+    if (ids.length > 0) await cleanup("image", "rm", ...ids);
   }
-}, 600_000);
+});
 
 interface LayerDescriptor {
   readonly diffId: string;

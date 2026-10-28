@@ -4,11 +4,8 @@ import { type ApiCommandOptions, DEFAULT_API_URL } from "./command-support.js";
 import { AgentError, EXIT_CODES } from "./output.js";
 import { loadProfileConfig, resolveEnvironment, resolveProfile } from "./profile.js";
 
-// What the CLI learns about an instance's environments from GET /environments. Every worker
-// runs queued runs of every environment, but a scheduler fires the cron triggers of only the one
-// environment it is configured for. The platform silently "discovers" environments, so a cron
-// automation deployed into one no scheduler serves produces no error, just triggers that never
-// fire. This guard turns that quiet failure into a loud, non-fatal warning.
+// Scheduler heartbeats describe the namespaces the instance serves. Warn when a target has
+// no live heartbeat, for example while an older scheduler is still running during an upgrade.
 
 export type EnvironmentLiveness = Pick<
   EnvironmentsResponse["environments"][number],

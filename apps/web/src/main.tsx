@@ -14,6 +14,7 @@ import {
 import React from "react";
 import ReactDOM from "react-dom/client";
 
+import { ConfirmProvider } from "./components/confirm";
 import { AppShell, NotFound } from "./components/shell";
 import { DashboardSessionProvider } from "./lib/dashboard-client";
 import { createAppQueryClient } from "./lib/query-client";
@@ -154,7 +155,9 @@ ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
       <DashboardSessionProvider>
-        <RouterProvider router={router} />
+        <ConfirmProvider>
+          <RouterProvider router={router} />
+        </ConfirmProvider>
       </DashboardSessionProvider>
     </QueryClientProvider>
   </React.StrictMode>,

@@ -62,7 +62,7 @@ async function office(...members: (typeof PAULA)[]) {
 }
 
 // Sign-ins hash with production-cost scrypt; see sign-in.test.ts.
-describe("tokens and service accounts over HTTP", { timeout: 30_000 }, () => {
+describe("tokens and service accounts over HTTP", () => {
   it("takes a team's rights from a personal token on the next request after its person leaves", async () => {
     const { ada, bearer, joined } = await office(MIA);
     const [mia] = joined;
@@ -326,7 +326,7 @@ describe("tokens and service accounts over HTTP", { timeout: 30_000 }, () => {
 });
 
 // The dashboard's Access tab shows these roles as they are; it never re-derives the production cap.
-describe("who may do what in a project", { timeout: 30_000 }, () => {
+describe("who may do what in a project", () => {
   it("names each holder's role per environment, capped where the project is protected", async () => {
     const { ada, joined } = await office(MIA);
     const [mia] = joined;

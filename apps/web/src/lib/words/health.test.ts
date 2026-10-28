@@ -19,6 +19,7 @@ describe("automationHealth", () => {
     queuedAt: NOW.toISOString(),
     runId: status,
     status,
+    triggerType: "manual" as const,
   });
 
   it("puts what blocks a run before the last result, and waiting is not failing", () => {

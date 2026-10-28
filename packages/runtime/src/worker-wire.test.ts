@@ -18,7 +18,7 @@ it("takes a heartbeat at every bound of its schema within the route's body limit
         name: AUTOMATION_RUNTIME_LANGUAGES[index % AUTOMATION_RUNTIME_LANGUAGES.length],
         version: field,
       })),
-      binaries: Array.from({ length: 256 }, () => ({ name: field, version: field })),
+      binaries: Array.from({ length: 2048 }, () => ({ name: field, version: field })),
       executionModes: Array.from(
         { length: 8 },
         (_, index) =>
@@ -46,6 +46,9 @@ it("takes a heartbeat at every bound of its schema within the route's body limit
     },
   };
   expect(WORKER_ROUTES.runtime.request.safeParse(extraImage).success).toBe(false);
+  const extraBinary = structuredClone(heartbeat);
+  extraBinary.capabilities.binaries.push({ name: field, version: field });
+  expect(WORKER_ROUTES.runtime.request.safeParse(extraBinary).success).toBe(false);
   const extraTag = structuredClone(heartbeat);
   extraTag.runImageDisk.unmeasuredActiveImages[0]?.tags.push(`swizzle-run:${"a".repeat(24)}`);
   expect(WORKER_ROUTES.runtime.request.safeParse(extraTag).success).toBe(false);

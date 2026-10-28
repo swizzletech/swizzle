@@ -57,7 +57,7 @@ async function instance({ mail = true } = {}) {
 }
 
 // Sign-ins hash with production-cost scrypt; see sign-in.test.ts.
-describe("people over HTTP", { timeout: 30_000 }, () => {
+describe("people over HTTP", () => {
   it("admits only an invited address, which lands in the projects it was invited to", async () => {
     const { ada, app, invite, join, mails } = await instance();
     await ada.send("POST", "/projects", { name: "Büro", slug: "buero" });

@@ -1,4 +1,5 @@
 import { AuditHistory } from "../components/audit-history";
+import { useConfirm } from "../components/confirm";
 // One automation `/automations/:slug`: health, description and trigger in words, then its runs
 // under the live track and beside the selected run, About (README, flow, trigger, what it needs,
 // API check, vars), Play (the deployed code with a run moving through it) and Versions.
@@ -666,6 +667,7 @@ function deploymentInWords(
  * the viewer's role refuses it; then it says why once.
  */
 function VersionsTab({ automation }: { readonly automation: AutomationDetail }) {
+  const confirm = useConfirm();
   const now = useNow();
   const { api } = useDashboardClient();
   const queryClient = useQueryClient();
@@ -709,12 +711,9 @@ function VersionsTab({ automation }: { readonly automation: AutomationDetail }) 
                 <button
                   className="btn quiet small"
                   disabled={rollback.isPending}
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        `Roll ${automation.automationName} back to #${deployment.seq} (${deployment.version})?`,
-                      )
-                    ) {
+                  onClick={async () => {
+                    const question = `Roll ${automation.automationName} back to #${deployment.seq} (${deployment.version})?`;
+                    if (await confirm({ action: "Roll back", question })) {
                       rollback.mutate(deployment.deploymentId);
                     }
                   }}

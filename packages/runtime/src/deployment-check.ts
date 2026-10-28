@@ -81,13 +81,6 @@ export async function checkDeployment(
   const { config } = candidate.definition;
   const webhookPath =
     config.trigger.type === "webhook" ? normalizeConfiguredWebhookPath(config.trigger.path) : null;
-  if (webhookPath !== null && options.isWebhookPathReserved?.(webhookPath)) {
-    throw new AutomationRuntimeError(
-      "TRIGGER_WEBHOOK_PATH_RESERVED",
-      `Webhook path ${webhookPath} is served by the API itself and would never reach the automation. Choose another trigger.path.`,
-      { details: { path: webhookPath } },
-    );
-  }
   const automationSlug = createDisplayName(config.name);
   const current = await store.findAutomation(automationSlug);
   const projectId =

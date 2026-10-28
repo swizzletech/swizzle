@@ -4,7 +4,7 @@ description: Validate and forward a decision-complete work order into a composab
 entrypoint: main.ts
 trigger:
   type: webhook
-  path: /agent-pipeline
+  path: /hooks/agent-pipeline
   payload_schema:
     type: object
     required:

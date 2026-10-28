@@ -198,6 +198,7 @@ describe("run commands", () => {
             attemptsMade: 1,
             attemptsMax: 3,
             automationSlug: "invoice-sync",
+            payload: { order: 42 },
             config: { runtime: { execution_mode: "process" } },
             finishedAt: "2026-07-07T10:00:05Z",
             dashboardUrl: null,
@@ -237,6 +238,8 @@ describe("run commands", () => {
         [
           "run:",
           "  id: a3c1e5f0-0b2d-4c7e-9f11-2d3e4f5a6b7c",
+          "  payload:",
+          "    order: 42",
           "  automation: invoice-sync",
           "  status: succeeded",
           "  trigger: webhook",
@@ -548,6 +551,31 @@ describe("swizzle run locally", () => {
     expect(output.result.checked).toHaveLength(1000);
     expect(output.result.files).toEqual([null, null]);
   });
+
+  it.each([
+    [
+      "secrets:\n  - REVIEW_CORE_MISSING_SECRET\n",
+      "console.log('{}');",
+      "MISSING_REQUIRED_SECRETS",
+    ],
+    ["", "console.error('HTTPError: 401 Unauthorized'); process.exit(1);", "API_CHECK_CREDENTIALS"],
+  ])(
+    "keeps the local check failure code for secrets=%s source=%s: %s",
+    async (secrets, source, code) => {
+      vi.stubEnv("REVIEW_CORE_MISSING_SECRET", undefined);
+      const directory = await temporaryDirectory("swizzle-cli-check-failure-");
+      await writeFile(
+        path.join(directory, "config.yaml"),
+        "name: check-failure\nversion: 1.0.0\nentrypoint: main.js\ntrigger:\n  type: cron\n  schedule: '0 * * * *'\napi_check:\n  mode: active\n" +
+          secrets,
+      );
+      await writeFile(path.join(directory, "main.js"), "console.log('{}');");
+      await writeFile(path.join(directory, "check.js"), source);
+      const io = createBufferIO();
+      expect(await runCli(["run", directory, "--check", "--json"], io)).toBe(1);
+      expect(JSON.parse(io.stdoutText)).toMatchObject({ code });
+    },
+  );
 
   it("runs an automation with a JSON payload file", async () => {
     const io = createBufferIO();

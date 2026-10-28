@@ -74,17 +74,19 @@ For deeper checklists — idempotency strategies, edge cases per input type, res
 
 ## Execution environment (what's actually available)
 
-Deployed automations run as the unprivileged user `65532` inside a read-only Debian sandbox. **Only what's explicitly installed exists.** Trusted local `swizzle run` remains a host-process authoring convenience. Verify every production dependency before writing code that depends on it.
+Deployed automations run as the unprivileged user `65532` inside a read-only Debian 13 sandbox: the runner image, built from the `runner-base` target of the instance's [Dockerfile](https://github.com/swizzletech/swizzle/blob/main/infra/docker/Dockerfile). **Only what that image installs exists.** Trusted local `swizzle run` remains a host-process authoring convenience. Verify every production dependency before writing code that depends on it.
 
 **Installed by default:**
-- Node.js 22, Python 3.11 + pip
-- `poppler-utils` (pdftoppm, pdftotext)
-- DejaVu fonts
-- `bash`, `git`, `curl`, `claude`, and `codex`
+- Node.js 26 with npm, and Python 3.13 with pip and venv
+- poppler-utils: `pdftoppm`, `pdftotext`, `pdfinfo` and the other poppler tools
+- Fonts: DejaVu Sans, DejaVu Serif and DejaVu Sans Mono, and no other font
+- `bash`, `curl`, `git`, `claude` and `codex`
 
-**Not installed:** ffmpeg, ImageMagick, LibreOffice, Chromium/Puppeteer, any browser.
+The exact packages: Debian `bash`, `ca-certificates`, `curl`, `fontconfig`, `fonts-dejavu-core`, `git`, `poppler-utils`, `proxychains4`, `python3`, `python3-pip`, `python3-venv`; npm `@anthropic-ai/claude-code`, `@openai/codex`.
 
-If you need something else, declare it in `config.yaml` under `runtime.requirements.binaries` — but note that the managed runner image has to actually ship it. For anything beyond what's listed, check `infra/docker/Dockerfile` (build target `runner-base`) or add it there before deploying.
+**Not installed:** ffmpeg, ImageMagick, LibreOffice, Chromium/Puppeteer, any browser, `gh`.
+
+Declare every binary the automation starts as a subprocess under `runtime.requirements.binaries`. Against an instance, `swizzle validate` and `swizzle apply` check each one against the binaries of its runner image, so a missing one fails before the deploy instead of in a run. Neither you nor the automation can add a binary, and installing one inside a run fails on the read-only file system: the instance operator adds it to the runner image and rebuilds the stack. An operator may have added tools, so a binary missing from this list can still pass `validate`.
 
 **Automation files** are the deployed bundle under `/automation`. A deployed run starts with `/automation` as its current working directory, on a read-only file system, so a relative write fails. Scratch files go under `$SWIZZLE_RUN_TMP` (`/tmp`, an ephemeral tmpfs); a relative path is writable only under a directory listed in `runtime.permissions.writable_dirs`. The container's home directory is also ephemeral and receives no operator files. Never hardcode a host path or use `~/` for durable state.
 
@@ -101,7 +103,7 @@ If you need something else, declare it in `config.yaml` under `runtime.requireme
 | "Process my emails" | IMAP poll via cron | Secrets, encoding quirks, mark processed, IMAP is slow |
 | "Sync X to Y" | Cron with external calls both sides | Conflict resolution, what wins on divergence, cursor |
 
-If something a user asks for can't be done in this container (no ffmpeg, no browser), say so and offer the alternative — different binary, API-based approach, or adding to the Dockerfile.
+If something a user asks for can't be done in this container (no ffmpeg, no browser), say so and offer the alternative — different binary, API-based approach, or asking the instance operator to add it to the runner image.
 
 ## Integrating with external services
 
@@ -114,7 +116,7 @@ If something a user asks for can't be done in this container (no ffmpeg, no brow
 - **Direct API calls** — the Anthropic / OpenAI / Gemini SDK, one secret for the key, `runtime.timeout` bumped up for slow completions, optional `rate_limits` plus SDK `pace(name)` around in-run calls. Right when the automation is one focused prompt → response. See recipe #7.
 - **Headless CLI calls** — `claude -p "..."`, `codex exec ...`, or similar. More powerful because the CLI brings its own tool use (file reads, searches, shell, sometimes MCP servers on top). Right when you want the AI to orchestrate multiple subtools on behalf of the automation. This path has several non-obvious traps — non-interactive flags, stdout capture, credential scoping, and writable directories. Read the [headless CLI entry in Integration Gotchas](references/integration-gotchas.md#headless-claude--codex-cli-in-the-worker-blocks-refuses-to-run-or-hides-its-errors) before writing one.
 
-Both paths still run inside the managed runner sandbox. Any CLI you invoke has to be installed in the runner image. The default image ships `claude` (`@anthropic-ai/claude-code`) and `codex` (`@openai/codex`) — check `infra/docker/Dockerfile` (build target `runner-base`) before assuming anything else is available.
+Both paths still run inside the managed runner sandbox. Any CLI you invoke has to be installed in the runner image. The default image ships `claude` (`@anthropic-ai/claude-code`) and `codex` (`@openai/codex`); [Execution environment](#execution-environment-whats-actually-available) lists the rest.
 
 ## Agent workflows
 
@@ -176,14 +178,18 @@ swizzle logs office-contact-intake
 
 **`apply` is the deploy command.** It's idempotent, and `--dry-run` shows the exact diff against the currently-active deployment before touching state — you see what changes before it changes.
 
-**Why scaffold first, even for hand-written automations:** the scaffold vendors `swizzle_sdk.py` / `swizzle-sdk.ts` into the folder. If you're building by hand, copy these from the repo instead of writing against the raw contract:
-
-```bash
-cp packages/sdk-ts/src/index.ts  my-automation/swizzle-sdk.ts
-cp packages/sdk-py/swizzle_sdk.py  my-automation/swizzle_sdk.py
-```
+**Why scaffold first, even for hand-written automations:** the scaffold vendors `swizzle_sdk.py` / `swizzle-sdk.ts` into the folder. To write an automation by hand, scaffold it anyway and replace the entrypoint, so you keep the SDK instead of writing against the raw contract.
 
 For durable steps, sleep, child invocation, external events, and approvals, use the vendored SDK helpers documented in [SDK Usage](references/sdk.md). The raw sentinel contract exists for plain Node, but SDK authoring is the default.
+
+An approver sees only the automation, the step and the approval's `details`, nothing else about the run. Lead `details` with a `title` or `summary` that states the decision, and add the facts it rests on as flat fields: the approval page and the dashboard's approval card both show the heading and each other field as a labelled line. [SDK Usage — events and approvals](references/sdk.md#events-and-approvals) has the full rule.
+
+```python
+request_approval("approve-payment", details={
+    "summary": "Pay 1,240.00 EUR to ACME GmbH for invoice INV-1042?",
+    "due": "2026-11-03",
+})
+```
 
 ## The execution contract
 
@@ -321,7 +327,7 @@ Minimal example, for an entrypoint with the steps `check`, `charge` and `notify`
 
 ```mermaid
 flowchart TD
-  trigger([Webhook: /process-order]) --> check{Is it an order?}
+  trigger([Webhook: /hooks/process-order]) --> check{Is it an order?}
   check -- no --> skipped([Result: skipped])
   check -- yes --> charge[Call payment API]
   charge -- success --> notify[POST to Slack]
@@ -416,7 +422,7 @@ Tell the user:
 
 ## Environment reminders
 
-- The platform runs via Docker Compose. In the default Caddy stack the CLI talks to `http://api.localhost:19826` (matches the `SWIZZLE_API_URL` default in `.env.example`). A dev stack started from a checkout prints its own api URL.
+- The platform runs via Docker Compose on the instance's host. There the default Caddy stack serves the API at `http://api.localhost:19826`; from a laptop, use the instance's HTTPS API URL as in [Install and connect](#install-and-connect-from-an-authors-laptop).
 - **`swizzle doctor` is the preflight.** Run it on any fresh or remote target before deploying — it verifies the four things that break first sessions (API reachable, platform ready, auth accepted, secret store usable).
 - **Deploy uploads a bundle, not a path.** `swizzle apply <dir>` packages the folder (tar.gz, `node_modules` / `dist` / `.git` excluded) and uploads it — remote VPS deploys work exactly like local ones.
 - **Dependencies install into the run image.** `runtime.requirements.python` and `runtime.requirements.node` are stored as raw manifests at deploy time. In the Compose stack the worker prepares the run image after deploy. A run started before preparation finishes may wait for the remaining work. Local `swizzle run` installs dependencies into a local cache on its first run and reuses it.
@@ -468,4 +474,4 @@ Machine-readable contract:
 - `swizzle scaffolds --json` — init templates and scaffold patterns
 - `swizzle schema <type> --json` — the other schemas (error, enums, exit codes, runtime error codes)
 
-Real working automations: `infra/examples/` — each folder is complete and deployable.
+Real working automations: [the examples](https://github.com/swizzletech/swizzle/tree/main/infra/examples) in the Swizzle repository — each folder is complete and deployable.

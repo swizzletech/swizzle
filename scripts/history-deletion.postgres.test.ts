@@ -1,5 +1,5 @@
 import { it } from "vitest";
-import { testDatabase } from "../test/postgres.js";
+import { testDatabase, untilLockWaiters } from "../test/postgres.js";
 import { testControlPlaneStore } from "../test/stores.js";
 // Run history expiry and project deletion on PostgreSQL (ADR 0015): a finished run past the
 // cutoff goes with its executions and logs while a waiting
@@ -66,6 +66,7 @@ async function verifyRunExpiry(client: DatabaseClient, store: ControlPlaneStore)
   );
 
   const result = await store.expireRuns({
+    environment: "state-machine",
     cutoff: new Date(Date.now() - 30 * DAY_MS).toISOString(),
   });
   assert.equal(result.runsDeleted, 1);
@@ -213,7 +214,7 @@ async function verifyDeletionBesideRunCreation(
     ]);
     const deleting = store.deleteProject({ contents: { kind: "delete" }, projectId: project.id });
     deleting.catch(() => {});
-    await untilSomeoneWaitsOnALock(client);
+    await untilLockWaiters(client, 1);
     const runId = randomUUID();
     await creating.query(
       `INSERT INTO runs SELECT * FROM jsonb_populate_record(null::runs,
@@ -233,18 +234,7 @@ async function verifyDeletionBesideRunCreation(
   assert.ok(await access.getProject(project.id), "the project stays");
 }
 
-async function untilSomeoneWaitsOnALock(client: DatabaseClient): Promise<void> {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
-    const waiting = await client.pool.query(
-      "SELECT count(*) AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'",
-    );
-    if (Number(waiting.rows[0]?.n) > 0) return;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  assert.fail("the project delete never waited on a lock");
-}
-
-it("history deletion", { timeout: 60_000 }, async () => {
+it("history deletion", async () => {
   const client = testDatabase();
   const store = testControlPlaneStore();
   await verifyHistoryDeletion(client, store);

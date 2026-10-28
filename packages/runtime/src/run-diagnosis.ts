@@ -7,6 +7,7 @@ import type { RunWait } from "@swizzle/db";
 import type { CredentialState, RunPlacement } from "@swizzle/db";
 import { placementInWords } from "@swizzle/db";
 import type { Diagnosis, DiagnosisEvidence, DiagnosisFix } from "./platform-records.js";
+import { exceptionSummary, findRunException } from "./run-exception.js";
 
 /** The fields of a run record the diagnosis reads. */
 export interface DiagnosableRun {
@@ -146,6 +147,18 @@ export function buildDiagnosis(
   }
 
   const stderrHeuristic = applyStderrHeuristics(stderrTail, evidence, fixes);
+  const exception = findRunException(run.stderr ?? "");
+  if (exception !== null) {
+    evidence.push({ kind: "exception", detail: exceptionSummary(exception) });
+    if (exception.message.startsWith("KeyError:")) {
+      fixes.push({
+        confidence: 0.8,
+        rationale:
+          "Inspect the missing key at the reported line. If it reads the payload, compare the payload with the expected fields. Fix the code, redeploy, then replay the run.",
+        command: `swizzle runs inspect ${run.runId}`,
+      });
+    }
+  }
 
   let likelyCode: string;
   let summary: string;
@@ -206,7 +219,7 @@ export function buildDiagnosis(
       case "PROCESS_EXIT_NON_ZERO":
         likelyCode = stderrHeuristic.likelyCode ?? "AUTOMATION_CRASHED";
         summary =
-          stderrHeuristic.summary ??
+          (exception === null ? stderrHeuristic.summary : exceptionSummary(exception)) ??
           "Automation process exited non-zero. Inspect stderr for the root cause.";
         break;
       case "UPSTREAM_CONTRACT_CHANGED":

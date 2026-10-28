@@ -1,8 +1,6 @@
-import { setTimeout as delay } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
-import { waitFor } from "../../../test/support.js";
+import { heldDeadlines, waitFor } from "../../../test/support.js";
 import {
-  controlledDeadlines,
   fakeDocker,
   isRunning,
   makeDefinition,
@@ -72,23 +70,39 @@ describe("sandbox hardening", () => {
   });
 });
 describe("sandbox execution", () => {
-  it("awaits asynchronous output and reports callback failures", async () => {
-    await fakeDocker({ missingImage: false });
+  it("awaits asynchronous output and reports callback failures", async ({ signal }) => {
+    const docker = await fakeDocker({ missingImage: false });
     const chunks: string[] = [];
     const options = await makeRunOptions(false);
-    const result = await runContainerAutomation({
+    let releaseWrite = () => {};
+    const writeHeld = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    let returned = false;
+    const running = runContainerAutomation({
       ...options,
       onStdoutChunk: async (chunk) => {
-        await delay(30);
+        await writeHeld;
         chunks.push(chunk);
       },
+    }).finally(() => {
+      returned = true;
     });
+    // The exec has exited with its stdout write still pending, so only that write holds the
+    // execution open.
+    await waitFor(signal, async () => {
+      const pid = await docker.execPid().catch(() => 0);
+      return pid > 0 && !isRunning(pid);
+    });
+    expect(returned).toBe(false);
+    releaseWrite();
+    const result = await running;
     expect(result.success).toBe(true);
     expect(chunks.join("")).toContain("ok");
+    // A rejected write fails the execution only when the runner awaits it.
     const failed = await runContainerAutomation({
       ...options,
       onStdoutChunk: async () => {
-        await delay(10);
         throw new Error("output persistence failed");
       },
     });
@@ -143,7 +157,7 @@ describe("sandbox execution", () => {
       options.definition,
       await runImageTag(options.automationDirectory, runImageRecipe(options.definition)),
     );
-    const deadlines = controlledDeadlines(5_000);
+    const deadlines = heldDeadlines(5_000);
     const preparation = prewarmSandbox(spec, options.timeoutMs).catch(() => undefined);
     // A run's claim takes the pending standby at once, so its create is still stalled when the
     // test expires its deadline.

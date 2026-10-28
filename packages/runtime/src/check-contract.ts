@@ -9,10 +9,12 @@ import type {
 } from "@swizzle/db";
 
 import { findContractChange } from "./api-signals.js";
+import { exceptionSummary, findRunException } from "./run-exception.js";
 
 import type { AutomationRunFailure, AutomationRunSuccess } from "./run-result.js";
 
 const MAX_OUTPUT_CHARS = 8_192;
+const MAX_MESSAGE_CHARS = 4_096;
 
 /** How one check process ended, before it is folded into the record. */
 export type CheckOutcome = { readonly report: ApiCheckReport } & (
@@ -20,6 +22,7 @@ export type CheckOutcome = { readonly report: ApiCheckReport } & (
   | { readonly status: "drift"; readonly output: string | null }
   | {
       readonly status: "error";
+      readonly failure: "credentials" | "execution";
       readonly exitCode: number | null;
       readonly message: string;
       readonly output: string | null;
@@ -27,8 +30,9 @@ export type CheckOutcome = { readonly report: ApiCheckReport } & (
 );
 
 /**
- * The check contract: exit 0 with `"ok": true` on stdout is green, exit 1 is drift (the check
- * reached the API and the answer differs), anything else could not decide.
+ * Exit 0 with `"ok": true` on stdout is green. A contract_changed event or bare exit 1 is drift.
+ * Recognizable exceptions and credential failures are errors, including exit 1. Anything else
+ * could not decide.
  */
 export function checkOutcome(
   execution:
@@ -44,7 +48,42 @@ export function checkOutcome(
     }
     return {
       exitCode: 0,
+      failure: "execution",
       message: 'The check exited 0 without "ok": true on stdout.',
+      output,
+      report,
+      status: "error",
+    };
+  }
+  if (report.change !== null) return { output, report, status: "drift" };
+  const credentials = execution.stderr.split(/\r?\n/u).findLast((line) => {
+    if (
+      /AUTHENTICATIONFAILED|authentication failed|invalid credentials|invalid password|login failed|\b(?:401 Unauthorized|403 Forbidden)\b/iu.test(
+        line,
+      )
+    )
+      return true;
+    return /(?:^|[ \t])(?:(?:HTTP)+(?:Error)?(?:\/[0-9]+(?:\.[0-9]+)?)?|status(?:[ \t]+code)?|response)[ \t:]+(?:401|403)\b/iu.test(
+      line,
+    );
+  });
+  const exception = findRunException(execution.stderr);
+  if (
+    credentials !== undefined ||
+    exception !== null ||
+    execution.stderr.includes("Traceback (most recent call last):") ||
+    /^[ \t]+at .+:\d+:\d+\)?$/mu.test(execution.stderr)
+  ) {
+    let message = execution.message;
+    if (credentials !== undefined) {
+      message = `API check credentials failed: ${credentials.trim()}`;
+    } else if (exception !== null) {
+      message = exceptionSummary(exception);
+    }
+    return {
+      exitCode: execution.exitCode,
+      failure: credentials === undefined ? "execution" : "credentials",
+      message: message.slice(0, MAX_MESSAGE_CHARS),
       output,
       report,
       status: "error",
@@ -58,7 +97,8 @@ export function checkOutcome(
   }
   return {
     exitCode: execution.exitCode,
-    message: execution.message,
+    failure: "execution",
+    message: execution.message.slice(0, MAX_MESSAGE_CHARS),
     output,
     report,
     status: "error",

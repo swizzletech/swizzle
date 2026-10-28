@@ -39,7 +39,8 @@ just stack
 
 `just stack` writes `.env` with fresh credentials on its first run, then builds the images in Docker and starts the stack.
 Open `http://localhost:19826` on that host. Claim the instance with `SWIZZLE_SETUP_TOKEN` from `.env`.
-[Install Swizzle on a server](docs/how-to/install.md) covers remote access, HTTPS, mail, and hardening.
+[Install Swizzle on a server](docs/how-to/install.md) covers remote access, HTTPS, mail, webhook URL routing, and hardening.
+[Upgrade an installed server](docs/how-to/upgrade.md) covers server and CLI updates and recovery.
 
 ## Try an automation
 
@@ -48,15 +49,15 @@ Install the CLI from npm on any machine with Node.js 22.18 or later, then create
 ```bash
 npm install --global @swizzletech/cli
 swizzle init hello --template python
-swizzle validate hello
 swizzle run hello
 ```
 
-This short demo runs trusted code on your host. After [connecting the CLI](docs/how-to/install.md#connect-the-cli) to your instance, store the webhook's signing secret and deploy it to run in Swizzle's restricted Docker sandbox:
+This short demo runs trusted code on your host and needs no instance. To deploy it to Swizzle's restricted Docker sandbox, [connect the CLI](docs/how-to/install.md#connect-the-cli) to your instance first. Then store the webhook's signing secret, validate the automation against the instance, and deploy it:
 
 ```bash
 export HELLO_SIGNING_SECRET="$(node -e "console.log(crypto.randomBytes(32).toString('hex'))")"
 swizzle secret set HELLO_SIGNING_SECRET --value-env HELLO_SIGNING_SECRET
+swizzle validate hello
 swizzle apply hello
 ```
 

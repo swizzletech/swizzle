@@ -9,6 +9,7 @@ import { testPlatform } from "../../../test/platform.js";
 import { TEST_ENCRYPTION_KEY, temporaryDirectory } from "../../../test/support.js";
 
 import { createAutomationFixture, deployFixture } from "../test/automations.js";
+import { DASHBOARD_ORIGIN, testBrowser } from "../test/browser.js";
 
 import { ownerHeaders } from "../test/people.js";
 
@@ -180,7 +181,7 @@ describe("trigger routes", () => {
       headers: owner,
       method: "POST",
       payload: { source: "paused" },
-      url: "/hello",
+      url: "/hooks/hello",
     });
     expect(pausedTriggerResponse.statusCode).toBe(404);
     expect(pausedTriggerResponse.json()).toMatchObject({
@@ -203,7 +204,7 @@ describe("trigger routes", () => {
       headers: owner,
       method: "POST",
       payload: { source: "resumed" },
-      url: "/hello",
+      url: "/hooks/hello",
     });
     expect(resumedTriggerResponse.statusCode).toBe(200);
 
@@ -253,31 +254,34 @@ describe("trigger routes", () => {
     await app.close();
   });
 
-  it("rejects a webhook path that an API POST route already serves, and deploys nothing", async () => {
+  it("answers a webhook whose path names an API route under /hooks, and leaves the route alone", async () => {
+    vi.stubEnv("SWIZZLE_DASHBOARD_ORIGIN", DASHBOARD_ORIGIN);
     const app = await buildTestServer({ platform: await testPlatform() });
+    const deployed = await deployFixture(
+      app,
+      await createAutomationFixture({
+        mainJs: "console.log('{}');",
+        name: "sign-in-hook",
+        path: "/hooks/auth/sign-in/email",
+      }),
+      {},
+      { headers: owner },
+    );
+    expect(deployed.statusCode).toBe(200);
+    expect(deployed.json().webhookUrl).toMatch(/\/hooks\/auth\/sign-in\/email\?environment=/u);
 
-    for (const webhookPath of ["/auth/sign-in/email", "/runs/abc/cancel"]) {
-      const response = await deployFixture(
-        app,
-        await createAutomationFixture({
-          mainJs: "console.log('{}');",
-          name: "shadowing-webhook",
-          path: webhookPath,
-        }),
-        {},
-        { headers: owner },
-      );
-
-      expect(response.statusCode).toBe(409);
-      expect(response.json()).toMatchObject({ error: "TRIGGER_WEBHOOK_PATH_RESERVED" });
-    }
-
-    const history = await app.inject({
-      headers: owner,
-      method: "GET",
-      url: "/automations/shadowing-webhook/deployments",
+    const hook = await app.inject({
+      method: "POST",
+      payload: {},
+      url: "/hooks/auth/sign-in/email",
     });
-    expect(history.json()).toMatchObject({ error: "AUTOMATION_NOT_FOUND" });
+    expect(hook.statusCode).toBe(200);
+    expect(hook.json()).toMatchObject({ status: "queued" });
+
+    // Sign-in itself still answers: an empty body reaches the auth handler and is refused there.
+    const signIn = await testBrowser(app).send("POST", "/auth/sign-in/email", {});
+    expect(signIn.statusCode).toBe(400);
+    expect(signIn.json()).toMatchObject({ error: "AUTH_REQUEST_INVALID" });
 
     await app.close();
   });

@@ -1,6 +1,4 @@
-/**
- * The platform version a build reports when no image tag names one: in /health, Settings >
- * Instance, `swizzle doctor` and trace resources. Every package.json and the SWIZZLE_IMAGE_TAG
- * in .env.example carry the same version; the platform-version convention checks them.
+/** The code's release version, shared by /health, Settings > Instance, doctor and traces.
+ * The platform-version convention keeps every workspace package.json aligned with it.
  */
-export const APP_VERSION = "1.0.2";
+export const APP_VERSION = "1.0.3";

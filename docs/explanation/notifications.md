@@ -37,3 +37,5 @@ The scheduler's maintenance cycle deletes old delivery rows ([`runMaintenanceCyc
 - `api-sunset` when a run or a check first sees a Deprecation or Sunset notice for a host, or when the notice announces a new date. Another call with the same notice does not send another alert.
 
 API alerts skip the cooldown. An automation with `api_check: off` can still get `api-sunset`, because SDK contact recording does not make an extra API call. API delivery rows use `api-check` or `api-sunset` as the event type and have no run id.
+
+[`sendApiAlert`](../../packages/runtime/src/notifications.ts) caps the complete API alert at 4,096 characters. The cap includes the header, automation name, environment, and alert details, so a long check diagnostic cannot exceed Telegram's message limit.

@@ -1,3 +1,4 @@
+import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { fileURLToPath } from "node:url";
@@ -165,13 +166,12 @@ describe("run routes", () => {
       headers: owner,
       method: "POST",
       payload: {},
-      url: "/hello",
+      url: "/hooks/hello",
     });
     const runId = trigger.json().runId as string;
     const address = await app.listen({ host: "127.0.0.1", port: 0 });
 
     const client = new AbortController();
-    const timer = setTimeout(() => client.abort(), 2_000);
     try {
       const response = await fetch(`${address}/runs/${runId}/logs/stream`, {
         headers: owner,
@@ -202,7 +202,6 @@ describe("run routes", () => {
         'event: status\ndata: {"status":"queued","terminal":false}',
       );
     } finally {
-      clearTimeout(timer);
       client.abort();
       await app.close();
     }
@@ -424,7 +423,7 @@ describe("run routes", () => {
       headers: owner,
       method: "POST",
       payload: { hello: "world" },
-      url: "/hello",
+      url: "/hooks/hello",
     });
     expect(trigger.statusCode).toBe(200);
     const { runId } = trigger.json() as { runId: string };
@@ -453,4 +452,68 @@ describe("run routes", () => {
 
     await app.close();
   });
+});
+
+it("replays a failed run's payload against the active deployment and audits the request", async () => {
+  const platform = await testPlatform({
+    artifactsDirectory: await temporaryDirectory("swizzle-replay-"),
+  });
+  const app = await buildTestServer({ platform });
+  const directory = await createAutomationFixture({
+    name: "replay-proof",
+    path: "/replay-proof",
+    mainJs: "throw new Error('broken');",
+  });
+  const configPath = path.join(directory, "config.yaml");
+  await writeFile(
+    configPath,
+    `${await readFile(configPath, "utf8")}\nruntime: { retry: { max_attempts: 1 } }\n`,
+  );
+  await deployFixture(app, directory, {}, { headers: owner });
+  const payload = { order: 42 };
+  const started = await app.inject({
+    method: "POST",
+    url: "/automations/replay-proof/runs",
+    headers: owner,
+    payload,
+  });
+  const original = started.json().runId;
+  expect((await platform.processNextPlatformRun())?.status).toBe("dead-lettered");
+  await writeFile(
+    path.join(directory, "main.js"),
+    "let input='';process.stdin.on('data',c=>input+=c);process.stdin.on('end',()=>console.log(JSON.stringify({input:JSON.parse(input), fixed:true}))); ",
+  );
+  const deployed = await deployFixture(app, directory, {}, { headers: owner });
+  expect(deployed.statusCode).toBe(200);
+  const replay = await app.inject({
+    method: "POST",
+    url: `/runs/${original}/replay`,
+    headers: owner,
+  });
+  expect(replay.statusCode).toBe(200);
+  expect(replay.json().runId).not.toBe(original);
+  expect(replay.json().deploymentId).toBe(deployed.json().deploymentId);
+  await platform.processNextPlatformRun();
+  const result = await app.inject({
+    method: "GET",
+    url: `/runs/${replay.json().runId}`,
+    headers: owner,
+  });
+  expect(result.json()).toMatchObject({
+    payload,
+    status: "succeeded",
+    result: { input: payload, fixed: true },
+  });
+  const audit = await app.inject({
+    method: "GET",
+    url: "/audit?automation=replay-proof",
+    headers: owner,
+  });
+  expect(audit.json().events).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ action: "POST /runs/:runId/replay", status: 200 }),
+    ]),
+  );
+  await app.close();
+  await platform.close();
 });

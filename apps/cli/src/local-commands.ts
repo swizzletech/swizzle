@@ -203,7 +203,8 @@ function registerValidate(program: Command, io: CliIO, runHandler: RunHandler): 
               version: config.version,
               entrypoint: definition.entrypointRelativePath,
               trigger: formatTriggerSummary(config.trigger),
-              runtime: `${config.runtime.language} / ${config.runtime.execution_mode} / ${config.runtime.profile}`,
+              runtime: `${config.runtime.language} / sandbox (container) / ${config.runtime.profile}`,
+              localRun: config.runtime.execution_mode,
               requirements: formatList(getDeclaredDependencyManifestPaths(definition)),
               secrets: formatList(config.secrets),
               vars: formatVars(config.vars),
@@ -311,7 +312,7 @@ function registerRun(program: Command, io: CliIO, runHandler: RunHandler): void 
 
 /**
  * `swizzle run --check`: the check script as a local host process, read by the check contract
- * (exit 0 with `"ok": true` is green, exit 1 is drift, anything else is undecided).
+ * (green, explicit drift, or an error such as an exception or failed login).
  */
 async function runApiCheck(
   dir: string,
@@ -347,11 +348,20 @@ async function runApiCheck(
     });
   }
   if (outcome.status === "error") {
+    let code = "API_CHECK_ERROR";
+    if (outcome.failure === "credentials") {
+      code = "API_CHECK_CREDENTIALS";
+    } else if (!result.success) {
+      code = result.code;
+    }
     throw new AgentError({
-      code: result.success ? "API_CHECK_UNDECIDED" : result.code,
+      code,
       details: { exitCode: outcome.exitCode, output: outcome.output },
-      hint: 'A check is green when it exits 0 with {"ok": true} on stdout, and drift when it exits 1. Anything else counts as undecided, such as a 503 or a timeout.',
-      message: `The API check could not decide: ${outcome.message}`,
+      hint:
+        outcome.failure === "credentials"
+          ? "Fix the check's credentials or connection, then rerun `swizzle run --check .`."
+          : "Read the exception in stderr and fix the check. Signal drift with contract_changed; a bare exit 1 also signals drift, but a traceback or credential failure is an error.",
+      message: `The API check failed: ${outcome.message}`,
     });
   }
   // Green implies success; the stored output is bounded, so print the whole answer instead.

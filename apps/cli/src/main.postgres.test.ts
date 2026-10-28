@@ -312,7 +312,7 @@ describe("swizzle CLI program", () => {
       await emptyTarget.app.close();
       await deployedTarget.app.close();
     }
-  }, 20_000);
+  });
 
   it("refuses to run an API command when a named profile pins no environment", async () => {
     const configHome = await temporaryDirectory("swizzle-cli-unpinned-");

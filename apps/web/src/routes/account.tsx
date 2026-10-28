@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 
 import {
   AuthScreen,
+  NewPasswordField,
   problemInWords,
   startTwoFactor,
   TwoFactorChoice,
@@ -19,6 +20,7 @@ import { Skeleton } from "../components/ui";
 import type { InvitationOffer } from "../lib/api";
 import { sessionApi } from "../lib/api/account";
 import { useDashboardSession } from "../lib/dashboard-client";
+import { passwordAccepted } from "../lib/words/access";
 
 const ROLE_IN_WORDS = {
   admin: "an admin, who manages the instance and every project",
@@ -125,7 +127,7 @@ function AcceptInvitation(props: {
       else props.onAccountCreated(start);
     },
   });
-  const ready = name.trim() !== "" && password.length >= 15 && !accept.isPending;
+  const ready = name.trim() !== "" && passwordAccepted(password) && !accept.isPending;
   const inviter = offer.invitedBy ?? "An owner";
   return (
     <AuthScreen
@@ -167,17 +169,7 @@ function AcceptInvitation(props: {
             value={name}
           />
         </label>
-        <label className="form-label">
-          Password
-          <input
-            autoComplete="new-password"
-            className="field h-10"
-            onChange={(event) => setPassword(event.target.value)}
-            type="password"
-            value={password}
-          />
-          <span className="t-faint font-normal">At least 15 characters.</span>
-        </label>
+        <NewPasswordField label="Password" onChange={setPassword} value={password} />
         <TwoFactorChoice checked={offerTwoFactor} onChange={setOfferTwoFactor} />
         {accept.isError ? (
           <p className="errbox m-0 text-[13px]" role="alert">
@@ -227,7 +219,7 @@ function ResetPassword({ token }: { readonly token: string }) {
       </AuthScreen>
     );
   }
-  const ready = token !== "" && password.length >= 15 && confirm !== "" && !reset.isPending;
+  const ready = token !== "" && passwordAccepted(password) && confirm !== "" && !reset.isPending;
   return (
     <AuthScreen title="Set a new password">
       <form
@@ -237,17 +229,7 @@ function ResetPassword({ token }: { readonly token: string }) {
           if (ready) reset.mutate();
         }}
       >
-        <label className="form-label">
-          New password
-          <input
-            autoComplete="new-password"
-            className="field h-10"
-            onChange={(event) => setPassword(event.target.value)}
-            type="password"
-            value={password}
-          />
-          <span className="t-faint font-normal">At least 15 characters.</span>
-        </label>
+        <NewPasswordField label="New password" onChange={setPassword} value={password} />
         <label className="form-label">
           New password again
           <input

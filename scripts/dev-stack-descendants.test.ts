@@ -85,7 +85,6 @@ binary.on('exit', (code) => process.exit(code ?? 1));
     expect(code).toBe(0);
     expect(await readFile(path.join(root, "signals.txt"), "utf8")).toBe("TERM;");
   },
-  40_000,
 );
 
 for (const phase of [
@@ -259,7 +258,5 @@ exec /usr/bin/ps "$@"
       expect(readProcessIdentity(planted.leader)).toBeUndefined();
       expect(readProcessIdentity(group?.pid ?? 0)).toBeUndefined();
     },
-    // Includes startup and cleanup under competing gates; the fixture's grace is 100 ms.
-    40_000,
   );
 }

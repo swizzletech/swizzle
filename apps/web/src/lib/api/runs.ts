@@ -9,6 +9,7 @@ import type {
   RunStatus,
   RunStepsResponse,
   RunsResponse,
+  TriggerRunResponse,
   TriggerType,
 } from "../api";
 import { request } from "./request";
@@ -27,6 +28,12 @@ export function runsCalls(environment: string) {
         `/dashboard/runs/${encodeURIComponent(runId)}/steps`,
         undefined,
       );
+    },
+
+    async replayRun(runId: string) {
+      return await request<TriggerRunResponse>(`/runs/${encodeURIComponent(runId)}/replay`, {
+        method: "POST",
+      });
     },
 
     async cancelRun(runId: string) {

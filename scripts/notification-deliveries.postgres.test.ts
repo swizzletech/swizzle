@@ -84,14 +84,14 @@ async function verifyNotificationDeliveryFilters(
   assert.deepEqual(tomorrow, []);
 }
 
-it("latest notification delivery for rule", { timeout: 60_000 }, async () => {
+it("latest notification delivery for rule", async () => {
   const client = testDatabase();
   const store = testControlPlaneStore();
   const deployment = await commitDeploymentFixture(store, "state-machine");
   await verifyLatestNotificationDeliveryForRule(client, store, deployment);
 });
 
-it("notification delivery filters", { timeout: 60_000 }, async () => {
+it("notification delivery filters", async () => {
   const store = testControlPlaneStore();
   const deployment = await commitDeploymentFixture(store, "state-machine");
   await verifyNotificationDeliveryFilters(store, deployment);

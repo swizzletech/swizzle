@@ -127,7 +127,7 @@ describe("runMaintenanceCycle", () => {
       path.join(gpuDirectory, "config.yaml"),
       config
         .replace("name: hello-webhook", "name: gpu-job")
-        .replace("path: /hello", "path: /gpu")
+        .replace("path: /hooks/hello", "path: /gpu")
         .replace("profile: host-default", "profile: gpu"),
     );
     // Maintenance reads only the stored profiles, so the deploys skip host capability probes.
@@ -183,7 +183,7 @@ describe("runMaintenanceCycle", () => {
     expect(queueMock.closedQueues).toEqual(["platform-runs--host-default", "platform-runs--gpu"]);
   });
 
-  it("expires a finished run past the retention age and keeps an unfinished one", async () => {
+  it("expires finished runs only in the maintained environment and keeps unfinished runs", async () => {
     const stateDirectory = await temporaryDirectory("swizzle-maintenance-expiry-");
     const platform = await testPlatform({
       artifactsDirectory: path.join(stateDirectory, "artifacts"),
@@ -193,8 +193,18 @@ describe("runMaintenanceCycle", () => {
       environment: "local",
     });
     const trigger = () =>
-      platform.triggerWebhookByPath({ environment: "local", path: "/hello", payload: {} });
+      platform.triggerWebhookByPath({ environment: "local", path: "/hooks/hello", payload: {} });
     const finished = await trigger();
+    await platform.processNextPlatformRun();
+    await platform.deployAutomationToPlatform({
+      automationDirectory: helloWebhook,
+      environment: "production",
+    });
+    const productionFinished = await platform.triggerWebhookByPath({
+      environment: "production",
+      path: "/hooks/hello",
+      payload: {},
+    });
     await platform.processNextPlatformRun();
     const queued = await trigger();
 
@@ -208,6 +218,18 @@ describe("runMaintenanceCycle", () => {
 
     expect(result.runExpiry).toEqual({ runsDeleted: 1 });
     expect(await platform.store.getRun(finished.runId)).toBeNull();
+    expect((await platform.store.getRun(queued.runId))?.status).toBe("queued");
+    expect((await platform.store.getRun(productionFinished.runId))?.status).toBe("succeeded");
+
+    const productionResult = await runMaintenanceCycle({
+      environment: "production",
+      now: new Date(Date.now() + 31 * 24 * 60 * 60 * 1000),
+      queueCounts: EMPTY_QUEUE_COUNTS,
+      retention: { artifactRetentionDeployments: null, runRetentionDays: 30 },
+      store: platform.store,
+    });
+    expect(productionResult.runExpiry).toEqual({ runsDeleted: 1 });
+    expect(await platform.store.getRun(productionFinished.runId)).toBeNull();
     expect((await platform.store.getRun(queued.runId))?.status).toBe("queued");
   });
 });

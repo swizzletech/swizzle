@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import os from "node:os";
 import {
   bootService,
@@ -6,35 +7,54 @@ import {
   resolveServiceInstanceId,
   shutdownTracing,
 } from "@swizzle/core";
-import { createServiceHeartbeatReporter, readConfiguredEnvironment } from "@swizzle/db/postgres";
+import {
+  createDashboardStore,
+  createPostgresEnvironmentStore,
+  createServiceHeartbeatReporter,
+  type ServiceHeartbeatReporter,
+} from "@swizzle/db/postgres";
 
 import { startSchedulerHealthServer } from "./health-server.js";
 import { createSchedulerService } from "./scheduler.js";
 
 const logger = createLogger("swizzle-scheduler");
 const instanceId = resolveServiceInstanceId({ service: "scheduler" });
-const environmentName = await bootService(logger, async () => {
-  await configureOutboundHttpProxy();
-  return readConfiguredEnvironment();
-});
-const heartbeat = createServiceHeartbeatReporter({
-  environment: environmentName,
-  host: os.hostname(),
-  instanceId,
-  logger,
-  metadata: {
-    intervalMs: Number(process.env.SCHEDULER_INTERVAL_MS ?? 15_000),
-    maintenanceIntervalMs: Number(process.env.SCHEDULER_MAINTENANCE_INTERVAL_MS ?? 60_000),
-    resumeWaitingIntervalMs: Number(process.env.SCHEDULER_RESUME_WAITING_INTERVAL_MS ?? 5_000),
-  },
-  pid: process.pid,
-  service: "scheduler",
-});
+await bootService(logger, configureOutboundHttpProxy);
+const environmentStore = createPostgresEnvironmentStore();
+const heartbeatStore = createDashboardStore();
+const heartbeats = new Map<string, ServiceHeartbeatReporter>();
+
+async function listEnvironments(): Promise<readonly string[]> {
+  const names = [
+    ...new Set([
+      "staging",
+      "production",
+      ...(await environmentStore.listEnvironments()).map(({ name }) => name),
+    ]),
+  ];
+  for (const environment of names) {
+    if (heartbeats.has(environment)) continue;
+    const heartbeat = createServiceHeartbeatReporter({
+      environment,
+      host: os.hostname(),
+      // Heartbeat rows are keyed by service and instance, so each namespace needs its own key.
+      instanceId: createHash("sha256").update(`${instanceId}:${environment}`).digest("hex"),
+      logger,
+      metadata: { schedulerInstanceId: instanceId },
+      pid: process.pid,
+      service: "scheduler",
+      store: heartbeatStore,
+    });
+    heartbeats.set(environment, heartbeat);
+    heartbeat.start();
+  }
+  return names;
+}
 
 async function main() {
   const scheduler = await createSchedulerService({
     enableLeaderLock: (process.env.SWIZZLE_SCHEDULER_LEADER_LOCK ?? "on") !== "off",
-    environmentName,
+    listEnvironments,
     instanceId,
     intervalMs: Number(process.env.SCHEDULER_INTERVAL_MS ?? 15_000),
     logger,
@@ -42,7 +62,7 @@ async function main() {
     resumeWaitingIntervalMs: Number(process.env.SCHEDULER_RESUME_WAITING_INTERVAL_MS ?? 5_000),
   });
 
-  heartbeat.start();
+  await listEnvironments();
   scheduler.start();
   const healthServer = await startSchedulerHealthServer({
     checkReady: async () => true,
@@ -60,11 +80,14 @@ async function main() {
     logger.info({ signal, shutdownTimeoutMs }, "Shutting down scheduler service.");
 
     const drain = Promise.all([
-      heartbeat.close(),
+      ...[...heartbeats.values()].map((heartbeat) => heartbeat.close()),
       scheduler.close(),
       healthServer.close(),
       shutdownTracing(),
-    ]);
+    ]).then(async () => {
+      await environmentStore.close();
+      await heartbeatStore.close();
+    });
     const timer = new Promise<"timeout">((resolve) =>
       setTimeout(() => resolve("timeout"), shutdownTimeoutMs).unref(),
     );

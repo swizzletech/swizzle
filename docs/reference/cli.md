@@ -506,6 +506,21 @@ swizzle runs inspect 0193b1d2-7f0c-7e55-9d5a-3c1f0b2a9e41
 swizzle runs inspect 0193b1d2-7f0c-7e55-9d5a-3c1f0b2a9e41 --full --json
 ```
 
+### `swizzle runs replay`
+
+Start a new run with the original payload on the active deployment
+
+Usage: `swizzle runs replay <runId>`
+
+| Argument | Required | Description |
+|---|---|---|
+| `runId` | yes | Run ID to replay |
+
+```bash
+swizzle runs replay 0193b1d2-7f0c-7e55-9d5a-3c1f0b2a9e41
+swizzle runs replay 0193b1d2-7f0c-7e55-9d5a-3c1f0b2a9e41 -e production
+```
+
 ### `swizzle runs cancel`
 
 Cancel a queued, waiting or running run; a finished one is a no-op

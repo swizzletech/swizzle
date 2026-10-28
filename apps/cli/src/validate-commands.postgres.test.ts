@@ -41,8 +41,9 @@ describe("swizzle validate", () => {
         "  name: hello-webhook",
         "  version: 1.0.0",
         "  entrypoint: main.py",
-        "  trigger: webhook (/hello)",
-        "  runtime: python / host / host-default",
+        "  trigger: webhook (/hooks/hello)",
+        "  runtime: python / sandbox (container) / host-default",
+        "  localRun: host",
         "  requirements: none",
         "  secrets: none",
         "  vars: none",
@@ -110,7 +111,7 @@ describe("swizzle validate", () => {
         name: "typescript-webhook",
         version: "1.0.0",
         entrypoint: "main.ts",
-        trigger: "webhook (/typescript-webhook)",
+        trigger: "webhook (/hooks/typescript-webhook)",
         samplePayload: "sample-payload.json",
       },
       checks: { readiness: "ready (this machine)" },
@@ -252,7 +253,7 @@ describe("swizzle validate", () => {
       expect(takenExit).toBe(8);
       expect(JSON.parse(taken.stdoutText)).toMatchObject({
         code: "TRIGGER_WEBHOOK_PATH_CONFLICT",
-        error: "Webhook path is already claimed in environment local: /hello",
+        error: "Webhook path is already claimed in environment local: /hooks/hello",
       });
     } finally {
       await app.close();
@@ -498,7 +499,7 @@ describe("swizzle validate", () => {
     expect(exitCode).toBe(0);
     expect(JSON.parse(io.stdoutText)).toMatchObject({
       valid: true,
-      automation: { runtime: "python / container / host-default" },
+      automation: { runtime: "python / sandbox (container) / host-default" },
     });
   });
 

@@ -317,7 +317,6 @@ for (const kind of ["column", "table"] as const) {
         expect(code, output).toBe(0);
         expect((await f.sql()).map(statements)).toEqual([sql]);
       },
-      60_000,
     );
   }
 }

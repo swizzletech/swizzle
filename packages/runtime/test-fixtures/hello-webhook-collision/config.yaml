@@ -3,7 +3,7 @@ version: 1.0.0
 entrypoint: main.py
 trigger:
   type: webhook
-  path: /hello
+  path: /hooks/hello
 runtime:
   timeout: 30s
   retry:

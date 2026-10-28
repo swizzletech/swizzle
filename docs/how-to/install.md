@@ -4,8 +4,11 @@ Swizzle runs from a checkout of this repository. `just stack` builds the images 
 
 You need:
 
-- Docker Engine with Docker Compose v2 on the server.
-- `git` and [mise](https://mise.jdx.dev), activated in your shell. `mise install` in the checkout installs the pinned toolchain from [`mise.toml`](../../mise.toml), so you install no `just` of your own. The stack recipes use its `just` and Node.js.
+- Docker Engine with the Docker Compose v2 plugin on the server. Install both with [Docker's guide for your distribution](https://docs.docker.com/engine/install/). A distribution package such as Ubuntu's `docker.io` can lack the plugin. `docker compose version` must print a version.
+- `git` and [mise](https://mise.jdx.dev). `mise install` in the checkout installs the pinned toolchain from [`mise.toml`](../../mise.toml), so you install no `just` of your own. The stack recipes use its `just` and Node.js.
+- On Debian and Ubuntu, the `libatomic1` package. The Node.js that mise installs needs it, and minimal server images lack it. Without it, `mise install` fails with `libatomic.so.1: cannot open shared object file`.
+
+With mise activated in your shell, run recipes as `just stack`. In a shell without it, such as a command passed to `ssh`, prefix each recipe with `mise x --`: `ssh you@server 'cd /opt/swizzle && mise x -- just stack'`.
 
 You need neither a domain nor a mail server. Without a mail server, you copy each invitation link from the dashboard and send it to the person yourself.
 
@@ -14,13 +17,16 @@ You need neither a domain nor a mail server. Without a mail server, you copy eac
 Clone the repository and write `.env`:
 
 ```bash
+sudo apt-get install -y git libatomic1   # Debian and Ubuntu
 git clone https://github.com/swizzletech/swizzle.git /opt/swizzle
 cd /opt/swizzle
 mise trust && mise install
 just init-env
 ```
 
-`just init-env` writes `.env` with unique credentials for Postgres, Valkey, encryption and the first account's setup. The file has mode 0600. It also sets a unique `COMPOSE_PROJECT_NAME` for the stack's containers, networks and volumes. A rerun keeps the file unchanged. If a required credential or project name is missing or blank, the recipe fails and names the key. Restore its value, or delete `.env` and rerun `just init-env` to generate fresh credentials. `just stack` runs `just init-env` first, so a stack never starts without `.env`.
+`just init-env` writes `.env` with unique credentials for Postgres, Valkey, encryption and the first account's setup. The file has mode 0600. It also sets a unique `COMPOSE_PROJECT_NAME` for the stack's containers, networks and volumes, and sizes the CPU limits to the Docker host (see [Configure the instance](#configure-the-instance)). A rerun keeps credentials and operator settings, removes the obsolete `SWIZZLE_IMAGE_TAG` line, and sizes legacy CPU defaults to the host. If a required credential or project name is missing or blank, or `SWIZZLE_LOCAL_WORKER_TOKEN` has a format from before 1.0.0, the recipe fails before any build and names the key. Restore the value or replace the token as the message shows, or delete `.env` and rerun `just init-env` to generate fresh credentials. `just stack` runs `just init-env` first, so a stack never starts without `.env`.
+
+The first `just stack` builds every image on the server, which takes minutes: about 20 on a 1-vCPU server. Later runs reuse Docker's build cache and rebuild only what changed.
 
 ## Choose who can reach the dashboard
 
@@ -40,7 +46,7 @@ Open `http://localhost:19826` in a browser on the server. From your own computer
 ssh -L 19826:localhost:19826 you@server
 ```
 
-The API and webhooks answer at `http://api.localhost:19826` on the server. All three published ports (HTTP, HTTPS, and the links listener) bind to `127.0.0.1`, so another device cannot reach them through the server's LAN address.
+The API and webhooks answer at `http://api.localhost:19826` on the server. All three published ports (HTTP, HTTPS, and the public listener) bind to `127.0.0.1`, so another device cannot reach them through the server's LAN address.
 
 ### On a private network over Tailscale
 
@@ -74,7 +80,7 @@ The API and webhooks answer at `http://api.localhost:19826` on the server. All t
 
 If port 443 of the name already serves something else, pick another port, such as `--https=8443`, and include it in both origins: `SWIZZLE_DASHBOARD_ORIGIN=https://server.example-tailnet.ts.net:8443` and `SWIZZLE_API_ORIGIN=https://server.example-tailnet.ts.net:8443/api`. `tailscale serve status` lists what the name serves. `tailscale serve --https=443 off` takes the dashboard off the tailnet again.
 
-Register the CLI profile with `--url https://server.example-tailnet.ts.net/api`. The dashboard's **About** tab, `swizzle apply`, and `swizzle inspect` show webhook URLs from `SWIZZLE_PUBLIC_URL`. Compose defaults that setting to `SWIZZLE_API_ORIGIN`, so the URL looks like `https://server.example-tailnet.ts.net/api/hello?environment=staging`. Senders on the tailnet can post to those URLs. Approvers outside the tailnet need only their links; to publish those alone, [share only the links](#share-approval-and-event-links-from-a-private-instance).
+Register the CLI profile with `--url https://server.example-tailnet.ts.net/api`. The dashboard's **About** tab, `swizzle apply`, and `swizzle inspect` show webhook URLs for `/hooks/` paths from `SWIZZLE_PUBLIC_URL`. Root paths such as `/orders` use `SWIZZLE_API_ORIGIN`. Compose defaults `SWIZZLE_PUBLIC_URL` to `SWIZZLE_API_ORIGIN`, so the URL looks like `https://server.example-tailnet.ts.net/api/hooks/hello?environment=production`. Senders on the tailnet can post to those URLs. For webhook senders and approvers outside the tailnet, publish only the public listener with Tailscale Funnel: [receive webhooks and share links on a private instance](#receive-webhooks-and-share-links-on-a-private-instance).
 
 ### Public with a domain
 
@@ -94,7 +100,7 @@ Register the CLI profile with `--url https://server.example-tailnet.ts.net/api`.
 
    Both HTTP and HTTPS bind to the IPv4 address in `SWIZZLE_HTTP_BIND`. The stack publishes no IPv6 ports. Do not add AAAA records or set an IPv6 bind: Docker can translate IPv6 peers into a private gateway address and bypass the private-range gate.
 
-   The scheduler fires cron triggers only for its `SWIZZLE_ENVIRONMENT`. See [environments](../explanation/environments.md).
+   One scheduler fires cron triggers in both staging and production. See [environments](../explanation/environments.md).
 
 3. Start the stack, and check the API:
 
@@ -120,9 +126,21 @@ Webhook senders and OAuth providers may need the API from the internet. The sign
 
 3. Set `WORKER_CONCURRENCY` in `.env` to the number of parallel local runs. The server admits that many leases across all groups of this identity. Start conservatively, for example 2 on four cores, and increase it for I/O-bound automations as memory permits. On a 1-vCPU server with about 4 GB of RAM, start with 1; concurrent dependency installs can exhaust memory.
 
+   `just init-env` writes `SWIZZLE_WORKER_CPUS`, the CPUs of the worker process, and `SWIZZLE_MAX_RUN_CPUS`, the most CPUs one run may ask for. Each is 2, or the host's CPU count when that is smaller, so a 1-vCPU server gets 1 for both. Docker refuses a limit above the host's CPU count. A value you set yourself stays, but `just stack` stops before it builds an image when the value exceeds the host, and names the key and the host's CPU count. Leave a value empty to size it to the host again.
+
    The stack has one configured local worker, shown as **Local** under Settings > Workers. It serves every project and environment, including ones created later. `just init-env` creates its private credential. Additional machines enroll with their own worker identity, grants and capacity ([add a remote worker](add-a-remote-worker.md)). Give CPU-bound work its own explicit group; a sleeping group's runs wait for it rather than falling back to the local worker.
 
 Run `just stack` again after a change to `.env`.
+
+## Add a tool to the runner image
+
+Deployed runs can call only binaries in the `runner-base` image from [infra/docker/Dockerfile](../../infra/docker/Dockerfile). `swizzle validate` and `swizzle apply` check each declared binary and optional version against that image's inventory. They fail with `RUNTIME_REQUIREMENTS_UNMET` when the image lacks a binary or cannot report a required version. The instance operator adds the binary's package to `runner-base`, then runs `just stack` to rebuild the images. The build records the executables on the run's `PATH`, and the worker reports that inventory. A remote worker builds its own runner image, so make the same Dockerfile change there and run `just worker` again ([add a remote worker](add-a-remote-worker.md)).
+
+`just upgrade` refuses a checkout with uncommitted changes. Remove the package change before upgrading, then add it again after the upgrade ([upgrade an installed server](upgrade.md)).
+
+## Upgrade the instance
+
+[Upgrade an installed server](upgrade.md) covers the backup, release checkout, migration, recovery and CLI update.
 
 ## Run the stack
 
@@ -132,11 +150,11 @@ Run `just stack-down` to stop the packaged stack and remove its volumes, the ser
 
 Compose allows the API and scheduler 45 seconds to stop, covering their default 30-second drain. If you increase `SWIZZLE_SHUTDOWN_TIMEOUT_MS`, keep `stop_grace_period` in [`compose.yml`](../../infra/docker/compose.yml) longer than that timeout so Docker does not kill them mid-drain.
 
-A webhook with a generated path such as `/hooks/hello-<random>` answers at `<SWIZZLE_API_ORIGIN>/hooks/hello-<random>`, by default `http://api.localhost:19826/hooks/hello-<random>`. The scaffold adds a random suffix and verifies the request signature. See [check webhook input](write-an-automation.md#check-webhook-input) for the signature setup.
+A webhook with a generated path such as `/hooks/hello-<random>` answers at `<SWIZZLE_PUBLIC_URL>/hooks/hello-<random>`, by default `http://api.localhost:19826/hooks/hello-<random>`. The scaffold adds a random suffix and verifies the request signature. See [check webhook input](write-an-automation.md#check-webhook-input) for the signature setup.
 
-Run `just smoke` on a development machine to check the full path. The recipe runs `just setup` first, which installs development dependencies, git hooks, and Playwright Chromium. Do not run it on the server. The recipe starts a throwaway stack with its own credentials, Compose project, and free ports. It deploys `infra/examples/hello-webhook`, posts to its webhook URL, and checks the successful run and exported trace. Then it removes the project's labelled containers, networks, volumes, and images, including resources left by a failed start. At startup, `just smoke` and `just perf` remove old throwaways when their recorded process identity no longer matches. [The local stack guide](run-a-local-stack.md) explains how cleanup checks process ownership.
+Run `just smoke` on a development machine to check the full path. The recipe writes `.env` and installs the development dependencies first. Do not run it on the server. The recipe starts a throwaway stack with its own credentials, Compose project, and free ports. It deploys `infra/examples/hello-webhook`, posts to its webhook URL, and checks the successful run and exported trace. It also deploys the shipped skill's PDF recipe as the skill writes it and checks that its run renders a page with `pdftoppm`. Then it removes the project's labelled containers, networks, volumes, and images, including resources left by a failed start. At startup, `just smoke` and `just perf` remove old throwaways when their recorded process identity no longer matches. [The local stack guide](run-a-local-stack.md) explains how cleanup checks process ownership.
 
-If another service uses a default host port, change that port to a free value. Set `SWIZZLE_HTTP_PORT` for HTTP, `SWIZZLE_HTTPS_PORT` for HTTPS, and `SWIZZLE_LINK_PORT` for the links listener. Keep all three ports distinct. When you change HTTP or HTTPS, put the new port in `SWIZZLE_DASHBOARD_SITE` and `SWIZZLE_API_SITE`. If a site setting is empty, put its port in the matching origin instead. The CLI's default API URL is `http://api.localhost:19826`, so also set `SWIZZLE_API_URL` to the new address, or register a profile with `swizzle profile add <name> --url <api origin>`.
+If another service uses a default host port, change that port to a free value. Set `SWIZZLE_HTTP_PORT` for HTTP, `SWIZZLE_HTTPS_PORT` for HTTPS, and `SWIZZLE_LINK_PORT` for the public listener. Keep all three ports distinct. When you change HTTP or HTTPS, put the new port in `SWIZZLE_DASHBOARD_SITE` and `SWIZZLE_API_SITE`. If a site setting is empty, put its port in the matching origin instead. The CLI's default API URL is `http://api.localhost:19826`, so also set `SWIZZLE_API_URL` to the new address, or register a profile with `swizzle profile add <name> --url <api origin>`.
 
 ## Clean up a worker host
 
@@ -151,7 +169,7 @@ Swizzle reassembles once after a lost lease and records the reassembly in the ru
 1. Open the dashboard. A fresh instance shows the setup form, "Set up your instance".
 2. Enter your name, `SWIZZLE_SETUP_TOKEN` from `.env`, an email address and a password of 15 to 128 characters, and select **Create account**.
 3. The dashboard then offers two-factor sign-in. For a public instance, scan the QR code with your authenticator app, enter the code it shows, and select **Turn on**. Store the ten recovery codes in your password manager. The dashboard shows them once, and each code signs you in once without the app. Select **Skip** to leave two-factor sign-in off. You can set it up later in **Settings → Two-factor sign-in**.
-4. Open **Settings → Agent access**, create a token for your workstation with an expiry, and copy it. The dashboard shows the token once in a command block that you can give to your agent. Agent tokens do not need the second factor.
+4. Open **Settings → Agent access**, create a token for your workstation with an expiry, and copy it. The dashboard shows the token once in a command block for your agent. If the browser cannot copy the block, the dashboard selects its text for you to copy by hand. Agent tokens do not need the second factor.
 
 ## Invite people
 
@@ -196,16 +214,16 @@ Protected API commands require a CLI profile, even when you pass `--api-url`. Wi
 
 ```bash
 export SWIZZLE_TOKEN='<token>'
-swizzle profile add staging \
+swizzle profile add production \
   --url https://server.example-tailnet.ts.net/api \
-  --env staging \
+  --env production \
   --token-env SWIZZLE_TOKEN \
   --default
 swizzle doctor
 swizzle security audit
 ```
 
-Use the API address from the path you configured above. `--env` must match the stack's `SWIZZLE_ENVIRONMENT`: it defaults to `staging`, while the public setup sets it to `production`. **Settings → Agent access** shows a profile command with the current API address and environment. The scheduler starts cron runs only in its configured environment. See [environments](../explanation/environments.md).
+Use the API address from the path you configured above. Fresh installs default to `production` on every path. **Settings → Agent access** shows a profile command with the current API address and selected environment. One scheduler serves both staging and production; use `-e staging` to test without changing production data. Existing installs keep their configured default and data. See [environments](../explanation/environments.md).
 
 `doctor` prints the CLI and server versions and probes the artifact store. `security audit` checks the whole instance without selecting an environment and exits non-zero when a critical check fails. Run it again after every proxy or `.env` change.
 
@@ -213,29 +231,15 @@ Use the API address from the path you configured above. `--env` must match the s
 
 To set up a folder for your automations with the agent skill the CLI ships, run `swizzle workspace init .` in a new, empty folder. It writes the skill to `.agents/skills/swizzle-builder/` there. Continue with [write an automation](write-an-automation.md).
 
-## Share approval and event links from a private instance
+## Receive webhooks and share links on a private instance
 
-Caddy serves [approval and event links](../explanation/approvals.md) on an origin of their own, `SWIZZLE_LINK_ORIGIN`. It answers `/approvals/*` and `/events/*` and a bare 404 for every other path. Runs build their links from `SWIZZLE_LINK_URL`, which defaults to `SWIZZLE_LINK_ORIGIN`. The production API refuses a non-local `SWIZZLE_LINK_URL` without HTTPS. Without either value, links start with `http://links.localhost:<SWIZZLE_HTTP_PORT>` and work only on the server itself.
+A private instance can keep its dashboard, API and sign-in on the host or tailnet while a public listener receives webhooks and link callbacks. The [security model](../explanation/security-model.md#the-public-listener-serves-only-public-routes) lists the listener's routes and their guards.
 
-If you change `SWIZZLE_LINK_URL` or `SWIZZLE_ENCRYPTION_KEY`, links sent before the change stop working.
-
-### Through Caddy on a public server
-
-1. Point a third IPv4 DNS record (A record), such as `links.swizzle.example.com`, at the server.
-2. Set these values in `.env`:
-
-   ```env
-   SWIZZLE_LINK_ORIGIN=https://links.swizzle.example.com
-   SWIZZLE_PRIVATE_RANGES=private_ranges 100.64.0.0/10
-   ```
-
-3. Run `just stack`.
-
-`SWIZZLE_PRIVATE_RANGES` lists the client addresses that the dashboard and the API answer. Every other client gets a bare 404 there. `private_ranges` covers local networks, and `100.64.0.0/10` covers Tailscale. The default answers every address. Keep the IPv4 bind from the public install path: an IPv6 connection must not be translated to a private Docker gateway. This gate uses the connecting address, so it cannot distinguish clients behind a tunnel on the server.
+This guide covers Tailscale Funnel, Cloudflare Tunnel, and a separate public hostname served by Caddy. For either tunnel, forward traffic to `http://127.0.0.1:<SWIZZLE_LINK_PORT>`. Caddy serves that listener on `SWIZZLE_LINK_ORIGIN` and binds the tunnel port to loopback.
 
 ### Through Tailscale Funnel on a private server
 
-Funnel publishes a port of the machine's `ts.net` name on the internet. Forward it to Caddy's dedicated links listener, which serves only `/approvals/*` and `/events/*` regardless of the client's `Host` header.
+Funnel publishes a port of the machine's `ts.net` name on the internet. The dashboard keeps its private tailnet origin from [the Tailscale install path](#on-a-private-network-over-tailscale).
 
 1. Set these values in `.env`, with your machine's name:
 
@@ -244,26 +248,61 @@ Funnel publishes a port of the machine's `ts.net` name on the internet. Forward 
    SWIZZLE_LINK_PORT=19828
    SWIZZLE_LINK_ORIGIN=http://links.localhost:19826
    SWIZZLE_LINK_URL=https://server.example-tailnet.ts.net:10000
+   SWIZZLE_PUBLIC_URL=https://server.example-tailnet.ts.net:10000
    ```
 
-   Keep `SWIZZLE_LINK_PORT` distinct from `SWIZZLE_HTTP_PORT` and `SWIZZLE_HTTPS_PORT`. The links listener always binds to `127.0.0.1`, including on a public server. `SWIZZLE_LINK_ORIGIN` is Caddy's local site, so HTTP is allowed there. `SWIZZLE_LINK_URL` is the HTTPS address sent to approvers and event senders. If you changed `SWIZZLE_HTTP_PORT`, use that port in `SWIZZLE_LINK_ORIGIN` too.
+   Keep `SWIZZLE_LINK_PORT` distinct from `SWIZZLE_HTTP_PORT` and `SWIZZLE_HTTPS_PORT`. If you changed `SWIZZLE_HTTP_PORT`, use that port in `SWIZZLE_LINK_ORIGIN`.
 
 2. Run `just stack`.
-3. Publish the links listener on Funnel port 10000. Funnel also offers ports 443 and 8443.
+3. Publish the listener on Funnel port 10000. Funnel also offers ports 443 and 8443.
 
    ```bash
    tailscale funnel --bg --https=10000 http://127.0.0.1:19828
    ```
 
-Use this dedicated listener for any public tunnel. The shared HTTP and HTTPS ports also serve the dashboard and API, which a caller can select with a `Host` header. `SWIZZLE_PRIVATE_RANGES` cannot separate tunnel clients because Caddy sees the Docker gateway. The dashboard can keep its localhost or private tailnet origin from the earlier install path.
+4. Run `swizzle inspect <automation>` and give the sender the webhook URL it shows, such as `https://server.example-tailnet.ts.net:10000/hooks/hello?environment=production`.
 
-To take these links off the internet, run `tailscale funnel --https=10000 off`. To test on the tailnet without public exposure, use `tailscale serve` with the same arguments instead of `tailscale funnel`.
+To take the listener off the internet, run `tailscale funnel --https=10000 off`. To test on the tailnet without public exposure, use `tailscale serve` with the same arguments instead of `tailscale funnel`.
+
+### Through Cloudflare Tunnel
+
+Configure the tunnel to forward its public hostname to `http://127.0.0.1:19828`. Set `SWIZZLE_LINK_URL` and `SWIZZLE_PUBLIC_URL` to that HTTPS hostname, then run `just stack`. Set `SWIZZLE_LINK_PORT` in `.env` and in the tunnel target if you changed its default.
+
+### Through Caddy on a public server
+
+On [the public install path](#public-with-a-domain), Caddy can serve the listener on a hostname of its own while the dashboard and the API answer only private addresses.
+
+1. Point a third IPv4 DNS record (A record), such as `links.swizzle.example.com`, at the server.
+2. Set these values in `.env`:
+
+   ```env
+   SWIZZLE_LINK_ORIGIN=https://links.swizzle.example.com
+   SWIZZLE_PUBLIC_URL=https://links.swizzle.example.com
+   SWIZZLE_PRIVATE_RANGES=private_ranges 100.64.0.0/10
+   ```
+
+3. Run `just stack`.
+
+The `SWIZZLE_PRIVATE_RANGES` value keeps the dashboard and API private. `private_ranges` covers local networks, and `100.64.0.0/10` covers Tailscale. Keep the IPv4 bind from the public install path. The private-range check uses the connecting address, so it cannot distinguish clients behind a tunnel on the server.
+
+### Check what the internet reaches
+
+From a device outside your network, request `/` and the following paths on the listener's public address. Replace the example host with its public hostname:
+
+```bash
+curl -i https://links.example.com/
+curl -i -H 'Host: api.localhost' https://links.example.com/health
+curl -i -H 'Host: localhost:19826' https://links.example.com/
+curl -i -X POST https://links.example.com/auth/sign-in/email
+```
+
+Each request answers 404 with an empty body. A webhook that requires a signature answers unsigned or wrongly signed requests with `404 WEBHOOK_NOT_AVAILABLE`. A valid signed request starts a run.
 
 ### Give each tunnel client its own rate-limit budget
 
-The approval and event rate limits count clients by address. A tunnel on the server, such as Tailscale Funnel or Cloudflare Tunnel, connects to Caddy from the Docker gateway, so every link holder behind it shares one budget by default. Caddy trusts no proxy by default and replaces a caller-supplied `X-Forwarded-For` with the connecting address.
+By default, callers behind a tunnel on the server share a rate-limit budget per route because Caddy sees the Docker gateway address. Caddy replaces a caller-supplied `X-Forwarded-For` with the connecting address unless you set `SWIZZLE_LINK_TRUSTED_PROXY`.
 
-If the tunnel sends each client's address in `X-Forwarded-For`, set `SWIZZLE_LINK_TRUSTED_PROXY` to the address or CIDR from which the tunnel connects. Caddy then uses that header for the links origin only. The dashboard and API origins continue to use the connecting address. Cloudflare sends the visitor address in both `X-Forwarded-For` and `CF-Connecting-IP` ([Cloudflare's header reference](https://developers.cloudflare.com/fundamentals/reference/http-headers/)). This Caddy config reads `X-Forwarded-For` and ignores `CF-Connecting-IP`.
+If the tunnel sends each client's address in `X-Forwarded-For`, set `SWIZZLE_LINK_TRUSTED_PROXY` to the tunnel's address or CIDR. Caddy then uses that header for the public listener only. Cloudflare sends the visitor address in `X-Forwarded-For` and `CF-Connecting-IP` ([Cloudflare's header reference](https://developers.cloudflare.com/fundamentals/reference/http-headers/)). Caddy reads `X-Forwarded-For` and ignores `CF-Connecting-IP`.
 
 1. Read the gateway of the stack's `outbound` network, which carries the `COMPOSE_PROJECT_NAME` from `.env` in front:
 
@@ -278,23 +317,14 @@ If the tunnel sends each client's address in `X-Forwarded-For`, set `SWIZZLE_LIN
    SWIZZLE_LINK_TRUSTED_PROXY=172.18.0.1
    ```
 
-This trusts `X-Forwarded-For` from every connection that arrives from the configured address. That includes every process on the server and, when Docker forwards a published port through its userland proxy, some outside connections too. Set it only when the tunnel is the only way from the internet to Caddy's ports.
-
-To check either setup, request `/` on the URL in `SWIZZLE_LINK_URL` from outside your network. It answers 404 with an empty body. For a tunnel, also check the dashboard and API Host headers, using your own dashboard host and port:
-
-```bash
-curl -i -H 'Host: api.localhost' https://server.example-tailnet.ts.net:10000/health
-curl -i -H 'Host: localhost:19826' https://server.example-tailnet.ts.net:10000/
-```
-
-Both answer 404 with an empty body. A valid `/approvals/<token>` link still opens its approval page.
+This trusts `X-Forwarded-For` from every connection at the configured address. Set it only when the tunnel is the only way from the internet to Caddy's ports.
 
 ## Harden a public instance
 
 Before the instance is reachable from the internet, check each item:
 
 - Turn on two-factor sign-in if the dashboard or API is reachable from the public internet.
-- If only approvers and third-party systems need the internet, make only the links origin public and narrow `SWIZZLE_PRIVATE_RANGES`.
+- If only webhook senders, approvers and other third-party systems need the internet, make only [the public listener](#receive-webhooks-and-share-links-on-a-private-instance) public and narrow `SWIZZLE_PRIVATE_RANGES`.
 - Keep `SWIZZLE_AUTH_COOKIE_SECURE` unset or `true` when you configure a public HTTPS origin. The production API refuses to start if the setting is false.
 - Use HTTPS origins, and keep the API behind Caddy or another trusted proxy.
 - Set `SWIZZLE_TRUSTED_PROXY` to the proxy's address or CIDR, never to `true` or a hop count. The packaged stack's default, `uniquelocal`, trusts Caddy on its private compose networks.

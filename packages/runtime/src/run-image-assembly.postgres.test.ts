@@ -2,9 +2,8 @@ import { writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { temporaryDirectory, waitFor } from "../../../test/support.js";
+import { heldDeadlines, temporaryDirectory, waitFor } from "../../../test/support.js";
 import {
-  controlledDeadlines,
   fakeDocker,
   makeDefinition,
   makeRunOptions,
@@ -260,7 +259,7 @@ describe("run image assembly", () => {
     "bounds a stalled %s before execution",
     async (stallControl, { signal }) => {
       const docker = await fakeDocker({ missingImage: false, stallControl });
-      const deadlines = controlledDeadlines(5_000);
+      const deadlines = heldDeadlines(5_000);
 
       const run = runContainerAutomation(await makeRunOptions(false));
       await docker.reached(signal, stallControl);
@@ -500,7 +499,7 @@ describe("run image assembly", () => {
         `${PYTHON_CONFIG}  requirements:\n    python:\n      requirements_file: requirements.txt\n`,
         options.automationDirectory,
       );
-      const deadlines = controlledDeadlines(5_000);
+      const deadlines = heldDeadlines(5_000);
       const run = runContainerAutomation({ ...options, definition });
       try {
         await docker.reached(signal, "container inspect");
@@ -531,7 +530,7 @@ describe("run image assembly", () => {
       options.automationDirectory,
     );
     // The assembly deadline, ten minutes, the test expires once the install step runs.
-    const deadlines = controlledDeadlines(600_000);
+    const deadlines = heldDeadlines(600_000);
 
     const run = runContainerAutomation({ ...options, definition });
     await docker.reached(signal, "start --attach");

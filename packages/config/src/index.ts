@@ -1,4 +1,9 @@
 export {
+  type ApprovalDetailField,
+  type ApprovalDetailsInWords,
+  approvalDetailsInWords,
+} from "./approval-details.js";
+export {
   extractFlowNodeIds,
   type FlowDriftWarning,
   flowDrift,
@@ -8,6 +13,7 @@ export {
   scanStepSites,
   stepSourceLanguage,
 } from "./flow-map.js";
+export { PASSWORD_LENGTH } from "./password.js";
 export {
   AUTOMATION_API_CHECK_DEFAULTS,
   AUTOMATION_API_CHECK_MODES,

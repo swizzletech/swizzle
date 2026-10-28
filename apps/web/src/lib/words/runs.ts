@@ -81,24 +81,6 @@ export function runStatusInWords(run: RunFacts): string {
   }
 }
 
-/**
- * The line an approval shows under its question. Automations pass any JSON as details; a string,
- * or an object's message, question, summary or title, reads as words, anything else as compact JSON.
- */
-export function approvalDetailsInWords(details: unknown): string | null {
-  if (details === null || details === undefined) return null;
-  if (typeof details === "string") return details;
-  if (typeof details === "object" && !Array.isArray(details)) {
-    const record = details as Record<string, unknown>;
-    for (const key of ["message", "question", "summary", "title"]) {
-      const value = record[key];
-      if (typeof value === "string" && value.length > 0) return value;
-    }
-  }
-  const json = JSON.stringify(details);
-  return json.length > 160 ? `${json.slice(0, 159)}…` : json;
-}
-
 /** How an approval step ended: the verdict and who gave it, or the timeout that ended it. */
 export function approvalDecisionInWords(decision: NonNullable<RunStep["approval"]>): string {
   if (decision.timedOut) return "Timed out without a decision";

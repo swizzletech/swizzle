@@ -13,22 +13,32 @@ dev_db := "node scripts/dev-stack.mts run --"
 # swizzle-source export condition: how the repository runs its own code, so no recipe builds first.
 tsx := "pnpm exec tsx --conditions=swizzle-source"
 
-# Only GitHub's runners may install the browser's OS packages: they have passwordless sudo and apt.
-# CI alone does not grant that: other runners set it on hosts where sudo asks for a password.
-browser_deps := if env("GITHUB_ACTIONS", "") == "true" { "--with-deps" } else { "" }
-
 _default:
     @{{ just_executable() }} --justfile {{ justfile() }} --list --unsorted
 
-# Write the packaged stack's .env with fresh credentials and a compose project of its own; keeps an existing one.
+# Write the stack's .env with fresh credentials, or keep its settings and remove the obsolete image tag; size its CPU limits to the Docker host.
 init-env:
     node scripts/init-env.ts
 
 # Write .env, then install a contributor's dependencies, the git hooks and the e2e browser; safe to rerun.
-setup: init-env
-    pnpm install --frozen-lockfile
+setup: init-env deps browser
     lefthook install
-    pnpm exec playwright install {{ browser_deps }} chromium
+
+# Install the locked dependencies alone; CI jobs that need neither .env, hooks nor the browser start here.
+deps:
+    pnpm install --frozen-lockfile
+
+# Only GitHub's runners may install the browser's OS packages: they have passwordless sudo and apt.
+# CI alone does not grant that: other runners set it on hosts where sudo asks for a password.
+# The runner image already carries the libraries Chromium links, and apt has stalled a run for
+# minutes, so apt runs only when the dynamic linker reports a library missing.
+
+# Install the e2e browser, and on GitHub's runners the OS libraries it misses.
+browser:
+    pnpm exec playwright install chromium
+    @if [ "${GITHUB_ACTIONS:-}" = true ] && grep 'not found' < <(find "${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}" -type f \( -name chrome -o -name chrome-headless-shell \) -exec ldd {} +); then \
+        pnpm exec playwright install-deps chromium; \
+    fi
 
 # The dev recipes give each worktree, and in it `dev` and `dev-fresh`, a compose project, free
 # ports and data of their own, so they run side by side. `exec` makes scripts/dev-stack.mts the
@@ -52,6 +62,11 @@ dev-down:
 test *args:
     @pnpm exec vitest run "$@"
 
+# Run tests reached through changed imports; shared inputs run all, identical green content is reused.
+[positional-arguments]
+test-affected *args:
+    @{{ tsx }} scripts/affected-tests.mts "$@"
+
 # Lint, conventions, dependency direction, migration drift, types and dead code: the static gate, in seconds.
 check:
     @# Report release version drift before pnpm checks workspace metadata.
@@ -72,11 +87,16 @@ check:
 format:
     pnpm exec biome check --write .
 
-# The static gate, every unit and integration test and the generated-reference check: all docs-check proves, without the stack.
-verify-fast: check test _reference-current
+# The static gate and references every time, then affected tests with green results cached by content.
+[positional-arguments]
+verify-fast *args: check _reference-current
+    @{{ just_executable() }} --justfile {{ justfile() }} test-affected "$@"
 
 # The full gate a commit must pass; runs setup first, so a fresh clone needs nothing else.
-verify: setup verify-fast verify-dispatch build e2e
+verify: setup check test _reference-current verify-dispatch build e2e compose-check
+
+# Check that the packaged and the development compose files resolve.
+compose-check: init-env
     {{ compose }} --profile stack config --quiet
     POSTGRES_PASSWORD=x VALKEY_PASSWORD=x docker compose -p swizzle-dev-check -f infra/docker/compose.dev.yml config --quiet
 
@@ -189,6 +209,10 @@ recover-owner email:
 stack: init-env
     {{ compose }} --profile stack up --build -d --wait
 
+# Back up this installed server, check out a release tag (newest stable without one), rebuild and verify its version.
+upgrade tag="":
+    node scripts/upgrade.ts {{ quote(tag) }}
+
 # Cleanup removes owned image IDs: the service images Compose built for the project and the run images
 # the worker labelled with it. Pulled images such as postgres stay, since other stacks share them.
 # `docker image prune` deletes the containerd leases of every import and commit on the daemon, so it
@@ -222,8 +246,16 @@ verify-multi-worker:
     {{ dev_db }} {{ tsx }} scripts/verify-multi-worker.ts
 
 # Boot the packaged stack as a throwaway project, deploy and trigger an example through it, then remove it with its volumes.
-smoke: setup
+smoke: init-env deps
     exec {{ tsx }} scripts/smoke.mts
+
+# Prove production defaults, both cron environments, and staging webhook isolation on one packaged stack.
+verify-environments evidence="": deps
+    exec {{ tsx }} scripts/verify-environments.mts {{ quote(evidence) }}
+
+# Upgrade a private v1.0.2 stack with an owner, project, secret and finished run to this HEAD; optional evidence uses chrome-devtools-axi.
+verify-upgrade evidence="": deps
+    exec {{ tsx }} scripts/verify-upgrade.mts {{ quote(evidence) }}
 
 # Measure api latency, the run lifecycle, CPU and memory per service and dashboard page loads on a throwaway packaged stack; `api` or `web` narrows it, `--against <git ref>` measures that commit alongside and prints the delta, `--base <result.json>` prints the delta to an earlier run.
 [positional-arguments]

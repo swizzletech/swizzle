@@ -1,4 +1,6 @@
 import { spawn } from "node:child_process";
+import { constants } from "node:fs";
+import { access, readFile, stat } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { StepSite } from "@swizzle/config";
@@ -16,6 +18,7 @@ import type {
   StoredBuildSnapshot,
   WorkerCapabilities,
 } from "@swizzle/db";
+import { z } from "zod";
 
 import { containerLimitIssues } from "./container-limits.js";
 import { AutomationRuntimeError } from "./errors.js";
@@ -32,6 +35,7 @@ const DEFAULT_QUEUE_PREFIX = "platform-runs";
 export type RuntimeSnapshot = AutomationRuntimeConfig;
 
 export type BuildSnapshot = StoredBuildSnapshot;
+type Binaries = WorkerCapabilities["binaries"];
 
 /** What readiness reads of an automation: its runtime block and the folder its files are in. */
 export interface RuntimeDefinitionLike {
@@ -139,7 +143,7 @@ export async function thisMachine(
   return {
     availability: "online",
     capabilities: await collectWorkerCapabilities(
-      runtime.requirements.binaries.map((binary) => binary.name),
+      await findBinaries(runtime.requirements.binaries),
     ),
     concurrency: 1,
     instanceId,
@@ -322,7 +326,8 @@ export type WorkerGap =
   | {
       readonly kind: "binary-version";
       readonly name: string;
-      readonly version: string;
+      /** Null when the worker could not tell the version, which no rule accepts. */
+      readonly version: string | null;
       readonly required: string;
     };
 
@@ -357,8 +362,7 @@ export function workerGaps(
     if (found === undefined) gaps.push({ kind: "binary-missing", name: required.name });
     else if (
       required.version !== undefined &&
-      found.version !== null &&
-      !matchesVersionRequirement(found.version, required.version)
+      (found.version === null || !matchesVersionRequirement(found.version, required.version))
     ) {
       gaps.push({
         kind: "binary-version",
@@ -397,7 +401,9 @@ export function gapsInWords(gaps: readonly WorkerGap[]): string {
         missing.push(gap.name);
         break;
       case "binary-version":
-        phrases.push(`has ${gap.name} ${gap.version} where ${gap.required} is required`);
+        phrases.push(
+          `has ${gap.name} ${gap.version ?? "in a version it cannot tell"} where ${gap.required} is required`,
+        );
         break;
     }
   }
@@ -515,10 +521,27 @@ export function buildRuntimeEnvironmentAdditions(input: {
   return additions;
 }
 
-/** What this host can run, plus the versions of the extra binaries a worker is asked to report. */
-export async function collectWorkerCapabilities(
-  discoverBinaries: readonly string[],
-): Promise<WorkerCapabilities> {
+/** Where the runner-base build records the binaries a deployed run can call (infra/docker/runner-tools.mjs). */
+const RUNNER_TOOLS_FILE = "/etc/swizzle/runner-tools.json";
+
+const runnerTools = z.object({
+  binaries: z.array(z.object({ name: z.string().min(1), version: z.string().nullable() })),
+});
+
+/**
+ * The binaries a deployed run finds in the runner image, as the image's build recorded them. A
+ * worker that requires the sandbox reports these, since its runs never see its own PATH.
+ */
+export async function readRunnerTools(file = RUNNER_TOOLS_FILE): Promise<Binaries> {
+  return runnerTools.parse(JSON.parse(await readFile(file, "utf8"))).binaries;
+}
+
+/**
+ * What a worker can run: languages, execution modes and dependency packaging measured on this
+ * host, and `binaries`, the executables its runs call, such as the runner image's. Node, npm,
+ * python3 and pip measured here stand in for any of them `binaries` does not name.
+ */
+export async function collectWorkerCapabilities(binaries: Binaries): Promise<WorkerCapabilities> {
   const pythonVersion = await detectCommandVersion("python3", ["--version"]);
   const nodeVersion = process.version.replace(/^v/, "");
   const pipVersion = await detectPythonPipAvailability();
@@ -528,28 +551,18 @@ export async function collectWorkerCapabilities(
     "--format",
     "{{.Server.Version}}",
   ]);
-  const binaryChecks = new Map<string, string>();
-
-  for (const binary of discoverBinaries) {
-    const version = await detectCommandVersion(binary, ["--version"]);
-    if (version !== null) {
-      binaryChecks.set(binary, version);
-    }
-  }
-
-  binaryChecks.set("node", nodeVersion);
-  if (npmVersion !== null) {
-    binaryChecks.set("npm", npmVersion);
-  }
-  if (pythonVersion !== null) {
-    binaryChecks.set("python3", pythonVersion);
-  }
-  if (pipVersion !== null) {
-    binaryChecks.set("pip", pipVersion);
-  }
+  const named = new Set(binaries.map((binary) => binary.name));
+  const measured = Object.entries({
+    node: nodeVersion,
+    npm: npmVersion,
+    python3: pythonVersion,
+    pip: pipVersion,
+  }).flatMap(([name, version]) =>
+    version !== null && !named.has(name) ? [{ name, version }] : [],
+  );
 
   return {
-    binaries: Array.from(binaryChecks.entries()).map(([name, version]) => ({ name, version })),
+    binaries: [...binaries, ...measured],
     dependencyPackaging: {
       node: npmVersion !== null,
       python: pipVersion !== null,
@@ -568,6 +581,43 @@ export async function collectWorkerCapabilities(
         : []),
     ],
   };
+}
+
+/**
+ * The declared binaries on this machine's PATH. A version is read only for a declaration with a
+ * version rule, from the first of `--version`, `-v` and `-V` that prints one: pdftoppm, for one,
+ * knows only `-v`.
+ */
+async function findBinaries(
+  declared: AutomationRuntimeConfig["requirements"]["binaries"],
+): Promise<Binaries> {
+  const found: Binaries[number][] = [];
+  for (const binary of declared) {
+    const file = await findOnPath(binary.name);
+    if (file === null) continue;
+    let version: string | null = null;
+    for (const flag of binary.version === undefined ? [] : ["--version", "-v", "-V"]) {
+      version = await detectCommandVersion(file, [flag]);
+      if (version !== null) break;
+    }
+    found.push({ name: binary.name, version });
+  }
+  return found;
+}
+
+async function findOnPath(name: string): Promise<string | null> {
+  const extensions =
+    process.platform === "win32" ? ["", ...(process.env.PATHEXT ?? ".EXE").split(";")] : [""];
+  for (const directory of (process.env.PATH ?? "").split(path.delimiter)) {
+    for (const extension of extensions) {
+      const file = path.join(directory, `${name}${extension}`);
+      try {
+        await access(file, constants.X_OK);
+        if ((await stat(file)).isFile()) return file;
+      } catch {}
+    }
+  }
+  return null;
 }
 
 async function detectCommandVersion(

@@ -47,16 +47,15 @@ export function validateEnvironmentName(name: string): string {
 }
 
 /**
- * The environment a service process serves: its `SWIZZLE_ENVIRONMENT`. The API answers a request
- * without `?environment=` from it, and the scheduler fires the cron triggers of it. Both call this
- * at startup and refuse to start without one, so no surface falls back to a name of its own.
+ * The API's default namespace for requests without `?environment=`. Scheduler coverage is
+ * instance-wide and independent of this setting.
  */
 export function readConfiguredEnvironment(environment: NodeJS.ProcessEnv = process.env): string {
   const configured = environment.SWIZZLE_ENVIRONMENT;
   if (configured === undefined || configured.trim().length === 0) {
     throw new EnvironmentError(
       "ENVIRONMENT_NOT_CONFIGURED",
-      "SWIZZLE_ENVIRONMENT is not set. Set it to the environment this service serves, such as staging.",
+      "SWIZZLE_ENVIRONMENT is not set. Set it to the default environment for API requests, such as production.",
     );
   }
   return validateEnvironmentName(configured);

@@ -2,9 +2,9 @@ import { EventEmitter, once, setMaxListeners } from "node:events";
 import { createServer, type RequestListener } from "node:http";
 import path from "node:path";
 import { expect, onTestFinished, test, vi } from "vitest";
-import { temporaryDirectory } from "../../test/support.ts";
+import { heldDeadlines, temporaryDirectory } from "../../test/support.ts";
 import type { PackagedStack } from "../packaged-stack.mts";
-import { routeRound, triggerRun, waitForRun } from "./api.mts";
+import { OPERATION_TIMEOUT_MS, routeRound, triggerRun, waitForRun } from "./api.mts";
 import { Rounds } from "./result.ts";
 
 async function stackServing(listener: RequestListener): Promise<PackagedStack> {
@@ -25,6 +25,7 @@ async function stackServing(listener: RequestListener): Promise<PackagedStack> {
     links: `http://127.0.0.1:${address.port}`,
     environment: "staging",
     project: "route-test",
+    envFile: "unused",
     token: "token",
     session: { name: "session", value: "owner" },
     cli: unused,
@@ -64,7 +65,7 @@ test("a complete route round does not retain fetch listeners on a shared abort s
       .map((entry) => entry.max),
   ).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
   expect(warnings).toEqual([]);
-}, 30_000);
+});
 
 test("a request's derived signal still cancels an unfinished response with its parent", async () => {
   const events = new EventEmitter();
@@ -96,20 +97,27 @@ async function statsServing(): Promise<() => number> {
   return () => reads;
 }
 
-/** A server that accepts each request and stalls its headers, or its body after one byte. */
+/**
+ * A server that accepts each request and stalls its headers, or its body after one byte. The
+ * newest operation's deadline ends once its stall is in place: at the request for the headers,
+ * and once the headers arrived for the body. Stats reads keep their real deadline.
+ */
 function stalling(phase: string): RequestListener {
+  const deadlines = heldDeadlines(OPERATION_TIMEOUT_MS);
+  if (phase === "body") {
+    const nativeFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", async (...request: Parameters<typeof fetch>) => {
+      const response = await nativeFetch(...request);
+      deadlines.expireNewest();
+      return response;
+    });
+  }
   return (_request, response) => {
     if (phase === "body") {
       response.writeHead(200);
       response.write("{");
-    }
+    } else deadlines.expireNewest();
   };
-}
-
-/** Cuts every deadline to at most one second; stats reads still finish well within it. */
-function shortDeadlines(): void {
-  const timeout = AbortSignal.timeout.bind(AbortSignal);
-  vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => timeout(Math.min(ms, 1_000)));
 }
 
 test.each(["headers", "body"])(
@@ -117,7 +125,6 @@ test.each(["headers", "body"])(
   async (phase) => {
     const stack = await stackServing(stalling(phase));
     const statsReads = await statsServing();
-    shortDeadlines();
 
     await expect(
       routeRound(stack, [{ containerId: "api", name: "api" }], "seed", new Rounds()),
@@ -132,7 +139,6 @@ test.each(["headers", "body"])(
   async (phase) => {
     const stack = await stackServing(stalling(phase));
     const lifecycle = new AbortController().signal;
-    shortDeadlines();
 
     await expect(triggerRun(stack, {}, lifecycle)).rejects.toMatchObject({ name: "TimeoutError" });
     await expect(waitForRun(stack, "run", lifecycle)).rejects.toMatchObject({

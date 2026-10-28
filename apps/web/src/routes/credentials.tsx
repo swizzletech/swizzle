@@ -8,8 +8,8 @@ import { AUTOMATION_CONNECTION_NAME_PATTERN } from "@swizzle/config/browser";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-
 import { ActionError, SecretField } from "../components/actions";
+import { useConfirm } from "../components/confirm";
 import { CredentialAccess } from "../components/credential-access";
 import { NeedsYou } from "../components/needs-you";
 import { SecretInput } from "../components/secret-input";
@@ -206,6 +206,7 @@ function Secrets(props: {
 }) {
   const { view } = props;
   const { api, queryScope } = useDashboardClient();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const now = useNow();
   const secrets = useQuery({
@@ -289,14 +290,9 @@ function Secrets(props: {
                       <button
                         className="btn danger small"
                         disabled={remove.isPending}
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              `Delete ${secret.name} from ${projectOf(secret)}? Runs that need it stop starting until it is set again and its automations are deployed again.`,
-                            )
-                          ) {
-                            remove.mutate(secret);
-                          }
+                        onClick={async () => {
+                          const question = `Delete ${secret.name} from ${projectOf(secret)}? Runs that need it stop starting until it is set again and its automations are deployed again.`;
+                          if (await confirm({ action: "Delete", question })) remove.mutate(secret);
                         }}
                         type="button"
                       >
@@ -454,6 +450,7 @@ function Accounts(props: {
 }) {
   const { view } = props;
   const { api, queryScope } = useDashboardClient();
+  const confirm = useConfirm();
   const queryClient = useQueryClient();
   const now = useNow();
   const prefilled = props.search.connect !== undefined || props.search.name !== undefined;
@@ -596,10 +593,9 @@ function Accounts(props: {
                       <button
                         className="btn danger small"
                         disabled={remove.isPending}
-                        onClick={() => {
-                          if (
-                            window.confirm(`Delete ${connection.name}? This revokes its tokens.`)
-                          ) {
+                        onClick={async () => {
+                          const question = `Delete ${connection.name}? This revokes its tokens.`;
+                          if (await confirm({ action: "Delete", question })) {
                             remove.mutate(connection);
                           }
                         }}

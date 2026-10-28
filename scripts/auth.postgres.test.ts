@@ -14,7 +14,7 @@ import {
 import { it } from "vitest";
 import { AuthBrowser, SESSION_COOKIE } from "../test/auth-browser.js";
 import { authenticatorCode, wrongAuthenticatorCode } from "../test/authenticator.js";
-import { testDatabase } from "../test/postgres.js";
+import { testDatabase, untilLockWaiters } from "../test/postgres.js";
 
 const ORIGIN = "http://dashboard.verify";
 const PERSON = { email: "ada@example.com", name: "Ada", password: "correct horse battery staple" };
@@ -414,7 +414,7 @@ async function verifyPromotionWhileWaiting(
       () => "suspended",
       (error: { code?: string }) => error.code,
     );
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await untilLockWaiters(client, 1);
     await promotion.query("COMMIT");
     assert.equal(await suspension, "ACCESS_DENIED");
   } finally {
@@ -435,7 +435,7 @@ async function sessionEnd(client: DatabaseClient): Promise<Date> {
   return rows[0].expires_at;
 }
 
-it("auth", { timeout: 60_000 }, async () => {
+it("auth", async () => {
   const client = testDatabase();
   await verifyAuth(client);
 });

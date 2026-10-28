@@ -1,6 +1,10 @@
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { CodedError, inScope, type SecretDeclarationCollision } from "@swizzle/db";
-import type { JudgedTriggerSummary, WithWebhookUrl } from "@swizzle/runtime/http-contract";
+import {
+  type JudgedTriggerSummary,
+  WEBHOOK_PATH_PREFIX,
+  type WithWebhookUrl,
+} from "@swizzle/runtime/http-contract";
 import type { PlatformServices } from "@swizzle/runtime/platform";
 import type { FastifyInstance, FastifyRequest, FastifyTypeProviderDefault } from "fastify";
 import type { Logger } from "pino";
@@ -135,7 +139,11 @@ const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "[::1]", "localhost", "0
  * or fragment is dropped, since the paths appended to the base would land inside it.
  */
 export function publicApiUrl(request: FastifyRequest): string | null {
-  const configured = process.env.SWIZZLE_PUBLIC_URL?.trim();
+  return apiBaseUrl(request, process.env.SWIZZLE_PUBLIC_URL);
+}
+
+function apiBaseUrl(request: FastifyRequest, setting: string | undefined): string | null {
+  const configured = setting?.trim();
   if (configured !== undefined && configured !== "") {
     const url = URL.parse(configured);
     // An unparsable value is returned as is, so the caller that needs it reports it.
@@ -161,13 +169,15 @@ export function withWebhookUrl<T extends { readonly trigger: JudgedTriggerSummar
   return { ...record, trigger: { ...trigger, webhookUrl: url } };
 }
 
-/** The URL a webhook trigger answers at, naming its environment; null where `publicApiUrl` is. */
+/** Root paths need the private API base; only /hooks/ is forwarded by the public listener. */
 export function webhookUrl(
   request: FastifyRequest,
   webhookPath: string,
   environment: string,
 ): string | null {
-  const base = publicApiUrl(request);
+  const base = webhookPath.startsWith(`${WEBHOOK_PATH_PREFIX}/`)
+    ? publicApiUrl(request)
+    : apiBaseUrl(request, process.env.SWIZZLE_API_ORIGIN);
   return base === null ? null : `${base}${webhookPath}?${new URLSearchParams({ environment })}`;
 }
 

@@ -9,6 +9,7 @@ import {
 } from "@swizzle/db";
 
 const TELEGRAM_BOT_TOKEN_SECRET = "SWIZZLE_TELEGRAM_BOT_TOKEN";
+const MAX_TELEGRAM_TEXT_CHARS = 4_096;
 
 interface TelegramMessageInput {
   readonly botToken: string;
@@ -134,7 +135,9 @@ export async function sendApiAlert(input: {
     `automation: ${alert.automation.automationName}`,
     `environment: ${alert.environment}`,
     ...alert.lines,
-  ].join("\n");
+  ]
+    .join("\n")
+    .slice(0, MAX_TELEGRAM_TEXT_CHARS);
   const deliveries: StoredNotificationDelivery[] = [];
   for (const rule of rules) {
     if (!rule.enabled) continue;

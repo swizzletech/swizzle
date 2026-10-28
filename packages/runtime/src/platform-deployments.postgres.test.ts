@@ -195,12 +195,12 @@ describe("platform deployments", () => {
     expect(trigger).toMatchObject({
       status: "active",
       triggerType: "webhook",
-      webhookPath: "/hello",
+      webhookPath: "/hooks/hello",
     });
 
     const queuedRun = await platform.triggerWebhookByPath({
       environment: "local",
-      path: "/hello",
+      path: "/hooks/hello",
       payload: { via: "platform" },
     });
 
@@ -384,7 +384,7 @@ describe("platform deployments", () => {
     expect(trigger).toMatchObject({
       automationName: "hello-webhook",
       status: "active",
-      webhookPath: "/hello",
+      webhookPath: "/hooks/hello",
     });
   });
 
@@ -440,7 +440,7 @@ describe("platform deployments", () => {
 
     const queuedRun = await platform.triggerWebhookByPath({
       environment: "local",
-      path: "/hello",
+      path: "/hooks/hello",
       payload: { via: "rollback" },
     });
     expect(queuedRun.status).toBe("queued");
@@ -529,7 +529,7 @@ describe("platform deployments", () => {
 
     const run = await platform.triggerWebhookByPath({
       environment: "local",
-      path: "/hello",
+      path: "/hooks/hello",
       payload: { phase: "before-delete" },
     });
     await platform.processNextPlatformRun();
@@ -684,7 +684,7 @@ describe("platform deployments", () => {
 
     await platform.triggerWebhookByPath({
       environment: "local",
-      path: "/hello",
+      path: "/hooks/hello",
       payload: { via: "swept-rollback" },
     });
     const processedRun = await platform.processNextPlatformRun();

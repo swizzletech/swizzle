@@ -33,6 +33,7 @@ import { createQueueNameForProfile } from "./runtime-requirements.js";
 import { apiCheckSecretNames } from "./validation.js";
 
 const MAX_STDERR_TAIL_CHARS = 4_096;
+const MAX_WARNING_CHARS = 4_096;
 
 /**
  * Enqueues every due check of an environment; the job ID carries the due time, so a tick that sees
@@ -151,6 +152,7 @@ export async function finishCheckExecution(input: {
   if ("error" in input.execution) {
     outcome = {
       exitCode: null,
+      failure: "execution",
       message: redactor.text(getErrorMessage(input.execution.error)),
       output: null,
       report: { ok: false, checked: [], change: null },
@@ -173,7 +175,8 @@ export async function finishCheckExecution(input: {
       : null,
   ]
     .filter((line) => line !== null)
-    .join(" ");
+    .join(" ")
+    .slice(0, MAX_WARNING_CHARS);
   const written = await store.completeAutomationCheck({
     ...next,
     checkId: check.checkId,

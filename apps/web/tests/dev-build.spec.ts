@@ -35,9 +35,6 @@ test.afterAll(async () => {
 });
 
 test("moving between pages in the dev build logs no React diagnostic", async ({ page }) => {
-  // The first page waits while Vite bundles the dashboard's dependencies into the empty cache,
-  // about 18 s of CPU across its threads. The budget lets a loaded host give it a tenth of a core.
-  test.setTimeout(180_000);
   const diagnostics: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error" || message.type() === "warning")

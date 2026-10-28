@@ -174,7 +174,8 @@ This workspace contains deployable Swizzle automation folders.
 - Each automation folder needs its own \`config.yaml\`, entrypoint, and sample payload.
 - Successful runs must write valid JSON to stdout. Logs go to stderr.
 - Declare required secrets in \`config.yaml\`; do not commit plaintext secrets.
-- Use \`swizzle validate <dir>\` and \`swizzle run <dir>\` before deploying.
+- Run \`swizzle run <dir>\` on this machine first; it needs no instance.
+- Store every secret the automation declares, the webhook signing secret included, with \`swizzle secret set <NAME> --value-env <NAME>\`, then run \`swizzle validate <dir>\` and \`swizzle apply <dir>\`. With a CLI profile, validate asks the instance, which refuses an automation whose declared secret is missing.
 - Deploy with an explicit profile and environment once the placeholders above are filled in.
 `;
 }
@@ -186,14 +187,25 @@ Standalone Swizzle automation workspace.
 
 ## Setup
 
+Create a device token in Settings > Agent access, connect the CLI to your instance, then scaffold an automation and run it on this machine:
+
 \`\`\`bash
-swizzle profile add <name> --url <INSTANCE_URL>
-# Create a device token in Settings > Agent access, then:
-swizzle profile add <name> --url <INSTANCE_URL> --token-env SWIZZLE_TOKEN --env <ENVIRONMENT_NAME>
+export SWIZZLE_TOKEN='<token>'
+swizzle profile add <PROFILE_NAME> --url <INSTANCE_URL> --token-env SWIZZLE_TOKEN --env <ENVIRONMENT_NAME> --default
 swizzle init automations/hello --template python
+swizzle run automations/hello
 \`\`\`
 
-Then edit \`automations/hello/config.yaml\`, run locally, and deploy to your instance.
+## Deploy
+
+The instance refuses an automation until every secret its \`config.yaml\` declares is stored, the webhook signing secret included. Store it, then validate against the instance and deploy:
+
+\`\`\`bash
+export HELLO_SIGNING_SECRET="$(node -e "console.log(crypto.randomBytes(32).toString('hex'))")"
+swizzle secret set HELLO_SIGNING_SECRET --value-env HELLO_SIGNING_SECRET
+swizzle validate automations/hello
+swizzle apply automations/hello
+\`\`\`
 `;
 }
 

@@ -103,8 +103,6 @@ const RUNTIME_HINTS: Partial<Record<AutomationRuntimeErrorCode, string>> = {
     "Automatic firing is paused. Use `swizzle trigger <name>` for one manual run, or `swizzle trigger resume <name>` to re-enable automatic firing.",
   TRIGGER_WEBHOOK_PATH_CONFLICT:
     "Another deployment claims the same webhook path. Change `trigger.path` in config.yaml.",
-  TRIGGER_WEBHOOK_PATH_RESERVED:
-    "The API serves this path itself, so a webhook there would never fire. Change `trigger.path` in config.yaml.",
   UPSTREAM_CONTRACT_CHANGED:
     "The API's answer no longer matches what the code expects, so the run is not retried. Update the response parsing to the new shape, confirm with `swizzle run --check .`, then redeploy with `swizzle apply .`.",
   WEBHOOK_PAYLOAD_INVALID:

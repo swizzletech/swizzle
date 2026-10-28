@@ -4,7 +4,7 @@ description: Minimal webhook automation example for Swizzle
 entrypoint: main.py
 trigger:
   type: webhook
-  path: /hello
+  path: /hooks/hello
 runtime:
   language: python
   execution_mode: host

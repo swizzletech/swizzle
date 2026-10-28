@@ -23,7 +23,6 @@ export default defineConfig({
   // about 4 s.
   expect: { timeout: 15_000 },
   timeout: 45_000,
-  retries: 0,
   reporter: [["dot"], ["./scripts/e2e-run-reporter.ts"]],
   // The terminal shows dots, failures and the log path; every line the tests and the web
   // server print goes to the run reporter's e2e.log instead.
@@ -43,9 +42,19 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 120_000,
   },
+  // The project timeouts are the only test timeouts: a flow sets none of its own (tests-wait-on-state).
   projects: [
     {
       name: "chromium",
+      testIgnore: "dev-build.spec.ts",
+      use: { ...devices["Desktop Chrome"] },
+    },
+    {
+      // Its first page waits while Vite bundles the dashboard's dependencies into an empty cache,
+      // about 18 s of CPU across its threads; the ceiling lets a loaded host give it a tenth of a core.
+      name: "dev-server",
+      testMatch: "dev-build.spec.ts",
+      timeout: 180_000,
       use: { ...devices["Desktop Chrome"] },
     },
   ],

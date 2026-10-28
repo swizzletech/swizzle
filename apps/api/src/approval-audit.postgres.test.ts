@@ -100,7 +100,7 @@ async function office() {
   };
 }
 
-describe("approvals, the audit and notifications over HTTP", { timeout: 60_000 }, () => {
+describe("approvals, the audit and notifications over HTTP", () => {
   it("lets only the assignee decide, signed in, and an owner reassign with a reason", async () => {
     const {
       app,

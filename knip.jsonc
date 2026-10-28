@@ -5,6 +5,8 @@
       "entry": [
         // Docker starts the control proxy configuration generator directly.
         "infra/docker/control-egress.mjs",
+        // The runner-base build records the image's binaries with it.
+        "infra/docker/runner-tools.mjs",
         // The worker runs each example's config.yaml entrypoint as a child process; nothing imports it.
         "infra/examples/**/main.{js,ts}",
         // The verify-swizzle skill deploys these fixtures to a private stack; the worker runs them,
@@ -26,7 +28,8 @@
       // mise.toml pins just; the conventions read the justfile through `just --dump`.
       // dev-stack.mts publishes the dashboard with the host's tailscale when it runs, and skips it otherwise.
       // The Linux migration tests drive a real terminal through util-linux script.
-      "ignoreBinaries": ["just", "tailscale", "script"]
+      // runner-tools.mjs runs in the Debian runner image, which ships dpkg-query.
+      "ignoreBinaries": ["just", "tailscale", "script", "dpkg-query"]
     },
     "apps/cli": {
       // Scaffolding copies this SDK asset into user automations at runtime.

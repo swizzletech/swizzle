@@ -1,6 +1,6 @@
 # Config Reference
 
-The main skill file covers common cases. The generated [config reference](../../../../../../docs/reference/config.md) lists every field. This page explains advanced triggers, profile routing, binary requirements, and container mode.
+The main skill file covers common cases. The generated [config reference](https://github.com/swizzletech/swizzle/blob/main/docs/reference/config.md) lists every field. This page explains advanced triggers, profile routing, binary requirements, and container mode.
 
 The rule for each field (type, default, allowed values, and constraints) lives in the config schema. Print it with its descriptions:
 
@@ -9,7 +9,7 @@ swizzle schema config --json
 swizzle schema enums --json
 ```
 
-The same schema generates the Swizzle config reference page (`docs/reference/config.md` in the Swizzle repository). If this page disagrees with the schema, the schema wins.
+The same schema generates that config reference page. If this page disagrees with the schema, the schema wins.
 
 ## Vars
 
@@ -51,7 +51,7 @@ connections:
 ```yaml
 trigger:
   type: webhook
-  path: /incoming/orders
+  path: /hooks/orders-7f3a9c2b8e1d4a6f
   payload_schema:
     type: object
     required:
@@ -66,7 +66,7 @@ trigger:
 
 Webhook deployment requires `trigger.path`. Deployment without it fails with `TRIGGER_CONFIGURATION_INVALID`. Local `swizzle run` works without a path.
 
-Paths must be unique per environment. Deployment fails with `TRIGGER_WEBHOOK_PATH_CONFLICT` if another automation uses the path. Deployment also fails with `TRIGGER_WEBHOOK_PATH_RESERVED` if the API serves the path itself, such as `/auth/sign-in/email` or `/runs/<id>/cancel`.
+Paths must be unique per environment. Deployment fails with `TRIGGER_WEBHOOK_PATH_CONFLICT` if another automation uses the path. The webhook answers at its complete declared path: the trigger above answers at `<SWIZZLE_PUBLIC_URL>/hooks/orders-7f3a9c2b8e1d4a6f?environment=<env>`, the `webhookUrl` that `swizzle apply` prints. Use `/hooks/` for paths the public listener receives. A root path such as `/orders` answers at `<SWIZZLE_API_ORIGIN>/orders?environment=<env>` on the private API.
 
 `payload_schema` is a standard JSON Schema object. The config parser compiles it with AJV, `swizzle run` validates local payloads before executing the entrypoint, and public webhook ingress rejects bad payloads with `WEBHOOK_PAYLOAD_INVALID` before creating a run or BullMQ job. Use it whenever the upstream event shape is known.
 
@@ -139,18 +139,18 @@ A run waits for a live worker granted its group, project and environment, and ne
 
 ## Binary requirements
 
-Declare host binaries the automation needs. Workers heartbeat which binaries they have; deployment readiness checks enforce this.
+Declare every binary the automation calls, by its name on `PATH`. Each worker reports the binaries of its runner image, with their package versions, and `validate` and `apply` refuse an automation whose binaries no worker of its group has.
 
 ```yaml
 runtime:
   requirements:
     binaries:
+      - name: pdftoppm
+        version: ">=25"
       - name: ffmpeg
-      - name: imagemagick
-        version: "7"
 ```
 
-If a binary isn't in the worker image (`infra/docker/Dockerfile`, target `service`), you have to add it there before the deployment will pass readiness.
+This example fails on the default runner image, which has no ffmpeg. The refusal names the instance operator: only they can add a binary to the runner image ([Execution environment](../SKILL.md#execution-environment-whats-actually-available)).
 
 ## Rate limits
 

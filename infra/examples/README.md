@@ -18,12 +18,12 @@ You can still override that with `--payload` or `--payload-file`.
 
 | Example | Runtime | Trigger | Secrets | Helper style | What it demonstrates |
 | --- | --- | --- | --- | --- | --- |
-| `hello-webhook` | Python | webhook `/hello` | none | raw contract | Smallest believable happy-path webhook with Mermaid flow and sample payload |
-| `document-scanner` | Python | webhook `/document-scan` | none | vendored Python helper | Durable steps that match its flowchart: parse, detect topics, extract fields, ask a person when no topic matches, and route to a team |
-| `webhook-transformer` | Node.js | webhook `/transform-webhook` | none | raw contract | Normalizing inbound partner webhooks into a stable internal event shape |
-| `typescript-webhook` | TypeScript | webhook `/typescript-webhook` | none | vendored TS helper | Typed webhook normalization on top of the existing stdin/stdout runtime contract |
+| `hello-webhook` | Python | webhook `/hooks/hello` | none | raw contract | Smallest believable happy-path webhook with Mermaid flow and sample payload |
+| `document-scanner` | Python | webhook `/hooks/document-scan` | none | vendored Python helper | Durable steps that match its flowchart: parse, detect topics, extract fields, ask a person when no topic matches, and route to a team |
+| `webhook-transformer` | Node.js | webhook `/hooks/transform-webhook` | none | raw contract | Normalizing inbound partner webhooks into a stable internal event shape |
+| `typescript-webhook` | TypeScript | webhook `/hooks/typescript-webhook` | none | vendored TS helper | Typed webhook normalization on top of the existing stdin/stdout runtime contract |
 | `rag-indexer` | Python | cron `0 * * * *` | none | raw contract | Dry-run-friendly chunking and indexing preparation for later retrieval pipelines |
-| `agent-pipeline/intake` | TypeScript | webhook `/agent-pipeline` | none | vendored TS helper | Stable front door for decision-complete work orders from any planning tool |
+| `agent-pipeline/intake` | TypeScript | webhook `/hooks/agent-pipeline` | none | vendored TS helper | Stable front door for decision-complete work orders from any planning tool |
 | `agent-pipeline/builder` | TypeScript | chain from `agent-pipeline-intake` | none | vendored TS helper | Replaceable build block with a memoized durable workspace handoff |
 | `agent-pipeline/reviewer` | TypeScript | chain from `agent-pipeline-builder` | none | vendored TS helper | Parallel review block that preserves the workspace pointer |
 | `agent-pipeline/e2e-verifier` | TypeScript | chain from `agent-pipeline-builder` | none | vendored TS helper | Parallel e2e branch that checks the synthetic workspace artifact |

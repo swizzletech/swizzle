@@ -1,13 +1,12 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { isFinishedRun, RUN_STATUSES } from "@swizzle/db";
-import { buildDiagnosis } from "@swizzle/runtime";
 import type {
-  AutomationSecretsResponse,
   CancelRunResponse,
-  DeploymentsResponse,
   ResumeRunResponse,
+  RunDiagnosisResponse,
   RunsResponse,
+  TriggerRunResponse,
 } from "@swizzle/runtime/http-contract";
 import { type Command, Option } from "commander";
 import { apiRequest } from "./api.js";
@@ -27,7 +26,14 @@ import {
 } from "./command-support.js";
 import { parseTimeRange } from "./context.js";
 import { resolveCommandEnvironment } from "./environment-guard.js";
-import { AgentError, type CliIO, EXIT_CODES, respond, selectFields } from "./output.js";
+import {
+  AgentError,
+  type CliIO,
+  EXIT_CODES,
+  outputFormat,
+  respond,
+  selectFields,
+} from "./output.js";
 import {
   type LogWindowOptions,
   runStderr,
@@ -121,6 +127,7 @@ function registerLogs(program: Command, io: CliIO, runHandler: RunHandler): void
         const stdout = windowLog(run.stdout ?? "", options);
         const stderr = windowLog(runStderr(run), options);
         const terminal = isFinishedRun(run.status);
+        const terminalBlocks = process.stdout.isTTY === true && outputFormat() !== "json";
         respond(
           io,
           {
@@ -132,8 +139,10 @@ function registerLogs(program: Command, io: CliIO, runHandler: RunHandler): void
                 ? { error: `${run.errorCode}: ${run.errorMessage ?? ""}`.trim() }
                 : {}),
             },
-            ...(options.follow === true ? {} : { stderr: stderr.text || "(empty)" }),
-            stdout: stdout.text || "(empty)",
+            ...(options.follow === true || terminalBlocks
+              ? {}
+              : { stderr: stderr.text || "(empty)" }),
+            ...(terminalBlocks ? {} : { stdout: stdout.text || "(empty)" }),
           },
           [
             ...(stdout.truncated || stderr.truncated
@@ -144,11 +153,12 @@ function registerLogs(program: Command, io: CliIO, runHandler: RunHandler): void
             ...(terminal
               ? []
               : [`Run \`swizzle logs --run ${run.runId} --follow\` to watch it to the end`]),
-            ...(run.status === "failed" || run.status === "dead-lettered"
-              ? [`Run \`swizzle diagnose ${run.runId}\` for the likely cause and a fix`]
-              : []),
           ],
         );
+        if (terminalBlocks) {
+          if (options.follow !== true) io.stdout(`stderr:\n${stderr.text || "(empty)"}\n`);
+          io.stdout(`stdout:\n${stdout.text || "(empty)"}\n`);
+        }
       });
     },
   );
@@ -316,6 +326,33 @@ function registerRuns(program: Command, io: CliIO, runHandler: RunHandler): void
       });
     },
   );
+
+  const replay = runs
+    .command("replay")
+    .description("Start a new run with the original payload on the active deployment")
+    .argument("<runId>", "Run ID to replay", parseRunId);
+  withExamples(replay, [
+    "swizzle runs replay 0193b1d2-7f0c-7e55-9d5a-3c1f0b2a9e41",
+    "swizzle runs replay 0193b1d2-7f0c-7e55-9d5a-3c1f0b2a9e41 -e production",
+  ]);
+  replay.action(async (runId: string, inputOptions: ApiCommandOptions) => {
+    await runHandler(async () => {
+      const options = await targeted(inputOptions);
+      const started = await apiRequest<TriggerRunResponse>(
+        buildApiUrl(`/runs/${encodeURIComponent(runId)}/replay`, options),
+        { method: "POST" },
+      );
+      respond(
+        io,
+        {
+          run: { id: started.runId, status: started.status, deployment: started.deploymentId },
+          replayedFrom: runId,
+          ...(started.warning === undefined ? {} : { warning: started.warning }),
+        },
+        [`Run \`swizzle logs --run ${started.runId} --follow\` to watch the replay`],
+      );
+    });
+  });
 
   const cancel = runs
     .command("cancel")
@@ -540,24 +577,9 @@ function registerDiagnose(program: Command, io: CliIO, runHandler: RunHandler): 
   command.action(async (runId: string, inputOptions: ApiCommandOptions) => {
     await runHandler(async () => {
       const options = await targeted(inputOptions);
-      const run = await apiRequest<RunDetailRecord>(
-        buildApiUrl(`/runs/${encodeURIComponent(runId)}`, options),
+      const diagnosis = await apiRequest<RunDiagnosisResponse>(
+        buildApiUrl(`/runs/${encodeURIComponent(runId)}/diagnosis`, options),
       );
-      const slug = run.automationSlug ?? run.automationName ?? "";
-      // Secrets and deployments sharpen the diagnosis; without them it still names a cause.
-      const [secretHealth, deployments] = await Promise.all([
-        slug
-          ? apiRequest<AutomationSecretsResponse>(
-              buildApiUrl(`/automations/${slug}/secrets`, options),
-            ).catch(() => null)
-          : null,
-        slug
-          ? apiRequest<DeploymentsResponse>(
-              buildApiUrl(`/automations/${slug}/deployments`, options),
-            ).catch(() => null)
-          : null,
-      ]);
-      const diagnosis = buildDiagnosis(run, secretHealth?.secrets, deployments?.deployments);
       respond(
         io,
         {

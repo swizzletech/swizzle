@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { setTimeout as delay } from "node:timers/promises";
 import { FULL_SCOPE } from "@swizzle/db";
 import {
   createPostgresApiTokenStore,
@@ -7,12 +6,12 @@ import {
   type DatabaseClient,
 } from "@swizzle/db/postgres";
 import { it } from "vitest";
-import { testDatabase } from "../test/postgres.js";
-import { lockWaiters } from "./verify-postgres-locks.js";
+import { lockWaiters, testDatabase } from "../test/postgres.js";
+import { waitFor } from "../test/support.js";
 
 // A bearer token rewrites its row once per touch interval, not once per request: a row update
 // gives the row a new xmin, so an unchanged xmin means no write.
-async function verifyApiTokenTouch(client: DatabaseClient): Promise<void> {
+async function verifyApiTokenTouch(client: DatabaseClient, signal: AbortSignal): Promise<void> {
   const store = createPostgresApiTokenStore({ client });
   const person = await client.pool.query<{ id: string }>(
     "INSERT INTO auth_users (name, email) VALUES ('verify', 'verify-touch@example.test') RETURNING id",
@@ -25,7 +24,7 @@ async function verifyApiTokenTouch(client: DatabaseClient): Promise<void> {
     name: "verify-touch",
     scope: FULL_SCOPE,
   });
-  await verifyTouch(client, id, token);
+  await verifyTouch(client, id, token, signal);
   const registry = createPostgresWorkerRegistry({ client });
   const enrollment = await registry.create({
     name: "verify-token-touch",
@@ -37,10 +36,10 @@ async function verifyApiTokenTouch(client: DatabaseClient): Promise<void> {
   const worker = await registry.enroll(enrollment.code, "verify-token-touch");
   const verified = await store.verifyToken(worker.token);
   assert.ok(verified?.holder.kind === "worker");
-  await verifyTouch(client, verified.id, worker.token);
+  await verifyTouch(client, verified.id, worker.token, signal);
   // Auth must finish while another transaction owns both rows. Warmed last-use needs no write.
   const lock = await client.pool.connect();
-  let timeout: NodeJS.Timeout | undefined;
+  const watching = new AbortController();
   try {
     await lock.query("BEGIN");
     await lock.query("SELECT 1 FROM workers WHERE id = $1 FOR UPDATE", [worker.worker.id]);
@@ -50,13 +49,14 @@ async function verifyApiTokenTouch(client: DatabaseClient): Promise<void> {
         assert.ok(credential?.holder.kind === "worker");
         return registry.authenticate(credential.holder.workerId, credential.id);
       }),
-      new Promise<never>((_, reject) => {
-        timeout = setTimeout(() => reject(new Error("WORKER_AUTH_WAITED_FOR_ROW_LOCK")), 5_000);
+      // Authentication that queues behind the locked rows shows up as a lock waiter.
+      waitFor(watching.signal, async () => (await lockWaiters(client)) > 0).then(() => {
+        throw new Error("WORKER_AUTH_WAITED_FOR_ROW_LOCK");
       }),
     ]);
     assert.equal(authenticated.id, worker.worker.id);
   } finally {
-    clearTimeout(timeout);
+    watching.abort();
     lock.release(true);
   }
   process.stdout.write(
@@ -64,7 +64,12 @@ async function verifyApiTokenTouch(client: DatabaseClient): Promise<void> {
   );
 }
 
-async function verifyTouch(client: DatabaseClient, id: string, token: string): Promise<void> {
+async function verifyTouch(
+  client: DatabaseClient,
+  id: string,
+  token: string,
+  signal: AbortSignal,
+): Promise<void> {
   const store = createPostgresApiTokenStore({ client });
   await client.pool.query("UPDATE api_tokens SET last_used_at = NULL WHERE id = $1", [id]);
   const rowVersion = async (): Promise<string> => {
@@ -119,12 +124,11 @@ async function verifyTouch(client: DatabaseClient, id: string, token: string): P
         }),
       ),
     );
-    const deadline = Date.now() + 5_000;
     // A settled use cannot become a lock waiter. Count it even when other uses are blocked.
-    while (settledUses < burst && (await lockWaiters(client)) + settledUses < burst) {
-      if (Date.now() >= deadline) throw new Error("TOKEN_BURST_BARRIER_TIMEOUT");
-      await delay(20);
-    }
+    await waitFor(
+      signal,
+      async () => settledUses >= burst || (await lockWaiters(client)) + settledUses >= burst,
+    );
   } finally {
     // This connection only holds the lock. End its transaction before draining blocked uses,
     // including when the barrier fails, so teardown can close the pool and drop the database.
@@ -149,7 +153,7 @@ async function verifyTouch(client: DatabaseClient, id: string, token: string): P
   );
 }
 
-it("api token touch", { timeout: 60_000 }, async () => {
+it("api token touch", async ({ signal }) => {
   const client = testDatabase();
-  await verifyApiTokenTouch(client);
+  await verifyApiTokenTouch(client, signal);
 });

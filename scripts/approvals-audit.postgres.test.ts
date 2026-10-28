@@ -409,7 +409,7 @@ async function waitingApproval(
   return runId;
 }
 
-it("approvals and audit", { timeout: 60_000 }, async () => {
+it("approvals and audit", async () => {
   const client = testDatabase();
   const store = testControlPlaneStore();
   await verifyApprovalsAndAudit(client, store);

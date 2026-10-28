@@ -1,7 +1,7 @@
 import { access, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { expect, it, vi } from "vitest";
-import { temporaryDirectory, waitFor } from "../../../test/support.js";
+import { heldDeadlines, temporaryDirectory, waitFor } from "../../../test/support.js";
 import {
   closeDockerScopes,
   DockerScope,
@@ -73,11 +73,7 @@ setInterval(() => {}, 1000);
     { mode: 0o755 },
   );
   vi.stubEnv("PATH", `${directory}:${process.env.PATH}`);
-  const deadline = new AbortController();
-  const timeout = AbortSignal.timeout.bind(AbortSignal);
-  vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) =>
-    ms === 5_000 ? deadline.signal : timeout(ms),
-  );
+  const deadlines = heldDeadlines(5_000);
   const owner = new DockerScope({ timeoutMs: 10_000, containerName: null });
   const outcome = owner
     .run(["image", "inspect", "probe"], { outputLimitBytes: 4096 })
@@ -88,7 +84,7 @@ setInterval(() => {}, 1000);
       descendantPid = Number(await readFile(pidFile, "utf8").catch(() => "0"));
       return descendantPid > 0;
     });
-    deadline.abort(new DOMException("Docker control deadline exceeded", "TimeoutError"));
+    deadlines.expire();
     // The descendant left the killed group and still holds the pipes, so a run that waited for
     // them would end only at the test's timeout.
     expect(await outcome).toMatchObject({ code: "DOCKER_CONTROL_TIMEOUT" });
@@ -122,7 +118,7 @@ it.for([
 const fs = require('node:fs');
 const args = process.argv.slice(2);
 if (args[0] === 'create') { fs.writeFileSync(${JSON.stringify(started)}, ''); setInterval(() => {}, 1000); }
-else if (args[0] === 'ps' && fs.existsSync(${JSON.stringify(container)})) console.log(${JSON.stringify(name + " created ")} + ${JSON.stringify(sandboxProcessLabel().split("=")[1])});
+else if (args[0] === 'ps' && fs.existsSync(${JSON.stringify(container)})) console.log(${JSON.stringify(`${name} created `)} + ${JSON.stringify(sandboxProcessLabel().split("=")[1])});
 else if (args[0] === 'rm') {
   if (fs.existsSync(${JSON.stringify(container)})) { fs.unlinkSync(${JSON.stringify(container)}); console.log(args.at(-1)); }
   // docker rm --force exits zero without output when the name does not exist.
@@ -131,11 +127,7 @@ else if (args[0] === 'rm') {
       { mode: 0o755 },
     );
     vi.stubEnv("PATH", `${directory}:${process.env.PATH}`);
-    const deadline = new AbortController();
-    const timeout = AbortSignal.timeout.bind(AbortSignal);
-    vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) =>
-      ms === 5_000 ? deadline.signal : timeout(ms),
-    );
+    const deadlines = heldDeadlines(5_000);
     const scope = new DockerScope({ timeoutMs: 30_000, containerName: name });
     const created = scope.run(["create"], { outputLimitBytes: 4096 });
     await waitFor(signal, async () =>
@@ -144,7 +136,7 @@ else if (args[0] === 'rm') {
         () => false,
       ),
     );
-    deadline.abort(new DOMException("Docker deadline", "TimeoutError"));
+    deadlines.expire();
     await expect(created).rejects.toMatchObject({ code: "DOCKER_CONTROL_TIMEOUT" });
     vi.restoreAllMocks();
     await scope.close();
@@ -177,11 +169,7 @@ else if (args[0] === 'rm') fs.appendFileSync(${JSON.stringify(removals)}, args.a
     { mode: 0o755 },
   );
   vi.stubEnv("PATH", `${directory}:${process.env.PATH}`);
-  const deadline = new AbortController();
-  const timeout = AbortSignal.timeout.bind(AbortSignal);
-  vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) =>
-    ms === 5_000 ? deadline.signal : timeout(ms),
-  );
+  const deadlines = heldDeadlines(5_000);
   const owner = new DockerScope({ timeoutMs: 30_000, containerName: "swizzle-run-never-created" });
   const created = owner.run(["create"], { outputLimitBytes: 4096 });
   await waitFor(signal, () =>
@@ -190,7 +178,7 @@ else if (args[0] === 'rm') fs.appendFileSync(${JSON.stringify(removals)}, args.a
       () => false,
     ),
   );
-  deadline.abort(new DOMException("Docker deadline", "TimeoutError"));
+  deadlines.expire();
   await expect(created).rejects.toMatchObject({ code: "DOCKER_CONTROL_TIMEOUT" });
   vi.restoreAllMocks();
   await owner.close();
@@ -255,18 +243,7 @@ exec sleep 1000
   // Each control deadline is expired by the test once its fake docker process has logged its call.
   // A timer would also run while a loaded host is still starting that process, so the call would
   // be killed unlogged.
-  const controlDeadlines: AbortController[] = [];
-  let expireAll = false;
-  const expire = (deadline: AbortController) =>
-    deadline.abort(new DOMException("Docker control deadline exceeded", "TimeoutError"));
-  const timeout = AbortSignal.timeout.bind(AbortSignal);
-  vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
-    if (ms !== 5_000) return timeout(ms);
-    const deadline = new AbortController();
-    controlDeadlines.push(deadline);
-    if (expireAll) expire(deadline);
-    return deadline.signal;
-  });
+  const controlDeadlines = heldDeadlines(5_000);
   const loggedCalls = async (): Promise<{ command: string; pid: number }[]> => {
     try {
       return (await readFile(log, "utf8"))
@@ -280,8 +257,7 @@ exec sleep 1000
   };
   const expireAfterLogged = async (callCount: number, deadlineIndex: number) => {
     await waitFor(signal, async () => (await loggedCalls()).length >= callCount);
-    const deadline = controlDeadlines[deadlineIndex];
-    if (deadline) expire(deadline);
+    controlDeadlines.expire(deadlineIndex);
   };
 
   const transfer = new DockerScope({ timeoutMs: 10_000, containerName: null });
@@ -308,8 +284,7 @@ exec sleep 1000
     await closing;
   } finally {
     // A failed wait must not leave a fake docker process under a deadline nobody will expire.
-    expireAll = true;
-    for (const deadline of controlDeadlines) expire(deadline);
+    controlDeadlines.expire();
     await closeDockerScopes();
   }
   const calls = await loggedCalls();

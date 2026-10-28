@@ -390,7 +390,6 @@ function buildSchema(type: string): Record<string, unknown> {
           "TRIGGER_NOT_FOUND",
           "TRIGGER_PAUSED",
           "TRIGGER_WEBHOOK_PATH_CONFLICT",
-          "TRIGGER_WEBHOOK_PATH_RESERVED",
           "UNEXPECTED_RUNTIME_ERROR",
           "WEBHOOK_PAYLOAD_INVALID",
         ],

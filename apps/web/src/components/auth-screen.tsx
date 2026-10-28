@@ -1,17 +1,18 @@
 // The screens a person sees before the dashboard: sign-in and setup (shell.tsx), accepting an
-// invitation and resetting a password (routes/account.tsx). Each renders inside AuthScreen.
+// invitation and resetting a password (routes/account.tsx). Each renders inside AuthScreen, and
+// each that sets a password asks for it with NewPasswordField.
 //
 // Creating an account offers two-factor sign-in, preselected and never required: the form shows
 // TwoFactorChoice, its submit calls `startTwoFactor` after the account exists, and the screen then
 // renders TwoFactorOnboarding with what that returned.
 
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { flushSync } from "react-dom";
 
 import { ApiError, type TwoFactorEnrollment } from "../lib/api";
 import { sessionApi } from "../lib/api/account";
-import { signInProblemInWords } from "../lib/words/access";
+import { PASSWORD_RULE, passwordProblemInWords, signInProblemInWords } from "../lib/words/access";
 import { Logo } from "./logo";
 import { RecoveryCodes, TwoFactorSetup } from "./two-factor";
 
@@ -31,6 +32,43 @@ export function AuthScreen(props: {
         </main>
         <p className="t-faint mt-4 text-center">Agents write it. Swizzle runs it.</p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * A new password with its rule underneath. Once a typed password is too short or too long, the rule
+ * says by how much and the field is marked invalid, so a form whose button waits for it says why.
+ */
+export function NewPasswordField(props: {
+  readonly label: string;
+  readonly value: string;
+  readonly onChange: (value: string) => void;
+  /** Said after the rule while the password meets it. */
+  readonly note?: string;
+}) {
+  const id = useId();
+  const problem = passwordProblemInWords(props.value);
+  const rule = props.note === undefined ? PASSWORD_RULE : `${PASSWORD_RULE} ${props.note}`;
+  return (
+    <div className="form-label">
+      <label htmlFor={`${id}-field`}>{props.label}</label>
+      <input
+        aria-describedby={`${id}-rule`}
+        aria-invalid={problem !== null}
+        autoComplete="new-password"
+        className="field h-10"
+        id={`${id}-field`}
+        onChange={(event) => props.onChange(event.target.value)}
+        type="password"
+        value={props.value}
+      />
+      <span
+        className={`font-normal ${problem === null ? "t-faint" : "text-fail"}`}
+        id={`${id}-rule`}
+      >
+        {problem ?? rule}
+      </span>
     </div>
   );
 }

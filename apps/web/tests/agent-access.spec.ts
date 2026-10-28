@@ -95,3 +95,71 @@ test("a limited agent token is sent with its limits and listed with them", async
     scope: { environments: ["staging"], projects: ["default"], role: "operator" },
   });
 });
+
+// A browser or an agent's webview may suppress window.confirm and answer false at once. Revoking
+// must still work, so the dashboard asks in the page.
+test("revoking an agent token asks in the page, even where window.confirm answers false", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.confirm = () => false;
+  });
+  const state = seededState();
+  await mockDashboardApi(page, state);
+  await page.goto("/settings#agent-access");
+  await page.getByLabel("Token name").fill("Claude on my laptop");
+  await page.getByRole("button", { name: "Create agent token" }).click();
+  await page.getByRole("button", { name: "Done" }).click();
+
+  await page.getByTestId("token-row").getByRole("button", { name: "Revoke" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("Revoke Claude on my laptop?");
+  await dialog.getByRole("button", { name: "Revoke" }).click();
+
+  await expect(dialog).toBeHidden();
+  await expect(page.getByTestId("token-row")).toHaveCount(0);
+  expect(
+    state.requests.filter(
+      (request) => request.method === "DELETE" && request.pathname === "/auth/tokens/token-1",
+    ),
+  ).toHaveLength(1);
+});
+
+// The block shows only once, so copying it must end in a visible outcome even when the browser
+// refuses the clipboard or never answers.
+for (const refusal of ["rejects", "never answers"] as const) {
+  test(`Copy block selects the block for copying by hand when the clipboard ${refusal}`, async ({
+    page,
+  }) => {
+    await page.addInitScript((mode) => {
+      const writeText =
+        mode === "rejects"
+          ? () => Promise.reject(new DOMException("Write permission denied.", "NotAllowedError"))
+          : () => new Promise<void>(() => {});
+      Object.defineProperty(navigator, "clipboard", { value: { writeText } });
+    }, refusal);
+    const silent = refusal === "never answers";
+    if (silent) await page.clock.install();
+    await mockDashboardApi(page, seededState());
+    await page.goto("/settings#agent-access");
+    await page.getByLabel("Token name").fill("Claude on my laptop");
+    await page.getByRole("button", { name: "Create agent token" }).click();
+    const block = page.getByTestId("give-to-agent");
+    const copy = block.getByRole("button", { name: "Copy block" });
+    // A silent clipboard ends at the button's 1.5 s deadline: time stands until the test runs it.
+    if (silent) await page.clock.pauseAt(Date.now() + 60_000);
+    await copy.click();
+    if (silent) {
+      // While the clipboard is asked, a second attempt cannot start and race the first.
+      await expect(copy).toBeDisabled();
+      await page.clock.runFor(1_500);
+    }
+
+    await expect(block.getByRole("alert")).toContainText("press Ctrl+C or ⌘C");
+    await expect
+      .poll(() => page.evaluate(() => String(window.getSelection())))
+      .toMatch(
+        /^export SWIZZLE_TOKEN='swz_token-1_one-time-plaintext'\n.*swizzle workspace init/su,
+      );
+  });
+}

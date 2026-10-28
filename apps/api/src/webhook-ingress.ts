@@ -4,9 +4,13 @@ import {
   createWebhookRunContext,
   type WebhookRunContext,
 } from "@swizzle/runtime";
-import type { TriggerRunResponse } from "@swizzle/runtime/http-contract";
+import {
+  isWebhookDeliveryPath,
+  type TriggerRunResponse,
+  WEBHOOK_PATH_PREFIX,
+} from "@swizzle/runtime/http-contract";
 import type { PlatformServices } from "@swizzle/runtime/platform";
-import type { FastifyRequest } from "fastify";
+import type { FastifyReply, FastifyRequest } from "fastify";
 
 import {
   type ClientRateLimiter,
@@ -33,31 +37,6 @@ const WEBHOOK_NOT_AVAILABLE_CODES = new Set<AutomationRuntimeError["code"]>([
   "WEBHOOK_NOT_AVAILABLE",
 ]);
 
-/**
- * Records every POST route registered on `app` from now on, so call it before the first route.
- * The returned predicate answers whether a webhook path would be answered by one of them instead
- * of the catch-all ingress (a `:param` segment matches any one segment). Deploy uses it to refuse
- * such a path.
- */
-export function trackApiPostRoutes(app: ApiServer): (webhookPath: string) => boolean {
-  const patterns: string[][] = [];
-  app.addHook("onRoute", (route) => {
-    const methods = Array.isArray(route.method) ? route.method : [route.method];
-    if (methods.includes("POST") && route.url !== "/*") {
-      patterns.push(route.url.split("/"));
-    }
-  });
-
-  return (webhookPath) => {
-    const segments = webhookPath.split("/");
-    return patterns.some(
-      (pattern) =>
-        pattern.length === segments.length &&
-        pattern.every((part, index) => part.startsWith(":") || part === segments[index]),
-    );
-  };
-}
-
 export function registerWebhookIngressRoute(
   app: ApiServer,
   options: {
@@ -65,9 +44,13 @@ export function registerWebhookIngressRoute(
     readonly webhookIngressLimiter: ClientRateLimiter;
   },
 ): void {
-  app.post<{ Reply: TriggerRunResponse }>("/*", async (request, reply) => {
+  const deliver = async (
+    request: FastifyRequest,
+    reply: FastifyReply,
+  ): Promise<TriggerRunResponse> => {
     const environment = getEnvironment(request);
     const requestPath = getRequestPath(request.raw.url);
+    if (!isWebhookDeliveryPath(requestPath)) return replyWebhookNotAvailable();
     // One budget per client across paths and environments: guessing either spends the same
     // budget as flooding one webhook.
     const rateLimit = options.webhookIngressLimiter.check(clientKey(request));
@@ -107,7 +90,9 @@ export function registerWebhookIngressRoute(
     } catch (error) {
       return sanitizeWebhookIngressError(error);
     }
-  });
+  };
+  app.post<{ Reply: TriggerRunResponse }>(`${WEBHOOK_PATH_PREFIX}/*`, deliver);
+  app.post<{ Reply: TriggerRunResponse }>("/*", deliver);
 }
 
 // Turns a runtime error into a caller-safe response for the public ingress door.
@@ -157,6 +142,8 @@ function buildWebhookContext(request: FastifyRequest): WebhookRunContext | null 
   });
 }
 
+/** The complete delivery path, as stored by every released 1.x server, without the query. */
 function getRequestPath(url: string | undefined): string {
-  return (url ?? "/").split("?")[0] ?? "/";
+  const path = (url ?? "").split("?")[0] ?? "";
+  return path || "/";
 }

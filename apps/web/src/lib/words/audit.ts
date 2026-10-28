@@ -60,6 +60,7 @@ const ROUTE_WORDS: Readonly<Record<AuditedRoute, string>> = {
   "DELETE /credentials/:kind/:name/shares/:project": "Stopped sharing a credential",
   "PUT /projects/:project/credential-shares/:shareId": "Accepted a shared credential",
   "DELETE /projects/:project/credential-shares/:shareId": "Removed a shared credential",
+  "POST /runs/:runId/replay": "Replayed a run",
   "POST /runs/:runId/cancel": "Cancelled a run",
   "POST /runs/:runId/events/:stepKey": "Sent an event to a run",
   "POST /runs/:runId/approvals/:stepKey": "Decided an approval",

@@ -233,15 +233,14 @@ test("environment grants are offered only in protected environments, and unprote
   await expect(staging.getByRole("button", { name: "Grant access to staging" })).toHaveCount(0);
   await expect(production).toContainText("Environment grants: Release as operator.");
 
-  let asked = "";
-  page.once("dialog", async (dialog) => {
-    asked = dialog.message();
-    await dialog.accept();
-  });
   await production.getByRole("checkbox", { name: "Protect production" }).click();
+  const confirm = page.getByRole("dialog");
+  await expect(confirm).toHaveAccessibleName(
+    "Unprotect production? This removes its 1 environment grant.",
+  );
+  await confirm.getByRole("button", { name: "Unprotect" }).click();
 
   await expect(production).toContainText("Protect production to grant access in it.");
-  expect(asked).toBe("Unprotect production? This removes its 1 environment grant.");
   expect(sent).toEqual(["DELETE /api/projects/default/environments/production/protection"]);
   await expect(production).not.toContainText("Environment grants");
 });
