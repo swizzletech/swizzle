@@ -3,6 +3,12 @@
 Each release lists changes for people who run Swizzle and write automations.
 Versions follow Semantic Versioning. Tags use `vX.Y.Z`; pre-releases use `X.Y.Z-rc.N`.
 
+## 1.0.4
+
+### Changed
+
+- The README leads with how Swizzle is meant to be used: a coding agent writes an automation once as ordinary code, and Swizzle runs it the same way every time. It also says why Swizzle exists.
+
 ## 1.0.3
 
 ### Added
