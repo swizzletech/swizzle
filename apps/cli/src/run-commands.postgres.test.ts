@@ -574,6 +574,11 @@ describe("swizzle run locally", () => {
       const io = createBufferIO();
       expect(await runCli(["run", directory, "--check", "--json"], io)).toBe(1);
       expect(JSON.parse(io.stdoutText)).toMatchObject({ code });
+      if (code === "MISSING_REQUIRED_SECRETS") {
+        expect(JSON.parse(io.stdoutText)).toMatchObject({
+          help: ["Export the missing secret names in your current shell before running locally."],
+        });
+      }
     },
   );
 

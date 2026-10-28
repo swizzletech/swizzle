@@ -10,6 +10,8 @@ A deployment is one activation of an automation in one environment. History is a
 2. It marks the active deployment of that environment `inactive` and inserts a new active one ([`deployments`](../../packages/db/src/schema.ts)) with the next `seq`. The sequence counts per automation across all environments, so `#7` names one deployment.
 3. It builds the trigger input with [`buildDeploymentTriggerInput`](../../packages/db/src/deployment-trigger-input.ts), syncs that input to the new deployment, and writes a deployment audit event. The PostgreSQL store and deployment preview use the same builder for cron, every, webhook, and chain triggers. Chain sources need active deployments in the consumer's project and environment. A missing source and a source in another project both refuse deployment with `TRIGGER_CONFIGURATION_INVALID` and `Chain source automation not found: <name>`, even when the deployer can read both projects. The runtime checks sources before creating artifacts. The transaction checks again before publishing the config. A chain source cannot be the target automation or one of its downstream automations, because either choice would create a cycle.
 
+Each deployment artifact records the binary version matching rule used by readiness. Older artifacts have no rule field, so runs, API checks, and worker image preparation use the 1.0.4 matcher for them. That matcher accepts `latest` when a worker reports a version because the rule has no numeric components. New source rejects `latest` and records numeric-prefix matching, where bare `25` matches `25.3`. Keeping the rule in the artifact lets an upgrade change validation for new deployments without changing readiness for installed ones.
+
 Each deployment records the artifact locator, the runtime snapshot and the dependency build snapshot, so a later run of that deployment knows which tree and which runtime it needs. A run row references its deployment and its version. Those foreign keys use `onDelete: "restrict"` ([`runs`](../../packages/db/src/schema.ts)), so PostgreSQL refuses to delete a deployment or version that any run used.
 
 Deployment readiness reads the worker registry, where each worker's row holds its grants, liveness and the capabilities its last heartbeat measured. Deploy and rollback load one worker snapshot before committing and reuse it in the response. A registered group whose workers sleep allows deployment with a warning. An unknown group or a failed registry query stops the operation before commit.
@@ -37,6 +39,10 @@ A rollback is a deploy of old code, so it goes through the same checks:
 - [`performRollback`](../../packages/runtime/src/deployment-admin.ts) first checks that the target's artifacts still exist ([`validateArtifactExists`](../../packages/runtime/src/deployment-admin.ts)). A target whose tree retention deleted fails before anything changes.
 - It syncs the trigger exactly like a deploy. A webhook path that another automation took in the meantime fails the rollback with `ROLLBACK_CONFLICT`. A cron trigger follows the new deployment, because the scheduler reads triggers from PostgreSQL.
 - It writes an audit event of type `rollback` with the target id.
+
+## Deleting a source leaves its chains invalid
+
+Deleting an automation removes its deployments and runs in every environment, while its audit events stay. The CLI names dependent chains before asking for `--yes`, including paused chains in other environments. If the API cannot preview that impact, the CLI refuses to delete. A dependent keeps an invalid trigger with `TRIGGER_CHAIN_SOURCE_DELETED`, so `swizzle inspect` and the dashboard show which source was deleted and mark the dependent not ready. Restore the source, then run `swizzle apply <dependent-dir> --force`, or change the dependent's trigger and deploy it. A join cannot resume with fewer sources than it declared.
 
 ## Retention expires finished runs and bounds bulk
 

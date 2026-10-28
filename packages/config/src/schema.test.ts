@@ -8,6 +8,25 @@ import {
 } from "./schema.js";
 
 describe("parseAutomationConfig", () => {
+  it.each(["^25", "~25", "25.x", ">=25 <26", "v25", "garbage", "25."])(
+    "rejects unsupported binary version rule %s with its accepted forms",
+    (rule) => {
+      expect(() =>
+        parseAutomationConfig(`
+name: pdf
+version: 1.0.0
+entrypoint: main.py
+trigger: { type: webhook }
+runtime:
+  requirements:
+    binaries:
+      - name: pdftoppm
+        version: "${rule}"
+`),
+      ).toThrow(/version.*Invalid.*>=.*<=.*>.*<.*=/);
+    },
+  );
+
   it("rejects unknown keys and names every offending path", () => {
     const parse = () =>
       parseAutomationConfig(`
@@ -475,4 +494,12 @@ describe("runtime normalization contract", () => {
       on_overlap: "skip",
     });
   });
+});
+
+it.each(["v25.03.0", "^25"])("reads the saved binary rule %s only from a deployment", (rule) => {
+  const yaml = `name: legacy\nversion: 1.0.0\ntrigger: { type: webhook }\nruntime:\n  requirements:\n    binaries:\n      - { name: pdftoppm, version: '${rule}' }\n`;
+  expect(parseAutomationConfig(yaml, "deployment").runtime.requirements.binaries).toEqual([
+    { name: "pdftoppm", version: rule },
+  ]);
+  expect(() => parseAutomationConfig(yaml)).toThrow("Invalid version rule");
 });

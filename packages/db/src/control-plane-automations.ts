@@ -99,6 +99,40 @@ export async function deleteAutomation(
   });
 }
 
+export async function listAutomationChainDependents(
+  client: DatabaseClient,
+  automationSlug: string,
+) {
+  const [source] = await client.db
+    .select({ id: automations.id })
+    .from(automations)
+    .where(automationNamed(automationSlug));
+  if (source === undefined) return [];
+  return await client.db
+    .selectDistinct({
+      automationId: automations.id,
+      automationSlug: automations.slug,
+      projectId: automations.projectId,
+      environment: automationTriggers.environment,
+    })
+    .from(automationTriggers)
+    .innerJoin(automations, eq(automations.id, automationTriggers.automationId))
+    .leftJoin(
+      automationTriggerChainSources,
+      eq(automationTriggerChainSources.triggerId, automationTriggers.id),
+    )
+    .where(
+      and(
+        eq(automationTriggers.triggerType, "chain"),
+        or(
+          eq(automationTriggers.chainSourceAutomationId, source.id),
+          eq(automationTriggerChainSources.sourceAutomationId, source.id),
+        ),
+      ),
+    )
+    .orderBy(automations.slug, automationTriggers.environment);
+}
+
 export async function countProjectContents(
   client: DatabaseClient,
   projectId: string,
@@ -347,8 +381,8 @@ async function artifactReferencesOf(
 /**
  * Deletes the automations with everything that cascades from them: versions, deployments,
  * triggers, state, checks, grants, rules and runs with their attempts, steps and logs. A chain
- * trigger of another automation that names one of them as a source goes too, so it never waits
- * for a source that cannot run again, and a join never fires on fewer sources than it declared.
+ * trigger of another automation that names one of them stays invalid, so its owner can see why
+ * it cannot fire, and a join never fires on fewer sources than it declared.
  */
 async function removeAutomations(
   tx: Transaction,
@@ -364,20 +398,37 @@ async function removeAutomations(
     .select({ rows: count() })
     .from(runs)
     .where(inArray(runs.automationId, ids));
-  await tx
-    .delete(automationTriggers)
-    .where(
-      or(
-        inArray(automationTriggers.chainSourceAutomationId, ids),
-        inArray(
-          automationTriggers.id,
-          tx
-            .select({ id: automationTriggerChainSources.triggerId })
-            .from(automationTriggerChainSources)
-            .where(inArray(automationTriggerChainSources.sourceAutomationId, ids)),
+  const sources = await tx
+    .select({ id: automations.id, slug: automations.slug })
+    .from(automations)
+    .where(inArray(automations.id, ids));
+  for (const source of sources) {
+    await tx
+      .update(automationTriggers)
+      .set({
+        // Clear the single-source FK before deleting its target, or its cascade removes the trigger.
+        chainSourceAutomationId: null,
+        status: "invalid",
+        errorCode: "TRIGGER_CHAIN_SOURCE_DELETED",
+        errorMessage: `Chain source automation was deleted: ${source.slug}`,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(automationTriggers.triggerType, "chain"),
+          or(
+            eq(automationTriggers.chainSourceAutomationId, source.id),
+            inArray(
+              automationTriggers.id,
+              tx
+                .select({ id: automationTriggerChainSources.triggerId })
+                .from(automationTriggerChainSources)
+                .where(eq(automationTriggerChainSources.sourceAutomationId, source.id)),
+            ),
+          ),
         ),
-      ),
-    );
+      );
+  }
   await tx.delete(automations).where(inArray(automations.id, ids));
   return { deployments: deploymentCount?.rows ?? 0, runs: runCount?.rows ?? 0 };
 }

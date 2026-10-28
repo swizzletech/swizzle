@@ -7,6 +7,7 @@ import type { ReadinessWorker } from "./platform-records.js";
 import {
   collectWorkerCapabilities,
   createQueueNameForProfile,
+  createRuntimeSnapshot,
   evaluateAutomationReadiness,
   evaluateLocalAutomationReadiness,
 } from "./runtime-requirements.js";
@@ -82,6 +83,10 @@ describe("evaluateLocalAutomationReadiness", () => {
       errors: [],
       status: "ready",
     });
+    expect(await readiness('      - name: pdftoppm\n        version: "25"')).toMatchObject({
+      errors: [],
+      status: "ready",
+    });
     expect(await readiness('      - name: pdftoppm\n        version: ">=26"')).toMatchObject({
       errors: [
         {
@@ -115,6 +120,78 @@ describe("evaluateLocalAutomationReadiness", () => {
 });
 
 describe("evaluateAutomationReadiness", () => {
+  it.each([
+    ["latest", "25.3", "ready"],
+    ["latest", null, "not-ready"],
+    ["25", "25.3", "not-ready"],
+    ["25", "25.03.0", "not-ready"],
+    ["25", "25.0.0", "ready"],
+    ["v25.03.0", "25.3", "ready"],
+  ])("preserves saved rule %s against worker version %s as %s", (rule, version, status) => {
+    const saved = parseAutomationConfig(
+      `
+name: saved
+version: 1.0.0
+entrypoint: main.js
+trigger: { type: webhook }
+runtime:
+  requirements:
+    binaries: [{ name: pdftoppm, version: '${rule}' }]
+`,
+      "deployment",
+    );
+    const available = worker(["host"]);
+    const pdfWorker = {
+      ...available,
+      capabilities: { ...available.capabilities, binaries: [{ name: "pdftoppm", version }] },
+    };
+    expect(
+      evaluateAutomationReadiness({ config: saved, directory: process.cwd() }, [pdfWorker]),
+    ).toMatchObject({ status });
+  });
+
+  it.each([
+    ["25", "ready"],
+    ["25.3", "ready"],
+    ["25.03.0", "ready"],
+    ["2", "not-ready"],
+    ["25.4", "not-ready"],
+    ["=25", "not-ready"],
+    ["=25.3.0", "ready"],
+    [">=26", "not-ready"],
+    ["<=25", "not-ready"],
+    ["<26", "ready"],
+    [">25", "ready"],
+  ])("checks rule %s against a worker's pdftoppm 25.03.0 as %s", (rule, status) => {
+    const available = worker(["host"]);
+    const pdfWorker = {
+      ...available,
+      capabilities: {
+        ...available.capabilities,
+        binaries: [{ name: "pdftoppm", version: "25.03.0" }],
+      },
+    };
+    expect(
+      evaluateAutomationReadiness(
+        {
+          config: config(
+            `  requirements:\n    binaries:\n      - name: pdftoppm\n        version: "${rule}"`,
+          ),
+          directory: process.cwd(),
+        },
+        [pdfWorker],
+      ),
+    ).toMatchObject({ status });
+    const current = config(
+      `  requirements:\n    binaries:\n      - name: pdftoppm\n        version: "${rule}"`,
+    );
+    const reloaded = parseAutomationConfig(JSON.stringify(current), "deployment");
+    expect(
+      evaluateAutomationReadiness({ config: reloaded, directory: process.cwd() }, [pdfWorker]),
+    ).toMatchObject({ status });
+    expect(createRuntimeSnapshot(reloaded).binary_version_matching).toBe("numeric-prefix");
+  });
+
   it("needs a worker that advertises container execution for a container automation", () => {
     const automation = { config: config("  execution_mode: container"), directory: process.cwd() };
 

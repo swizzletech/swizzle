@@ -3,6 +3,29 @@
 Each release lists changes for people who run Swizzle and write automations.
 Versions follow Semantic Versioning. Tags use `vX.Y.Z`; pre-releases use `X.Y.Z-rc.N`.
 
+## 1.0.5
+
+### Added
+
+- Releases publish signed images for `linux/amd64` and `linux/arm64` to `ghcr.io/swizzletech`. On a release checkout, `just stack`, `just backup`, `just restore` and `just upgrade` pull these images instead of compiling the stack on the server. Releases 1.0.4 and earlier have no images and still build from source, one service at a time. [Verify release images](docs/how-to/upgrade.md#verify-release-images) shows how to check a signature.
+
+### Changed
+
+- `just upgrade` prepares the target release's images while the installed services keep running. Before it stops anything, it checks `just`, `mise`, the pinned Node toolchain, Docker Compose and free space in Docker's data directory. A missing tool, too little space, a failed pull or an incomplete image publication leaves the installed services running. The first upgrade from 1.0.4 or earlier runs the target release's upgrade script, as [Upgrade a server](docs/how-to/upgrade.md#if-your-installed-release-predates-image-preparation) describes.
+- Cron no longer catches up occurrences missed while the scheduler was stopped. The latest due occurrence still runs if it is at most 30 seconds late. A `cron_missed` audit event records how many occurrences were skipped, and the automation's Change history shows it.
+- Deleting an automation that other automations chain from names the dependent chains in every environment before asking for `--yes`. The dependents keep an invalid trigger, and `swizzle inspect` and the dashboard mark them not ready and name the deleted source. If the API cannot preview the deletion, the CLI refuses to delete.
+- A version rule in `requirements.binaries` accepts a bare numeric version, which matches a dotted prefix, or a comparison with `>=`, `<=`, `>`, `<` or `=`. `swizzle validate` refuses other forms, such as `^25`. Deployments saved by an earlier 1.x release keep their rules, such as `v25.03.0` or `latest`, and match workers as they did before.
+- `swizzle inspect` shows the active deployment's execution mode, `host` or `sandbox (container)`.
+
+### Fixed
+
+- `swizzle logs --run <id> --full` prints stderr with real line breaks when stdout is piped, as it already did in a terminal.
+- An API check whose last API call returned 401 or 403 reports `credentials`, even if the check exits with a bare `1`. A check that cannot start locally keeps its own error code and recovery hint, such as exporting a missing secret.
+- In the run panel, **Run again** no longer appears where **Open automation** or **Cancel run** was a moment earlier, so a click aimed at one cannot start a second run. Approval buttons wrap together under the comment field on a narrow screen, and stay inside the run panel when even one row is too wide.
+- Dashboard readiness labels name the broken trigger.
+- Resuming a paused chain cannot reactivate it while its source is being deleted.
+- The install and upgrade guides show how to run recipes in a plain SSH shell with mise in `~/.local/bin`, and require the Docker Buildx plugin.
+
 ## 1.0.4
 
 ### Changed

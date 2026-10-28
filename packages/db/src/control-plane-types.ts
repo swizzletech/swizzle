@@ -296,10 +296,16 @@ export interface ControlPlaneStore {
   ): Promise<boolean>;
   /**
    * Deletes an automation with everything it owns, its runs included (ADR 0015), and the chain
-   * triggers of other automations that name it as a source. Only its audit events stay. Refuses
+   * invalidates chain triggers of other automations that name it as a source. Only its audit events stay. Refuses
    * while a trigger is active or a run is unfinished.
    */
   deleteAutomation(input: DeleteAutomationInput): Promise<DeleteAutomationResult>;
+  /** Chain triggers in every environment whose source would be deleted, including paused ones. */
+  listAutomationChainDependents(
+    automationSlug: string,
+  ): Promise<
+    readonly Pick<StoredTrigger, "automationId" | "automationSlug" | "projectId" | "environment">[]
+  >;
   /** What a project holds that deleting it must decide about; null when there is no project. */
   countProjectContents(projectId: string): Promise<ProjectContentCounts | null>;
   /**

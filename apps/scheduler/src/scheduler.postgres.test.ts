@@ -122,7 +122,7 @@ describe("scheduler service", () => {
     const duplicatePollRuns = await scheduler.pollOnce(requireDate(trigger.nextRunAt));
     expect(duplicatePollRuns).toHaveLength(0);
 
-    // Process the first run so overlap-prevention does not skip the catchup slot.
+    // Process the first run so overlap-prevention does not skip the next slot.
     await platform.processNextPlatformRun();
 
     const updatedTrigger = await platform.getAutomationTrigger("cron-success", "local");

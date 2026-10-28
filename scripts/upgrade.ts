@@ -1,37 +1,34 @@
 // `just upgrade [vX.Y.Z]`: self-contained so an older checkout can run the target's script
-// from its git directory before it has the recipe. Requires only the pinned Node and just.
+// and stack-images.ts from its git directory before it has the recipe.
 
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { chmod, copyFile, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
+import {
+  capture,
+  composeArgs,
+  preflight,
+  prepareImages,
+  RELEASE_TAG,
+  readCompose,
+  run,
+  writeCompose,
+} from "./stack-images.ts";
 
 interface Release {
   readonly tag: string;
   readonly commit: string;
   readonly version: string;
 }
-
-const TAG = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:rc\.(?:0|[1-9]\d*)))?$/u;
 const compose = ["compose", "--env-file", ".env", "-f", "infra/docker/compose.yml"];
-
-function capture(command: string, args: string[]): string {
-  return execFileSync(command, args, {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "inherit"],
-  }).trim();
-}
-
-function run(command: string, args: string[]): void {
-  execFileSync(command, args, { stdio: "inherit" });
-}
 
 function quote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 function resolveRelease(requestedTag: string | undefined): Release {
-  if (requestedTag !== undefined && !TAG.test(requestedTag)) {
+  if (requestedTag !== undefined && !RELEASE_TAG.test(requestedTag)) {
     throw new Error(
       "Use a release tag such as v1.0.3 or v2.0.0-rc.1, or omit it for the newest stable release.",
     );
@@ -45,11 +42,11 @@ function resolveRelease(requestedTag: string | undefined): Release {
   ])
     .split("\n")
     .map((line) => line.split("\t")[1]?.replace(/^refs\/tags\//u, "") ?? "")
-    .filter((name) => TAG.test(name));
+    .filter((name) => RELEASE_TAG.test(name));
   const tag = requestedTag ?? tags.find((name) => !name.includes("-"));
   if (tag === undefined) throw new Error("No stable release tags found on origin.");
   if (!tags.includes(tag)) throw new Error(`Release tag ${tag} was not found on origin.`);
-  run("git", ["fetch", "--no-tags", "origin", `refs/tags/${tag}`]);
+  run("git", ["fetch", "--no-tags", "origin", `refs/tags/${tag}:refs/swizzle/releases/${tag}`]);
   const commit = capture("git", ["rev-parse", "--verify", "FETCH_HEAD^{commit}"]);
   const manifest: unknown = JSON.parse(capture("git", ["show", `${commit}:package.json`]));
   if (
@@ -57,10 +54,12 @@ function resolveRelease(requestedTag: string | undefined): Release {
     typeof manifest !== "object" ||
     !("version" in manifest) ||
     typeof manifest.version !== "string" ||
-    !TAG.test(`v${manifest.version}`)
+    !RELEASE_TAG.test(`v${manifest.version}`)
   ) {
     throw new Error(`Release ${tag} has no valid package.json version.`);
   }
+  if (`v${manifest.version}` !== tag)
+    throw new Error(`Tag ${tag} does not match package version ${manifest.version}.`);
   return { tag, commit, version: manifest.version };
 }
 
@@ -72,6 +71,8 @@ async function upgrade(requestedTag: string | undefined): Promise<void> {
     );
   }
   await readFile(".env");
+  const source = { root: process.cwd(), envFile: path.resolve(".env") };
+  preflight(source);
   const release = resolveRelease(requestedTag);
   const previous = capture("git", ["rev-parse", "HEAD"]);
   const directory = path.join(
@@ -83,24 +84,96 @@ async function upgrade(requestedTag: string | undefined): Promise<void> {
   const envBackup = path.join(directory, "env");
   await copyFile(".env", envBackup);
   await chmod(envBackup, 0o600);
-  const restore = `git checkout --detach ${previous} && cp ${quote(envBackup)} .env && docker compose --env-file .env -f infra/docker/compose.yml --profile stack build && just restore ${quote(backup)}`;
+  const targetRoot = path.join(directory, "target");
+  await mkdir(targetRoot);
+  const archive = execFileSync("git", ["archive", release.commit], { maxBuffer: 64 * 1024 * 1024 });
+  execFileSync("tar", ["-xf", "-", "-C", targetRoot], { input: archive });
+  const target = {
+    root: targetRoot,
+    envFile: path.join(targetRoot, ".env"),
+    version: release.version,
+  };
+  // Trust the selected release's pinned toolchain before the installed services are touched.
+  run("mise", ["trust"], targetRoot);
+  preflight(target);
+  await copyFile(source.envFile, target.envFile);
+  run("mise", ["exec", "--", "node", "scripts/init-env.ts"], targetRoot);
+  const prepared = prepareImages(target, path.join(directory, "target.json"));
+  // Backup format 1 is schema-agnostic: use the prepared tool before applying migrations.
+  const currentBackupImage = prepared.images.backup;
+  if (currentBackupImage === undefined) throw new Error("The release has no backup image.");
+  const rollback = readCompose(source);
+  for (const [name, service] of Object.entries(rollback.services)) {
+    const containers = capture("docker", [...composeArgs(source), "ps", "--all", "--quiet", name])
+      .split("\n")
+      .filter(Boolean);
+    service.image =
+      name === "backup"
+        ? currentBackupImage
+        : containers.length > 0
+          ? capture("docker", ["inspect", "--format", "{{.Image}}", ...containers])
+          : capture("docker", [
+              "image",
+              "inspect",
+              "--format",
+              "{{.Id}}",
+              service.image ?? `${rollback.name}-${name}`,
+            ]);
+    const [image, ...otherImages] = new Set(service.image.split("\n").filter(Boolean));
+    if (image === undefined || otherImages.length > 0) {
+      throw new Error(
+        `Service ${name} has containers with different images or no image. Reconcile its containers before retrying.`,
+      );
+    }
+    service.image = image;
+    delete service.build;
+    service.pull_policy = "never";
+  }
+  if (
+    rollback.services.worker?.environment !== undefined &&
+    rollback.services["runner-base"]?.image !== undefined
+  ) {
+    rollback.services.worker.environment.SWIZZLE_RUNNER_BASE_IMAGE =
+      rollback.services["runner-base"].image;
+  }
+  const rollbackFile = path.join(directory, "rollback.json");
+  writeCompose(rollback, rollbackFile);
+  const oldCompose = `docker compose -f ${quote(rollbackFile)}`;
+  const restore = `git checkout --detach ${previous} && cp ${quote(envBackup)} .env && ${oldCompose} --profile stack stop api scheduler worker && tar -C ${quote(backup)} -cf - . | ${oldCompose} --profile tools run --pull never --rm -T --volume /backup --entrypoint sh backup -ec 'tar -xf - -C /backup; exec node dist/bin.js backup restore --input-dir /backup --yes' && ${oldCompose} --profile stack up --no-build --pull never -d --wait`;
   process.stdout.write(
     `Upgrading ${previous} to ${release.tag} (${release.commit}).\nBackup directory: ${directory}\n`,
   );
   try {
     // Drain all writers before exporting the database and artifacts together.
     run("docker", [...compose, "--profile", "stack", "stop", "api", "scheduler", "worker"]);
-    run("just", ["backup", backup]);
+    const recipes = await readFile("justfile", "utf8");
+    if (recipes.includes("_backup dir config:")) run("just", ["_backup", backup, rollbackFile]);
+    else run("just", ["--set", "compose", oldCompose, "backup", backup]);
   } catch (error) {
     process.stdout.write(
-      `Backup did not complete. Checkout is still ${previous}.\nRestart it with: just stack\nBackup directory: ${directory}\n`,
+      `Backup did not complete. Checkout is still ${previous}.\nRestart it with: ${oldCompose} --profile stack up --no-build --pull never -d --wait\nBackup directory: ${directory}\n`,
     );
     throw error;
   }
   process.stdout.write(`Backup complete: ${backup}\nRestore with: ${restore}\n`);
   try {
     run("git", ["checkout", "--detach", release.commit]);
-    run("just", ["stack"]);
+    // Move configuration forward with the target release before migrations start.
+    await copyFile(target.envFile, source.envFile);
+    await chmod(source.envFile, 0o600);
+    run("docker", [
+      "compose",
+      "-f",
+      prepared.file,
+      "--profile",
+      "stack",
+      "up",
+      "--no-build",
+      "--pull",
+      "never",
+      "-d",
+      "--wait",
+    ]);
     // Probe the running process inside its container, independent of public DNS or TLS.
     run("docker", [
       ...compose,

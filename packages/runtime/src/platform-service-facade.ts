@@ -658,6 +658,9 @@ export function createPlatformServiceFacade(
       });
     },
 
+    listAutomationChainDependents: async (automationName) => {
+      return await store.listAutomationChainDependents(createDisplayName(automationName));
+    },
     deleteAutomation: async (deleteOptions) => {
       return await performDeleteAutomation({
         ...(options.artifactsDirectory !== undefined

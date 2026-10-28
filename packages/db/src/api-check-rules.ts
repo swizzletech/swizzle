@@ -95,5 +95,9 @@ function latest(left: string | null, right: string | null): string | null {
 export function checkNeedsAttention(
   check: Pick<StoredAutomationCheck, "consecutiveFailures" | "status">,
 ): boolean {
-  return check.status === "drift" || (check.status === "error" && check.consecutiveFailures >= 3);
+  return (
+    check.status === "drift" ||
+    check.status === "credentials" ||
+    (check.status === "error" && check.consecutiveFailures >= 3)
+  );
 }

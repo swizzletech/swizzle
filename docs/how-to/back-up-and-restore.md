@@ -10,7 +10,7 @@ The backup does not hold `.env`. Back up `.env` separately. Without its `SWIZZLE
 
 ## Know what the recipes reach
 
-`just backup` and `just restore` use the Compose stack's `backup` service from [`compose.yml`](../../infra/docker/compose.yml). The service joins the stack's network and mounts its `artifacts-data` volume. Both recipes read database credentials and the artifact backend from `.env`. They build the service image from the checkout and start Postgres if it is down.
+`just backup` and `just restore` use the Compose stack's `backup` service from [`compose.yml`](../../infra/docker/compose.yml). The service joins the stack's network and mounts its `artifacts-data` volume. Both recipes read database credentials and the artifact backend from `.env`. They pull the release image, or build from source when the checkout has no published image, and start Postgres if it is down. Restore prepares all stack images before stopping writers. See [release images](upgrade.md#verify-release-images) for signature verification.
 
 With the `s3` backend, the backup holds a copy of the bucket prefix instead of the volume.
 

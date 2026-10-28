@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { apiCheckHandoff, apiCheckRunsInWords, apiSunsetHandoff } from "./api-checks";
+import {
+  apiCheckHandoff,
+  apiCheckInWords,
+  apiCheckRunsInWords,
+  apiSunsetHandoff,
+} from "./api-checks";
 
 const NOW = new Date("2026-10-23T12:00:00.000Z");
 
@@ -39,7 +44,7 @@ describe("API check handoffs", () => {
 
     expect(apiCheckHandoff(item)).toBe(
       [
-        "crm-export's API check fails since 2026-10-22 08:00 UTC (2 checks in a row). Its last run succeeded at 2026-10-21 06:00 UTC, before the check started failing; no run finished since.",
+        "crm-export's API check has failed since 2026-10-22 08:00 UTC (2 checks in a row); the latest check, 2026-10-23 08:00 UTC, found drift. Its last run succeeded at 2026-10-21 06:00 UTC, before the check started failing; no run finished since.",
         "The check is check.ts in deployment 3f2a91c0, every 7d and after each deploy, against api.hubapi.com.",
         "Latest check, 2026-10-23 08:00 UTC, exit 1:",
         '{"ok":false,"field":"amount","expected":"number","got":"string"}',
@@ -50,6 +55,16 @@ describe("API check handoffs", () => {
       ].join("\n"),
     );
     expect(apiCheckRunsInWords(item)).toBeNull();
+    const credentials = { ...item, check: { ...item.check, status: "credentials" as const } };
+    expect(apiCheckInWords(credentials)).toBe("crm-export's API check credentials failed");
+    expect(apiCheckHandoff(credentials)).toContain(
+      "Fix the check's credentials or connection, then rerun the check.",
+    );
+    // The streak began with drift; the latest check is a credential failure. The handoff keeps the
+    // two apart instead of saying credentials failed since the drift began.
+    expect(apiCheckHandoff(credentials).split("\n")[0]).toBe(
+      "crm-export's API check has failed since 2026-10-22 08:00 UTC (2 checks in a row); the latest check, 2026-10-23 08:00 UTC, failed on credentials. Its last run succeeded at 2026-10-21 06:00 UTC, before the check started failing; no run finished since.",
+    );
     expect(
       apiCheckRunsInWords({
         ...item,

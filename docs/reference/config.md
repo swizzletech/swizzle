@@ -100,7 +100,7 @@ Every automation folder holds one `config.yaml`. The parser rejects any field th
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `runtime.requirements.binaries[].name` | non-empty string | yes | - | Executable name on the run's `PATH`: the runner image's for a deployed run, this machine's for `swizzle run`. |
-| `runtime.requirements.binaries[].version` | non-empty string | no | - | Version rule, for example `>=5`. A binary whose version the worker cannot tell fails it. |
+| `runtime.requirements.binaries[].version` | string matching `^(?:>=\|<=\|>\|<\|=)?\s*\d+(?:\.\d+)*$` | no | - | A bare numeric version matches a dotted prefix: `25` matches `25.03.0`, and `25.3` matches `25.03.0`. Comparisons `>=`, `<=`, `>`, `<` and `=` compare numeric components, treating omitted components as zero; `=25` means exactly `25.0.0`. Forms such as `^25` are invalid. A binary whose version the worker cannot tell fails every rule. |
 
 ## `runtime.requirements.node`
 

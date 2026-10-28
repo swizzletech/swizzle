@@ -262,6 +262,12 @@ export interface UpdateTriggerStatusInput {
 
 export interface AdvanceCronTriggerCursorInput {
   readonly expectedNextRunAt: string;
+  /** Recorded in the same transaction as the successful cursor claim. */
+  readonly missed?: {
+    readonly firstMissedAt: string;
+    readonly lastMissedAt: string;
+    readonly missedCount: number;
+  };
   readonly nextRunAt: string;
   readonly triggerId: string;
   readonly updatedAt: string;

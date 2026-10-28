@@ -86,6 +86,7 @@ export interface RuntimeRequirementIssue {
     | "RUNTIME_PROFILE_UNAVAILABLE"
     | "RUNTIME_SERVICE_NOT_GRANTED"
     | "SECRET_MISSING"
+    | "TRIGGER_CONFIGURATION_INVALID"
     | "TIMEOUT_FORMAT_INVALID";
   readonly message: string;
   readonly subject?: string | undefined;

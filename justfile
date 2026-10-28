@@ -180,11 +180,17 @@ db-reencrypt:
 # Write an owner-only backup of the stack to <dir>, a new or empty directory: its database and its artifact store.
 backup dir:
     node packages/runtime/src/backup.ts check {{ quote(dir) }}
-    {{ compose }} --profile tools build backup >&2
+    directory=$(mktemp -d "$(git rev-parse --git-path swizzle-stack)-XXXXXX"); trap 'rm -rf "$directory"' EXIT; \
+        node scripts/stack.ts prepare "$directory/compose.json" backup >&2; \
+        {{ just_executable() }} _backup {{ quote(dir) }} "$directory/compose.json"
+
+# Export with an already prepared backup image; upgrade calls this after draining writers.
+_backup dir config:
+    node packages/runtime/src/backup.ts check {{ quote(dir) }}
     output={{ quote(dir) }}; parent=$(dirname -- "$output"); name=$(basename -- "$output"); \
         mkdir -p "$parent"; \
         staging=$(mktemp -d "$parent/.$name-XXXXXX"); trap 'rm -rf "$staging"' EXIT; \
-        {{ compose }} --profile tools run --rm -T --volume /backup --entrypoint sh backup -ec 'answer=$(node dist/bin.js backup export --output-dir /backup/export) || { echo "$answer" >&2; exit 1; }; tar -cf - -C /backup/export database.sql artifacts metadata.json' >"$staging/backup.tar"; \
+        docker compose -f {{ quote(config) }} --profile tools run --pull never --rm -T --volume /backup --entrypoint sh backup -ec 'answer=$(node dist/bin.js backup export --output-dir /backup/export) || { echo "$answer" >&2; exit 1; }; tar -cf - -C /backup/export database.sql artifacts metadata.json' >"$staging/backup.tar"; \
         mkdir -m 700 "$staging/backup"; tar -xf "$staging/backup.tar" -C "$staging/backup"; \
         node packages/runtime/src/backup.ts publish "$staging/backup" "$output"; \
         rm -rf "$staging" || echo "Backup published; remove staging directory $staging manually." >&2; \
@@ -197,19 +203,21 @@ backup dir:
 # Overwrite the stack's database and artifact store with the backup in <dir>, with api, scheduler and worker stopped.
 [confirm("Restore overwrites the stack's database and artifact store. Continue?")]
 restore dir:
-    {{ compose }} --profile stack stop api scheduler worker
-    tar -C {{ quote(dir) }} -cf - . | {{ compose }} --profile tools run --rm --build -T --volume /backup --entrypoint sh backup -ec 'tar -xf - -C /backup; exec node dist/bin.js backup restore --input-dir /backup --yes'
-    {{ compose }} --profile stack up -d --wait
+    directory=$(mktemp -d "$(git rev-parse --git-path swizzle-stack)-XXXXXX"); trap 'rm -rf "$directory"' EXIT; \
+        node scripts/stack.ts prepare "$directory/compose.json"; \
+        docker compose -f "$directory/compose.json" --profile stack stop api scheduler worker; \
+        tar -C {{ quote(dir) }} -cf - . | docker compose -f "$directory/compose.json" --profile tools run --pull never --rm -T --volume /backup --entrypoint sh backup -ec 'tar -xf - -C /backup; exec node dist/bin.js backup restore --input-dir /backup --yes'; \
+        docker compose -f "$directory/compose.json" --profile stack up --no-build --pull never -d --wait
 
 # Restore a locked-out owner's access to the running stack: prints a one-time link that sets a new password.
 recover-owner email:
     {{ compose }} --profile stack exec -T api node dist/recover-owner.js {{ quote(email) }}
 
-# Build and start the full hardened stack behind Caddy, as production runs it; the images build in Docker, so the host needs only .env.
+# Pull a tagged release or build source images sequentially, then start the hardened stack behind Caddy.
 stack: init-env
-    {{ compose }} --profile stack up --build -d --wait
+    node scripts/stack.ts up
 
-# Back up this installed server, check out a release tag (newest stable without one), rebuild and verify its version.
+# Prepare release images, back up this server, switch to the tag (newest stable without one), and verify its version.
 upgrade tag="":
     node scripts/upgrade.ts {{ quote(tag) }}
 
@@ -289,3 +297,19 @@ secret-scan:
 # Build and pack the publishable CLI into a named artifact directory; never publishes it.
 pack-cli directory: build
     pnpm --dir apps/cli/build/npm pack --pack-destination {{ quote(absolute_path(directory)) }}
+
+# Generate the multi-platform registry build plan from the packaged stack.
+image-plan version file: init-env
+    node scripts/release-images.ts plan {{ quote(version) }} {{ quote(file) }}
+
+# Publish the generated build plan, with provenance and a digest metadata file.
+image-publish version file:
+    node scripts/release-images.ts publish {{ quote(version) }} {{ quote(file) }}
+
+# Sign and verify each published digest using the tag workflow's OIDC identity.
+image-sign version file:
+    node scripts/release-images.ts sign {{ quote(version) }} {{ quote(file) }}
+
+# Prove registry install, upgrade, rollback, preflight refusal and source fallback on one disposable packaged stack.
+verify-images evidence:
+    node scripts/verify-images.mts {{ quote(evidence) }}

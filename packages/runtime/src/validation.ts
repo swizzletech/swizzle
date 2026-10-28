@@ -19,6 +19,7 @@ export interface AutomationDefinition {
 
 export async function loadAutomationDefinition(
   automationDirectory: string,
+  source: "source" | "deployment" = "source",
 ): Promise<AutomationDefinition> {
   const directory = path.resolve(automationDirectory);
   const configPath = path.join(directory, "config.yaml");
@@ -36,7 +37,7 @@ export async function loadAutomationDefinition(
 
   let config: AutomationConfig;
   try {
-    config = parseAutomationConfig(configSource);
+    config = parseAutomationConfig(configSource, source);
   } catch (error) {
     throw new AutomationRuntimeError(
       "AUTOMATION_CONFIG_INVALID",

@@ -364,6 +364,10 @@ export interface ConnectionAuthorizationRequest {
 /** GET /automations/:name returns the full active deployment. */
 export type AutomationDeploymentResponse = PlatformDeploymentRecord;
 export type DeleteAutomationResponse = DeleteAutomationResultRecord;
+export interface AutomationDeletePreviewResponse {
+  readonly dependents: readonly { readonly automationSlug: string; readonly environment: string }[];
+  readonly hiddenDependents: number;
+}
 export type DeploymentAuditResponse = readonly AuditEventOf<"deployment">[];
 export type TriggerAuditResponse = readonly AuditEventOf<"trigger">[];
 
@@ -573,6 +577,7 @@ const ROUTE_POLICY = {
   "POST /deployment-checks": { access: "resource", audit: false },
   "GET /automations/:automationName": { access: "resource", audit: false },
   "DELETE /automations/:automationName": { access: "resource", audit: true },
+  "GET /automations/:automationName/delete-preview": { access: "resource", audit: false },
   "GET /automations/:automationName/deployments": { access: "resource", audit: false },
   "GET /automations/:automationName/deployments/audit": { access: "resource", audit: false },
   "POST /automations/:automationName/rollback": { access: "resource", audit: true },

@@ -1,3 +1,5 @@
+import type { AutomationConfig } from "@swizzle/config";
+
 export type ArtifactStorageBackend = "local" | "s3";
 
 interface LocalArtifactLocator {
@@ -26,6 +28,7 @@ export interface ArtifactStorageReference {
 }
 
 export interface CreateDeploymentArtifactsInput {
+  readonly config: AutomationConfig;
   readonly automationDirectory: string;
   readonly automationName: string;
   readonly deployedAt: string;

@@ -30,6 +30,82 @@ import { runCli } from "./main.js";
 useCliTestEnvironment();
 
 describe("deployment commands", () => {
+  it("refuses deletion when the API cannot preview its chain impact", async () => {
+    const platform = await testPlatform();
+    await platform.deployAutomationToPlatform({
+      automationDirectory: path.join(repoRoot, "infra/examples/hello-webhook"),
+      environment: "local",
+    });
+    await platform.pauseAutomationTrigger("hello-webhook", "local");
+    const app = await buildTestServer({
+      platform,
+      dashboard: createDashboardStub("hello-webhook"),
+    });
+    app.addHook("onRequest", async (request, reply) => {
+      if (request.url.startsWith("/automations/hello-webhook/delete-preview")) {
+        return reply.code(404).send({ error: "Not Found", message: "Route does not exist" });
+      }
+    });
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    try {
+      const io = createBufferIO();
+      expect(
+        await runCli(["delete", "hello-webhook", "--yes", "--json", "--api-url", address], io),
+      ).toBe(5);
+      expect(JSON.parse(io.stdoutText)).toMatchObject({
+        code: "DELETE_PREVIEW_UNAVAILABLE",
+        help: [expect.stringContaining("Upgrade the server")],
+      });
+      expect(await platform.findAutomation("hello-webhook")).toMatchObject({
+        automationSlug: "hello-webhook",
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("names dependent chains before confirming source deletion and with --yes", async () => {
+    const platform = await testPlatform();
+    const dashboard = createDashboardStub("hello-webhook");
+    const dependent = await temporaryDirectory("swizzle-dependent-");
+    await writeFile(path.join(dependent, "main.js"), "console.log('{}');\n");
+    await writeFile(
+      path.join(dependent, "config.yaml"),
+      "name: dependent\nversion: 1.0.0\nentrypoint: main.js\ntrigger: { type: chain, source: hello-webhook }\n",
+    );
+    for (const environment of ["local", "staging"]) {
+      await platform.deployAutomationToPlatform({
+        automationDirectory: path.join(repoRoot, "infra/examples/hello-webhook"),
+        environment,
+      });
+      await platform.deployAutomationToPlatform({ automationDirectory: dependent, environment });
+      await platform.pauseAutomationTrigger("dependent", environment);
+      await platform.pauseAutomationTrigger("hello-webhook", environment);
+    }
+    const app = await buildTestServer({ platform, dashboard });
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    try {
+      const refused = createBufferIO();
+      expect(
+        await runCli(["delete", "hello-webhook", "--json", "--api-url", address], refused),
+      ).toBe(2);
+      expect(JSON.parse(refused.stdoutText)).toMatchObject({
+        code: "CONFIRMATION_REQUIRED",
+        error: expect.stringContaining("dependent (local), dependent (staging)"),
+      });
+      const deleted = createBufferIO();
+      expect(
+        await runCli(["delete", "hello-webhook", "--yes", "--json", "--api-url", address], deleted),
+      ).toBe(0);
+      expect(JSON.parse(deleted.stdoutText)).toMatchObject({
+        state: "deleted",
+        warnings: [expect.stringContaining("dependent (local), dependent (staging)")],
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
   it("previews the same field changes apply prints and keeps the active version until apply", async () => {
     const directory = await temporaryDirectory("swizzle-cli-deployment-changes-");
     await cp(path.join(repoRoot, "infra/examples/hello-webhook"), directory, { recursive: true });

@@ -44,6 +44,7 @@ After the auth check, each route checks its path parameters, query and JSON body
 | PATCH | `/automation-folders/:folderId` | resource | [automation-folder-routes.ts](../../apps/api/src/automation-folder-routes.ts) |
 | DELETE | `/automations/:automationName` | resource | [automation-routes.ts](../../apps/api/src/automation-routes.ts) |
 | GET | `/automations/:automationName` | resource | [automation-routes.ts](../../apps/api/src/automation-routes.ts) |
+| GET | `/automations/:automationName/delete-preview` | resource | [automation-routes.ts](../../apps/api/src/automation-routes.ts) |
 | GET | `/automations/:automationName/deployments` | resource | [automation-routes.ts](../../apps/api/src/automation-routes.ts) |
 | GET | `/automations/:automationName/deployments/audit` | resource | [automation-routes.ts](../../apps/api/src/automation-routes.ts) |
 | PUT | `/automations/:automationName/folder` | resource | [automation-folder-routes.ts](../../apps/api/src/automation-folder-routes.ts) |

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { cp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { stringifyAutomationConfig } from "@swizzle/config";
 import { createDisplayName } from "@swizzle/core";
 import { AutomationRuntimeError } from "../errors.js";
 import type {
@@ -77,7 +78,11 @@ export function createLocalArtifactStorage(options: {
           const sourcePath = path.join(input.automationDirectory, relativePath);
           const destinationPath = path.join(reference.sourceDirectory, relativePath);
           await mkdir(path.dirname(destinationPath), { recursive: true });
-          await cp(sourcePath, destinationPath, { force: true });
+          if (relativePath === "config.yaml") {
+            await writeFile(destinationPath, stringifyAutomationConfig(input.config), "utf8");
+          } else {
+            await cp(sourcePath, destinationPath, { force: true });
+          }
         }
 
         await writeFile(

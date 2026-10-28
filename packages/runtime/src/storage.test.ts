@@ -10,6 +10,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
+import { parseAutomationConfig } from "@swizzle/config";
 import { describe, expect, it, vi } from "vitest";
 import { recordingProxy, temporaryDirectory } from "../../../test/support.js";
 import { deployAutomation } from "./deploy.js";
@@ -299,6 +300,9 @@ describe("artifact storage", () => {
         copiedDirectory = directory;
         const config = await readFile(path.join(directory, "config.yaml"), "utf8");
         expect(config).toContain("name: hello-webhook");
+        expect(parseAutomationConfig(config, "deployment").runtime.binary_version_matching).toBe(
+          "numeric-prefix",
+        );
       });
       await expect(stat(copiedDirectory)).rejects.toMatchObject({ code: "ENOENT" });
 

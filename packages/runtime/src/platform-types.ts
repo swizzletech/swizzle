@@ -492,6 +492,9 @@ export interface PlatformServices {
     environment: string,
   ): Promise<PlatformTriggerRecord>;
   deleteAutomation(options: DeleteAutomationOptions): Promise<DeleteAutomationResultRecord>;
+  listAutomationChainDependents(
+    automationName: string,
+  ): ReturnType<ControlPlaneStore["listAutomationChainDependents"]>;
   countProjectContents(projectId: string): Promise<ProjectContentCounts | null>;
   /** Deletes a project and, as asked, moves or deletes its contents; see ControlPlaneStore. */
   deleteProject(input: DeleteProjectInput): Promise<DeleteProjectResultRecord>;

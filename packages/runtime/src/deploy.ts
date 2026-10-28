@@ -98,6 +98,7 @@ export async function deployAutomation(
       : {}),
   });
   const reference = await storage.createDeploymentArtifacts({
+    config: definition.config,
     automationDirectory: definition.directory,
     automationName: definition.config.name,
     deployedAt,

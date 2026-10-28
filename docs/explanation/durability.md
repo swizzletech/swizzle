@@ -4,6 +4,12 @@ Swizzle is durable at the platform boundary, not inside your code. PostgreSQL st
 
 The wire format of each mechanism is in the [runtime contract](../reference/runtime-contract.md). This page explains why the mechanisms look the way they do.
 
+## Cron resumes at the next future occurrence
+
+Cron does not replay occurrences missed while the scheduler was stopped. The scheduler advances the cursor past all due occurrences and starts only the latest one, if it is no more than 30 seconds late. That grace covers two default polling ticks. Older occurrences are recorded as missed and never become runs, regardless of `runtime.on_overlap`. The rule applies to UTC cron expressions and `trigger.every` intervals. Intervals keep their original cadence.
+
+The scheduler advances the cursor with a PostgreSQL claim that compares the previous cursor, so two schedulers cannot claim the same trigger state. The cursor advance and its `cron_missed` audit event commit together. The event records `missedCount`, `firstMissedAt`, `lastMissedAt`, and `nextRunAt` for the trigger and environment. The automation's **Versions** tab shows it in **Change history**. A due occurrence within grace still follows the usual overlap and missing-secret checks.
+
 ## State lives in the platform, not on the worker
 
 A run starts in a fresh scratch directory that the worker deletes when the run ends, and deployed runs execute in a read-only container. A file written there is gone on the next run. Small durable values belong in the platform state store instead.

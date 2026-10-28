@@ -1,13 +1,11 @@
 import { execFile } from "node:child_process";
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { expect, it, vi } from "vitest";
 import { temporaryDirectory } from "../test/support.js";
 
 const execute = promisify(execFile);
-const justfile = fileURLToPath(new URL("../justfile", import.meta.url));
 
 // Every file below a directory with its mode and contents, and every directory with its mode.
 async function snapshot(directory: string) {
@@ -22,10 +20,44 @@ async function snapshot(directory: string) {
   return entries;
 }
 
-it.each(["complete", "truncated", "existing destination"])(
-  "publishes only a complete backup into a new directory (%s)",
-  async (scenario) => {
+it.each(
+  ["complete", "truncated", "existing destination"].flatMap((scenario) =>
+    ["absolute", "mise"].map((invocation) => ({ scenario, invocation })),
+  ),
+)(
+  "publishes only a complete backup into a new directory ($scenario, $invocation)",
+  async ({ scenario, invocation }) => {
     const root = await temporaryDirectory("swizzle-backup-recipe-");
+    const checkout = path.join(root, "checkout");
+    await mkdir(path.join(checkout, "scripts"), { recursive: true });
+    await mkdir(path.join(checkout, "packages/runtime/src"), { recursive: true });
+    for (const file of [
+      "justfile",
+      "mise.toml",
+      "scripts/stack.ts",
+      "scripts/stack-images.ts",
+      "packages/runtime/src/backup.ts",
+    ]) {
+      await copyFile(new URL(`../${file}`, import.meta.url), path.join(checkout, file));
+    }
+    await writeFile(path.join(checkout, "package.json"), '{"type":"module","version":"1.0.3"}');
+    await writeFile(
+      path.join(checkout, "Dockerfile"),
+      "FROM alpine:3.24.3\nRUN pnpm exec turbo run build\n",
+    );
+    await execute("git", ["init", "--initial-branch=fixture", checkout]);
+    await execute("git", ["-C", checkout, "add", "."]);
+    await execute("git", [
+      "-C",
+      checkout,
+      "-c",
+      "user.name=Backup test",
+      "-c",
+      "user.email=test@swizzle.test",
+      "commit",
+      "-m",
+      "Fixture",
+    ]);
     const source = path.join(root, "source");
     // A space in the directory must survive into the printed restore command.
     const output = path.join(root, "daily backup");
@@ -66,13 +98,48 @@ it.each(["complete", "truncated", "existing destination"])(
       path.join(bin, "docker"),
       `#!/bin/sh
 printf '%s\\n' "$*" >> '${dockerLog}'
-case " $* " in *" run "*) cat '${archive}' ;; esac
+case " $* " in
+  *" build "*)
+    while [ "$#" -gt 0 ]; do
+      if [ "$1" = --iidfile ]; then printf '%s\\n' sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa > "$2"; break; fi
+      shift
+    done ;;
+  *" info "*) echo /tmp ;;
+  *" config "*) echo '{"name":"backup-test","services":{"backup":{"build":{"context":"${checkout}","dockerfile":"Dockerfile","target":"cli"}}}}' ;;
+  *" inspect "*) echo sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;
+  *" run "*) cat '${archive}' ;;
+esac
 `,
       { mode: 0o755 },
     );
-    vi.stubEnv("PATH", `${bin}${path.delimiter}${process.env.PATH}`);
+    const locate = async (command: string) =>
+      (await execute("bash", ["-c", 'command -v "$1"', "fixture", command])).stdout.trim();
+    const just = await locate("just");
+    // Keep every required tool even when the host installs it beside just.
+    for (const command of [
+      "mise",
+      "git",
+      "bash",
+      "tar",
+      "cp",
+      "mkdir",
+      "dirname",
+      "basename",
+      "mktemp",
+      "rm",
+      "cat",
+    ]) {
+      await symlink(await locate(command), path.join(bin, command));
+    }
+    vi.stubEnv("PATH", bin);
+    // The runner has no globally selected tools to mask a missing fixture toolchain.
+    vi.stubEnv("MISE_GLOBAL_CONFIG_FILE", path.join(root, "global.toml"));
+    vi.stubEnv("MISE_TRUSTED_CONFIG_PATHS", checkout);
 
-    const result = execute("just", ["--justfile", justfile, "backup", output]);
+    const result =
+      invocation === "mise"
+        ? execute("mise", ["x", "--", "just", "backup", output], { cwd: checkout })
+        : execute(just, ["backup", output], { cwd: checkout });
     if (scenario === "complete") {
       // The export inside the container names its own path, which the host cannot restore from.
       expect((await result).stdout).toBe(

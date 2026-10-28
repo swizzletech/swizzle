@@ -140,7 +140,7 @@ describe("dashboard commands", () => {
           "  environment: local",
           '  deployment: "#1 v1.0.0 dep-active"',
           '  deployedAt: "2026-04-18T22:00:00.000Z"',
-          "  runtime: typescript / sandbox (container) / host-default",
+          "  runtime: typescript / host / host-default",
           "  apiCheck: null",
           "  trigger: webhook (active)",
           `  webhookUrl: "${new URL(address).origin}/hooks/hello?environment=local"`,

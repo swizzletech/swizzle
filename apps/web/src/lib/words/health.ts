@@ -57,7 +57,7 @@ export const RUN_TONE: Record<RunStatus, Tone> = {
   waiting: "warn",
 };
 
-/** Why a not-ready deployment cannot run: the credentials it needs, else that no worker takes it. */
+/** Why a deployment cannot run: missing credentials, a broken trigger, or worker requirements. */
 export function readinessInWords(readiness: RuntimeReadiness): string {
   const subjects = (code: RuntimeReadiness["errors"][number]["code"]) =>
     readiness.errors.filter((issue) => issue.code === code).map((issue) => issue.subject ?? "");
@@ -65,7 +65,10 @@ export function readinessInWords(readiness: RuntimeReadiness): string {
     named("secret", subjects("SECRET_MISSING")),
     named("account", subjects("CONNECTION_NOT_ACTIVE")),
   ].filter((phrase) => phrase !== null);
-  return needs.length > 0 ? `Needs ${needs.join(" and ")}` : "No worker can run it";
+  if (needs.length > 0) return `Needs ${needs.join(" and ")}`;
+  return readiness.errors.some((issue) => issue.code === "TRIGGER_CONFIGURATION_INVALID")
+    ? "Trigger does not work"
+    : "No worker can run it";
 }
 
 /** The overview row's short form of `readinessInWords`, which names no secret or account. */
@@ -73,6 +76,7 @@ export function readinessLabel(readiness: RuntimeReadiness): string {
   const codes = new Set(readiness.errors.map((issue) => issue.code));
   if (codes.has("SECRET_MISSING")) return "Needs secret";
   if (codes.has("CONNECTION_NOT_ACTIVE")) return "Needs account";
+  if (codes.has("TRIGGER_CONFIGURATION_INVALID")) return "Trigger invalid";
   return "Can't run";
 }
 

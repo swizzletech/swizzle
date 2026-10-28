@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { scheduler } from "node:timers/promises";
 import {
   type AutomationWebhookSignatureConfig,
   normalizeWebhookPath,
@@ -9,7 +10,7 @@ import { createDisplayName } from "@swizzle/core";
 import type { AuditEventOf } from "@swizzle/db";
 import {
   type ControlPlaneStore,
-  getNextCronOccurrence,
+  iterateCronOccurrences,
   type RunTriggerType,
   type StoredRun,
   type StoredTrigger,
@@ -136,14 +137,7 @@ export async function resumeAutomationTrigger(options: {
   readonly store: ControlPlaneStore;
 }): Promise<StoredTrigger> {
   const trigger = await getAutomationTrigger(options);
-  if (trigger.status === "invalid") {
-    throw new AutomationRuntimeError(
-      "TRIGGER_CONFIGURATION_INVALID",
-      trigger.errorMessage ?? "The trigger configuration is invalid and cannot be resumed.",
-    );
-  }
-
-  if (trigger.status === "active") {
+  if (trigger.status === "active" && trigger.errorCode === null) {
     return trigger;
   }
 
@@ -299,18 +293,44 @@ export async function materializeDueCronRuns(
         continue;
       }
 
+      let scheduledFor = trigger.nextRunAt;
+      let previousDueAt = scheduledFor;
+      let dueCount = 1;
       let nextRunAt: string;
       if (trigger.cronIntervalMs !== null) {
-        nextRunAt = new Date(
-          new Date(trigger.nextRunAt).getTime() + trigger.cronIntervalMs,
-        ).toISOString();
+        const firstDue = Date.parse(scheduledFor);
+        dueCount += Math.floor((now.getTime() - firstDue) / trigger.cronIntervalMs);
+        scheduledFor = new Date(firstDue + (dueCount - 1) * trigger.cronIntervalMs).toISOString();
+        previousDueAt = new Date(Date.parse(scheduledFor) - trigger.cronIntervalMs).toISOString();
+        nextRunAt = new Date(firstDue + dueCount * trigger.cronIntervalMs).toISOString();
       } else if (trigger.cronSchedule !== null) {
-        nextRunAt = getNextCronOccurrence(trigger.cronSchedule, new Date(trigger.nextRunAt));
+        const occurrences = iterateCronOccurrences(trigger.cronSchedule, new Date(scheduledFor));
+        nextRunAt = occurrences.next().value;
+        while (Date.parse(nextRunAt) <= now.getTime()) {
+          previousDueAt = scheduledFor;
+          scheduledFor = nextRunAt;
+          dueCount++;
+          nextRunAt = occurrences.next().value;
+          // Long downtime must leave the event loop available for other environments and timers.
+          if (dueCount % 1_000 === 0) await scheduler.yield();
+        }
       } else {
         continue;
       }
+      // Two default scheduler ticks tolerate ordinary polling lag without replaying downtime.
+      const withinGrace = now.getTime() - Date.parse(scheduledFor) <= 30_000;
+      const missedCount = dueCount - (withinGrace ? 1 : 0);
       const claimed = await options.store.advanceCronTriggerCursor({
         expectedNextRunAt: trigger.nextRunAt,
+        ...(missedCount > 0
+          ? {
+              missed: {
+                firstMissedAt: trigger.nextRunAt,
+                lastMissedAt: withinGrace ? previousDueAt : scheduledFor,
+                missedCount,
+              },
+            }
+          : {}),
         nextRunAt,
         triggerId: trigger.triggerId,
         updatedAt: nowIso,
@@ -321,6 +341,7 @@ export async function materializeDueCronRuns(
       }
 
       claimedAny = true;
+      if (!withinGrace) continue;
 
       const deployment = await options.store.getDeploymentById(trigger.deploymentId);
       const onOverlap = deployment?.config.runtime.on_overlap ?? "skip";
@@ -340,7 +361,7 @@ export async function materializeDueCronRuns(
               nextRunAt,
               reason: "overlap",
               schedule: trigger.cronSchedule,
-              scheduledFor: trigger.nextRunAt,
+              scheduledFor,
             },
             occurredAt: nowIso,
             triggerId: trigger.triggerId,
@@ -356,7 +377,7 @@ export async function materializeDueCronRuns(
             ...(trigger.cronSchedule !== null
               ? { schedule: trigger.cronSchedule }
               : { interval_ms: trigger.cronIntervalMs }),
-            scheduled_for: trigger.nextRunAt,
+            scheduled_for: scheduledFor,
             trigger: "cron",
           },
           trigger,
@@ -379,7 +400,7 @@ export async function materializeDueCronRuns(
               nextRunAt,
               reason: "missing-secrets",
               schedule: trigger.cronSchedule,
-              scheduledFor: trigger.nextRunAt,
+              scheduledFor,
             },
             occurredAt: nowIso,
             triggerId: trigger.triggerId,

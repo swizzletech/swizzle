@@ -157,7 +157,7 @@ describe("buildAttention", () => {
 
   it("lists API drift, then near sunsets, then untested passive APIs, but not a passing doubt", () => {
     const record = (
-      status: "drift" | "error" | "green",
+      status: "drift" | "error" | "green" | "credentials",
       consecutiveFailures: number,
       lastOutput: string | null,
     ) => ({
@@ -165,7 +165,7 @@ describe("buildAttention", () => {
       deploymentId: "d1",
       failingSince: NOW,
       lastCheckedAt: NOW,
-      lastExitCode: { drift: 1, error: 2, green: 0 }[status],
+      lastExitCode: { drift: 1, error: 2, green: 0, credentials: 1 }[status],
       lastGreenAt: null,
       lastGreenOutput: null,
       lastGreenReport: null,
@@ -215,6 +215,7 @@ describe("buildAttention", () => {
           apiCheck: active(record("drift", 1, "diagnostic text, not the report")),
         }),
         automation("flaky", { apiCheck: active(record("error", 2, null)) }),
+        automation("expired-key", { apiCheck: active(record("credentials", 1, null)) }),
         automation("passing", {
           apiCheck: active(record("green", 0, '{"ok":true,"checked":["GET /v1/deals"]}')),
         }),
@@ -234,6 +235,11 @@ describe("buildAttention", () => {
         automation: { automationSlug: "drifting" },
         change: { api: null, expected: "number", field: "amount", got: "string" },
         kind: "api-check",
+      },
+      {
+        automation: { automationSlug: "expired-key" },
+        kind: "api-check",
+        check: { status: "credentials" },
       },
       {
         automation: { automationSlug: "sunsetting" },

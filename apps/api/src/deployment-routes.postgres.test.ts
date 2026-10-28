@@ -28,6 +28,74 @@ const repoRoot = path.resolve(appRoot, "../..");
 
 let owner: { readonly authorization: string };
 
+it("shows a deleted chain source as an invalid trigger and not ready in the dashboard", async () => {
+  const platform = await testPlatform();
+  for (const name of ["source", "dependent"]) {
+    const directory = await createAutomationFixture({
+      name,
+      path: `/hooks/${name}`,
+      mainJs: "console.log('{}');",
+    });
+    if (name === "dependent")
+      await writeFile(
+        path.join(directory, "config.yaml"),
+        "name: dependent\nversion: 1.0.0\nentrypoint: main.js\ntrigger: { type: chain, source: source }\n",
+      );
+    await platform.deployAutomationToPlatform({
+      automationDirectory: directory,
+      environment: "local",
+    });
+  }
+  const app = await buildTestServer({
+    platform,
+    dashboard: createDashboardDataProvider({
+      dashboardStore: createDashboardStore({ client: testDatabase() }),
+      platform,
+      workerRegistry: createPostgresWorkerRegistry({ client: testDatabase() }),
+    }),
+  });
+  const detail = () =>
+    app.inject({
+      method: "GET",
+      url: "/dashboard/automations/dependent?environment=local",
+      headers: owner,
+    });
+  try {
+    expect((await detail()).json()).toMatchObject({
+      trigger: { triggerType: "chain", status: "active" },
+      activeDeployment: { readiness: { status: "ready" } },
+    });
+    await platform.pauseAutomationTrigger("source", "local");
+    const deleted = await app.inject({
+      method: "DELETE",
+      url: "/automations/source?environment=local",
+      headers: owner,
+    });
+    expect(deleted.statusCode).toBe(200);
+    expect((await detail()).json()).toMatchObject({
+      trigger: {
+        triggerType: "chain",
+        status: "invalid",
+        errorCode: "TRIGGER_CHAIN_SOURCE_DELETED",
+        errorMessage: "Chain source automation was deleted: source",
+      },
+      activeDeployment: {
+        readiness: {
+          status: "not-ready",
+          errors: [
+            {
+              code: "TRIGGER_CONFIGURATION_INVALID",
+              message: "Chain source automation was deleted: source",
+            },
+          ],
+        },
+      },
+    });
+  } finally {
+    await app.close();
+  }
+});
+
 beforeEach(async () => {
   owner = await ownerHeaders();
 });

@@ -78,6 +78,7 @@ const CHAIN_VERB: Record<string, readonly [single: string, all: string]> = {
 };
 
 function chainInWords(trigger: TriggerSummary): string {
+  if (trigger.errorCode === "TRIGGER_CHAIN_SOURCE_DELETED") return "Chain source deleted";
   const [single, all] = CHAIN_VERB[trigger.chainOnStatus ?? "succeeded"] ?? ["runs", "run"];
   const sources = chainSourcesInWords(trigger);
   if (sources.length === 1) return `After ${sources[0]} ${single}`;

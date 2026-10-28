@@ -3,6 +3,7 @@ import { auditEventsOf } from "./audit.js";
 import { listAutomationAudit, recordTriggerChange } from "./audit-resources.js";
 
 import type { DatabaseClient } from "./client.js";
+import { CodedError } from "./coded-error.js";
 import { shareLiveAutomation } from "./control-plane-automations.js";
 import {
   getChainSourceAutomationIdsByTriggerId,
@@ -30,22 +31,38 @@ export async function advanceCronTriggerCursor(
   client: DatabaseClient,
   input: AdvanceCronTriggerCursorInput,
 ): Promise<boolean> {
-  const updatedTriggers = await client.db
-    .update(automationTriggers)
-    .set({
-      nextRunAt: new Date(input.nextRunAt),
-      updatedAt: new Date(input.updatedAt),
-    })
-    .where(
-      and(
-        eq(automationTriggers.id, input.triggerId),
-        eq(automationTriggers.status, "active"),
-        eq(automationTriggers.nextRunAt, new Date(input.expectedNextRunAt)),
-      ),
-    )
-    .returning({ id: automationTriggers.id });
+  return await client.db.transaction(async (tx) => {
+    const updatedTriggers = await tx
+      .update(automationTriggers)
+      .set({
+        nextRunAt: new Date(input.nextRunAt),
+        updatedAt: new Date(input.updatedAt),
+      })
+      .where(
+        and(
+          eq(automationTriggers.id, input.triggerId),
+          eq(automationTriggers.status, "active"),
+          eq(automationTriggers.nextRunAt, new Date(input.expectedNextRunAt)),
+        ),
+      )
+      .returning();
 
-  return updatedTriggers.length > 0;
+    const trigger = updatedTriggers[0];
+    if (trigger === undefined) return false;
+    if (input.missed !== undefined) {
+      await recordTriggerChange(tx, {
+        automationId: trigger.automationId,
+        deploymentId: trigger.deploymentId,
+        environment: trigger.environment,
+        eventType: "cron_missed",
+        metadata: { ...input.missed, nextRunAt: input.nextRunAt },
+        occurredAt: input.updatedAt,
+        triggerId: trigger.id,
+        triggerType: "cron",
+      });
+    }
+    return true;
+  });
 }
 
 export async function getChainTriggersForSource(
@@ -184,6 +201,28 @@ export async function updateAutomationTriggerStatus(
   const triggerId = await client.db.transaction(async (tx) => {
     const automation = await shareLiveAutomation(tx, automationNamed(input.automationSlug));
     if (automation === null) return null;
+    const [trigger] = await tx
+      .select({
+        id: automationTriggers.id,
+        status: automationTriggers.status,
+        errorCode: automationTriggers.errorCode,
+        errorMessage: automationTriggers.errorMessage,
+      })
+      .from(automationTriggers)
+      .where(
+        and(
+          eq(automationTriggers.automationId, automation.id),
+          eq(automationTriggers.environment, input.environment),
+        ),
+      )
+      .for("update");
+    if (trigger === undefined) return null;
+    if (input.status === "active" && (trigger.status === "invalid" || trigger.errorCode !== null)) {
+      throw new CodedError(
+        "TRIGGER_CONFIGURATION_INVALID",
+        trigger.errorMessage ?? "The trigger configuration is invalid and cannot be resumed.",
+      );
+    }
     const [updated] = await tx
       .update(automationTriggers)
       .set({
@@ -191,12 +230,7 @@ export async function updateAutomationTriggerStatus(
         status: input.status,
         updatedAt: new Date(input.updatedAt),
       })
-      .where(
-        and(
-          eq(automationTriggers.automationId, automation.id),
-          eq(automationTriggers.environment, input.environment),
-        ),
-      )
+      .where(eq(automationTriggers.id, trigger.id))
       .returning({ id: automationTriggers.id });
     return updated?.id ?? null;
   });

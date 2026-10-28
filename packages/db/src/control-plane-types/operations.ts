@@ -210,10 +210,10 @@ export interface ExpireRunsResult {
 
 /**
  * Where an automation's API check stands. `pending` until the first check of a deployment ran;
- * `drift` when the check reached the API and the answer differs (exit 1); `error` when it could
- * not decide (another exit, a signal, a timeout, invalid stdout).
+ * `drift` when the check reached the API and the answer differs; `credentials` when its login
+ * failed; `error` when it could not decide (another exit, a signal, a timeout, invalid stdout).
  */
-export type AutomationCheckStatus = "pending" | "green" | "drift" | "error";
+export type AutomationCheckStatus = "pending" | "green" | "drift" | "credentials" | "error";
 
 /** The one `automation_checks` row of an automation with `api_check.mode: active` in an environment. */
 export interface StoredAutomationCheck {
