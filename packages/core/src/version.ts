@@ -1,4 +1,4 @@
 /** The code's release version, shared by /health, Settings > Instance, doctor and traces.
  * The platform-version convention keeps every workspace package.json aligned with it.
  */
-export const APP_VERSION = "1.0.3";
+export const APP_VERSION = "1.0.4";

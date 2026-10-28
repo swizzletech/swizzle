@@ -7,7 +7,9 @@
   </picture>
 </h1>
 
-Swizzle is a self-hosted runtime for automations written as ordinary code.
+**Agents write it. Swizzle runs it.**
+
+Swizzle is a self-hosted runtime for automations that a coding agent writes once as ordinary code. Swizzle runs them on schedules, webhooks and approvals, with queues, retries, secrets, versioned deployments and logs.
 
 [![CI](https://github.com/swizzletech/swizzle/actions/workflows/ci.yml/badge.svg)](https://github.com/swizzletech/swizzle/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/@swizzletech/cli)](https://www.npmjs.com/package/@swizzletech/cli)
@@ -17,13 +19,21 @@ Swizzle is a self-hosted runtime for automations written as ordinary code.
 
 </div>
 
-Write the business logic in Python, JavaScript, or TypeScript. Swizzle handles queues, retries, secrets, versioned deployments, and logs.
-It ships as a Docker Compose stack with a dashboard and the `swizzle` CLI.
+An agent that does the job itself on every run spends tokens each time, can act differently from one run to the next, and leaves no code to review. Let the agent write the automation once. Swizzle runs that code the same way every time, and you can read, test and roll back what runs.
+
+Automations are Python, JavaScript, or TypeScript.
+Swizzle ships as a Docker Compose stack with a dashboard and the `swizzle` CLI.
 
 Use it for scheduled jobs, incoming webhooks, and workflows that need to pause for approval or an external event.
 Keep the code in your editor and use the dashboard to inspect runs, manage access, and retry failures.
 
 ![Dark-mode Play view of document-scanner with its Python code, step diagram, and a successful run that includes an approval step](docs/assets/dashboard.png)
+
+## Why I built this
+
+I run a few small businesses and automated their back office (incoming invoices, mail, CRM updates) with no-code automation tools for years. What kept bothering me was that none of them were agent-native: a coding agent could not write, test or change a flow the way it works with code. Node editors were built for humans holding a mouse, and an agent has no mouse. So I built Swizzle. A coding agent writes each automation as ordinary code, and Swizzle runs it on my own server with secrets, approvals and logs. Automations that used to take me days now take a few minutes. Swizzle ran privately for my own businesses. I made it public so others can work with it too.
+
+Jan-Peter Franke · [X](https://x.com/janpfranke) · [GitHub](https://github.com/boldprojekte)
 
 ## Quick start
 
