@@ -49,5 +49,11 @@
   ],
   "**/.*/checks/dev-skill.test.ts": [
     "scripts/{dev-stack.mts,dev-stack-supervisor.mts,dev-stack-timeout.ts,env-file.ts,process-identity.ts}"
-  ]
+  ],
+  "**/.*/checks/public-export.test.ts": [
+    "**/.*/export-landings.mts",
+    "**/.*/justfile",
+    "scripts/{export-public.mts,private-paths.ts}"
+  ],
+  "**/.*/checks/release-skill.test.ts": ["**/.*/skills/release/SKILL.md"]
 }

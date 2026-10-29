@@ -20,6 +20,7 @@
     "packages/db/*.ts",
     "scripts/**/*",
     ".agents/checks/**/*",
+    ".agents/*.mts",
     "test/**/*",
     "vitest.config.ts",
     "playwright.config.ts"

@@ -19,7 +19,8 @@
         "scripts/*.{ts,mts}",
         "scripts/conventions/main.ts",
         // conventions-allow no-private-paths: the private repository's own checks; the export has none.
-        ".agents/checks/main.ts"
+        ".agents/checks/main.ts",
+        ".agents/*.mts"
       ],
       // The API check fixture imports the SDK copy that `swizzle init` writes beside it at drive time.
       "ignoreUnresolved": ["./swizzle-sdk.ts"],
