@@ -83,6 +83,7 @@ export interface RuntimeRequirementIssue {
     | "NODE_LOCKFILE_MISSING"
     | "RUNTIME_CONTAINER_LIMIT_EXCEEDS_MAX"
     | "RUNTIME_TIMEOUT_EXCEEDS_MAX"
+    | "RUNNER_IMAGE_INVENTORY_UNAVAILABLE"
     | "RUNTIME_PROFILE_UNAVAILABLE"
     | "RUNTIME_SERVICE_NOT_GRANTED"
     | "SECRET_MISSING"
@@ -118,6 +119,8 @@ interface WorkerRuntimeProfile {
  * capabilities its last heartbeat reported. An offline worker counts with its grants only.
  */
 export interface ReadinessWorker {
+  /** A selected image that this worker could not inspect, never a default-image fallback. */
+  readonly runnerImageError?: string;
   readonly availability: "online" | "offline";
   readonly capabilities: WorkerCapabilities;
   readonly concurrency: number;

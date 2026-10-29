@@ -1,5 +1,5 @@
 import path from "node:path";
-import { isPrivate } from "../../private-paths.js";
+import { exportConfiguration, isPrivate } from "../../private-paths.js";
 import type { Rule } from "../lint.js";
 
 /** A path with at least one slash, which may start with `./` or `../`; a trailing dot ends a sentence. */
@@ -19,12 +19,14 @@ export const noPrivatePaths: Rule = {
       .flatMap((file) => {
         const text = repo.read(file);
         if (text.includes("\0")) return [];
+        const exportedPaths = new Set(exportConfiguration(file, text).match(PATH));
         return text.split("\n").flatMap((line, index) =>
           [...new Set(line.match(PATH))]
             .filter(
               (found) =>
-                hidden.has(found.replace(/^(?:\.\.?\/)+/u, "")) ||
-                hidden.has(path.posix.join(path.posix.dirname(file), found)),
+                exportedPaths.has(found) &&
+                (hidden.has(found.replace(/^(?:\.\.?\/)+/u, "")) ||
+                  hidden.has(path.posix.join(path.posix.dirname(file), found))),
             )
             .map((found) => ({
               file,

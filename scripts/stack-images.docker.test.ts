@@ -3,11 +3,217 @@ import { randomUUID } from "node:crypto";
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { collectWorkerCapabilities, readRunnerTools } from "@swizzle/runtime";
 import { expect, it } from "vitest";
 import { temporaryDirectory } from "../test/support.js";
 import { prepareImages, readCompose, writeCompose } from "./stack-images.ts";
 
 const execute = promisify(execFile);
+
+it("keeps local runner tags stable and tools available through just upgrade", async () => {
+  const directory = await temporaryDirectory("swizzle-runner-upgrade-");
+  const root = path.join(directory, "installed");
+  const project = `swizzle-runner-packages-${randomUUID()}`;
+  await mkdir(path.join(root, "infra/docker"), { recursive: true });
+  await mkdir(path.join(root, "scripts"));
+  for (const file of [
+    "mise.toml",
+    ".env.example",
+    "scripts/stack.ts",
+    "scripts/stack-images.ts",
+    "scripts/upgrade.ts",
+    "scripts/init-env.ts",
+    "scripts/env-file.ts",
+    "infra/docker/Dockerfile.runner",
+    "infra/docker/runner-tools.mjs",
+  ]) {
+    await copyFile(new URL(`../${file}`, import.meta.url), path.join(root, file));
+  }
+  const environment = { ...process.env, MISE_TRUSTED_CONFIG_PATHS: root };
+  const command = async (program: string, ...args: string[]) =>
+    (await execute(program, args, { cwd: root, env: environment })).stdout.trim();
+  const git = (...args: string[]) => command("git", ...args);
+  const compose = (...args: string[]) =>
+    command(
+      "docker",
+      "compose",
+      "--env-file",
+      ".env",
+      "-f",
+      "infra/docker/compose.yml",
+      "--profile",
+      "stack",
+      ...args,
+    );
+  await writeFile(path.join(root, ".gitignore"), ".env\n");
+  await copyFile(
+    new URL("../test/fixtures/runner-upgrade/justfile", import.meta.url),
+    path.join(root, "justfile"),
+  );
+  await copyFile(
+    new URL("../test/fixtures/runner-upgrade/Dockerfile", import.meta.url),
+    path.join(root, "Dockerfile"),
+  );
+  await git("init", "--initial-branch=fixture");
+  await git("config", "user.name", "Runner upgrade test");
+  await git("config", "user.email", "test@swizzle.test");
+  const composeTemplate = await readFile(
+    new URL("../test/fixtures/runner-upgrade/compose.yml", import.meta.url),
+    "utf8",
+  );
+  for (const version of ["1.0.3", "1.0.4"]) {
+    await writeFile(path.join(root, "package.json"), JSON.stringify({ version, type: "module" }));
+    await writeFile(
+      path.join(root, "infra/docker/compose.yml"),
+      composeTemplate.replace("VERSION: 1.0.3", `VERSION: ${version}`),
+    );
+    await git("add", ".");
+    await git("commit", "-m", `Fixture release ${version}`);
+    await git("tag", `v${version}`);
+  }
+  const origin = path.join(directory, "origin.git");
+  await command("git", "clone", "--bare", root, origin);
+  await git("remote", "add", "origin", origin);
+  await git("checkout", "--detach", "v1.0.3");
+  const envFile = path.join(root, ".env");
+  const localTags = (service: string) =>
+    command("docker", "image", "ls", "--format", "{{.Tag}}", `${project}-${service}`);
+  const observe = async (version: string) => {
+    const container = await compose("ps", "--all", "--quiet", "runner-base");
+    const runner = await command("docker", "inspect", "--format", "{{.Image}}", container);
+    expect(
+      await command(
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--entrypoint",
+        "jq",
+        runner,
+        "--version",
+      ),
+    ).toMatch(/^jq-1\./u);
+    expect(
+      await command(
+        "docker",
+        "image",
+        "inspect",
+        "--format",
+        '{{index .Config.Labels "fixture.release"}}',
+        runner,
+      ),
+    ).toBe(version);
+    const inventory = await compose(
+      "exec",
+      "-T",
+      "worker",
+      "cat",
+      "/etc/swizzle/runner-tools.json",
+    );
+    expect(JSON.parse(inventory).binaries).toContainEqual({
+      name: "jq",
+      version: expect.stringMatching(/^1\./u),
+    });
+    const record = path.join(directory, "runner-tools.json");
+    await writeFile(record, inventory);
+    const capabilities = await collectWorkerCapabilities(await readRunnerTools(record));
+    expect(capabilities).toMatchObject({
+      binaries: expect.arrayContaining([{ name: "jq", version: expect.stringMatching(/^1\./u) }]),
+      dependencyPackaging: { node: true, python: false },
+      languages: [
+        { name: "node", version: "26.12.1" },
+        { name: "typescript", version: "26.12.1" },
+      ],
+    });
+    expect(await compose("exec", "-T", "worker", "printenv", "SWIZZLE_RUNNER_BASE_IMAGE")).toBe(
+      runner,
+    );
+
+    expect(
+      await command(
+        "docker",
+        "run",
+        "--rm",
+        "--network",
+        "none",
+        "--entrypoint",
+        "cat",
+        runner,
+        "/etc/swizzle/runner-tools.json",
+      ),
+    ).toBe(inventory);
+    return runner;
+  };
+  try {
+    await command("just", "init-env");
+    await writeFile(
+      envFile,
+      (await readFile(envFile, "utf8"))
+        .replace(/^COMPOSE_PROJECT_NAME=.*$/mu, `COMPOSE_PROJECT_NAME=${project}`)
+        .replace(/^SWIZZLE_RUNNER_APT_PACKAGES=.*$/mu, "SWIZZLE_RUNNER_APT_PACKAGES=jq"),
+    );
+    await command("just", "stack");
+    const first = await observe("1.0.3");
+    for (const service of ["runner-base", "worker"]) {
+      expect((await localTags(service)).split("\n").sort()).toEqual([
+        "local",
+        "local-packages",
+        "local-stock",
+      ]);
+    }
+    await writeFile(
+      envFile,
+      (await readFile(envFile, "utf8")).replace(
+        "SWIZZLE_RUNNER_APT_PACKAGES=jq",
+        "SWIZZLE_RUNNER_APT_PACKAGES=jq curl",
+      ),
+    );
+    await command("just", "stack");
+    const before = await observe("1.0.3");
+    expect(before).not.toBe(first);
+    for (const service of ["runner-base", "worker"]) {
+      expect((await localTags(service)).split("\n").sort()).toEqual([
+        "local",
+        "local-packages",
+        "local-stock",
+      ]);
+    }
+    const originalEnv = await readFile(envFile, "utf8");
+    const stock = await command(
+      "docker",
+      "image",
+      "inspect",
+      "--format",
+      "{{.Id}}",
+      `${project}-runner-base:local-stock`,
+    );
+    expect(await git("status", "--porcelain")).toBe("");
+
+    await command("just", "upgrade", "v1.0.4");
+
+    expect(await git("rev-parse", "HEAD")).toBe(await git("rev-parse", "v1.0.4"));
+    expect(await observe("1.0.4")).not.toBe(before);
+    expect(await readFile(envFile, "utf8")).toBe(originalEnv);
+    expect(await git("status", "--porcelain")).toBe("");
+    expect(
+      await command(
+        "docker",
+        "image",
+        "inspect",
+        "--format",
+        "{{.Id}}",
+        `${project}-runner-base:local-stock`,
+      ),
+    ).toBe(stock);
+  } finally {
+    const owned = ["--all", "--quiet", "--filter", `label=com.docker.compose.project=${project}`];
+    const containers = (await command("docker", "ps", ...owned)).split("\n").filter(Boolean);
+    if (containers.length > 0) await command("docker", "rm", "--force", "--volumes", ...containers);
+    const ids = (await command("docker", "image", "ls", ...owned)).split("\n").filter(Boolean);
+    if (ids.length > 0) await command("docker", "image", "rm", "--force", ...ids);
+  }
+});
 
 it("starts with cached dependency images when their registry is unreachable", async () => {
   const root = await temporaryDirectory("swizzle-offline-stack-");

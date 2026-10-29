@@ -220,5 +220,106 @@
     "NetworkingConfig": {
       "EndpointsConfig": {}
     }
+  },
+  "inventory": {
+    "Hostname": "",
+    "Domainname": "",
+    "User": "65532:65532",
+    "AttachStdin": false,
+    "AttachStdout": true,
+    "AttachStderr": true,
+    "Tty": false,
+    "OpenStdin": false,
+    "StdinOnce": false,
+    "Env": null,
+    "Cmd": ["-c", "true"],
+    "Image": "node:26.12.1-trixie-slim",
+    "Volumes": {},
+    "WorkingDir": "",
+    "Entrypoint": ["/bin/sh"],
+    "Labels": {
+      "swizzle.sandbox-process": "process-a",
+      "swizzle.stack": "stack-a",
+      "swizzle.worker": "worker-a"
+    },
+    "HostConfig": {
+      "Binds": null,
+      "ContainerIDFile": "",
+      "LogConfig": {
+        "Type": "",
+        "Config": {}
+      },
+      "NetworkMode": "none",
+      "PortBindings": {},
+      "RestartPolicy": {
+        "Name": "no",
+        "MaximumRetryCount": 0
+      },
+      "AutoRemove": false,
+      "VolumeDriver": "",
+      "VolumesFrom": null,
+      "ConsoleSize": [0, 0],
+      "CapAdd": null,
+      "CapDrop": ["ALL"],
+      "CgroupnsMode": "",
+      "Dns": null,
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": null,
+      "GroupAdd": null,
+      "IpcMode": "",
+      "Cgroup": "",
+      "Links": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyRootfs": false,
+      "SecurityOpt": ["no-new-privileges:true"],
+      "UTSMode": "",
+      "UsernsMode": "",
+      "ShmSize": 0,
+      "Isolation": "",
+      "CpuShares": 0,
+      "Memory": 536870912,
+      "NanoCpus": 1000000000,
+      "CgroupParent": "",
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": [],
+      "BlkioDeviceReadBps": [],
+      "BlkioDeviceWriteBps": [],
+      "BlkioDeviceReadIOps": [],
+      "BlkioDeviceWriteIOps": [],
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "Devices": [],
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "MemoryReservation": 0,
+      "MemorySwap": 536870912,
+      "MemorySwappiness": -1,
+      "OomKillDisable": false,
+      "PidsLimit": 128,
+      "Ulimits": [
+        {
+          "Name": "nofile",
+          "Hard": 1024,
+          "Soft": 1024
+        }
+      ],
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "IOMaximumIOps": 0,
+      "IOMaximumBandwidth": 0,
+      "MaskedPaths": null,
+      "ReadonlyPaths": null
+    },
+    "NetworkingConfig": {
+      "EndpointsConfig": {}
+    }
   }
 }

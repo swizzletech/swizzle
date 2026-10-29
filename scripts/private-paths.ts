@@ -19,3 +19,33 @@ export function isPrivate(file: string): boolean {
     AT_ROOT.some((root) => file === root || file.startsWith(`${root}/`))
   );
 }
+
+/** Configurations whose private path entries leave with the files they refer to. */
+export const PUBLIC_CONFIG_FILES: readonly string[] = [
+  "knip.jsonc",
+  "test/inputs.json",
+  "tsconfig.test.json",
+];
+
+/** The public contents inspected by conventions and written by the exporter. */
+export function exportConfiguration(file: string, text: string): string {
+  if (!PUBLIC_CONFIG_FILES.includes(file)) return text;
+  // These configurations use whole-line comments. Malformed input fails before anything is exported.
+  const value: unknown = JSON.parse(text.replace(/^\s*\/\/.*$/gm, ""));
+  return `${JSON.stringify(publicConfiguration(value), null, 2)}\n`;
+}
+
+/** Remove private path keys and array entries from exported configuration. */
+function publicConfiguration(value: unknown): unknown {
+  if (Array.isArray(value))
+    return value
+      .filter((item: unknown) => typeof item !== "string" || !isPrivate(item))
+      .map(publicConfiguration);
+  if (typeof value === "object" && value !== null)
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => !isPrivate(key))
+        .map(([key, item]) => [key, publicConfiguration(item)]),
+    );
+  return value;
+}

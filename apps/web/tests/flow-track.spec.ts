@@ -276,3 +276,20 @@ test("an approval with long CJK details keeps its buttons inside the station", a
   }));
   expect(approveBottom).toBeLessThanOrEqual(stationBottom);
 });
+
+// A decision draws one hexagon: its own box border stays clear whatever the station's state.
+test("a decision node has a single outline in every state", async ({ page }) => {
+  await mockDashboardApi(page, seededState());
+  await page.goto(`/automations/verify-probe?run=${OK_RUN_ID}`);
+
+  const decision = page.getByTestId("flow-track").locator(".station.diamond");
+  await expect(decision).toHaveCount(1);
+  for (const state of ["idle", "done", "failed"]) {
+    await decision.evaluate((node, next) => {
+      node.setAttribute("class", `station diamond narration ${next}`);
+    }, state);
+    expect(await decision.evaluate((node) => getComputedStyle(node).borderTopColor), state).toBe(
+      "rgba(0, 0, 0, 0)",
+    );
+  }
+});

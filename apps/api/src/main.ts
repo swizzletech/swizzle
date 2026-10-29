@@ -129,7 +129,13 @@ async function main() {
     await app.listen({ host, port });
     if (localWorkerId !== null && localHost) {
       const address = await lookup(localHost);
-      localApp = buildLocalWorkerServer(dispatch, workerRegistry, localWorkerId, apiTokenStore);
+      localApp = buildLocalWorkerServer(
+        dispatch,
+        workerRegistry,
+        localWorkerId,
+        apiTokenStore,
+        platform.runnerImageChecks,
+      );
       await localApp.listen({
         host: address.address,
         port: Number(process.env.SWIZZLE_LOCAL_WORKER_API_PORT ?? 19821),

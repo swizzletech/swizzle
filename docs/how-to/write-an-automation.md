@@ -62,6 +62,8 @@ swizzle validate .
 
 With a remote profile, `swizzle validate` and `swizzle apply --dry-run` check the deployment through the API without changing it. For webhook scaffolds, store the signing key from `README.md` before validation. See [deployment checks](../explanation/deployments-and-rollback.md) for the checks the API runs.
 
+The `swizzle validate` summary lists dependency manifests and binary requirements under `requirements`. For webhook automations, it lists the signing secret under `secrets`.
+
 `swizzle run` uses `sample-payload.json` when the folder has one. To try another payload, pass `--payload-file ./other.json`, which avoids the shell quoting that `--payload '<json>'` needs.
 
 A local run reads each name in `secrets` from your shell, not from the platform store. Export them first:
@@ -191,7 +193,7 @@ flowchart LR
 
 Here, `fetch-invoice-123` must match a step name in the entrypoint. `trigger` and `publish` remain narration nodes.
 
-The dashboard draws a flowchart as a track on the About tab and above the runs list. Other Mermaid diagram types still use Mermaid's renderer. The track follows the selected run, or shows reach counts when no run is selected. You can fold the track. The browser remembers that choice. With a run selected, each finished step shows its duration beside its node.
+The dashboard draws a flowchart as a track on the About tab and above the runs list. Other Mermaid diagram types still use Mermaid's renderer. The track follows the selected run, or shows reach counts when no run is selected. When recorded steps do not distinguish decision lanes, the track leaves both lanes open. You can fold the track. The browser remembers that choice. With a run selected, each finished step shows its duration beside its node.
 
 The Play tab pairs the deployed entrypoint with the track. It colours the active step's code and dims other code. Each step's lines carry a state-coloured bracket and tag. You can replay a finished run. Replay compresses waits.
 

@@ -1,7 +1,7 @@
 // Prints, as JSON, every executable a run in this image finds on its PATH, with the version of the
 // Debian or npm package that ships it, or of Node itself; null when neither says. The runner-base
 // build writes it to /etc/swizzle/runner-tools.json, and the worker image copies that file and
-// reports its binaries, which `requirements.binaries` is checked against (readRunnerTools in
+// reports its tools, languages and dependency packaging (readRunnerTools in
 // packages/runtime). Package versions need no `--version` flag, which not every tool knows.
 import { spawnSync } from "node:child_process";
 import {
@@ -68,4 +68,25 @@ function version({ file, real }) {
 const binaries = [...executables]
   .map(([name, executable]) => ({ name, version: version(executable) }))
   .sort((left, right) => left.name.localeCompare(right.name));
-process.stdout.write(`${JSON.stringify({ binaries })}\n`);
+// Probe runtimes here, inside the execution image, instead of inferring features from package versions.
+const probe = (command, args) => spawnSync(command, args, { encoding: "utf8" });
+const python = probe("python3", ["--version"]);
+const pythonVersion =
+  python.status === 0
+    ? /\b(\d+(?:\.\d+)+)\b/u.exec(`${python.stdout}${python.stderr}`)?.[1]
+    : undefined;
+const node = executables.has("node");
+const languages = [
+  ...(pythonVersion ? [{ name: "python", version: pythonVersion }] : []),
+  ...(node ? [{ name: "node", version: process.versions.node }] : []),
+  ...(node && process.features.typescript
+    ? [{ name: "typescript", version: process.versions.node }]
+    : []),
+];
+const dependencyPackaging = {
+  node: probe("npm", ["--version"]).status === 0,
+  python:
+    probe("python3", ["-m", "pip", "--version"]).status === 0 &&
+    probe("python3", ["-c", "import venv"]).status === 0,
+};
+process.stdout.write(`${JSON.stringify({ binaries, languages, dependencyPackaging })}\n`);

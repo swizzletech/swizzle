@@ -217,6 +217,9 @@ importers:
       '@swizzle/config':
         specifier: workspace:*
         version: link:packages/config
+      '@swizzle/core':
+        specifier: workspace:*
+        version: link:packages/core
       '@swizzle/db':
         specifier: workspace:*
         version: link:packages/db

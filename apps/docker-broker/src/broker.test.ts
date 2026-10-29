@@ -189,6 +189,26 @@ function withHostConfig(change: Record<string, unknown>): unknown {
   return { ...requests.sandbox, HostConfig: { ...requests.sandbox.HostConfig, ...change } };
 }
 
+it("reads an inventory archive only from a container owned by this stack", async () => {
+  const { url, received } = await startBroker();
+  const archive = "/archive?path=%2Fetc%2Fswizzle%2Frunner-tools.json";
+  const allowed = await fetch(`${url}/v1.56/containers/swizzle-run-1${archive}`);
+  expect(allowed.status).toBe(201);
+  expect(await allowed.json()).toEqual({});
+  expect(received).toContainEqual({
+    method: "GET",
+    url: `/v1.56/containers/${OWNED_ID}${archive}`,
+    body: "",
+  });
+  const foreign = await fetch(`${url}/v1.56/containers/postgres${archive}`);
+  expect(foreign.status).toBe(403);
+  expect(received).not.toContainEqual({
+    method: "GET",
+    url: `/v1.56/containers/${FOREIGN_ID}${archive}`,
+    body: "",
+  });
+});
+
 it("allows image history only for images owned by the stack", async () => {
   const { url, received } = await startBroker();
   const route = `/images/${OWNED_ID}/history`;
@@ -309,7 +329,7 @@ describe("docker-broker", () => {
   it("passes on the sandbox and image assembly creates the worker sends", async () => {
     const broker = await startBroker();
 
-    for (const body of [requests.sandbox, requests.assembly]) {
+    for (const body of [requests.sandbox, requests.assembly, requests.inventory]) {
       const response = await post(`${broker.url}/v1.56/containers/create?name=swizzle-run-1`, body);
       expect(response.status).toBe(201);
     }
@@ -317,6 +337,7 @@ describe("docker-broker", () => {
     expect(broker.received.map(({ body }) => JSON.parse(body))).toEqual([
       requests.sandbox,
       requests.assembly,
+      requests.inventory,
     ]);
   });
 

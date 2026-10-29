@@ -20,7 +20,14 @@
     "scripts/{dev-stack.mts,dev-stack-supervisor.mts,dev-stack-timeout.ts,env-file.ts,process-identity.ts}"
   ],
   "scripts/init-env.test.ts": ["scripts/{init-env,env-file}.ts"],
-  "scripts/export-public.test.ts": ["scripts/{export-public.mts,private-paths.ts}"],
+  "scripts/export-public.test.ts": [
+    "scripts/{export-public.mts,private-paths.ts}",
+    "knip.jsonc",
+    "test/inputs.json",
+    "tsconfig.test.json",
+    "biome.jsonc",
+    "pnpm-lock.yaml"
+  ],
   "scripts/perf/cli.test.ts": [
     "scripts/perf.mts",
     "scripts/perf/**",
@@ -36,24 +43,30 @@
     "packages/runtime/src/backup.ts",
     "test/fixtures/disk-space.mjs"
   ],
+  "scripts/agent-reference-drift.test.ts": ["apps/cli/assets/skills/**"],
   "scripts/runner-tools.test.ts": ["infra/docker/runner-tools.mjs"],
   "scripts/stack-images.docker.test.ts": [
     "justfile",
     "mise.toml",
     ".env.example",
-    "scripts/{stack,stack-images,init-env,env-file}.ts"
+    "scripts/{stack,stack-images,init-env,env-file,upgrade}.ts",
+    "infra/docker/{Dockerfile.runner,runner-tools.mjs}",
+    "test/fixtures/runner-upgrade/**"
   ],
   "scripts/upgrade.test.ts": [
     "scripts/{upgrade,stack,stack-images}.ts",
     "test/fixtures/disk-space.mjs"
   ],
-  "**/.*/checks/dev-skill.test.ts": [
-    "scripts/{dev-stack.mts,dev-stack-supervisor.mts,dev-stack-timeout.ts,env-file.ts,process-identity.ts}"
+  "scripts/valkey-health.docker.test.ts": [
+    ".env.example",
+    "infra/docker/{compose,databases,execution}.yml",
+    "scripts/{stack-images,env-file}.ts"
   ],
-  "**/.*/checks/public-export.test.ts": [
-    "**/.*/export-landings.mts",
-    "**/.*/justfile",
-    "scripts/{export-public.mts,private-paths.ts}"
-  ],
-  "**/.*/checks/release-skill.test.ts": ["**/.*/skills/release/SKILL.md"]
+  "scripts/runner-packages.test.ts": ["scripts/stack-images.ts"],
+  "scripts/verify-upgrade.test.ts": [
+    ".env.example",
+    "scripts/{verify-upgrade,packaged-stack}.mts",
+    "scripts/{env-file,process-identity}.ts",
+    "packages/*/src/**"
+  ]
 }

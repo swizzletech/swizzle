@@ -57,7 +57,9 @@
     display: grid;
     box-sizing: border-box;
     background: var(--raised);
-    border: 1.5px solid var(--line-2);
+    /* The outline colour; a state sets it here so a decision's clipped hexagon takes it too. */
+    --edge: var(--line-2);
+    border: 1.5px solid var(--edge);
     border-radius: var(--radius-s);
     color: var(--ink);
     font-size: 12.5px;
@@ -85,7 +87,7 @@
       14px 100%,
       0 50%
     );
-    background: var(--line-2);
+    background: var(--edge);
   }
   .station.diamond::after {
     inset: 1.5px;
@@ -192,17 +194,17 @@
   }
   .station.narration {
     border-style: dashed;
-    border-color: var(--line);
+    --edge: var(--line);
     color: var(--ink-3);
   }
   .station.done {
-    border-color: var(--ok);
+    --edge: var(--ok);
   }
   .station.done .st-meta {
     color: var(--ok);
   }
   .station.running {
-    border-color: var(--run);
+    --edge: var(--run);
   }
   .station.running .st-meta {
     color: var(--ink-2);
@@ -235,14 +237,14 @@
     }
   }
   .station.waiting {
-    border-color: var(--warn);
+    --edge: var(--warn);
     background: var(--tint-warn);
   }
   .station.waiting .st-meta {
     color: var(--warn-text);
   }
   .station.failed {
-    border-color: var(--fail);
+    --edge: var(--fail);
   }
   .station.failed .st-meta {
     color: var(--fail);

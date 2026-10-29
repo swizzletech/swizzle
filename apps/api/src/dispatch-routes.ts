@@ -2,6 +2,7 @@ import type { WorkerRegistry } from "@swizzle/db";
 import { CodedError } from "@swizzle/db";
 import type { WorkerDispatchResponse } from "@swizzle/runtime/http-contract";
 import {
+  type PlatformServices,
   type ServerDispatch,
   WORKER_ROUTES,
   type WorkerRoute,
@@ -14,6 +15,7 @@ export function registerDispatchRoutes(
   app: ApiServer,
   dispatch: ServerDispatch,
   registry: WorkerRegistry,
+  imageChecks: PlatformServices["runnerImageChecks"],
 ) {
   const identity = (request: FastifyRequest) => {
     if (request.actor?.kind !== "worker") throw new Error("Worker authentication required.");
@@ -45,6 +47,9 @@ export function registerDispatchRoutes(
         return await handler(body.data, identity(request), request, reply);
       },
     );
+  serve(WORKER_ROUTES.imageChecks, async (body, worker) => ({
+    requests: imageChecks.exchange(worker.id, body.reports),
+  }));
   const accepted = { accepted: true } as const;
   serve(WORKER_ROUTES.preparations, (body, worker) => dispatch.preparations(worker, body.knownIds));
   serve(WORKER_ROUTES.runImage, async (body, worker) => {

@@ -126,6 +126,43 @@ export function trackForRun(
     dead.has(lane.from) ||
     (states.get(lane.from)?.state === "done" &&
       (outgoing.get(lane.from) ?? []).some((other) => other !== lane && reached(other.to)));
+  // The reached stations behind a node, found through idle narration nodes; each node is visited once.
+  const reachedBehind = (id: string): ReadonlyMap<string, number> => {
+    const found = new Map<string, number>();
+    const seen = new Set([id]);
+    const queue = [id];
+    for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+      for (const lane of outgoing.get(next) ?? []) {
+        const node = states.get(lane.to);
+        if (node === undefined || seen.has(lane.to)) continue;
+        seen.add(lane.to);
+        if (REACHED.has(node.state)) found.set(lane.to, node.at ?? 0);
+        else if (node.key === null) queue.push(lane.to);
+      }
+    }
+    return found;
+  };
+  const reachedBehindOrSelf = (id: string): ReadonlyMap<string, number> => {
+    const node = states.get(id);
+    return node !== undefined && REACHED.has(node.state)
+      ? new Map([[id, node.at ?? 0]])
+      : reachedBehind(id);
+  };
+  // When the run passed through an idle narration node: the earliest station behind it that no
+  // sibling lane of a branch into it also leads to. A step both sides rejoin proves neither side.
+  const viaAt = (id: string): number | null => {
+    const mine = reachedBehind(id);
+    let evidence = mine;
+    for (const lane of incoming.get(id) ?? []) {
+      const siblings = (outgoing.get(lane.from) ?? []).filter((other) => other.to !== id);
+      if (siblings.length === 0) continue;
+      const shared = new Set(
+        siblings.flatMap((other) => [...reachedBehindOrSelf(other.to).keys()]),
+      );
+      evidence = new Map([...evidence].filter(([key]) => !shared.has(key)));
+    }
+    return evidence.size === 0 ? null : Math.min(...evidence.values());
+  };
   // Narration and death spread along lanes; a pass per rank is enough, bounded by the node count.
   for (let pass = 0; pass < flow.nodes.length; pass += 1) {
     let changed = false;
@@ -139,6 +176,12 @@ export function trackForRun(
         continue;
       }
       if (current.key !== null || !started) continue;
+      const through = viaAt(node.id);
+      if (through !== null) {
+        states.set(node.id, { ...current, at: through, state: "done" });
+        changed = true;
+        continue;
+      }
       const settled = lanes.every((lane) => taken(lane) || untaken(lane));
       if (!settled || (lanes.length > 0 && !lanes.some(taken))) continue;
       const at = Math.max(
@@ -253,7 +296,13 @@ function lanesFor(
       if (earlier) state = "untaken";
       else if (to === "done") state = "done";
       else state = "active";
-    } else if (from === "done" && to === "idle" && (finished || siblings.length > 0)) {
+    } else if (
+      from === "done" &&
+      to === "idle" &&
+      // A branch with no side reached yet is open, even when the run is over: nothing says which
+      // way it went. Only a run that ended on a single way out left that lane untaken.
+      ((finished && (outgoing.get(edge.from) ?? []).length === 1) || siblings.length > 0)
+    ) {
       state = "untaken";
     }
     return { dashed: false, from: edge.from, label: edge.label, state, to: edge.to };

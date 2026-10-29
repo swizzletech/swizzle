@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import type { StepSite } from "@swizzle/config";
 import {
+  AUTOMATION_RUNTIME_LANGUAGES,
   AUTOMATION_RUNTIME_PROFILE_DEFAULT,
   type AutomationConfig,
   type AutomationRuntimeConfig,
@@ -36,6 +37,7 @@ export type RuntimeSnapshot = AutomationRuntimeConfig;
 
 export type BuildSnapshot = StoredBuildSnapshot;
 type Binaries = WorkerCapabilities["binaries"];
+type RunnerTools = Pick<WorkerCapabilities, "binaries" | "languages" | "dependencyPackaging">;
 
 /** What readiness reads of an automation: its runtime block and the folder its files are in. */
 export interface RuntimeDefinitionLike {
@@ -320,6 +322,7 @@ export function evaluateAutomationReadiness(
 
 /** One thing that keeps a worker from running an automation; see `workerGaps`. */
 export type WorkerGap =
+  | { readonly kind: "image-unavailable"; readonly message: string }
   | { readonly kind: "group"; readonly profile: string }
   | { readonly kind: "service"; readonly service: WorkerService }
   | { readonly kind: "offline" }
@@ -353,6 +356,8 @@ export function workerGaps(
     if (!worker.services.includes(service)) gaps.push({ kind: "service", service });
   }
   if (worker.availability === "offline") return [...gaps, { kind: "offline" }];
+  if (worker.runnerImageError !== undefined)
+    return [...gaps, { kind: "image-unavailable", message: worker.runnerImageError }];
   const { capabilities } = worker;
   if (!capabilities.executionModes.includes(runtime.execution_mode)) {
     gaps.push({ kind: "execution-mode", mode: runtime.execution_mode });
@@ -390,6 +395,9 @@ export function gapsInWords(gaps: readonly WorkerGap[]): string {
   const missing: string[] = [];
   for (const gap of gaps) {
     switch (gap.kind) {
+      case "image-unavailable":
+        phrases.push(gap.message);
+        break;
       case "group":
         phrases.push(`is not in group "${gap.profile}"`);
         break;
@@ -429,6 +437,12 @@ function gapIssue(worker: ReadinessWorker, gap: WorkerGap): RuntimeRequirementIs
   const message = `${worker.name} ${gapsInWords([gap])}.`;
   const issue = { message, worker: worker.name };
   switch (gap.kind) {
+    case "image-unavailable":
+      return {
+        ...issue,
+        code: "RUNNER_IMAGE_INVENTORY_UNAVAILABLE",
+        subject: "runtime.container.base_image",
+      };
     case "group":
     case "offline":
       return { ...issue, code: "RUNTIME_PROFILE_UNAVAILABLE", subject: "runtime.profile" };
@@ -529,63 +543,76 @@ export function buildRuntimeEnvironmentAdditions(input: {
   return additions;
 }
 
-/** Where the runner-base build records the binaries a deployed run can call (infra/docker/runner-tools.mjs). */
+/** Where runner image builds record execution capabilities, including package extension layers. */
 const RUNNER_TOOLS_FILE = "/etc/swizzle/runner-tools.json";
 
 const runnerTools = z.object({
-  binaries: z.array(z.object({ name: z.string().min(1), version: z.string().nullable() })),
-});
+  binaries: z
+    .array(z.object({ name: z.string().min(1).max(80), version: z.string().max(80).nullable() }))
+    .max(2048),
+  languages: z
+    .array(
+      z.object({
+        name: z.enum(AUTOMATION_RUNTIME_LANGUAGES),
+        version: z.string().max(80).nullable(),
+      }),
+    )
+    .max(8),
+  dependencyPackaging: z.object({ node: z.boolean(), python: z.boolean() }),
+}) satisfies z.ZodType<RunnerTools>;
 
-/**
- * The binaries a deployed run finds in the runner image, as the image's build recorded them. A
- * worker that requires the sandbox reports these, since its runs never see its own PATH.
- */
-export async function readRunnerTools(file = RUNNER_TOOLS_FILE): Promise<Binaries> {
-  return runnerTools.parse(JSON.parse(await readFile(file, "utf8"))).binaries;
+/** The runner image's build record; no executable in the worker substitutes for a missing tool. */
+export async function readRunnerTools(file = RUNNER_TOOLS_FILE): Promise<RunnerTools> {
+  return parseRunnerTools(await readFile(file, "utf8"));
 }
 
-/**
- * What a worker can run: languages, execution modes and dependency packaging measured on this
- * host, and `binaries`, the executables its runs call, such as the runner image's. Node, npm,
- * python3 and pip measured here stand in for any of them `binaries` does not name.
- */
-export async function collectWorkerCapabilities(binaries: Binaries): Promise<WorkerCapabilities> {
-  const pythonVersion = await detectCommandVersion("python3", ["--version"]);
-  const nodeVersion = process.version.replace(/^v/, "");
-  const pipVersion = await detectPythonPipAvailability();
-  const npmVersion = await detectCommandVersion("npm", ["--version"]);
+export function parseRunnerTools(record: string): RunnerTools {
+  return runnerTools.parse(JSON.parse(record));
+}
+
+/** A runner record is authoritative. An array of local declarations adds this host's measured tools. */
+export async function collectWorkerCapabilities(
+  input: Binaries | RunnerTools,
+): Promise<WorkerCapabilities> {
   const dockerVersion = await detectCommandVersion("docker", [
     "version",
     "--format",
     "{{.Server.Version}}",
   ]);
-  const named = new Set(binaries.map((binary) => binary.name));
-  const measured = Object.entries({
-    node: nodeVersion,
-    npm: npmVersion,
-    python3: pythonVersion,
-    pip: pipVersion,
-  }).flatMap(([name, version]) =>
-    version !== null && !named.has(name) ? [{ name, version }] : [],
-  );
-
+  if ("binaries" in input)
+    return {
+      ...input,
+      executionModes: [
+        "host",
+        "profile",
+        ...(dockerVersion !== null ? ["container" as const] : []),
+      ],
+    };
+  const pythonVersion = await detectCommandVersion("python3", ["--version"]);
+  const nodeVersion = process.version.replace(/^v/, "");
+  const pipVersion = await detectPythonPipAvailability();
+  const npmVersion = await detectCommandVersion("npm", ["--version"]);
   return {
-    binaries: [...binaries, ...measured],
-    dependencyPackaging: {
-      node: npmVersion !== null,
-      python: pipVersion !== null,
-    },
-    executionModes: [
-      "host",
-      "profile",
-      ...(dockerVersion !== null ? (["container"] as const) : []),
+    binaries: [
+      ...input,
+      ...Object.entries({
+        node: nodeVersion,
+        npm: npmVersion,
+        python3: pythonVersion,
+        pip: pipVersion,
+      }).flatMap(([name, version]) =>
+        version !== null && !input.some((binary) => binary.name === name)
+          ? [{ name, version }]
+          : [],
+      ),
     ],
+    dependencyPackaging: { node: npmVersion !== null, python: pipVersion !== null },
+    executionModes: ["host", "profile", ...(dockerVersion !== null ? ["container" as const] : [])],
     languages: [
-      ...(pythonVersion ? [{ name: "python", version: pythonVersion } as const] : []),
-      { name: "node", version: nodeVersion } as const,
-      // Node runs TypeScript itself once it can strip types.
+      ...(pythonVersion ? [{ name: "python" as const, version: pythonVersion }] : []),
+      { name: "node" as const, version: nodeVersion },
       ...(process.features.typescript
-        ? [{ name: "typescript", version: nodeVersion } as const]
+        ? [{ name: "typescript" as const, version: nodeVersion }]
         : []),
     ],
   };

@@ -53,6 +53,7 @@ import {
   resumeDueWaitingRunsWithStore,
 } from "./run-lifecycle.js";
 import type { RunQueueProducer } from "./run-queue.js";
+import { createRunnerImageChecks, type RunnerImageChecks } from "./runner-image-checks.js";
 import {
   getAutomationTrigger as getStoredAutomationTrigger,
   listAutomationTriggerAuditEvents as listStoredAutomationTriggerAuditEvents,
@@ -64,6 +65,7 @@ import {
 } from "./triggers.js";
 
 export interface CreatePlatformServiceFacadeOptions {
+  readonly runnerImageChecks?: RunnerImageChecks;
   readonly artifactsDirectory?: string;
   readonly checkReadiness: () => Promise<PlatformReadinessReport>;
   readonly close: () => Promise<void>;
@@ -127,6 +129,7 @@ export function createPlatformServiceFacade(
   };
 
   return {
+    runnerImageChecks: options.runnerImageChecks ?? createRunnerImageChecks(),
     beginConnectionAuthorization: async (authorizeOptions) => {
       return await beginPlatformConnectionAuthorization({
         clientId: authorizeOptions.clientId,

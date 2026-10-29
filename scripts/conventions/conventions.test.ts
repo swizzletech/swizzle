@@ -741,6 +741,28 @@ it("no-private-paths reports a public file that names a file the export leaves o
   ).toEqual(["docs/guide.md:1", "scripts/login.test.ts:2"]);
 });
 
+it("no-private-paths inspects the configuration that ships, including retained text", async () => {
+  const hidden = "nested/.agents/tool.ts";
+  const files = {
+    [hidden]: "private checks",
+    "test/inputs.json": JSON.stringify({
+      [hidden]: [hidden],
+      "public.test.ts": [hidden, "scripts/**"],
+    }),
+    "tsconfig.test.json": JSON.stringify({ include: [hidden, "scripts/**"] }),
+  };
+  expect(await reported("no-private-paths", files)).toEqual([]);
+  expect(
+    await reported("no-private-paths", {
+      ...files,
+      "tsconfig.test.json": JSON.stringify({
+        description: hidden,
+        include: [hidden, "scripts/**"],
+      }),
+    }),
+  ).toEqual(["tsconfig.test.json:1"]);
+});
+
 it("web-reads-the-contract reports a dashboard call whose answer is not a contract type", async () => {
   const imports = [
     'import { request } from "./request.js";',
