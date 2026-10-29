@@ -1124,7 +1124,7 @@ export const maintenanceRuns = pgTable(
 );
 
 /**
- * API tokens. A personal token acts as its person, with their rights at the time of each request; a
+ * API tokens. An agent token acts as its person, with their rights at the time of each request; a
  * service account token acts as its account. Either is capped by the scope it was minted with
  * (access.ts, TokenScope): `project_ids` and `environments` null mean every one. The person who
  * issued it is named by id and name without a foreign key, so both outlive them; a worker's
@@ -1400,7 +1400,7 @@ export const serviceHeartbeats = pgTable(
   }),
 );
 
-/** Worker authority is independent of personal API tokens and project roles (ADR 0013). */
+/** Worker authority is independent of agent tokens and project roles (ADR 0013). */
 export const workers = pgTable("workers", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: varchar("name", { length: 120 }).notNull(),

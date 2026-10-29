@@ -61,7 +61,7 @@ async function office() {
     return { browser, email, id };
   };
   const owner = await signIn("owner@office.test", "owner");
-  /** A personal token of the person: the same person, without a session. */
+  /** An agent token of the person: the same person, without a session. */
   const mint = async (userId: string) =>
     (
       await apiTokenStore.createToken({

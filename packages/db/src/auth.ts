@@ -137,7 +137,7 @@ export interface SwizzleAuth {
   readonly setupTokenRequired: boolean;
   /** How many accounts sign in with a password alone. */
   accountsWithoutTwoFactor(): Promise<number>;
-  /** The person a personal API token acts as; null once the account is gone. */
+  /** The person an agent token acts as; null once the account is gone. */
   findPerson(userId: string): Promise<AuthUser | null>;
   listPeople(): Promise<readonly AuthUser[]>;
   listSessions(person: SignedInPerson): Promise<readonly AuthSessionMetadata[]>;
@@ -175,7 +175,7 @@ export interface SwizzleAuth {
   /** Suspending signs the person out at once; errors as for setRole. */
   setSuspended(actorId: string, userId: string, suspended: boolean): Promise<AuthUser | null>;
   /**
-   * Offboarding: deletes the account with its sessions, factors, API tokens, team memberships and
+   * Offboarding: deletes the account with its sessions, factors, agent tokens, team memberships and
    * grants. False when no account has this id; errors as for setRole.
    */
   removePerson(actorId: string, userId: string): Promise<boolean>;

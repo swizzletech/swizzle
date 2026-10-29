@@ -13,7 +13,7 @@ The process contract between the worker and an automation entrypoint. It is the 
 | Working directory | A host run (`swizzle run`, or a worker without the sandbox) starts in a fresh scratch directory. A container run starts in `/automation`, the deployed bundle on a read-only file system. |
 | Scratch files | `SWIZZLE_RUN_TMP` names a writable directory in both: the host scratch directory, or `/tmp` in a container, a 64 MiB tmpfs. In a container, a relative path is writable only under a directory that `runtime.permissions.writable_dirs` declares ([`sandboxSpec`](../../packages/runtime/src/sandbox.ts)). Both scratch directories are deleted when the run ends. |
 
-stdout and stderr are each limited to 1 MiB. For deployed runs, the API replaces exact injected secret and connection-token values with `[REDACTED]` in stored stdout and stderr, parsed JSON results, and streamed logs. It also replaces approval and event link tokens by their shape in those outputs. The API redacts link tokens in responses to people and API tokens, including step values, state, child payloads, and approval details, while worker routes return the stored values for execution. The [security model](../explanation/security-model.md) describes the limits of this redaction.
+stdout and stderr are each limited to 1 MiB. For deployed runs, the API replaces exact injected secret and connection-token values with `[REDACTED]` in stored stdout and stderr, parsed JSON results, and streamed logs. It also replaces approval and event link tokens by their shape in those outputs. The API redacts link tokens in responses to people and tokens, including step values, state, child payloads, and approval details, while worker routes return the stored values for execution. The [security model](../explanation/security-model.md) describes the limits of this redaction.
 
 For container runs, image preparation logs and process stderr share that limit. A run that exceeds its preparation log allowance stops waiting and fails on its own. Other runs and background preparation can finish the shared assembly. The assembly itself stops at its shared 1 MiB log limit. Process overflow stops the process. Captured output keeps the longest complete UTF-8 prefix that fits, including an initial byte order mark; stdout keeps its separate 1 MiB allowance.
 
@@ -70,7 +70,7 @@ A deployed run receives only these variables, the declared `secrets`, the declar
 
 A run with `permissions.network` also receives the egress proxy settings.
 
-No variable carries a Swizzle API token. A run acts with the credentials its deployment bound, not as the person who deployed it. Code that must call the Swizzle API needs a [project service account](../explanation/security-model.md#tokens-act-within-a-fixed-scope) token stored as a declared secret, and acts within that token's scope.
+No variable carries a Swizzle token. A run acts with the credentials its deployment bound, not as the person who deployed it. Code that must call the Swizzle API needs a [project service account](../explanation/security-model.md#tokens-act-within-a-fixed-scope) token stored as a declared secret, and acts within that token's scope.
 
 ## State snapshot and steps snapshot
 

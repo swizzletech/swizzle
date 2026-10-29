@@ -118,7 +118,7 @@ swizzle apply ./automations/report
 
 ## Give every person their own CLI profile
 
-A personal token acts with its person's current rights and loses them on the next request after a grant is removed. A service account token acts as the account and never beyond its grants. The CLI stores its profiles in `~/.swizzle/config.toml` of the operating-system account that runs it. On a shared machine, give each person their own operating-system account, so nobody's commands run with someone else's token. Each person mints their token in **Settings → Agent access** and checks it with `swizzle whoami`.
+An agent token acts with its person's current rights and loses them on the next request after a grant is removed. A service account token acts as the account and never beyond its grants. The CLI stores its profiles in `~/.swizzle/config.toml` of the operating-system account that runs it. On a shared machine, give each person their own operating-system account, so nobody's commands run with someone else's token. Each person mints their token in **Settings → Agent access** and checks it with `swizzle whoami`.
 
 ## When someone leaves
 
@@ -127,7 +127,7 @@ A personal token acts with its person's current rights and loses them on the nex
 
 | Stops | Keeps working |
 |---|---|
-| Their sign-in, sessions, and personal tokens | Automations they deployed, with their triggers and schedules |
+| Their sign-in, sessions, and agent tokens | Automations they deployed, with their triggers and schedules |
 | Their grants, team memberships, and pending invitations | Service accounts they created, with their tokens, each still naming them as its creator or issuer |
 | Decisions on approvals assigned to them: those wait until an owner, an admin, or the project's admin reassigns them | Their audit events, with the address they had |
 

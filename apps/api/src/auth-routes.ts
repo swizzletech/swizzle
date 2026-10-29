@@ -185,9 +185,9 @@ export function registerAuthGuard(app: ApiServer, options: RegisterAuthGuardOpti
     if (rawApiToken !== undefined && verified === null) {
       return respondAuthError({
         code: "FORBIDDEN",
-        message: "The provided API token is invalid, revoked, or expired.",
+        message: "The provided token is invalid, revoked, or expired.",
         fixCommand:
-          "Mint a replacement in Settings > Agent access, then run swizzle profile add <name> --url <api-url> --token <token>.",
+          "Create an agent token in Settings > Agent access, then run swizzle profile add <name> --url <api-url> --token <token>.",
       });
     }
 
@@ -223,7 +223,7 @@ export function registerAuthGuard(app: ApiServer, options: RegisterAuthGuardOpti
         // A new token would be refused too; only lifting the suspension helps.
         return respondAuthError({
           code: "AUTH_ACCOUNT_SUSPENDED",
-          message: "The person this API token belongs to is suspended.",
+          message: "The person this agent token belongs to is suspended.",
           fixCommand:
             "Ask an owner or admin of this instance to lift the suspension in Settings > People.",
         });
@@ -236,9 +236,9 @@ export function registerAuthGuard(app: ApiServer, options: RegisterAuthGuardOpti
       return respondAuthError({
         code: "FORBIDDEN",
         message:
-          "The provided API token is invalid, revoked, or expired, or its person or service account is gone.",
+          "The provided token is invalid, revoked, or expired, or its person or service account is gone.",
         fixCommand:
-          "Mint a replacement in Settings > Agent access, then run swizzle profile add <name> --url <api-url> --token <token>.",
+          "Create an agent token in Settings > Agent access, then run swizzle profile add <name> --url <api-url> --token <token>.",
       });
     }
 
@@ -246,14 +246,14 @@ export function registerAuthGuard(app: ApiServer, options: RegisterAuthGuardOpti
       code: "UNAUTHORIZED",
       message: "Sign in to the dashboard or provide 'Authorization: Bearer <token>'.",
       fixCommand:
-        "Mint a token in Settings > Agent access, then run swizzle profile add <name> --url <api-url> --token <token>.",
+        "Create an agent token in Settings > Agent access, then run swizzle profile add <name> --url <api-url> --token <token>.",
     });
   });
 }
 
 /**
  * Who a verified token acts as, "suspended" while its person is, or null when nobody may act by it.
- * A personal token acts with its person's current role, so a demotion or suspension counts at once;
+ * An agent token acts with its person's current role, so a demotion or suspension counts at once;
  * a service account token acts as the account in its project, whoever minted it.
  */
 async function tokenActor(

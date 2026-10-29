@@ -455,7 +455,7 @@ describe("swizzle CLI program", () => {
         error: "No CLI profile is configured. Sign in to use the API.",
         help: [
           "Run `swizzle profile add <name> --url <api-url> --token-env SWIZZLE_TOKEN --env <environment> --default`",
-          "Sign in to the dashboard, create an API token in Settings > Agent access, and set SWIZZLE_TOKEN to that token.",
+          "Sign in to the dashboard, create an agent token in Settings > Agent access, and set SWIZZLE_TOKEN to that token.",
         ],
       });
       expect(io.stderrText).toBe("");

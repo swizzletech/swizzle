@@ -72,7 +72,7 @@ interface ActingToken {
 }
 
 /**
- * Who sent a request: a person by session (token null) or personal token, a service account by
+ * Who sent a request: a person by session (token null) or agent token, a service account by
  * its token, or a worker with its independent protocol identity.
  */
 export type Actor =

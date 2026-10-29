@@ -13,10 +13,10 @@ swizzle --version
 
 The package includes the SDKs and the builder skill. Your laptop needs no server checkout, Docker, or database. Python is needed only when you run Python automations locally.
 
-Create a device token in your instance's **Settings > Agent access**. Read it without adding it to shell history:
+Create an agent token in your instance's **Settings > Agent access**. Read it without adding it to shell history:
 
 ```bash
-read -r -s -p 'Device token: ' SWIZZLE_TOKEN
+read -r -s -p 'Agent token: ' SWIZZLE_TOKEN
 printf '\n'
 export SWIZZLE_TOKEN
 ```

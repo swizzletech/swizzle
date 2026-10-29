@@ -26,7 +26,7 @@ swizzle --version
 
 The package carries the SDKs and this skill. It needs no source checkout, Docker, or database on the laptop. Python is needed for local Python runs.
 
-A person creates a device token in the remote instance's **Settings > Agent access** and supplies it through `SWIZZLE_TOKEN`. Use the instance's HTTPS API URL and an existing environment:
+A person creates an agent token in the remote instance's **Settings > Agent access** and supplies it through `SWIZZLE_TOKEN`. Use the instance's HTTPS API URL and an existing environment:
 
 ```bash
 swizzle profile add server --url https://swizzle.example.com/api --token-env SWIZZLE_TOKEN --env staging

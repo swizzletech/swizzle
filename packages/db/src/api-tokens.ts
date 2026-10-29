@@ -113,7 +113,7 @@ export function createPostgresApiTokenStore(
           userId: input.holder.kind === "person" ? input.holder.userId : null,
         })
         .returning();
-      if (inserted === undefined) throw new Error("Failed to persist API token.");
+      if (inserted === undefined) throw new Error("Failed to persist token.");
       return { inserted, plaintext };
     } catch (error) {
       if (causeCode(error) === PG_ERROR.uniqueViolation) throw nameConflict(input.name);
@@ -353,7 +353,7 @@ function normalizeExpiration(value: string | undefined, holder: TokenHolder): Da
 }
 
 function nameConflict(name: string): CodedError {
-  return new CodedError("API_TOKEN_NAME_CONFLICT", `A live API token named "${name}" exists.`);
+  return new CodedError("API_TOKEN_NAME_CONFLICT", `A live token named "${name}" exists.`);
 }
 
 function scopeOf(row: typeof apiTokens.$inferSelect): TokenScope {
@@ -370,7 +370,7 @@ function mapRow(row: typeof apiTokens.$inferSelect): StoredApiToken {
   else if (row.serviceAccountId !== null) {
     holder = { kind: "service-account", serviceAccountId: row.serviceAccountId };
   } else if (row.workerId !== null) holder = { kind: "worker", workerId: row.workerId };
-  else throw new Error("API token has no holder.");
+  else throw new Error("Token has no holder.");
   return {
     createdAt: row.createdAt.toISOString(),
     expiresAt: row.expiresAt.toISOString(),

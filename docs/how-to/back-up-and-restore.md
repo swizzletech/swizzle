@@ -1,6 +1,6 @@
 # Back up and restore an instance
 
-PostgreSQL holds deployments, triggers, runs, state, encrypted secrets, connections, account and invitation records, API tokens, and sessions. The artifact store holds each deployment's source tree. `swizzle backup export` writes both stores to one directory ([`apps/cli/src/backup.ts`](../../apps/cli/src/backup.ts), [`packages/runtime/src/backup.ts`](../../packages/runtime/src/backup.ts)):
+PostgreSQL holds deployments, triggers, runs, state, encrypted secrets, connections, account and invitation records, tokens, and sessions. The artifact store holds each deployment's source tree. `swizzle backup export` writes both stores to one directory ([`apps/cli/src/backup.ts`](../../apps/cli/src/backup.ts), [`packages/runtime/src/backup.ts`](../../packages/runtime/src/backup.ts)):
 
 - `metadata.json` names the artifact backend, the format version, and the time of the export.
 - `database.sql` is a `pg_dump` of the database.

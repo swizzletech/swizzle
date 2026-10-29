@@ -187,7 +187,7 @@ Standalone Swizzle automation workspace.
 
 ## Setup
 
-Create a device token in Settings > Agent access, connect the CLI to your instance, then scaffold an automation and run it on this machine:
+Create an agent token in Settings > Agent access, connect the CLI to your instance, then scaffold an automation and run it on this machine:
 
 \`\`\`bash
 export SWIZZLE_TOKEN='<token>'

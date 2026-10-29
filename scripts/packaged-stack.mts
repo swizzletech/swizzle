@@ -1,5 +1,5 @@
 // A throwaway packaged stack: infra/docker/compose.yml as a compose project of its own, from an
-// env file with fresh credentials and free ports, with its first account set up and an API token made.
+// env file with fresh credentials and free ports, with its first account set up and an agent token made.
 // `just smoke` and `just perf` boot one, `just perf --against` two; each runs beside every other
 // stack, and `remove` (also run on SIGINT, SIGTERM or SIGHUP) deletes the project with its volumes
 // and the images it built. A SIGKILL skips `remove`, so each throwaway's name carries its owner's
@@ -408,7 +408,7 @@ export async function startPackagedStack(
       cookie,
     );
     const { token } = (await created.json()) as { token: string };
-    log("claimed the instance and created an API token");
+    log("claimed the instance and created an agent token");
     // Outside loopback the api answers /ready only to an authenticated caller.
     await until(
       "the api reports ready",

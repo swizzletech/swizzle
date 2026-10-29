@@ -12,7 +12,7 @@
  * | session insert                | refuses a suspended account                                    |
  * | account insert, same transaction | adds the first account to the team Release                  |
  * | sign-up and sign-in, after    | grants what the person's accepted invitation promised, once    |
- * | /reset-password               | mails the link; afterwards revokes the API tokens (auth.ts)    |
+ * | /reset-password               | mails the link; afterwards revokes the agent tokens (auth.ts)    |
  *
  * An invitation carries the project grants it promises. They become grants once its recipient has
  * an account, after that account's transaction committed, through AccountEffects.grantProject.
@@ -112,7 +112,7 @@ export type OwnerRecovery =
 export interface AccountEffects {
   /** Gives a person one grant an invitation promised. */
   grantProject(userId: string, grant: PendingGrant): Promise<void>;
-  /** Revokes every API token of the person, after their password was reset. */
+  /** Revokes every agent token of the person, after their password was reset. */
   revokeTokens(userId: string): Promise<void>;
 }
 
