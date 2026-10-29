@@ -2,7 +2,7 @@ import type { TokenScope } from "./access.js";
 import type { PersonOnRecord } from "./access-store.js";
 
 /**
- * Who a token acts as. A personal token acts as its person, with their rights at the time of each
+ * Who a token acts as. An agent token acts as its person, with their rights at the time of each
  * request; a service account token acts as the account, whoever minted it. A worker token
  * authorizes only the worker protocol, with the grants of its registered machine.
  */

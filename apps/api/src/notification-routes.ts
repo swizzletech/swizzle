@@ -200,6 +200,6 @@ function personOf(request: FastifyRequest): string {
   if (actor?.kind === "person") return actor.userId;
   throw new AutomationRuntimeError(
     "ACCESS_DENIED",
-    "A notification rule belongs to a person. Sign in, or use a personal token.",
+    "A notification rule belongs to a person. Sign in, or use an agent token.",
   );
 }

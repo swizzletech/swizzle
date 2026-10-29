@@ -354,7 +354,7 @@ export interface WorkerRegistry {
     run: PlacementTarget & { readonly runId: string; readonly queueTimeout: string },
   ): Promise<RunPlacement>;
   revoke(id: string, issuedBy: string | null): Promise<RegisteredWorker>;
-  /** Resolve a verified API token to its current worker identity without locking or writing. */
+  /** Resolve a verified worker token to its current worker identity without locking or writing. */
   authenticate(workerId: string, tokenId: string): Promise<RegisteredWorker>;
   /** Rechecks identity and scope under the same lock as heartbeat or token renewal. */
   session(

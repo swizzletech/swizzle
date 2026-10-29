@@ -63,7 +63,7 @@ async function office(...members: (typeof PAULA)[]) {
 
 // Sign-ins hash with production-cost scrypt; see sign-in.test.ts.
 describe("tokens and service accounts over HTTP", () => {
-  it("takes a team's rights from a personal token on the next request after its person leaves", async () => {
+  it("takes a team's rights from an agent token on the next request after its person leaves", async () => {
     const { ada, bearer, joined } = await office(MIA);
     const [mia] = joined;
     if (mia === undefined) throw new Error("Mia did not join.");

@@ -293,7 +293,7 @@ function apiHint(code: ApiErrorCode | undefined, status: number): string | undef
   const hint = code === undefined ? undefined : API_HINTS[code];
   if (hint !== undefined) return hint;
   if (code === "UNAUTHORIZED" || status === 401)
-    return "This API requires a bearer token. In the dashboard, open Settings > Agent access, create a device token, export it and register it with `swizzle profile add <name> --url <api-url> --token-env <VAR>`.";
+    return "This API requires a bearer token. In the dashboard, open Settings > Agent access, create an agent token, export it and register it with `swizzle profile add <name> --url <api-url> --token-env <VAR>`.";
   if (code === "FORBIDDEN" || status === 403)
     return "The API rejected the bearer token. Check the selected profile/token env var, or have the owner create a replacement under Settings > Agent access.";
   if (status === 404) return "Not found. Check the name, ID, or environment.";

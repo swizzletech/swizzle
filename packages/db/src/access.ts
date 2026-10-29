@@ -12,7 +12,7 @@
  *   a deployment, `manage` also lets them set, rotate, delete, grant and share it. No right shows a
  *   stored value. See `credentialRight`.
  *
- * - A request that comes with an API token is limited by that token's scope as well: at most its
+ * - A request that comes with a token is limited by that token's scope as well: at most its
  *   role, only in its projects and environments. The scope is fixed when the token is minted, so
  *   rights its person or service account gains later never widen a narrowed token.
  * - A service account is a project's own identity. It holds grants like a person but never an

@@ -1,6 +1,6 @@
 import type { DeleteServiceAccountResult } from "@swizzle/db";
 /**
- * API tokens and service accounts over HTTP (ADR 0014), and who a request acts as.
+ * Agent tokens and service accounts over HTTP (ADR 0014), and who a request acts as.
  *
  * - A person mints, lists and revokes their own tokens. A token's scope is fixed when it is
  *   minted: a highest role and optionally its projects and environments (access.ts, TokenScope).
@@ -152,7 +152,7 @@ export function registerTokenRoutes(app: ApiServer, options: RegisterTokenRoutes
         holder: { kind: "person", userId: person.id },
         issuedBy: person,
         name: body.name,
-        scope: await personalScope(request, accessStore, body.scope),
+        scope: await agentTokenScope(request, accessStore, body.scope),
       });
       reply.status(201);
       return { ...(await tokenView(directory(options), created)), token: created.token };
@@ -222,7 +222,7 @@ export function registerTokenRoutes(app: ApiServer, options: RegisterTokenRoutes
     async (request, reply) => {
       const project = await administered(request);
       const actor = request.actor;
-      // A personal token's person, or the session's.
+      // An agent token's person, or the session's.
       const creator =
         actor?.kind === "person" && actor.token !== null
           ? await auth.findPerson(actor.userId)
@@ -330,8 +330,8 @@ function sessionPerson(request: FastifyRequest): PersonOnRecord {
   return { id: person.user.id, name: person.user.name };
 }
 
-/** A personal scope with its projects resolved to ids; a project the person cannot see is a 404. */
-async function personalScope(
+/** An agent token scope with its projects resolved to ids; a project the person cannot see is a 404. */
+async function agentTokenScope(
   request: FastifyRequest,
   accessStore: AccessStore,
   body: ScopeBody | undefined,
@@ -413,5 +413,5 @@ function once<T>(cache: Map<string, Promise<T>>, key: string, read: () => Promis
 }
 
 function tokenNotFound(identifier: string): Error {
-  return new CodedError("API_TOKEN_NOT_FOUND", `API token not found: ${identifier}`);
+  return new CodedError("API_TOKEN_NOT_FOUND", `Token not found: ${identifier}`);
 }

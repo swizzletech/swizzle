@@ -199,7 +199,7 @@ export function resolveProfile(input: ResolveProfileInput): ResolvedProfile {
     exitCode: EXIT_CODES.auth,
     fixCommand:
       "swizzle profile add <name> --url <api-url> --token-env SWIZZLE_TOKEN --env <environment> --default",
-    hint: "Sign in to the dashboard, create an API token in Settings > Agent access, and set SWIZZLE_TOKEN to that token.",
+    hint: "Sign in to the dashboard, create an agent token in Settings > Agent access, and set SWIZZLE_TOKEN to that token.",
   });
 }
 

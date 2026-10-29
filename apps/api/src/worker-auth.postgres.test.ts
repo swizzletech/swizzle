@@ -106,7 +106,7 @@ it("confines worker credentials to the worker protocol", async () => {
   expect((await app.inject({ method: "GET", url: "/environments", headers })).statusCode).toBe(403);
 });
 
-it("permits owner/admin enrollment but refuses member, narrowed owner and personal credentials on worker routes", async () => {
+it("permits owner/admin enrollment but refuses member, narrowed owner and agent tokens on worker routes", async () => {
   const registry = createPostgresWorkerRegistry({ client: testDatabase() });
   const enrollment = {
     worker: { ...identity, state: "pending" as const },

@@ -121,7 +121,7 @@ export interface BuildServerOptions {
   readonly accessStore: AccessStore;
   readonly environmentStore: EnvironmentStore;
   readonly automationFolderStore: AutomationFolderStore;
-  /** Every bearer token: personal, service account and worker. */
+  /** Every bearer token: agent, service account and worker. */
   readonly apiTokenStore: ApiTokenStore;
   /** Who changed what, kept past the deletion of what they changed (request-audit.ts). */
   readonly auditStore: AuditStore;

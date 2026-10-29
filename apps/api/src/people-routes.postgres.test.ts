@@ -171,7 +171,7 @@ describe("people over HTTP", () => {
       error: "AUTH_ACCOUNT_SUSPENDED",
       fixCommand:
         "Ask an owner or admin of this instance to lift the suspension in Settings > People.",
-      message: "The person this API token belongs to is suspended.",
+      message: "The person this agent token belongs to is suspended.",
     });
     expect(listed.json().users).toContainEqual(
       expect.objectContaining({ email: ANNA.email, suspended: true }),

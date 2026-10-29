@@ -97,7 +97,7 @@ export type { ProjectRef };
 
 /**
  * The most a token may do, fixed when it is minted: `projects` and `environments` null mean every
- * one its holder reaches. A personal token of role admin with neither limit acts with all of its
+ * one its holder reaches. An agent token of role admin with neither limit acts with all of its
  * person's rights.
  */
 export type TokenScope = TokenView["scope"];
