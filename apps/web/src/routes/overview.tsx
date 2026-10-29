@@ -551,7 +551,7 @@ function FirstSteps() {
           <p className="t-meta">
             Create a token. You get one block to paste into your agent's terminal.
           </p>
-          <Link className="btn mt-3" hash="agent-access" to="/settings">
+          <Link className="btn mt-3" params={{ section: "agent-access" }} to="/settings/$section">
             Create agent token
           </Link>
         </div>

@@ -33,7 +33,8 @@
     "justfile",
     "mise.toml",
     "scripts/{stack,stack-images}.ts",
-    "packages/runtime/src/backup.ts"
+    "packages/runtime/src/backup.ts",
+    "test/fixtures/disk-space.mjs"
   ],
   "scripts/runner-tools.test.ts": ["infra/docker/runner-tools.mjs"],
   "scripts/stack-images.docker.test.ts": [
@@ -42,7 +43,10 @@
     ".env.example",
     "scripts/{stack,stack-images,init-env,env-file}.ts"
   ],
-  "scripts/upgrade.test.ts": ["scripts/{upgrade,stack-images}.ts"],
+  "scripts/upgrade.test.ts": [
+    "scripts/{upgrade,stack,stack-images}.ts",
+    "test/fixtures/disk-space.mjs"
+  ],
   "**/.*/checks/dev-skill.test.ts": [
     "scripts/{dev-stack.mts,dev-stack-supervisor.mts,dev-stack-timeout.ts,env-file.ts,process-identity.ts}"
   ]

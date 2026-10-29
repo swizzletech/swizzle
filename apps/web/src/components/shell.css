@@ -247,8 +247,6 @@
     /* The sticky header's height, so what else sticks to the top sits below it. */
     :root {
       --header-h: 85px;
-      /* An anchor, such as /settings#people, scrolls its target below the header. */
-      scroll-padding-top: var(--header-h);
     }
     /* The header row keeps its height; the page row takes what the screen has left. */
     .app {

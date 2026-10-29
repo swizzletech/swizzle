@@ -14,7 +14,6 @@ import type { InstanceRole, Person, ProjectRole, SentInvitationResponse } from "
 import { useDashboardClient } from "../../lib/dashboard-client";
 import { useProjects } from "../../lib/queries";
 import { expiryInWords } from "../../lib/words/time";
-import { SECTION_DATA } from "./section";
 
 const INSTANCE_ROLES: readonly InstanceRole[] = ["member", "admin", "owner"];
 const PROJECT_ROLES: readonly ProjectRole[] = ["viewer", "operator", "editor", "admin"];
@@ -33,12 +32,10 @@ export function People(props: {
   const now = useNow();
   // Keyed by the sign-in, so a person who signs in after another never sees the other's answers.
   const people = useQuery({
-    meta: SECTION_DATA,
     queryFn: () => api.listPeople(),
     queryKey: ["people", authRevision],
   });
   const invitations = useQuery({
-    meta: SECTION_DATA,
     queryFn: () => api.listInvitations(),
     queryKey: ["invitations", authRevision],
   });

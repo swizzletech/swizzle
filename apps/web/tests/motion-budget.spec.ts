@@ -183,7 +183,7 @@ const DASHBOARD_PAGES = [
   "/automations/verify-probe?tab=about",
   "/runs",
   "/credentials",
-  "/settings",
+  "/settings/agent-access",
 ] as const;
 
 /**

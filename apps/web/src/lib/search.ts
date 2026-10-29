@@ -46,6 +46,26 @@ export interface ProjectSearch {
   readonly tab?: ProjectTab | undefined;
 }
 
+/**
+ * Settings' sections in the order the nav lists them, one page each at /settings/<section>. The
+ * first four belong to every person; the rest run the instance, for its owners and admins.
+ */
+export const SETTINGS_SECTIONS = [
+  "agent-access",
+  "notifications",
+  "account",
+  "two-factor",
+  "people",
+  "teams",
+  "workers",
+  "status",
+] as const;
+export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
+
+export function isSettingsSection(value: string): value is SettingsSection {
+  return oneOf(SETTINGS_SECTIONS, value) !== undefined;
+}
+
 type RawSearch = Record<string, unknown>;
 
 // The router merges a route's parsed search over the raw URL search, so each parser returns every

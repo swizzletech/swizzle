@@ -252,7 +252,11 @@ function NeedRow({ item, now }: { readonly item: AttentionItem; readonly now: Da
       return (
         <Need
           act={
-            <Link className="btn quiet" hash="notifications" to="/settings">
+            <Link
+              className="btn quiet"
+              params={{ section: "notifications" }}
+              to="/settings/$section"
+            >
               Open settings
             </Link>
           }

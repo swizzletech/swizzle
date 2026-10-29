@@ -45,9 +45,14 @@ test("moving between pages in the dev build logs no React diagnostic", async ({ 
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
   const nav = page.getByRole("navigation", { name: "Dashboard" });
-  for (const place of ["Runs", "Credentials", "Settings"]) {
+  // Settings opens its first section.
+  for (const [place, heading] of [
+    ["Runs", "Runs"],
+    ["Credentials", "Credentials"],
+    ["Settings", "Agent access"],
+  ] as const) {
     await nav.getByRole("link", { name: place }).click();
-    await expect(page.getByRole("heading", { level: 1, name: place })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
   }
   await nav.getByRole("link", { name: /^Overview/u }).click();
   await page.getByRole("link", { name: "verify-probe" }).first().click();

@@ -1,5 +1,5 @@
-/* Settings: the sections' anchors on the left, the sections on the right; at phone width the
-   anchors wrap above the sections, so every one shows. */
+/* Settings: the nav of sections, in groups, on the left and the open section on the right; at
+   phone width the nav wraps above the section, so every link shows. */
 @layer components {
   .settings {
     display: grid;
@@ -11,7 +11,24 @@
     position: sticky;
     top: 24px;
     display: grid;
+    gap: 14px;
+  }
+  .snav-group {
+    display: grid;
     gap: 1px;
+  }
+  .snav-label {
+    padding: 0 10px 4px;
+    color: var(--ink-3);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .snav-version {
+    padding: 0 10px;
+    color: var(--ink-3);
+    font-size: 12px;
   }
   .snav a {
     padding: 6px 10px;
@@ -24,7 +41,7 @@
     background: var(--surface-2);
     color: var(--ink);
   }
-  .snav a[aria-current="location"] {
+  .snav a[aria-current="page"] {
     background: var(--surface-2);
     color: var(--ink);
     font-weight: 500;
@@ -37,9 +54,16 @@
     }
     .snav {
       position: static;
+      gap: 8px;
+    }
+    .snav-group {
       display: flex;
       flex-wrap: wrap;
+      align-items: baseline;
       gap: 2px;
+    }
+    .snav-label {
+      flex-basis: 100%;
     }
   }
 }

@@ -44,8 +44,8 @@ for (const delayed of [false, true]) {
         },
       });
     });
-    await page.goto("/settings#workers");
-    const workers = page.locator("#workers");
+    await page.goto("/settings/workers");
+    const workers = page.getByRole("main");
     await workers.getByLabel("Worker name", { exact: true }).fill("Staging laptop");
     await workers.getByLabel("Groups (comma-separated)").fill("macbook");
     await workers.getByRole("combobox", { name: "Project", exact: true }).selectOption(PROJECT_ID);

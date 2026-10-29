@@ -1,3 +1,6 @@
+// Settings › Workers, for owners and admins: every worker with its groups and runs, enrollment of a
+// new one with a one-time code, and revoking one.
+
 import { LOCAL_LLM_SERVICE } from "@swizzle/config/browser";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -11,7 +14,7 @@ import type { WorkerEnrollment, WorkerListing } from "../../lib/api";
 import { useDashboardClient } from "../../lib/dashboard-client";
 import { useProjects } from "../../lib/queries";
 import { workerKindInWords, workerStateInWords, workerTone } from "../../lib/words/workers";
-import { SECTION_DATA } from "./section";
+import { Section } from "./section";
 
 export function Workers() {
   const confirm = useConfirm();
@@ -34,7 +37,6 @@ export function Workers() {
   const now = useNow();
   const key = ["workers", ...queryScope];
   const workers = useQuery({
-    meta: SECTION_DATA,
     queryKey: key,
     queryFn: () => api.listWorkers(),
     refetchInterval: 15_000,
@@ -131,15 +133,10 @@ export function Workers() {
     ));
   }
   return (
-    <section id="workers" className="scroll-mt-6">
-      <div className="sec-head">
-        <h2 className="t-section">Workers</h2>
-        <p className="t-meta mt-1">
-          Every machine that runs automations, its groups and what it runs now. To enroll another,
-          approve groups and a project in {environment} below. New workers receive no default group.
-          Each code admits one machine and expires in ten minutes.
-        </p>
-      </div>
+    <Section
+      intro={`Every machine that runs automations, its groups and what it runs now. To enroll another, approve groups and a project in ${environment} below. New workers receive no default group. Each code admits one machine and expires in ten minutes.`}
+      title="Workers"
+    >
       <div className="card rows overflow-hidden">
         {revoke.isError ? <ActionError error={revoke.error} /> : null}
         {workerList()}
@@ -223,7 +220,7 @@ export function Workers() {
           </div>
         )}
       </div>
-    </section>
+    </Section>
   );
 }
 
