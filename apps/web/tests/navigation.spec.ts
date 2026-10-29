@@ -47,7 +47,7 @@ test("an empty instance shows only the three steps to the first automation", asy
   await expect(page.getByTestId("needs-you")).toHaveCount(0);
 
   await page.getByRole("link", { name: "Create agent token" }).click();
-  await expect(page).toHaveURL(/\/settings#agent-access$/u);
+  await expect(page).toHaveURL(/\/settings\/agent-access$/u);
 });
 
 test("a link the agent prints opens the connect form prefilled", async ({ page }) => {

@@ -153,12 +153,12 @@ async function screenshot(
       `async () => {
       const response = await fetch('/api/auth/sign-in/email', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({email: 'smoke@swizzle.test', password: ${JSON.stringify(password)}})});
       if (!response.ok) throw new Error('Login failed: ' + response.status);
-      location.href = '/settings#instance';
+      location.href = '/settings/status';
       return 'Signed in as existing owner';
     }`,
     );
     await browser("wait", "Version");
-    await browser("screenshot", path.join(evidence, `${prefix}upgrade-instance.png`));
+    await browser("screenshot", path.join(evidence, `${prefix}upgrade-status.png`));
     await browser("open", `${dashboard}/automations/upgrade-proof?tab=runs`);
     await browser("wait", "Succeeded");
     await browser("screenshot", path.join(evidence, `${prefix}upgrade-runs.png`));

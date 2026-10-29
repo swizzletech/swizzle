@@ -1,20 +1,23 @@
-// Settings › Agent access (#agent-access): the signed-in person's agent tokens, created with a
-// scope and shown once.
+// Settings › Agent access (`/settings/agent-access`): the one place to connect an agent. It sets
+// the two identities an agent can act as side by side: an agent token, which acts as the signed-in
+// person and is made here with a scope and shown once, and a project's service account, which the
+// project's admins make on its Service accounts tab, linked from here.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { ActionError } from "../../components/actions";
 import { useConfirm } from "../../components/confirm";
 import { type Scope, ScopeFields, scopeInput } from "../../components/scope-fields";
 import { CopyButton, ErrorNote, Skeleton, useNow } from "../../components/ui";
-import type { CreatedApiToken, ProjectRole } from "../../lib/api";
+import type { CreatedApiToken, Project, ProjectRole } from "../../lib/api";
 import { publicApiUrl } from "../../lib/api/request";
 import { useDashboardClient } from "../../lib/dashboard-client";
 import { refreshAll, useProjects } from "../../lib/queries";
 import { scopeInWords } from "../../lib/words/access";
 import { ageInWords, expiryInWords } from "../../lib/words/time";
-import { SECTION_DATA, Section } from "./section";
+import { Section } from "./section";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -46,7 +49,6 @@ export function AgentAccess() {
     return () => window.removeEventListener("pagehide", forget);
   }, []);
   const tokens = useQuery({
-    meta: SECTION_DATA,
     queryFn: async () => (await api.listApiTokens()).tokens,
     queryKey: ["tokens", ...queryScope],
   });
@@ -75,10 +77,25 @@ export function AgentAccess() {
 
   return (
     <Section
-      id="agent-access"
-      intro="A token lets your agent deploy and operate automations through the swizzle CLI. Use one token per agent or device, so you can revoke each on its own."
+      intro="Connect a coding agent, a script or CI to this instance through the swizzle CLI. Choose who it acts as."
       title="Agent access"
     >
+      <div className="mb-6 grid gap-3.5 md:grid-cols-2" data-testid="agent-identities">
+        <div className="card px-5 py-4">
+          <h2 className="t-section">As you: agent token</h2>
+          <p className="t-meta mt-1">
+            Use an agent token when the agent works for you. It acts with your rights at most and
+            stops when you lose them.
+          </p>
+        </div>
+        <ServiceAccountsDoor projects={projects} />
+      </div>
+      <div className="sec-head">
+        <h2 className="t-section">Your agent tokens</h2>
+        <p className="t-meta mt-1">
+          Use one token per agent or device, so you can revoke each on its own.
+        </p>
+      </div>
       {created === null ? null : <GiveToAgent onDismiss={() => setCreated(null)} token={created} />}
       <div className="card rows overflow-hidden">
         <form
@@ -181,6 +198,64 @@ export function AgentAccess() {
         ) : null}
       </div>
     </Section>
+  );
+}
+
+/**
+ * The other identity an agent can act as. It links to the Service accounts tab of each project the
+ * person administers; someone who administers none learns whom to ask, and gets no link to a tab
+ * they cannot open.
+ */
+function ServiceAccountsDoor({ projects }: { readonly projects: ReturnType<typeof useProjects> }) {
+  const administered = (projects.data ?? []).filter((project) => project.role === "admin");
+  return (
+    <div className="card px-5 py-4">
+      <h2 className="t-section">As a project: service account</h2>
+      <p className="t-meta mt-1">
+        Use a service account for CI or an agent that must keep working when you leave.{" "}
+        {projects.isSuccess && administered.length === 0
+          ? "A project's admins create them; ask one of them."
+          : "It belongs to one project and acts at most as editor."}
+      </p>
+      <ServiceAccountLinks administered={administered} projects={projects} />
+    </div>
+  );
+}
+
+/** Where the person's service accounts live: one link per project they administer. */
+function ServiceAccountLinks(props: {
+  readonly projects: ReturnType<typeof useProjects>;
+  readonly administered: readonly Project[];
+}) {
+  if (props.projects.isError) {
+    return (
+      <div className="mt-2">
+        <ErrorNote
+          error={props.projects.error}
+          title="The projects could not be loaded, so their service accounts cannot be listed."
+        />
+      </div>
+    );
+  }
+  if (props.projects.data === undefined) return <Skeleton label="Loading projects" lines={1} />;
+  if (props.administered.length === 0) return null;
+  return (
+    <p className="t-meta mt-2">
+      Service accounts in{" "}
+      {props.administered.map((project, index) => (
+        <Fragment key={project.id}>
+          {index === 0 ? null : ", "}
+          <Link
+            className="linkish"
+            params={{ project: project.slug }}
+            search={{ tab: "service-accounts" }}
+            to="/projects/$project"
+          >
+            {project.name}
+          </Link>
+        </Fragment>
+      ))}
+    </p>
   );
 }
 

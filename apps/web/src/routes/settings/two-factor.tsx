@@ -1,5 +1,5 @@
-// Settings › Two-factor sign-in (#two-factor): turning it on with an app, its recovery codes, and
-// turning it off.
+// Settings › Two-factor sign-in (`/settings/two-factor`): turning it on with an app, its recovery
+// codes, and turning it off.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useState } from "react";
@@ -9,13 +9,12 @@ import { Chip, ErrorNote, Skeleton } from "../../components/ui";
 import type { TwoFactorEnrollment } from "../../lib/api";
 import { sessionApi } from "../../lib/api/account";
 import { useDashboardClient } from "../../lib/dashboard-client";
-import { SECTION_DATA, Section } from "./section";
+import { Section } from "./section";
 
 export function TwoFactor() {
   const { api } = useDashboardClient();
   const queryClient = useQueryClient();
   const status = useQuery({
-    meta: SECTION_DATA,
     queryFn: () => api.getTwoFactor(),
     queryKey: ["two-factor"],
   });
@@ -151,7 +150,6 @@ export function TwoFactor() {
 
   return (
     <Section
-      id="two-factor"
       intro="Sign-in asks for a code from an authenticator app, such as Google Authenticator, 1Password or Aegis, after the password. Turning it on or off signs out every other browser. Agent tokens keep working."
       title="Two-factor sign-in"
     >

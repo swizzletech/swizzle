@@ -1,4 +1,4 @@
-// Settings › Account (#account): the password and the browsers signed in.
+// Settings › Account (`/settings/account`): the password and the browsers signed in.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
@@ -13,7 +13,7 @@ import {
   sessionDeviceInWords,
 } from "../../lib/words/access";
 import { ageInWords } from "../../lib/words/time";
-import { SECTION_DATA, Section } from "./section";
+import { Section } from "./section";
 
 export function Account() {
   const confirm = useConfirm();
@@ -25,7 +25,6 @@ export function Account() {
   const [repeat, setRepeat] = useState("");
   const [code, setCode] = useState("");
   const twoFactor = useQuery({
-    meta: SECTION_DATA,
     queryFn: () => api.getTwoFactor(),
     queryKey: ["two-factor"],
   });
@@ -54,7 +53,6 @@ export function Account() {
     (!needsCode || code.trim() !== "") &&
     !changePassword.isPending;
   const sessions = useQuery({
-    meta: SECTION_DATA,
     queryFn: () => api.listSessions(),
     queryKey: ["sessions"],
   });
@@ -78,7 +76,6 @@ export function Account() {
   });
   return (
     <Section
-      id="account"
       intro="Changing the password signs out every other browser. Agent tokens keep working until you revoke them."
       title="Account"
     >

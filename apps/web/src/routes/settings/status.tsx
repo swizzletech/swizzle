@@ -1,53 +1,42 @@
-// Settings › Instance (#instance): the version, environments and the platform's state.
+// Settings › Status, for instance owners and admins: the version, the environments and whether
+// workers, scheduler and cleanup run.
 
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Chip, ErrorNote, Skeleton } from "../../components/ui";
 import { useDashboardClient } from "../../lib/dashboard-client";
-import { SECTION_DATA, Section } from "./section";
+import { Section } from "./section";
 
-export function Instance({ operator }: { readonly operator: boolean }) {
+export function Status() {
   const { api, environment, environments } = useDashboardClient();
   const health = useQuery({
-    meta: SECTION_DATA,
     queryFn: () => api.getHealth(),
     queryKey: ["health"],
   });
   return (
-    <Section
-      id="instance"
-      intro="Details for running the platform. Problems also show on the Overview."
-      title="Instance"
-    >
-      <div className="card rows overflow-hidden" data-testid="instance">
-        <InstanceFact label="Version">
+    <Section intro="Whether the platform runs. Problems also show on the Overview." title="Status">
+      <div className="card rows overflow-hidden" data-testid="status">
+        <StatusFact label="Version">
           <span className="mono">{health.data?.version ?? "…"}</span>
-        </InstanceFact>
-        <InstanceFact label="Environments">
+        </StatusFact>
+        <StatusFact label="Environments">
           {environments.map((name) => (
             <span className="mr-2" key={name}>
               <span className="mono">{name}</span>
               {name === environment ? <span className="t-faint"> (shown)</span> : null}
             </span>
           ))}
-        </InstanceFact>
-        {operator ? (
-          <PlatformState />
-        ) : (
-          <InstanceFact label="Workers, scheduler, cleanup">
-            <span className="t-faint">Shown to instance owners and admins</span>
-          </InstanceFact>
-        )}
+        </StatusFact>
+        <PlatformState />
       </div>
     </Section>
   );
 }
 
-/** Workers, scheduler and cleanup, which only an owner or admin may read. */
+/** Workers, scheduler and cleanup. */
 function PlatformState() {
   const { api, queryScope } = useDashboardClient();
   const operations = useQuery({
-    meta: SECTION_DATA,
     queryFn: () => api.getOperationsSummary(),
     queryKey: ["operations", ...queryScope],
     refetchInterval: 30_000,
@@ -67,19 +56,17 @@ function PlatformState() {
   const workers = operations.data.onlineWorkers;
   return (
     <>
-      <InstanceFact label="Workers">
+      <StatusFact label="Workers">
         {workers === 0 ? (
           <Chip tone="fail">No worker is running</Chip>
         ) : (
           `${workers} ${workers === 1 ? "worker" : "workers"} running`
         )}
-      </InstanceFact>
-      <InstanceFact label="Scheduler">
+      </StatusFact>
+      <StatusFact label="Scheduler">
         {alive("scheduler") === 0 ? <Chip tone="fail">Not running</Chip> : "Running"}
-      </InstanceFact>
-      <InstanceFact label="Cleanup">
-        {CLEANUP_IN_WORDS[operations.data.maintenance.state]}
-      </InstanceFact>
+      </StatusFact>
+      <StatusFact label="Cleanup">{CLEANUP_IN_WORDS[operations.data.maintenance.state]}</StatusFact>
     </>
   );
 }
@@ -90,7 +77,7 @@ const CLEANUP_IN_WORDS = {
   missing: "Has not run yet",
 } as const;
 
-function InstanceFact(props: { readonly label: string; readonly children: ReactNode }) {
+function StatusFact(props: { readonly label: string; readonly children: ReactNode }) {
   return (
     <div className="setting">
       <span className="t-meta">{props.label}</span>

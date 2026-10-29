@@ -99,7 +99,7 @@ Give `use` only to people whose code you trust with the value. [Credentials need
 
 ## Connect an external CI with a service account
 
-A service account belongs to the project, so the CI keeps working when the person who set it up leaves.
+A service account belongs to the project, so the CI keeps working when the person who set it up leaves. For an agent that works for you, create an agent token on **Settings → Agent access**. That page also links to the **Service accounts** tab for each project you administer.
 
 1. As an admin of the project, open its **Service accounts** tab, enter a **Name** such as `ci`, and select **Create service account**.
 2. Select **Change rights**. Share the whole project with the account as `Editor`, then share **One protected environment**, `production`, as `Editor`.

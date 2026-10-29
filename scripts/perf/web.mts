@@ -26,7 +26,7 @@ const PAGES = [
   `/automations/${API_PROFILE.referenceAutomation}`,
   "/runs",
   "/credentials",
-  "/settings",
+  "/settings/agent-access",
 ] as const;
 
 interface Interaction {

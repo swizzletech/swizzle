@@ -58,7 +58,7 @@ Use a version with published images. Repeat the command for each `swizzle-<servi
 
 ## Check the result
 
-Sign in with the existing owner's account, open a project's automation and check its earlier runs. Trigger an automation that uses a secret and confirm it succeeds. Run `swizzle doctor` with the profile for this instance. Settings > Instance and `/health` show the server version compiled into the running code. An old `SWIZZLE_IMAGE_TAG` in `.env` cannot override it; `just init-env`, also run by `just stack`, removes that line while keeping credentials and other settings.
+Sign in with the existing owner's account, open a project's automation and check its earlier runs. Trigger an automation that uses a secret and confirm it succeeds. Run `swizzle doctor` with the profile for this instance. **Settings → Status** and `/health` show the server version compiled into the running code. An old `SWIZZLE_IMAGE_TAG` in `.env` cannot override it; `just init-env`, also run by `just stack`, removes that line while keeping credentials and other settings.
 
 Existing deployments keep their binary version matching behavior. In a deployment saved by 1.0.4, `latest` accepts a known worker version and bare `25` matches only `25.0.0`, so it rejects `25.3`. Runs, API checks, and worker image preparation keep reading those artifacts after an upgrade. New source validation rejects `latest` and treats bare `25` as a numeric prefix. New deployments record that matching revision in their configuration and artifacts.
 

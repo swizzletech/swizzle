@@ -26,6 +26,8 @@ The convention checks syntax, not event order. Review fake-timer tests for code 
 
 Tests may run beside other worktrees against the same host. Give each test its own files, ports, processes, database rows, containers, and Docker images. Use `temporaryDirectory()` from `test/support.ts`, bind servers to port `0`, and use uniquely named Docker resources. Clean them up when the test ends.
 
+When a test exercises a host resource measurement, control the measurement instead of reading the runner's current state. For disk checks, call `diskSpace(gib)` from `test/disk-space.ts`. It sets `statfsSync` in the test process and in Node child processes, so recipe tests can check low-space failures and sufficient-space paths on any runner.
+
 The runner timeout is a hang limit, not a performance target. Keep timeouts in `vitest.config.ts` and `playwright.config.ts`. A slow test that needs more room belongs in a separate runner project with a reason for its ceiling. Fix a flaky test at the race. Do not retry it.
 
-Sources: [`tests-wait-on-state.ts`](../../scripts/conventions/rules/tests-wait-on-state.ts), [`test/support.ts`](../../test/support.ts), [`test/postgres.ts`](../../test/postgres.ts), [`vitest.config.ts`](../../vitest.config.ts), [`playwright.config.ts`](../../playwright.config.ts)
+Sources: [`tests-wait-on-state.ts`](../../scripts/conventions/rules/tests-wait-on-state.ts), [`test/support.ts`](../../test/support.ts), [`test/postgres.ts`](../../test/postgres.ts), [`test/disk-space.ts`](../../test/disk-space.ts), [`disk-space.mjs`](../../test/fixtures/disk-space.mjs), [`vitest.config.ts`](../../vitest.config.ts), [`playwright.config.ts`](../../playwright.config.ts)

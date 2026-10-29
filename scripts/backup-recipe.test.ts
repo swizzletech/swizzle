@@ -3,6 +3,7 @@ import { copyFile, mkdir, readdir, readFile, stat, symlink, writeFile } from "no
 import path from "node:path";
 import { promisify } from "node:util";
 import { expect, it, vi } from "vitest";
+import { diskSpace } from "../test/disk-space.js";
 import { temporaryDirectory } from "../test/support.js";
 
 const execute = promisify(execFile);
@@ -21,12 +22,13 @@ async function snapshot(directory: string) {
 }
 
 it.each(
-  ["complete", "truncated", "existing destination"].flatMap((scenario) =>
+  ["complete", "truncated", "existing destination", "low disk"].flatMap((scenario) =>
     ["absolute", "mise"].map((invocation) => ({ scenario, invocation })),
   ),
 )(
   "publishes only a complete backup into a new directory ($scenario, $invocation)",
   async ({ scenario, invocation }) => {
+    diskSpace(64);
     const root = await temporaryDirectory("swizzle-backup-recipe-");
     const checkout = path.join(root, "checkout");
     await mkdir(path.join(checkout, "scripts"), { recursive: true });
@@ -136,10 +138,21 @@ esac
     vi.stubEnv("MISE_GLOBAL_CONFIG_FILE", path.join(root, "global.toml"));
     vi.stubEnv("MISE_TRUSTED_CONFIG_PATHS", checkout);
 
+    if (scenario === "low disk") diskSpace(8);
+
     const result =
       invocation === "mise"
         ? execute("mise", ["x", "--", "just", "backup", output], { cwd: checkout })
         : execute(just, ["backup", output], { cwd: checkout });
+    if (scenario === "low disk") {
+      await expect(result).rejects.toMatchObject({
+        stderr: expect.stringContaining(
+          "Need at least 12 GiB free at /tmp for source builds and backup",
+        ),
+      });
+      expect(await readdir(root)).not.toContain("daily backup");
+      expect(await readFile(dockerLog, "utf8")).not.toContain(" build ");
+    }
     if (scenario === "complete") {
       // The export inside the container names its own path, which the host cannot restore from.
       expect((await result).stdout).toBe(

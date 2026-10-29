@@ -9,6 +9,7 @@ import {
   lazyRouteComponent,
   Outlet,
   RouterProvider,
+  redirect,
   useMatches,
 } from "@tanstack/react-router";
 import React from "react";
@@ -23,13 +24,14 @@ import {
   parseCredentialsSearch,
   parseProjectSearch,
   parseRunsSearch,
+  SETTINGS_SECTIONS,
 } from "./lib/search";
 
 // The dashboard has five places: Overview, Runs, Projects, Credentials and Settings, plus one page
-// per automation and per project, all inside AppShell, which signs the person in. The pages a
-// mailed link opens, /invitation and /reset-password, sit outside it. Each page loads on first visit, so a library
-// one page imports (Mermaid and marked on the automation page) stays out of the others. Any other
-// address shows NotFound.
+// per automation, per project and per settings section, all inside AppShell, which signs the
+// person in. The pages a mailed link opens, /invitation and /reset-password, sit outside it. Each
+// page loads on first visit, so a library one page imports (Mermaid and marked on the automation
+// page) stays out of the others. Any other address shows NotFound.
 // Each route's component is the lazy page itself, never a component that renders it: the router
 // loads a route's own component before it renders the route. A page that starts loading only when
 // it renders blanks the screen while it loads, and React's dev build logs conditional-use-of-use.
@@ -117,10 +119,23 @@ const credentialsRoute = createRoute({
   validateSearch: parseCredentialsSearch,
 });
 
+// The sidebar's Settings opens the first section.
 const settingsRoute = createRoute({
-  component: SettingsPage,
+  beforeLoad: () => {
+    throw redirect({
+      params: { section: SETTINGS_SECTIONS[0] },
+      replace: true,
+      to: "/settings/$section",
+    });
+  },
   getParentRoute: () => rootRoute,
   path: "/settings",
+});
+
+const settingsSectionRoute = createRoute({
+  component: SettingsPage,
+  getParentRoute: () => rootRoute,
+  path: "/settings/$section",
 });
 
 const routeTree = rootRoute.addChildren([
@@ -131,6 +146,7 @@ const routeTree = rootRoute.addChildren([
   projectRoute,
   credentialsRoute,
   settingsRoute,
+  settingsSectionRoute,
   invitationRoute,
   resetPasswordRoute,
 ]);

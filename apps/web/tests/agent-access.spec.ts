@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-import { mockDashboardApi, seededState } from "./dashboard-mock";
+import type { Project, ProjectAccess } from "../src/lib/api";
+import { mockDashboardApi, PROJECT_ID, seededState } from "./dashboard-mock";
 
 // Settings promises the agent token is shown only once. The browser keeps a page it leaves in the
 // back/forward cache, so Back must not bring the token block back.
@@ -24,7 +25,7 @@ test("the one-time agent token is gone after leaving the page and pressing Back"
     });
   });
   await mockDashboardApi(page, seededState());
-  await page.goto("/settings#agent-access");
+  await page.goto("/settings/agent-access");
   await page.getByLabel("Token name").fill("Claude on my laptop");
   await page.getByRole("button", { name: "Create agent token" }).click();
   await expect(page.getByTestId("give-to-agent")).toContainText("swz_token-1_one-time-plaintext");
@@ -59,7 +60,7 @@ test("a token that arrives after the owner left is not shown on Back", async ({ 
       await route.fallback();
     },
   );
-  await page.goto("/settings#agent-access");
+  await page.goto("/settings/agent-access");
   await page.getByLabel("Token name").fill("Claude on my laptop");
   await page.getByRole("button", { name: "Create agent token" }).click();
   await expect(page.getByRole("button", { name: "Creating…" })).toBeVisible();
@@ -78,7 +79,7 @@ test("a token that arrives after the owner left is not shown on Back", async ({ 
 test("a limited agent token is sent with its limits and listed with them", async ({ page }) => {
   const state = seededState();
   await mockDashboardApi(page, state);
-  await page.goto("/settings#agent-access");
+  await page.goto("/settings/agent-access");
   await page.getByLabel("Token name").fill("Claude for Default");
   await page.getByText("Limit what it may do").click();
   const scope = page.getByTestId("scope-fields");
@@ -106,7 +107,7 @@ test("revoking an agent token asks in the page, even where window.confirm answer
   });
   const state = seededState();
   await mockDashboardApi(page, state);
-  await page.goto("/settings#agent-access");
+  await page.goto("/settings/agent-access");
   await page.getByLabel("Token name").fill("Claude on my laptop");
   await page.getByRole("button", { name: "Create agent token" }).click();
   await page.getByRole("button", { name: "Done" }).click();
@@ -141,7 +142,7 @@ for (const refusal of ["rejects", "never answers"] as const) {
     const silent = refusal === "never answers";
     if (silent) await page.clock.install();
     await mockDashboardApi(page, seededState());
-    await page.goto("/settings#agent-access");
+    await page.goto("/settings/agent-access");
     await page.getByLabel("Token name").fill("Claude on my laptop");
     await page.getByRole("button", { name: "Create agent token" }).click();
     const block = page.getByTestId("give-to-agent");
@@ -163,3 +164,60 @@ for (const refusal of ["rejects", "never answers"] as const) {
       );
   });
 }
+
+// Agent access is the one place to connect an agent: it names the service account as the other
+// identity and links to it, and the project's Service accounts tab links back.
+test("Agent access and a project's Service accounts tab lead to each other", async ({ page }) => {
+  await mockDashboardApi(page, seededState());
+  const access: ProjectAccess = {
+    automationSlugs: {},
+    environments: ["staging", "production"],
+    grants: [],
+    holders: [],
+    project: {
+      createdAt: "2026-01-05T09:00:00.000Z",
+      id: PROJECT_ID,
+      name: "Default",
+      slug: "default",
+    },
+    protectedEnvironments: ["production"],
+  };
+  await page.route(
+    (url) => url.pathname === "/api/projects/default/access",
+    (route) => route.fulfill({ json: access }),
+  );
+  await page.route(
+    (url) => url.pathname === "/api/projects/default/service-accounts",
+    (route) => route.fulfill({ json: { serviceAccounts: [] } }),
+  );
+  await page.goto("/settings/agent-access");
+
+  const identities = page.getByTestId("agent-identities");
+  await expect(identities).toContainText("Use an agent token when the agent works for you.");
+  await expect(identities).toContainText(
+    "Use a service account for CI or an agent that must keep working when you leave.",
+  );
+  await identities.getByRole("link", { name: "Default" }).click();
+  await expect(page).toHaveURL(/\/projects\/default\?tab=service-accounts$/u);
+  await expect(page.getByRole("tab", { name: "Service accounts" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+
+  await page.getByRole("link", { name: "Settings › Agent access" }).click();
+  await expect(page).toHaveURL(/\/settings\/agent-access$/u);
+  await expect(page.getByRole("heading", { level: 1, name: "Agent access" })).toBeVisible();
+});
+
+test("someone who administers no project learns whom to ask, with no link to a service account", async ({
+  page,
+}) => {
+  const state = seededState();
+  state.projects = state.projects.map((project): Project => ({ ...project, role: "editor" }));
+  await mockDashboardApi(page, state);
+  await page.goto("/settings/agent-access");
+
+  const identities = page.getByTestId("agent-identities");
+  await expect(identities).toContainText("A project's admins create them; ask one of them.");
+  await expect(identities.getByRole("link")).toHaveCount(0);
+});

@@ -111,7 +111,7 @@ try {
       localStorage.clear();
       const response = await fetch('/api/auth/sign-in/email', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({email: 'smoke@swizzle.test', password: ${JSON.stringify(password)}})});
       if (!response.ok) throw new Error('Sign in failed');
-      location.href = '/settings#agent-access';
+      location.href = '/settings/agent-access';
       return 'Signed in';
     }`,
     );

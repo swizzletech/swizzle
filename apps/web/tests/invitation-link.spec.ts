@@ -63,7 +63,7 @@ test("an invitation's link stays until Done, and a failed invitation shows no li
   page,
 }) => {
   await ownerWithoutMail(page);
-  await page.goto("/settings#people");
+  await page.goto("/settings/people");
   const email = page.getByRole("textbox", { name: "Email", exact: true });
   const create = page.getByRole("button", { name: "Create link" });
   const link = page.getByLabel("Invitation link for anna@example.com");

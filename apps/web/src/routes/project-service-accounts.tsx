@@ -1,9 +1,11 @@
 // A project's service accounts, for its admins: create one, give it roles on the project, an
 // automation or an environment (through the share form), mint tokens with a scope, rotate and
 // revoke them, and read what the account did in the audit. A token value shows once, and is
-// forgotten when the page is hidden, as Settings › Agent access does.
+// forgotten when the page is hidden, as Settings › Agent access does. Agent access links here for
+// every project the person administers, and this tab links back to it.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { ActionError } from "../components/actions";
@@ -48,7 +50,12 @@ export function ServiceAccounts({ access }: { readonly access: ProjectAccess }) 
         <h2 className="t-section">Service accounts</h2>
         <p className="t-meta">
           An identity of this project for CI or an agent that must keep working when a person
-          leaves. It acts as itself, at most as editor, never as whoever made its token.
+          leaves. It acts as itself, at most as editor, never as whoever made its token. For an
+          agent that works for you, use an agent token in{" "}
+          <Link className="linkish" params={{ section: "agent-access" }} to="/settings/$section">
+            Settings › Agent access
+          </Link>{" "}
+          instead.
         </p>
       </div>
       <form

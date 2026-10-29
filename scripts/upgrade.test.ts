@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { expect, it, vi } from "vitest";
+import { diskSpace } from "../test/disk-space.js";
 import { temporaryDirectory } from "../test/support.js";
 
 import { capture, prepareImages, releaseVersion, run } from "./stack-images.ts";
@@ -12,6 +13,7 @@ const execute = promisify(execFile);
 const script = fileURLToPath(new URL("upgrade.ts", import.meta.url));
 
 async function installedCheckout() {
+  diskSpace(64);
   const directory = await temporaryDirectory("swizzle-upgrade-command-");
   const checkout = path.join(directory, "checkout");
   const origin = path.join(directory, "origin.git");
@@ -27,6 +29,7 @@ async function installedCheckout() {
   await mkdir(path.join(checkout, ".github/workflows"), { recursive: true });
   await writeFile(path.join(checkout, ".github/workflows/images.yml"), "name: Fixture images\n");
   await copyFile(script, path.join(checkout, "scripts/upgrade.ts"));
+  await copyFile(new URL("stack.ts", import.meta.url), path.join(checkout, "scripts/stack.ts"));
   await copyFile(
     new URL("stack-images.ts", import.meta.url),
     path.join(checkout, "scripts/stack-images.ts"),
@@ -51,8 +54,7 @@ backup dir:
     git rev-parse HEAD > {{ quote(dir) }}/source
     echo durable-data > {{ quote(dir) }}/database.sql
 stack:
-    test "\u0024{UPGRADE_TEST_FAILURE:-}" != migrate
-    git rev-parse HEAD > .git/stack-head
+    node scripts/stack.ts up
 `,
   );
   await writeFile(path.join(checkout, "operator-config"), "installed setting\n");
@@ -137,6 +139,31 @@ esac
   const backups = () => readdir(path.join(checkout, ".git/swizzle-upgrades")).catch(() => []);
   return { checkout, git, upgrade, previous, target, backups };
 }
+
+it.each(["upgrade", "stack"].flatMap((command) => [1, 8].map((gib) => ({ command, gib }))))(
+  "refuses just $command with $gib GiB free before stopping or building",
+  async ({ command, gib }) => {
+    const installed = await installedCheckout();
+    diskSpace(gib);
+    vi.stubEnv("UPGRADE_TEST_FAILURE", "absent");
+    if (command === "stack" && gib === 8)
+      await writeFile(path.join(installed.checkout, "operator-config"), "source build\n");
+
+    await expect(
+      execute("just", [command, ...(command === "upgrade" ? ["v1.0.3"] : [])], {
+        cwd: installed.checkout,
+      }),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining(
+        `Need at least ${gib === 1 ? 5 : 12} GiB free at /tmp for ${gib === 1 ? "release images" : "source builds"} and backup`,
+      ),
+    });
+    expect(await installed.git("rev-parse", "HEAD")).toBe(installed.previous);
+    const calls = await readFile(path.join(installed.checkout, ".git/docker-calls"), "utf8");
+    expect(calls).not.toContain(" stop ");
+    expect(calls).not.toContain(" build ");
+  },
+);
 
 it.each([{ args: [] }, { args: ["v1.0.3"] }])(
   "backs up the original checkout before selecting the named or newest stable release (%j)",
