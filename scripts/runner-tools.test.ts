@@ -27,9 +27,29 @@ it("records the first executable file on PATH and passes over a directory of the
   });
 
   expect(JSON.parse(stdout)).toEqual({
+    languages: [],
+    dependencyPackaging: { node: false, python: false },
     binaries: [
       { name: "dpkg-query", version: null },
       { name: "tool", version: "1.2.3" },
     ],
+  });
+});
+
+it("records runtime versions and packaging probes rather than assuming executable names are enough", async () => {
+  const bin = await temporaryDirectory("swizzle-runner-probes-");
+  for (const [name, source] of Object.entries({
+    "dpkg-query": "#!/bin/sh\nexit 1\n",
+    python3:
+      '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "Python 3.13.5"; exit 0; fi\nif [ "$2" = "pip" ]; then echo "pip 25.1"; exit 0; fi\nexit 1',
+    npm: "#!/bin/sh\nexit 1\n",
+    pip: "#!/bin/sh\nexit 0\n",
+  }))
+    await writeFile(path.join(bin, name), source, { mode: 0o755 });
+  const { stdout } = await promisify(execFile)(process.execPath, [script], { env: { PATH: bin } });
+  expect(JSON.parse(stdout)).toMatchObject({
+    languages: [{ name: "python", version: "3.13.5" }],
+    // The venv import failed, and npm could not run, even though pip and npm are on PATH.
+    dependencyPackaging: { node: false, python: false },
   });
 });

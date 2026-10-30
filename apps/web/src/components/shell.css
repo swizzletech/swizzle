@@ -332,4 +332,11 @@
       overflow: hidden;
     }
   }
+  /* The five place names plus their padding come to 337px at 13px type; 320px leaves 296px. */
+  @media (max-width: 360px) {
+    .navlink {
+      padding: 0 3px;
+      font-size: 12px;
+    }
+  }
 }

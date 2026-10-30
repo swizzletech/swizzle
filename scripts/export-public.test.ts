@@ -17,6 +17,11 @@ test("exports the selected commit without private files, dirty changes or source
     execFileSync("git", ["-C", source, ...args], { encoding: "utf8" }).trim();
   git("init", "--quiet");
   const files = {
+    "biome.jsonc": await readFile(new URL("../biome.jsonc", import.meta.url), "utf8"),
+    "pnpm-lock.yaml": await readFile(new URL("../pnpm-lock.yaml", import.meta.url), "utf8"),
+    "knip.jsonc": await readFile(new URL("../knip.jsonc", import.meta.url), "utf8"),
+    "test/inputs.json": await readFile(new URL("../test/inputs.json", import.meta.url), "utf8"),
+    "tsconfig.test.json": await readFile(new URL("../tsconfig.test.json", import.meta.url), "utf8"),
     "README.md": "Public documentation\n",
     "AGENTS.md": "private root guide",
     "CLAUDE.md": "@AGENTS.md",
@@ -58,10 +63,28 @@ test("exports the selected commit without private files, dirty changes or source
     "Public documentation\n",
   );
   const exported = execFileSync("git", ["-C", destination, "ls-files"], { encoding: "utf8" });
-  expect(exported).toBe("README.md\napps/cli/assets/skills/swizzle-builder/SKILL.md\n");
+  expect(exported).toBe(
+    "README.md\napps/cli/assets/skills/swizzle-builder/SKILL.md\nbiome.jsonc\nknip.jsonc\npnpm-lock.yaml\ntest/inputs.json\ntsconfig.test.json\n",
+  );
   // The no-private-paths convention reads the same list, so it agrees with the archive.
-  expect(Object.keys(files).filter((file) => !isPrivate(file))).toEqual(
-    exported.trim().split("\n"),
+  expect(
+    Object.keys(files)
+      .filter((file) => !isPrivate(file))
+      .sort(),
+  ).toEqual(exported.trim().split("\n"));
+  for (const file of ["knip.jsonc", "test/inputs.json", "tsconfig.test.json"]) {
+    const configuration = await readFile(path.join(destination, file), "utf8");
+    expect(configuration, file).not.toMatch(/\.agents|\*\*\/\.\*\//);
+    expect(configuration, file).not.toContain('"./swizzle-sdk.ts"');
+  }
+  expect(await readFile(path.join(destination, "knip.jsonc"), "utf8")).toContain(
+    '"infra/examples/**/swizzle-sdk.ts"',
+  );
+  expect(await readFile(path.join(destination, "test/inputs.json"), "utf8")).toContain(
+    '"scripts/affected-tests.test.ts"',
+  );
+  expect(await readFile(path.join(destination, "tsconfig.test.json"), "utf8")).toContain(
+    '"apps/api/src/**/*.test.ts"',
   );
   for (const privatePath of [".agents", "nested/.agents", "docs/adr", ".out-of-scope"]) {
     expect(existsSync(path.join(destination, privatePath)), privatePath).toBe(false);
@@ -74,4 +97,34 @@ test("exports the selected commit without private files, dirty changes or source
   const invalid = path.join(root, "invalid");
   expect(run(invalid, "missing-ref").status).toBe(1);
   expect(existsSync(invalid)).toBe(false);
+
+  await writeFile(
+    path.join(source, "pnpm-lock.yaml"),
+    [
+      "importers:",
+      "  .:",
+      "    devDependencies:",
+      "      '@biomejs/biome':",
+      "        version: 0.0.0",
+      "",
+    ].join("\n"),
+  );
+  git("add", "pnpm-lock.yaml");
+  git(
+    "-c",
+    "user.name=Test",
+    "-c",
+    "user.email=test@example.com",
+    "-c",
+    "core.hooksPath=/dev/null",
+    "commit",
+    "--quiet",
+    "-m",
+    "build: select another formatter",
+  );
+  const wrongVersion = path.join(root, "wrong-formatter");
+  const mismatch = run(wrongVersion, "HEAD");
+  expect(mismatch.status).toBe(1);
+  expect(mismatch.stderr).toContain("Selected commit requires Biome 0.0.0");
+  expect(existsSync(wrongVersion)).toBe(false);
 });

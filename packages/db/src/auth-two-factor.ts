@@ -1,5 +1,5 @@
 /**
- * Better Auth 1.7.12 owns code verification and the twoFactor row. This module owns
+ * Better Auth 1.7.14 owns code verification and the twoFactor row. This module owns
  * Swizzle's replay ledger and the integration with the library's challenge and endpoints.
  */
 import { createHash } from "node:crypto";

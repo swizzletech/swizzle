@@ -51,6 +51,26 @@ describe("createQueueNameForProfile", () => {
 });
 
 describe("collectWorkerCapabilities", () => {
+  it("derives runner languages and packaging from its inventory instead of the worker host", async () => {
+    const capabilities = await collectWorkerCapabilities({
+      binaries: [
+        { name: "node", version: "26.12.1" },
+        { name: "python3", version: "3.13.5" },
+        { name: "pip", version: "25.1" },
+      ],
+      languages: [
+        { name: "python", version: "3.13.5" },
+        { name: "node", version: "26.12.1" },
+      ],
+      dependencyPackaging: { node: false, python: true },
+    });
+    expect(capabilities).toMatchObject({
+      dependencyPackaging: { node: false, python: true },
+      languages: expect.arrayContaining([{ name: "python", version: "3.13.5" }]),
+    });
+    expect(capabilities.binaries.find((binary) => binary.name === "npm")).toBeUndefined();
+  });
+
   it("advertises node packaging without extra worker config", async () => {
     const capabilities = await collectWorkerCapabilities([]);
 
@@ -121,6 +141,7 @@ describe("evaluateLocalAutomationReadiness", () => {
 
 describe("evaluateAutomationReadiness", () => {
   it.each([
+    [">=7", null, "not-ready"],
     ["latest", "25.3", "ready"],
     ["latest", null, "not-ready"],
     ["25", "25.3", "not-ready"],

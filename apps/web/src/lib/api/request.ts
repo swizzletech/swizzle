@@ -5,9 +5,22 @@ import { ApiError, type ApiErrorResponse } from "../api";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
 
-/** The API's public address as the CLI reaches it from this browser's origin. */
-export function publicApiUrl(): string {
-  return new URL(API_BASE_URL, window.location.origin).toString().replace(/\/$/, "");
+/**
+ * The API's public address as the CLI reaches it from this browser's origin. The packaged stack
+ * opened at `localhost` serves the API at `api.localhost` on the same port, the address the CLI
+ * defaults to and install.md teaches, so the dashboard names that one.
+ */
+export function publicApiUrl(
+  base: string = API_BASE_URL,
+  origin: string = window.location.origin,
+  packaged: boolean = !import.meta.env.DEV,
+): string {
+  const page = new URL(origin);
+  if (packaged && base === "/api" && page.hostname === "localhost") {
+    page.hostname = "api.localhost";
+    return page.origin;
+  }
+  return new URL(base, page).toString().replace(/\/$/, "");
 }
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {

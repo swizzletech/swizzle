@@ -202,6 +202,9 @@ function automationDetail(
         }
       : {}),
     ready: readinessText(deployment.readiness),
+    ...(deployment.readiness.warnings.length > 0
+      ? { readinessWarnings: deployment.readiness.warnings.map((issue) => issue.message) }
+      : {}),
     secrets:
       detail.requiredSecrets.length === 0
         ? "none"

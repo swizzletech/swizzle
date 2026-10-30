@@ -38,4 +38,4 @@ The scheduler's maintenance cycle deletes old delivery rows ([`runMaintenanceCyc
 
 API alerts skip the cooldown. An automation with `api_check: off` can still get `api-sunset`, because SDK contact recording does not make an extra API call. API delivery rows use `api-check` or `api-sunset` as the event type and have no run id.
 
-[`sendApiAlert`](../../packages/runtime/src/notifications.ts) caps the complete API alert at 4,096 characters. The cap includes the header, automation name, environment, and alert details, so a long check diagnostic cannot exceed Telegram's message limit.
+Both alert formatters cap the complete Telegram message at 4,096 JavaScript string units. The shared helper removes a trailing unmatched high surrogate when the limit splits an emoji pair, so PostgreSQL can store the message in delivery metadata.

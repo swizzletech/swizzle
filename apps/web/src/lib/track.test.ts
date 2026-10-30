@@ -6,6 +6,7 @@ import {
   activeStep,
   buildReplay,
   type FlowGraph,
+  type FlowNode,
   positionAt,
   staticTrack,
   type TrackStep,
@@ -314,5 +315,149 @@ describe("replay", () => {
     const end = positionAt(replay, replay.length, SITES);
     expect(end.waiting).toBeNull();
     expect([...end.steps.keys()].sort()).toEqual(["cool-down", "fetch", "notify", "review"]);
+  });
+});
+
+// check{Taken?} ─yes→ accepted ─→ ship (step)
+//               ─no→  rejected ─→ archive (step)
+// Both lanes of the decision lead to narration nodes, and only the step behind a lane tells which
+// one the run took.
+describe("trackForRun with a decision between narration nodes", () => {
+  const BRANCH: FlowGraph = {
+    direction: "LR",
+    edges: [
+      { from: "check", label: "yes", to: "accepted" },
+      { from: "check", label: "no", to: "rejected" },
+      { from: "accepted", label: null, to: "ship" },
+      { from: "rejected", label: null, to: "archive" },
+    ],
+    nodes: [
+      { id: "check", label: "Taken?", shape: "diamond" },
+      { id: "accepted", label: "Accepted", shape: "pill" },
+      { id: "rejected", label: "Rejected", shape: "pill" },
+      { id: "ship", label: "Ship", shape: "box" },
+      { id: "archive", label: "Archive", shape: "box" },
+    ],
+  };
+  const KEYS_BRANCH: ReadonlySet<string> = new Set(["ship", "archive"]);
+  const finished = run({ finishedAt: at(1_000), status: "succeeded" });
+
+  it("marks only the lane to the narration node whose step the run reached", () => {
+    const steps = new Map([["ship", step("ship", 100, 400)]]);
+    const track = trackForRun(BRANCH, finished, { steps, waiting: null }, KEYS_BRANCH);
+    expect(lanes(track.edges)).toEqual({
+      "accepted>ship": "done",
+      "check>accepted": "done",
+      "check>rejected": "untaken",
+      "rejected>archive": "idle",
+    });
+    expect(states(track.nodes)).toMatchObject({ accepted: "done", rejected: "idle" });
+  });
+
+  it("leaves both lanes open when no step shows which one the run took", () => {
+    const track = trackForRun(BRANCH, finished, { steps: new Map(), waiting: null }, KEYS_BRANCH);
+    expect(lanes(track.edges)).toMatchObject({
+      "check>accepted": "idle",
+      "check>rejected": "idle",
+    });
+  });
+
+  it("keeps both sides open when they rejoin at the step the run recorded, in either node order", () => {
+    const edges = [
+      { from: "check", label: "yes", to: "accepted" },
+      { from: "check", label: "no", to: "rejected" },
+      { from: "accepted", label: null, to: "ship" },
+      { from: "rejected", label: null, to: "ship" },
+    ];
+    const [check, accepted, rejected, ship]: FlowNode[] = [
+      { id: "check", label: "Taken?", shape: "diamond" },
+      { id: "accepted", label: "Accepted", shape: "pill" },
+      { id: "rejected", label: "Rejected", shape: "pill" },
+      { id: "ship", label: "Ship", shape: "box" },
+    ] as [FlowNode, FlowNode, FlowNode, FlowNode];
+    const steps = new Map([["ship", step("ship", 100, 400)]]);
+    for (const order of [
+      [check, accepted, rejected, ship],
+      [check, rejected, accepted, ship],
+    ]) {
+      const flow: FlowGraph = { direction: "LR", edges, nodes: order };
+      const track = trackForRun(flow, finished, { steps, waiting: null }, new Set(["ship"]));
+      expect(lanes(track.edges)).toMatchObject({
+        "check>accepted": "idle",
+        "check>rejected": "idle",
+      });
+    }
+  });
+
+  it.each(["done", "waiting"] as const)(
+    "keeps unequal-depth reconverged decision lanes open with a %s station in every node order",
+    (stationState) => {
+      const nodes: FlowNode[] = [
+        { id: "check", label: "Taken?", shape: "diamond" },
+        { id: "accepted", label: "Accepted", shape: "pill" },
+        { id: "prepare", label: "Prepare", shape: "pill" },
+        { id: "rejected", label: "Rejected", shape: "pill" },
+        { id: "ship", label: "Ship", shape: "box" },
+      ];
+      const edges = [
+        { from: "check", label: "yes", to: "accepted" },
+        { from: "accepted", label: null, to: "prepare" },
+        { from: "prepare", label: null, to: "ship" },
+        { from: "check", label: "no", to: "rejected" },
+        { from: "rejected", label: null, to: "ship" },
+      ];
+      function orders(remaining: readonly FlowNode[]): FlowNode[][] {
+        if (remaining.length === 0) return [[]];
+        return remaining.flatMap((node, index) =>
+          orders(remaining.filter((_, other) => other !== index)).map((rest) => [node, ...rest]),
+        );
+      }
+      const steps =
+        stationState === "done" ? new Map([["ship", step("ship", 100, 400)]]) : new Map();
+      for (const order of orders(nodes)) {
+        const track = trackForRun(
+          { direction: "LR", edges, nodes: order },
+          stationState === "done" ? finished : run({ status: "waiting" }),
+          {
+            steps,
+            waiting:
+              stationState === "waiting"
+                ? { approval: null, reason: "event", stepKey: "ship", until: null }
+                : null,
+          },
+          new Set(["ship"]),
+        );
+        expect(lanes(track.edges), order.map((node) => node.id).join(",")).toMatchObject({
+          "check>accepted": "idle",
+          "check>rejected": "idle",
+        });
+        expect(states(track.nodes)).toMatchObject({
+          accepted: "idle",
+          check: "done",
+          rejected: "idle",
+          ship: stationState,
+        });
+      }
+    },
+  );
+
+  it("walks a long chain of split and rejoin decisions without enumerating paths", () => {
+    const nodes: FlowNode[] = [{ id: "d0", label: "d0", shape: "diamond" }];
+    const edges: { from: string; to: string; label: null }[] = [];
+    for (let index = 0; index < 40; index += 1) {
+      nodes.push(
+        { id: `a${index}`, label: "a", shape: "pill" },
+        { id: `b${index}`, label: "b", shape: "pill" },
+        { id: `d${index + 1}`, label: "d", shape: "diamond" },
+      );
+      for (const side of ["a", "b"]) {
+        edges.push({ from: `d${index}`, label: null, to: `${side}${index}` });
+        edges.push({ from: `${side}${index}`, label: null, to: `d${index + 1}` });
+      }
+    }
+    const flow: FlowGraph = { direction: "LR", edges, nodes };
+    // Path enumeration would not return within the test timeout.
+    const track = trackForRun(flow, run({}), { steps: new Map(), waiting: null }, new Set());
+    expect(track.nodes).toHaveLength(nodes.length);
   });
 });

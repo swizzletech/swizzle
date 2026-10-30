@@ -33,7 +33,8 @@ async function fixture(unaffectedExpected = 42) {
       'import { it, expect } from "vitest"; import { value } from "./src/core.js"; import { appendFileSync } from "node:fs"; it("direct", () => { appendFileSync("executions.log", "direct\\n"); expect(value).toBe(42); });',
     "transitive.test.ts":
       'import { it, expect } from "vitest"; import { value } from "./src/dependant.js"; it("transitive", () => expect(value).toBe(42));',
-    "unaffected.test.ts": `import { it, expect } from "vitest"; it("unaffected", () => expect(6 * 7).toBe(${unaffectedExpected}));`,
+    "unaffected.test.ts":
+      'import { it, expect } from "vitest"; it("unaffected", () => expect(6 * 7).toBe(Number(process.env.FIXTURE_UNAFFECTED_EXPECTED)));',
   };
   for (const [file, content] of Object.entries(files))
     await writeFile(path.join(root, file), content);
@@ -66,7 +67,14 @@ async function fixture(unaffectedExpected = 42) {
         "HEAD",
         ...args,
       ],
-      { cwd: root, env: { ...process.env, NODE_ENV: "test" } },
+      {
+        cwd: root,
+        env: {
+          ...process.env,
+          NODE_ENV: "test",
+          FIXTURE_UNAFFECTED_EXPECTED: String(unaffectedExpected),
+        },
+      },
     );
   return { root, run };
 }

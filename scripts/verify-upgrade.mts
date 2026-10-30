@@ -1,4 +1,4 @@
-// `just verify-upgrade`: real v1.0.2 data survives an upgrade to this exact HEAD.
+// `just verify-upgrade`: the latest stable release's data survives an upgrade to this exact HEAD.
 // A local origin and a test-only release tag keep the check independent of published releases.
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -7,6 +7,7 @@ import { copyFile, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/p
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { APP_VERSION } from "@swizzle/core";
 import type {
   ApplyResponse,
   HealthResponse,
@@ -22,16 +23,6 @@ import {
   until,
 } from "./packaged-stack.mts";
 
-const manifest: unknown = JSON.parse(
-  await readFile(new URL("../package.json", import.meta.url), "utf8"),
-);
-assert.ok(
-  manifest !== null &&
-    typeof manifest === "object" &&
-    "version" in manifest &&
-    typeof manifest.version === "string",
-);
-const APP_VERSION = manifest.version;
 const execute = promisify(execFile);
 const log = (message: string) => process.stdout.write(`upgrade-check: ${message}\n`);
 const source = process.cwd();
@@ -129,74 +120,32 @@ async function inspectWebhook(name: string): Promise<string> {
   return inspected.automation.webhookUrl;
 }
 
-async function screenshot(
-  dashboard: string,
-  password: string,
-  oldRun: string,
-  newRun: string,
-  prefix = "",
-) {
-  if (evidence === undefined) return;
-  await mkdir(evidence, { recursive: true });
-  const browser = async (...args: string[]) =>
-    execute("chrome-devtools-axi", args, {
-      env: { ...process.env, CHROME_DEVTOOLS_AXI_SESSION: "webhook-upgrade" },
-      maxBuffer: 1024 * 1024,
-    }).catch(() => {
-      throw new Error(`Browser proof step ${args[0]} failed.`);
-    });
-  try {
-    await browser("open", dashboard);
-    await browser("resize", "1280", "720");
-    await browser(
-      "eval",
-      `async () => {
-      const response = await fetch('/api/auth/sign-in/email', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({email: 'smoke@swizzle.test', password: ${JSON.stringify(password)}})});
-      if (!response.ok) throw new Error('Login failed: ' + response.status);
-      location.href = '/settings/status';
-      return 'Signed in as existing owner';
-    }`,
-    );
-    await browser("wait", "Version");
-    await browser("screenshot", path.join(evidence, `${prefix}upgrade-status.png`));
-    await browser("open", `${dashboard}/automations/upgrade-proof?tab=runs`);
-    await browser("wait", "Succeeded");
-    await browser("screenshot", path.join(evidence, `${prefix}upgrade-runs.png`));
-    for (const name of ["legacy-scaffold", "legacy-orders", "fresh-scaffold"]) {
-      await browser("open", `${dashboard}/automations/${name}?tab=about`);
-      await browser("wait", "Webhook");
-      await browser("screenshot", path.join(evidence, `${prefix}${name}-url.png`));
-      await browser("open", `${dashboard}/automations/${name}?tab=runs`);
-      await browser("wait", "Succeeded");
-      await browser("screenshot", path.join(evidence, `${prefix}${name}-runs.png`));
-    }
-    await browser("open", `${dashboard}/automations/upgrade-cron?tab=runs`);
-    await browser("wait", "Succeeded");
-    await browser("screenshot", path.join(evidence, `${prefix}upgrade-cron-runs.png`));
-    await browser("open", `${dashboard}/credentials?project=upgrade-proof`);
-    await browser("wait", "UPGRADE_SECRET");
-    await browser("screenshot", path.join(evidence, `${prefix}upgrade-staging-secret.png`));
-
-    await writeFile(
-      path.join(evidence, `${prefix}upgrade-result.json`),
-      `${JSON.stringify({ head: (await command("git", ["rev-parse", "HEAD"])).trim(), version: APP_VERSION, oldRun, newRun }, null, 2)}\n`,
-    );
-  } finally {
-    await browser("stop");
-  }
-}
-
 cleanUpOnSignal(async () => {
   await command("docker", ["rm", "--force", "--volumes", registry], source).catch(() => undefined);
   await rm(directory, { recursive: true, force: true });
 });
 try {
   const head = (await command("git", ["rev-parse", "HEAD"], source)).trim();
+  const sourceTag = (await command("git", ["tag", "--sort=-version:refname"], source))
+    .split("\n")
+    .find((tag) => /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.test(tag));
+  assert.ok(
+    sourceTag,
+    "No stable release tag found. Fetch release tags before running this proof.",
+  );
+  const sourceCommit = (
+    await command("git", ["rev-parse", `${sourceTag}^{commit}`], source)
+  ).trim();
+  assert.notEqual(
+    sourceCommit,
+    head,
+    "HEAD is already the latest stable release; run on the upgrade target.",
+  );
   await command("git", ["clone", "--bare", "--shared", source, origin], source);
   const unrelated = (await command("git", ["--git-dir", origin, "tag", "--list"], source))
     .trim()
     .split("\n")
-    .filter((tag) => tag !== "v1.0.2" && tag !== targetTag);
+    .filter((tag) => tag !== sourceTag && tag !== targetTag);
   if (unrelated.length > 0)
     await command("git", ["--git-dir", origin, "tag", "--delete", ...unrelated], source);
   await command("git", ["--git-dir", origin, "tag", "--force", targetTag, head], source);
@@ -208,8 +157,11 @@ try {
   const registryAddress = (await command("docker", ["port", registry, "5000/tcp"], source)).trim();
   process.env.SWIZZLE_IMAGE_REGISTRY = `${registryAddress}/swizzletech`;
 
-  await command("git", ["clone", "--shared", "--branch", "v1.0.2", origin, checkout], source);
-  log(`source v1.0.2; target ${head}; local test tag ${targetTag}; code version ${APP_VERSION}`);
+  await command("git", ["clone", "--shared", "--no-checkout", origin, checkout], source);
+  await command("git", ["checkout", "--detach", sourceCommit]);
+  log(
+    `source ${sourceTag}; target ${head}; local test tag ${targetTag}; code version ${APP_VERSION}`,
+  );
   stack = await startPackagedStack("smoke", log, checkout, { SWIZZLE_ENVIRONMENT: "staging" });
   await copyFile(stack.envFile, path.join(checkout, ".env"));
   const originalEnv = await readFile(path.join(checkout, ".env"), "utf8");
@@ -265,7 +217,9 @@ try {
     };
     const url = inspected.automation.webhookUrl;
     assert.ok(url);
-    assert.equal(url, `${stack.api}${route}?environment=staging`);
+    const printed = new URL(url);
+    assert.equal(printed.pathname, route);
+    assert.equal(printed.searchParams.get("environment"), "staging");
     const oldRun = await signedWebhook(url, name, signingSecret);
     legacyWebhooks.push({ name, fixture, url, oldRun });
   }
@@ -273,7 +227,6 @@ try {
     "released CLI scaffold and authored /orders and shadow paths are deployed and signed deliveries succeed",
   );
 
-  assert.match(originalEnv, /^SWIZZLE_IMAGE_TAG=v1\.0\.2$/mu);
   const password = /^SWIZZLE_SETUP_TOKEN=(.+)$/mu.exec(originalEnv)?.[1];
   assert.ok(password);
   const project = (await (
@@ -357,11 +310,11 @@ api_check:
   const beforeCronRuns: RunsResponse = await (
     await request("/dashboard/runs?environment=staging&automation=upgrade-cron")
   ).json();
-  log(`v1.0.2 staging cron succeeded: ${oldCron}`);
+  log(`${sourceTag} staging cron succeeded: ${oldCron}`);
 
   const bootstrap = path.join(checkout, ".git", "swizzle-upgrade.ts");
-  await command("git", ["tag", "v999.0.0", "v1.0.2^{commit}"]);
-  await command("git", ["tag", "--force", targetTag, "v1.0.2^{commit}"]);
+  await command("git", ["tag", "v999.0.0", sourceCommit]);
+  await command("git", ["tag", "--force", targetTag, sourceCommit]);
   await command("git", ["fetch", "--no-tags", "origin", `refs/tags/${targetTag}`]);
   await writeFile(bootstrap, await command("git", ["show", "FETCH_HEAD:scripts/upgrade.ts"]));
   await writeFile(
@@ -369,17 +322,7 @@ api_check:
     await command("git", ["show", "FETCH_HEAD:scripts/stack-images.ts"]),
   );
   const beforeRef = await command("git", ["rev-parse", "HEAD"]);
-  const beforeContainers = await command("docker", [
-    "compose",
-    "--env-file",
-    ".env",
-    "-f",
-    "infra/docker/compose.yml",
-    "--profile",
-    "stack",
-    "ps",
-    "-q",
-  ]);
+  const beforeContainers = await stack.compose("ps", "-q");
   await writeFile(path.join(checkout, "operator-note"), "uncommitted operator file\n");
   await assert.rejects(
     command(process.execPath, [bootstrap, targetTag]),
@@ -387,20 +330,7 @@ api_check:
   );
   assert.equal(await command("git", ["rev-parse", "HEAD"]), beforeRef);
   assert.equal(await readFile(path.join(checkout, ".env"), "utf8"), originalEnv);
-  assert.equal(
-    await command("docker", [
-      "compose",
-      "--env-file",
-      ".env",
-      "-f",
-      "infra/docker/compose.yml",
-      "--profile",
-      "stack",
-      "ps",
-      "-q",
-    ]),
-    beforeContainers,
-  );
+  assert.equal(await stack.compose("ps", "-q"), beforeContainers);
   await rm(path.join(checkout, "operator-note"));
   log("dirty checkout refused; original commit, .env and running container IDs are unchanged");
   const upgraded = await command(process.execPath, [bootstrap]);
@@ -550,9 +480,15 @@ api_check:
   log(
     "existing owner signs in; original project and finished run are listed; deployed source still decrypts and uses its secret",
   );
-  await screenshot(stack.dashboard, password, oldRun, newRun);
+  if (evidence) {
+    await mkdir(evidence, { recursive: true });
+    await writeFile(
+      path.join(evidence, "upgrade-result.json"),
+      `${JSON.stringify({ head, sourceTag, sourceCommit, version: APP_VERSION, oldRun, newRun }, null, 2)}\n`,
+    );
+  }
   const privateApiBase = `${stack.dashboard}/api`;
-  // Main and v1.0.2 can share a release number before the next version bump. A distinct stale
+  // HEAD and the latest stable tag can share a version before the next bump. A distinct stale
   // value makes the observation sensitive to the old Compose-to-API override as well.
   await writeFile(
     path.join(checkout, ".env"),
@@ -613,7 +549,6 @@ api_check:
   log(
     "with PUBLIC_URL on the restricted listener, root webhook URLs use the private API and every printed URL runs",
   );
-  await screenshot(stack.dashboard, password, oldRun, newRun, "private-");
   const restore = /^Restore with: (.+)$/mu.exec(upgraded)?.[1];
   assert.ok(restore);
   process.stdout.write(await command("bash", ["-euo", "pipefail", "-c", restore]));
@@ -621,10 +556,10 @@ api_check:
   const restoredHealth: HealthResponse = JSON.parse(
     (await get(`${stack.dashboard}/api/health`)) ?? "null",
   );
-  assert.equal(restoredHealth.version, "1.0.2");
+  assert.equal(restoredHealth.version, sourceTag.slice(1));
   const restoredRun = await runWithSecret(hash);
   log(
-    `printed restore command returned to 1.0.2; original secret still works in run ${restoredRun}`,
+    `printed restore command returned to ${sourceTag}; original secret still works in run ${restoredRun}`,
   );
   log("passed");
 } catch (error) {

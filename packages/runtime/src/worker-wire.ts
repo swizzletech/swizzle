@@ -17,6 +17,7 @@ import {
   type WorkerCapabilities,
 } from "@swizzle/db";
 import { z } from "zod";
+import type { RunnerImageReport, RunnerImageRequest } from "./runner-image-checks.js";
 
 /** Files and bytes of one deployment bundle, on both sides of the transfer. */
 export const MAX_SOURCE_FILES = 4_096;
@@ -219,6 +220,34 @@ const route = <Request, Reply>(
 
 /** The routes a worker calls with its credential, enrollment and token renewal aside. */
 export const WORKER_ROUTES = {
+  imageChecks: route(
+    "/worker/image-checks",
+    z.strictObject({
+      reports: z
+        .array(
+          z.strictObject({
+            id: z.uuid(),
+            result: z.discriminatedUnion("kind", [
+              z.strictObject({ kind: z.literal("ready"), capabilities: workerCapabilities }),
+              z.strictObject({ kind: z.literal("unverified") }),
+              z.strictObject({ kind: z.literal("unavailable"), message: z.string().max(4096) }),
+            ]),
+          }) satisfies z.ZodType<RunnerImageReport>,
+        )
+        .max(8),
+    }),
+    z.strictObject({
+      requests: z
+        .array(
+          z.strictObject({
+            id: z.uuid(),
+            image: z.string().min(1).max(512),
+          }) satisfies z.ZodType<RunnerImageRequest>,
+        )
+        .max(8),
+    }),
+    8 * 2_100_000,
+  ),
   drain: route("/worker/drain", z.strictObject({ draining: z.boolean() }), accepted),
   /**
    * The heartbeat: what the host can run, the health of each service it runs, and the disk the

@@ -232,6 +232,33 @@ test("at phone width the header shows every place without cutting one off", asyn
   await expect(page.getByRole("button", { name: "Sign out" })).toBeInViewport({ ratio: 1 });
 });
 
+test("at 320 px no page scrolls sideways", async ({ page }) => {
+  await page.setViewportSize({ height: 700, width: 320 });
+  await mockDashboardApi(page, seededState());
+  // Each page with a heading or element that shows only once its queries have answered.
+  for (const [path, ready] of [
+    ["/", page.getByRole("heading", { level: 1 })],
+    ["/runs", page.getByRole("heading", { level: 1 })],
+    ["/projects", page.getByRole("heading", { level: 1 })],
+    ["/credentials", page.getByRole("heading", { level: 1 })],
+    ["/settings/agent-access", page.getByRole("heading", { level: 1 })],
+    ["/automations/verify-probe?tab=play", page.getByTestId("play")],
+  ] as const) {
+    await page.goto(path);
+    await expect(ready.first(), path).toBeVisible();
+    await expect
+      .poll(
+        () =>
+          page.evaluate(() => ({
+            header: document.querySelector(".side")?.scrollWidth,
+            page: document.documentElement.scrollWidth,
+          })),
+        { message: path },
+      )
+      .toEqual({ header: 320, page: 320 });
+  }
+});
+
 test("at phone width a detail page keeps its link back to the parent", async ({ page }) => {
   await page.setViewportSize({ height: 844, width: 390 });
   await mockDashboardApi(page, seededState());

@@ -1,0 +1,15 @@
+# Extend the prepared release images without rebuilding the platform from source.
+ARG RUNNER_BASE=scratch
+ARG WORKER_BASE=scratch
+FROM ${RUNNER_BASE} AS runner
+USER root
+ARG SWIZZLE_RUNNER_APT_PACKAGES
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ${SWIZZLE_RUNNER_APT_PACKAGES} \
+  && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=bind,source=infra/docker/runner-tools.mjs,target=/tmp/runner-tools.mjs \
+  node /tmp/runner-tools.mjs > /etc/swizzle/runner-tools.json
+
+# The worker reports the binary, language and packaging measurements of the selected runner layer.
+FROM ${WORKER_BASE} AS worker
+COPY --from=runner /etc/swizzle/runner-tools.json /etc/swizzle/runner-tools.json

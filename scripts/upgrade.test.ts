@@ -75,7 +75,7 @@ stack:
     path.join(bin, "docker"),
     `#!/bin/sh
 set -e
-printf '%s\\n' "$*" >> '${checkout}/.git/docker-calls'
+printf '%s\\n' "$*" >> "$FIXTURE_DOCKER_LOG"
 case " $* " in
   *" build "*)
     image=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -134,6 +134,7 @@ esac
 `,
     { mode: 0o755 },
   );
+  vi.stubEnv("FIXTURE_DOCKER_LOG", path.join(checkout, ".git/docker-calls"));
   vi.stubEnv("PATH", `${bin}${path.delimiter}${process.env.PATH}`);
   const upgrade = (...tags: string[]) => execute("just", ["upgrade", ...tags], { cwd: checkout });
   const backups = () => readdir(path.join(checkout, ".git/swizzle-upgrades")).catch(() => []);

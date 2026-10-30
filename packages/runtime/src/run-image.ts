@@ -583,7 +583,7 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
-function isSafeImageReference(value: string): boolean {
+export function isSafeImageReference(value: string): boolean {
   return (
     value.length <= 255 &&
     !/[\s'"\\]/u.test(value) &&

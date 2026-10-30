@@ -35,6 +35,13 @@ describe("dashboard commands", () => {
             readiness: {
               ...automation.activeDeployment.readiness,
               status,
+              warnings: [
+                {
+                  code: "RUNNER_IMAGE_REQUIREMENTS_UNVERIFIED",
+                  message:
+                    "Language node and binary legacy-tool are unverified. Add /etc/swizzle/runner-tools.json using infra/docker/runner-tools.mjs.",
+                },
+              ],
               errors:
                 status === "ready"
                   ? []
@@ -79,6 +86,9 @@ describe("dashboard commands", () => {
         expect(JSON.parse(inspect.stdoutText).automation.ready).toBe(
           status === "ready" ? "yes" : "no: Secret TOKEN is missing.",
         );
+        expect(JSON.parse(inspect.stdoutText).automation.readinessWarnings).toEqual([
+          "Language node and binary legacy-tool are unverified. Add /etc/swizzle/runner-tools.json using infra/docker/runner-tools.mjs.",
+        ]);
       } finally {
         await app.close();
       }

@@ -1,7 +1,9 @@
+import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkInvocation, createProgram, describeCommandTree } from "@swizzle/cli";
+import { checkInvocation, createProgram, describeCommandTree, runCli } from "@swizzle/cli";
 import { describe, expect, it } from "vitest";
+import { temporaryDirectory } from "../test/support.js";
 import { shellCommands } from "./conventions/parse.js";
 import { gitRepo, readRepo } from "./conventions/repo.js";
 
@@ -12,15 +14,27 @@ const repoRoot = path.resolve(fileURLToPath(new URL(".", import.meta.url)), ".."
 const EXEMPT = /^(docs\/adr\/|\.out-of-scope\/|docs\/reference\/cli\.md$)/u;
 
 describe("agent reference drift", () => {
-  it("teaches only commands and flags the CLI accepts", () => {
+  it("teaches only commands and flags the CLI accepts", async () => {
     const program = createProgram();
     const pages = gitRepo(repoRoot).files.filter(
       (file) => file.endsWith(".md") && !EXEMPT.test(file),
     );
-    const unknown = cliCommands(pages).flatMap(({ file, line, words }) => {
-      const { problem } = checkInvocation(program, words.slice(1));
-      return problem === null ? [] : [`${file}:${line}: \`${words.join(" ")}\` (${problem})`];
+    const workspace = await temporaryDirectory("swizzle-reference-workspace-");
+    const output: string[] = [];
+    const exitCode = await runCli(["workspace", "init", workspace], {
+      stdout: (message) => output.push(message),
+      stderr: (message) => output.push(message),
     });
+    expect(exitCode, output.join("\n")).toBe(0);
+    const guides = (await readdir(workspace, { recursive: true })).filter(
+      (file) => file.endsWith(".md") || file.endsWith(".sh"),
+    );
+    const unknown = [...cliCommands(repoRoot, pages), ...cliCommands(workspace, guides)].flatMap(
+      ({ file, line, words }) => {
+        const { problem } = checkInvocation(program, words.slice(1));
+        return problem === null ? [] : [`${file}:${line}: \`${words.join(" ")}\` (${problem})`];
+      },
+    );
 
     expect(unknown).toEqual([]);
   });
@@ -47,10 +61,10 @@ describe("agent reference drift", () => {
   });
 });
 
-// Every `swizzle` command a page shows in a code span or a shell block, as the shell splits it.
+// Every `swizzle` command in Markdown code or a generated shell script, as the shell splits it.
 // The verify skill drives the CLI as `$V/swizzle`.
-function cliCommands(pages: readonly string[]) {
-  return readRepo(repoRoot, pages)
+function cliCommands(root: string, pages: readonly string[]) {
+  return readRepo(root, pages)
     .commands()
     .filter(
       ({ words }) =>

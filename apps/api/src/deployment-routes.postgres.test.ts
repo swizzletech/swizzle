@@ -1,4 +1,4 @@
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 
 import path from "node:path";
 
@@ -11,7 +11,7 @@ import { testDatabase } from "../../../test/postgres.js";
 
 import { testFolderStore } from "../../../test/stores.js";
 
-import { temporaryDirectory } from "../../../test/support.js";
+import { heldDeadlines, temporaryDirectory, waitFor } from "../../../test/support.js";
 
 import { createAutomationFixture, deployFixture } from "../test/automations.js";
 
@@ -27,6 +27,184 @@ const appRoot = path.resolve(sourceRoot, "..");
 const repoRoot = path.resolve(appRoot, "../..");
 
 let owner: { readonly authorization: string };
+
+it.for([
+  { historical: false, view: "detail" },
+  { historical: false, view: "list" },
+  { historical: true, view: "detail" },
+])(
+  "returns readiness when a worker never answers an image check ($view, historical: $historical)",
+  async ({ historical, view }, { signal }) => {
+    const platform = await testPlatform();
+    const directory = await createAutomationFixture({
+      name: "silent-image",
+      path: "/hooks/silent-image",
+      mainJs: "console.log('{}');",
+    });
+    const configPath = path.join(directory, "config.yaml");
+    const plainConfig = await readFile(configPath, "utf8");
+    await writeFile(
+      configPath,
+      `${plainConfig}runtime:\n  execution_mode: container\n  container: { base_image: custom:silent }\n`,
+    );
+    await platform.deployAutomationToPlatform({
+      automationDirectory: directory,
+      environment: "local",
+      skipReadinessCheck: true,
+    });
+    if (historical) {
+      await writeFile(configPath, plainConfig);
+      await platform.deployAutomationToPlatform({
+        automationDirectory: directory,
+        environment: "local",
+      });
+    }
+    const registry = createPostgresWorkerRegistry({ client: testDatabase() });
+    const [worker] = await registry.list();
+    if (worker?.capabilities == null) throw new Error("Fixture worker missing capabilities.");
+    await registry.heartbeat(
+      { id: worker.id, credentialGeneration: worker.credentialGeneration },
+      {
+        capabilities: { ...worker.capabilities, executionModes: ["host", "container"] },
+        services: {},
+        runImageDisk: null,
+      },
+    );
+    const app = await buildTestServer({
+      platform,
+      dashboard: createDashboardDataProvider({
+        dashboardStore: createDashboardStore({ client: testDatabase() }),
+        platform,
+        workerRegistry: registry,
+      }),
+    });
+    try {
+      const deadlines = heldDeadlines(20_000);
+      const url = `/dashboard/automations${view === "detail" ? "/silent-image" : ""}?environment=local`;
+      const response = app.inject({ method: "GET", url, headers: owner }).then((result) => result);
+      await waitFor(signal, () =>
+        platform.runnerImageChecks
+          .exchange(worker.id, [])
+          .some((request) => request.image === "custom:silent"),
+      );
+      deadlines.expire();
+      const result = await response;
+      expect(result.statusCode).toBe(200);
+      const body = result.json();
+      const automation = view === "detail" ? body : body.automations[0];
+      const unavailable = {
+        status: "not-ready",
+        errors: [
+          {
+            code: "RUNNER_IMAGE_INVENTORY_UNAVAILABLE",
+            message: expect.stringContaining("response deadline"),
+          },
+        ],
+      };
+      if (historical) {
+        expect(automation.activeDeployment.readiness).toMatchObject({
+          status: "ready",
+          errors: [],
+        });
+        expect(automation.deploymentHistory[1].readiness).toMatchObject(unavailable);
+      } else expect(automation.activeDeployment.readiness).toMatchObject(unavailable);
+    } finally {
+      platform.runnerImageChecks.close();
+      await app.close();
+    }
+  },
+);
+
+it("reads a custom image's missing-record notice in dashboard detail and list", async ({
+  signal,
+}) => {
+  const platform = await testPlatform();
+  const directory = await createAutomationFixture({
+    name: "legacy-image",
+    path: "/hooks/legacy-image",
+    mainJs: "console.log('{}');",
+  });
+  await writeFile(
+    path.join(directory, "config.yaml"),
+    `name: legacy-image
+version: 1.0.0
+entrypoint: main.js
+trigger: { type: webhook, path: /hooks/legacy-image }
+runtime:
+  execution_mode: container
+  container: { base_image: custom:legacy }
+  requirements:
+    binaries: [{ name: legacy-tool, version: '>=7' }]
+`,
+  );
+  await platform.deployAutomationToPlatform({
+    automationDirectory: directory,
+    environment: "local",
+    force: true,
+    skipReadinessCheck: true,
+  });
+  const registry = createPostgresWorkerRegistry({ client: testDatabase() });
+  const [worker] = await registry.list();
+  if (worker?.capabilities == null) throw new Error("Fixture worker missing capabilities.");
+  await registry.heartbeat(
+    { id: worker.id, credentialGeneration: worker.credentialGeneration },
+    {
+      capabilities: { ...worker.capabilities, executionModes: ["container"] },
+      services: {},
+      runImageDisk: null,
+    },
+  );
+  const app = await buildTestServer({
+    platform,
+    dashboard: createDashboardDataProvider({
+      dashboardStore: createDashboardStore({ client: testDatabase() }),
+      platform,
+      workerRegistry: registry,
+    }),
+  });
+  try {
+    for (const url of [
+      "/dashboard/automations/legacy-image?environment=local",
+      "/dashboard/automations?environment=local",
+    ]) {
+      let finished = false;
+      const response = app.inject({ method: "GET", url, headers: owner }).finally(() => {
+        finished = true;
+      });
+      let requests: ReturnType<typeof platform.runnerImageChecks.exchange> = [];
+      await waitFor(signal, () => {
+        requests = platform.runnerImageChecks.exchange(worker.id, []);
+        return finished || requests.length > 0;
+      });
+      for (const request of requests)
+        platform.runnerImageChecks.exchange(worker.id, [
+          { id: request.id, result: { kind: "unverified" } },
+        ]);
+      const result = await response;
+      expect(result.statusCode).toBe(200);
+      const body = result.json();
+      const automation = url.includes("/legacy-image?") ? body : body.automations[0];
+      expect(automation.activeDeployment.readiness).toMatchObject({
+        status: "ready",
+        errors: [],
+        warnings: [
+          {
+            code: "RUNNER_IMAGE_REQUIREMENTS_UNVERIFIED",
+            message: expect.stringContaining("legacy-tool >=7"),
+          },
+        ],
+      });
+      expect(requests).toEqual([{ id: expect.any(String), image: "custom:legacy" }]);
+      if (automation.deploymentHistory)
+        expect(automation.deploymentHistory[0].readiness).toMatchObject({
+          status: "ready",
+          warnings: [{ code: "RUNNER_IMAGE_REQUIREMENTS_UNVERIFIED" }],
+        });
+    }
+  } finally {
+    await app.close();
+  }
+});
 
 it("shows a deleted chain source as an invalid trigger and not ready in the dashboard", async () => {
   const platform = await testPlatform();

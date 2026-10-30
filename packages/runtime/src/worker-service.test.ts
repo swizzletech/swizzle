@@ -79,6 +79,7 @@ async function api(script: string, faults: Faults = {}, expiresAt = lease.expire
       return;
     }
     let body: unknown = { accepted: true };
+    if (req.url === "/worker/image-checks") body = { requests: [] };
     if (req.url === "/worker/preparations") body = { activeIds: [], deployments: [] };
     if (req.url === "/worker/run-images/keep") body = { keep: [] };
     if (req.url === "/worker/pull") {

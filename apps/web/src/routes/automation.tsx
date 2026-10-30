@@ -163,6 +163,11 @@ function Header({ automation }: { readonly automation: AutomationDetail }) {
             </span>
           ) : null}
         </div>
+        {readiness.warnings.map((issue) => (
+          <p className="t-meta mt-1.5" key={`${issue.code}:${issue.worker}:${issue.subject}`}>
+            {issue.message}
+          </p>
+        ))}
         {toggle.isError ? <ActionError error={toggle.error} /> : null}
         {refused.length === 0 ? null : (
           <p className="t-meta mt-1.5" data-testid="refused-controls">

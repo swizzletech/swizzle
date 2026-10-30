@@ -56,6 +56,44 @@ else console.log([require("node:os").hostname(), ...(fs.existsSync(${JSON.string
   expect(await readFile(removed, "utf8")).toBe("sandbox-gone\n");
 });
 
+it("lets create finish after the metadata deadline expires", async ({ signal }) => {
+  const directory = await temporaryDirectory("swizzle-create-storage-");
+  const started = path.join(directory, "started");
+  const release = path.join(directory, "release");
+  await writeFile(
+    path.join(directory, "docker"),
+    `#!${process.execPath}
+const fs = require('node:fs');
+if (process.argv[2] === 'create') {
+  fs.writeFileSync(${JSON.stringify(started)}, '');
+  const check = setInterval(() => {
+    if (fs.existsSync(${JSON.stringify(release)})) { clearInterval(check); console.log('created-container'); }
+  }, 10);
+}
+`,
+    { mode: 0o755 },
+  );
+  vi.stubEnv("PATH", `${directory}:${process.env.PATH}`);
+  const metadata = heldDeadlines(5_000);
+  const owner = new DockerScope({ timeoutMs: 30_000, containerName: null });
+  const outcome = owner
+    .run(["create"], { outputLimitBytes: 4096 })
+    .catch((error: unknown) => error);
+  try {
+    await waitFor(signal, () =>
+      access(started).then(
+        () => true,
+        () => false,
+      ),
+    );
+    metadata.expire();
+    await writeFile(release, "");
+    expect(await outcome).toMatchObject({ exitCode: 0, stdout: "created-container\n" });
+  } finally {
+    await owner.close();
+  }
+});
+
 it("bounds a Docker wrapper whose descendant inherits its output pipes", async ({ signal }) => {
   const directory = await temporaryDirectory("swizzle-docker-descendant-");
   const pidFile = path.join(directory, "descendant.pid");
@@ -127,7 +165,7 @@ else if (args[0] === 'rm') {
       { mode: 0o755 },
     );
     vi.stubEnv("PATH", `${directory}:${process.env.PATH}`);
-    const deadlines = heldDeadlines(5_000);
+    const deadlines = heldDeadlines(60_000);
     const scope = new DockerScope({ timeoutMs: 30_000, containerName: name });
     const created = scope.run(["create"], { outputLimitBytes: 4096 });
     await waitFor(signal, async () =>
@@ -137,7 +175,7 @@ else if (args[0] === 'rm') {
       ),
     );
     deadlines.expire();
-    await expect(created).rejects.toMatchObject({ code: "DOCKER_CONTROL_TIMEOUT" });
+    await expect(created).rejects.toMatchObject({ code: "DOCKER_TRANSFER_TIMEOUT" });
     vi.restoreAllMocks();
     await scope.close();
     // A unique sandbox finishes late; a shared assembly name may already belong to a new owner.
@@ -169,7 +207,7 @@ else if (args[0] === 'rm') fs.appendFileSync(${JSON.stringify(removals)}, args.a
     { mode: 0o755 },
   );
   vi.stubEnv("PATH", `${directory}:${process.env.PATH}`);
-  const deadlines = heldDeadlines(5_000);
+  const deadlines = heldDeadlines(60_000);
   const owner = new DockerScope({ timeoutMs: 30_000, containerName: "swizzle-run-never-created" });
   const created = owner.run(["create"], { outputLimitBytes: 4096 });
   await waitFor(signal, () =>
@@ -179,7 +217,7 @@ else if (args[0] === 'rm') fs.appendFileSync(${JSON.stringify(removals)}, args.a
     ),
   );
   deadlines.expire();
-  await expect(created).rejects.toMatchObject({ code: "DOCKER_CONTROL_TIMEOUT" });
+  await expect(created).rejects.toMatchObject({ code: "DOCKER_TRANSFER_TIMEOUT" });
   vi.restoreAllMocks();
   await owner.close();
   for (let pass = 0; pass < 3; pass++) await removeAbandonedContainers();
@@ -243,7 +281,7 @@ exec sleep 1000
   // Each control deadline is expired by the test once its fake docker process has logged its call.
   // A timer would also run while a loaded host is still starting that process, so the call would
   // be killed unlogged.
-  const controlDeadlines = heldDeadlines(5_000);
+  const controlDeadlines = heldDeadlines();
   const loggedCalls = async (): Promise<{ command: string; pid: number }[]> => {
     try {
       return (await readFile(log, "utf8"))
@@ -255,9 +293,9 @@ exec sleep 1000
       return [];
     }
   };
-  const expireAfterLogged = async (callCount: number, deadlineIndex: number) => {
+  const expireAfterLogged = async (callCount: number) => {
     await waitFor(signal, async () => (await loggedCalls()).length >= callCount);
-    controlDeadlines.expire(deadlineIndex);
+    controlDeadlines.expireNewest();
   };
 
   const transfer = new DockerScope({ timeoutMs: 10_000, containerName: null });
@@ -274,12 +312,13 @@ exec sleep 1000
     const owner = new DockerScope({ timeoutMs: 10_000, containerName: "swizzle-run-stalled" });
 
     const created = owner.run(["create"], { outputLimitBytes: 4096 });
-    await expireAfterLogged(2, 0);
-    await expect(created).rejects.toMatchObject({ code: "DOCKER_CONTROL_TIMEOUT" });
+    await waitFor(signal, async () => (await loggedCalls()).length >= 2);
+    controlDeadlines.expireNewest();
+    await expect(created).rejects.toMatchObject({ code: "DOCKER_TRANSFER_TIMEOUT" });
     // close() retries removal under fresh deadlines, even though the create command already expired.
     const closing = owner.close();
     for (const attempt of [1, 2, 3]) {
-      await expireAfterLogged(2 + attempt, attempt);
+      await expireAfterLogged(2 + attempt);
     }
     await closing;
   } finally {

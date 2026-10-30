@@ -122,3 +122,98 @@ it.each([false, true])(
     expect(dashboardStore.close).not.toHaveBeenCalled();
   },
 );
+
+it("deploys against a custom image's record instead of the default worker inventory", async ({
+  signal,
+}) => {
+  const { createDashboardStore } = await import("@swizzle/db/postgres");
+  const { testDatabase } = await import("../../../test/postgres.js");
+  const { waitFor } = await import("../../../test/support.js");
+  const directory = await temporaryDirectory("swizzle-custom-readiness-");
+  const capabilities = {
+    binaries: [{ name: "default-only", version: "9" }],
+    languages: [{ name: "node", version: "26.12.1" }],
+    executionModes: ["container"],
+    dependencyPackaging: { node: true, python: false },
+  } satisfies WorkerStatus["capabilities"];
+  const worker: WorkerStatus = {
+    id: "readiness-worker",
+    kind: "local",
+    name: "Local worker",
+    capacity: 1,
+    draining: false,
+    services: [],
+    profiles: ["host-default"],
+    environments: "all",
+    state: "online",
+    credentialGeneration: 1,
+    createdAt: new Date().toISOString(),
+    lastSeenAt: new Date().toISOString(),
+    tokenExpiresAt: null,
+    slotsInUse: 0,
+    currentRuns: [],
+    localLlm: null,
+    runImageDisk: null,
+    runImageDiskOverBudget: null,
+    capabilities,
+  };
+  const dashboardStore = createDashboardStore({ client: testDatabase() });
+  const platform = await createPlatformServices({
+    artifactsDirectory: path.join(directory, "artifacts"),
+    store: testControlPlaneStore(),
+    dashboardStore,
+    workerRegistry: {
+      close: async () => {},
+      list: async () => [worker],
+      placement: async () => {
+        throw new Error("Unexpected placement during readiness check.");
+      },
+    },
+  });
+  try {
+    const automationDirectory = await createAutomationFixture({
+      name: "custom-readiness",
+      triggerLines: ["  type: webhook", "  path: /hooks/custom-readiness"],
+      configLines: [
+        "runtime:",
+        "  execution_mode: container",
+        "  container: { base_image: custom:reviewed }",
+        "  requirements:",
+        '    binaries: [{ name: image-only, version: ">=7" }]',
+      ],
+    });
+    let finished = false;
+    const deployment = platform.deployAutomationToPlatform({
+      environment: "local",
+      automationDirectory,
+    });
+    const result = deployment.then(
+      (value) => {
+        finished = true;
+        return value;
+      },
+      (error: unknown) => {
+        finished = true;
+        return error;
+      },
+    );
+    let requests: ReturnType<typeof platform.runnerImageChecks.exchange> = [];
+    await waitFor(signal, () => {
+      requests = platform.runnerImageChecks?.exchange(worker.id, []) ?? [];
+      return finished || requests.length > 0;
+    });
+    for (const request of requests)
+      platform.runnerImageChecks.exchange(worker.id, [
+        {
+          id: request.id,
+          result: {
+            kind: "ready",
+            capabilities: { ...capabilities, binaries: [{ name: "image-only", version: "7.2" }] },
+          },
+        },
+      ]);
+    expect(await result).toMatchObject({ readiness: { status: "ready" } });
+  } finally {
+    await platform.close();
+  }
+});

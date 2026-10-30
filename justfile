@@ -313,3 +313,11 @@ image-sign version file:
 # Prove registry install, upgrade, rollback, preflight refusal and source fallback on one disposable packaged stack.
 verify-images evidence:
     node scripts/verify-images.mts {{ quote(evidence) }}
+
+# Prove authoring summaries, custom-image readiness and runner capability reports on a private packaged stack.
+verify-runtime-readiness evidence: deps
+    exec {{ tsx }} scripts/verify-runtime-readiness.mts {{ quote(evidence) }}
+
+# Hold real Docker create replies past five seconds, then withhold them, and record both run outcomes.
+verify-docker-create evidence image="node:26.12.1-trixie-slim": deps
+    exec {{ tsx }} scripts/verify-docker-create.mts {{ quote(evidence) }} {{ quote(image) }}

@@ -259,7 +259,7 @@ describe("run image assembly", () => {
     "bounds a stalled %s before execution",
     async (stallControl, { signal }) => {
       const docker = await fakeDocker({ missingImage: false, stallControl });
-      const deadlines = heldDeadlines(5_000);
+      const deadlines = heldDeadlines(stallControl === "create" ? 60_000 : 5_000);
 
       const run = runContainerAutomation(await makeRunOptions(false));
       await docker.reached(signal, stallControl);
@@ -267,7 +267,9 @@ describe("run image assembly", () => {
 
       expect(await run).toMatchObject({
         success: false,
-        message: expect.stringContaining("DOCKER_CONTROL_TIMEOUT"),
+        message: expect.stringContaining(
+          stallControl === "create" ? "DOCKER_TRANSFER_TIMEOUT" : "DOCKER_CONTROL_TIMEOUT",
+        ),
       });
     },
   );

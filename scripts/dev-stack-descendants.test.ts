@@ -45,7 +45,7 @@ async function stackRoot(turboScript: string) {
       { mode: 0o755 },
     );
   }
-  await writeFile(path.join(turbo, "turbo"), `#!${process.execPath}\n${turboScript}`, {
+  await writeFile(path.join(turbo, "turbo"), turboScript, {
     mode: 0o755,
   });
   return { root, bin };
@@ -56,7 +56,7 @@ async function stackRoot(turboScript: string) {
 test.skipIf(process.platform !== "linux")(
   "just dev-down signals the services command once, so a forwarding command stops gracefully",
   async ({ signal }) => {
-    const { root, bin } = await stackRoot(`
+    const { root, bin } = await stackRoot(`#!/usr/bin/env node
 const { spawn } = require('node:child_process');
 const binary = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => { require('node:fs').appendFileSync('signals.txt', 'TERM;'); setTimeout(() => process.exit(0), 300); }); require('node:fs').writeFileSync('ready', ''); setInterval(() => {}, 1000)"], { stdio: 'inherit' });
 process.on('SIGTERM', () => binary.kill('SIGTERM'));
@@ -98,7 +98,7 @@ for (const phase of [
   test.skipIf(process.platform !== "linux")(
     `just dev-down kills a stubborn descendant after its command leader exits: ${phase}`,
     async ({ signal }) => {
-      const { root, bin } = await stackRoot(`
+      const { root, bin } = await stackRoot(`#!/usr/bin/env node
 const { spawn } = require('node:child_process');
 const { writeFileSync } = require('node:fs');
 const child = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); process.send('ready'); setInterval(() => {}, 1000)"], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });

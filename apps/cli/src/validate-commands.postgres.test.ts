@@ -47,6 +47,32 @@ describe("swizzle validate", () => {
     });
   });
 
+  it("lists binary requirements and webhook signing secrets in its authoring summary", async () => {
+    const directory = await temporaryDirectory("swizzle-cli-summary-");
+    await writeFile(path.join(directory, "main.js"), "console.log('{}');\n");
+    await writeFile(
+      path.join(directory, "config.yaml"),
+      `
+name: signing-probe
+version: 1.0.0
+entrypoint: main.js
+trigger:
+  type: webhook
+  signature:
+    header: x-swizzle-signature
+    secret: GREETER_SIGNING_SECRET
+runtime:
+  requirements:
+    binaries: [{ name: node, version: ">=7" }]
+`,
+    );
+    const io = createBufferIO();
+    expect(await runCli(["validate", directory, "--json"], io)).toBe(0);
+    expect(JSON.parse(io.stdoutText)).toMatchObject({
+      automation: { requirements: "node >=7", secrets: "GREETER_SIGNING_SECRET" },
+    });
+  });
+
   it("validates an automation folder with a richer authoring summary", async () => {
     const io = createBufferIO();
     // A path inside the working directory prints relative to it.

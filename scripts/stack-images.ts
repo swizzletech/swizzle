@@ -1,5 +1,6 @@
 // Shared by install, backup and upgrade. Preparation never stops a service.
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import {
   accessSync,
   constants,
@@ -219,6 +220,16 @@ export function prepareImages(
   options: { readonly services?: readonly string[]; readonly tag?: "local" } = {},
 ): PreparedStack {
   const config = readCompose(source);
+  const packages = (config.services["runner-base"]?.build?.args.SWIZZLE_RUNNER_APT_PACKAGES ?? "")
+    .trim()
+    .split(/ +/u)
+    .filter(Boolean);
+  for (const entry of packages) {
+    if (!/^[a-z0-9][a-z0-9+.-]+$/u.test(entry))
+      throw new Error(
+        `Invalid SWIZZLE_RUNNER_APT_PACKAGES entry ${JSON.stringify(entry)}. Use space-separated Debian package names.`,
+      );
+  }
   const builds = Object.entries(config.services).filter(
     ([name, service]) =>
       service.build !== undefined &&
@@ -359,6 +370,68 @@ export function prepareImages(
     images[name] = service.image;
     delete service.build;
     service.pull_policy = "never";
+  }
+  if (packages.length > 0 && options.services === undefined) {
+    mkdirSync(path.dirname(output), { recursive: true, mode: 0o700 });
+    const suffix =
+      options.tag ?? path.basename(path.dirname(output)).replaceAll(/[^a-zA-Z0-9_.-]/gu, "-");
+    const bases: Record<string, string> = {};
+    try {
+      for (const name of ["runner-base", "worker"]) {
+        const image = images[name];
+        if (image === undefined) throw new Error(`No prepared ${name} image for runner packages.`);
+        // BuildKit resolves FROM by name; each preparation owns its stock references.
+        const tag = `${config.name}-${name}:stock-${randomUUID()}`;
+        run("docker", ["tag", image, tag]);
+        bases[name] = tag;
+      }
+      for (const [name, target] of [
+        ["runner-base", "runner"],
+        ["worker", "worker"],
+      ] as const) {
+        const imageFile = path.join(path.dirname(output), `${name}-packages.iid`);
+        process.stdout.write(`Adding runner packages to ${name}: ${packages.join(" ")}.\n`);
+        run("docker", [
+          "buildx",
+          "build",
+          "--load",
+          "--iidfile",
+          imageFile,
+          "--file",
+          path.join(source.root, "infra/docker/Dockerfile.runner"),
+          "--target",
+          target,
+          "--label",
+          `com.docker.compose.project=${config.name}`,
+          "--label",
+          `com.docker.compose.service=${name}`,
+          "--build-arg",
+          `RUNNER_BASE=${bases["runner-base"]}`,
+          "--build-arg",
+          `WORKER_BASE=${bases.worker}`,
+          "--build-arg",
+          `SWIZZLE_RUNNER_APT_PACKAGES=${packages.join(" ")}`,
+          source.root,
+        ]);
+        const image = readFileSync(imageFile, "utf8").trim();
+        // Loading under a shared tag can remove another preparation's image record.
+        run("docker", ["tag", image, `${config.name}-${name}:${suffix}-packages`]);
+        const service = config.services[name];
+        if (service === undefined) throw new Error(`No ${name} service.`);
+        service.image = image;
+        images[name] = image;
+      }
+    } finally {
+      for (const tag of Object.values(bases)) {
+        try {
+          capture("docker", ["image", "rm", tag]);
+        } catch (error) {
+          process.stderr.write(
+            `Could not remove temporary stock image ${tag}: ${error instanceof Error ? error.message : String(error)}\n`,
+          );
+        }
+      }
+    }
   }
   if (options.services === undefined) {
     const worker = config.services.worker;

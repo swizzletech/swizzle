@@ -2,7 +2,13 @@ import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { extractFlowNodeIds, flowDrift, scanStepSites, stepSourceLanguage } from "@swizzle/config";
+import {
+  declaredCredentialNames,
+  extractFlowNodeIds,
+  flowDrift,
+  scanStepSites,
+  stepSourceLanguage,
+} from "@swizzle/config";
 import {
   type AutomationDefinition,
   type AutomationRunFailure,
@@ -205,8 +211,13 @@ function registerValidate(program: Command, io: CliIO, runHandler: RunHandler): 
               trigger: formatTriggerSummary(config.trigger),
               runtime: `${config.runtime.language} / sandbox (container) / ${config.runtime.profile}`,
               localRun: config.runtime.execution_mode,
-              requirements: formatList(getDeclaredDependencyManifestPaths(definition)),
-              secrets: formatList(config.secrets),
+              requirements: formatList([
+                ...getDeclaredDependencyManifestPaths(definition),
+                ...config.runtime.requirements.binaries.map((binary) =>
+                  binary.version === undefined ? binary.name : `${binary.name} ${binary.version}`,
+                ),
+              ]),
+              secrets: formatList(declaredCredentialNames(config).secrets),
               vars: formatVars(config.vars),
               apiCheck: formatApiCheckSummary(config.api_check),
               samplePayload: samplePayloadPath

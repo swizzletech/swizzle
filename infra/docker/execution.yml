@@ -136,6 +136,8 @@ services:
     build:
       <<: *build
       target: runner-base
+      args:
+        SWIZZLE_RUNNER_APT_PACKAGES: ${SWIZZLE_RUNNER_APT_PACKAGES:-}
     command: ["true"]
     network_mode: none
     restart: "no"

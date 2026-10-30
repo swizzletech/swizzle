@@ -91,7 +91,11 @@ export function assertDeploymentRuntimeReadiness(
     const binaryRemedy = readiness.errors.some(
       (issue) => issue.code === "BINARY_REQUIREMENT_MISSING",
     )
-      ? " A deployed run has only the binaries of its worker's runner image; the instance operator adds a missing one to the runner image (target runner-base of infra/docker/Dockerfile) and rebuilds the stack."
+      ? ` A deployed run has only the binaries of its worker's runner image; ${
+          input.config.runtime.container?.base_image
+            ? `add the missing binary to the selected image "${input.config.runtime.container.base_image}" and regenerate /etc/swizzle/runner-tools.json after the final tool install.`
+            : "to add Debian packages, set SWIZZLE_RUNNER_APT_PACKAGES in .env and run `just stack`."
+        }`
       : "";
     throw new AutomationRuntimeError(
       "RUNTIME_REQUIREMENTS_UNMET",

@@ -1,0 +1,11 @@
+set shell := ["mise", "exec", "--", "bash", "-euo", "pipefail", "-c"]
+init-env:
+    node scripts/init-env.ts
+stack: init-env
+    node scripts/stack.ts up
+upgrade tag="":
+    node scripts/upgrade.ts {{ quote(tag) }}
+# API liveness and backup data are fixtures; image preparation and upgrade run the shipped code.
+_backup dir config:
+    mkdir -p {{ quote(dir) }}
+    echo durable-fixture > {{ quote(dir) }}/database.sql

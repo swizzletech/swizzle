@@ -57,7 +57,53 @@ runtime:
   expect(() =>
     assertDeploymentRuntimeReadiness({ config, directory: process.cwd(), workers }),
   ).toThrow(
-    /^No worker in group "gpu" meets every requirement\. Workers in group "gpu" here: gpu-box does not run python and lacks the binary ffmpeg\. gpu-laptop is offline, so it reports no languages or binaries\. A deployed run has only the binaries of its worker's runner image; the instance operator adds a missing one to the runner image \(target runner-base of infra\/docker\/Dockerfile\) and rebuilds the stack\.$/u,
+    /^No worker in group "gpu" meets every requirement\. Workers in group "gpu" here: gpu-box does not run python and lacks the binary ffmpeg\. gpu-laptop is offline, so it reports no languages or binaries\. A deployed run has only the binaries of its worker's runner image; to add Debian packages, set SWIZZLE_RUNNER_APT_PACKAGES in \.env and run `just stack`\.$/u,
+  );
+});
+
+it.each([
+  {
+    container: "",
+    remedy: "to add Debian packages, set SWIZZLE_RUNNER_APT_PACKAGES in .env and run `just stack`.",
+  },
+  {
+    container: "  container: { base_image: custom:reviewed }",
+    remedy:
+      'add the missing binary to the selected image "custom:reviewed" and regenerate /etc/swizzle/runner-tools.json after the final tool install.',
+  },
+])("directs a missing binary remedy to its runner image ($container)", ({ container, remedy }) => {
+  const config = parseAutomationConfig(`
+name: transcode
+version: 1.0.0
+entrypoint: main.js
+trigger:
+  type: webhook
+runtime:
+  language: node
+  execution_mode: container
+${container}
+  requirements:
+    binaries:
+      - name: ffmpeg
+`);
+  const workers = [
+    worker("Local worker", {
+      capabilities: {
+        ...NO_CAPABILITIES,
+        executionModes: ["container"],
+        languages: [{ name: "node", version: "26.12.1" }],
+      },
+    }),
+  ];
+
+  expect(() =>
+    assertDeploymentRuntimeReadiness({ config, directory: process.cwd(), workers }),
+  ).toThrow(
+    expect.objectContaining({
+      message:
+        'No worker in group "host-default" meets every requirement. Workers in group "host-default" here: Local worker lacks the binary ffmpeg. A deployed run has only the binaries of its worker\'s runner image; ' +
+        remedy,
+    }),
   );
 });
 

@@ -157,7 +157,7 @@ describe("sandbox execution", () => {
       options.definition,
       await runImageTag(options.automationDirectory, runImageRecipe(options.definition)),
     );
-    const deadlines = heldDeadlines(5_000);
+    const deadlines = heldDeadlines(60_000);
     const preparation = prewarmSandbox(spec, options.timeoutMs).catch(() => undefined);
     // A run's claim takes the pending standby at once, so its create is still stalled when the
     // test expires its deadline.
@@ -165,7 +165,7 @@ describe("sandbox execution", () => {
     await docker.reached(signal, "create");
     deadlines.expireNewest();
 
-    await expect(claim).rejects.toMatchObject({ code: "DOCKER_CONTROL_TIMEOUT" });
+    await expect(claim).rejects.toMatchObject({ code: "DOCKER_TRANSFER_TIMEOUT" });
     await preparation;
     expect((await docker.calls()).filter((call) => call.startsWith("create"))).toHaveLength(1);
   });
