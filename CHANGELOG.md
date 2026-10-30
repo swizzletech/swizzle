@@ -3,6 +3,33 @@
 Each release lists changes for people who run Swizzle and write automations.
 Versions follow Semantic Versioning. Tags use `vX.Y.Z`; pre-releases use `X.Y.Z-rc.N`.
 
+## 1.1.0
+
+### Added
+
+- `SWIZZLE_RUNNER_APT_PACKAGES` adds Debian packages to the runner through `.env`, without editing tracked Dockerfiles. `just stack` builds thin runner and worker layers with matching tool inventories, and `just upgrade` keeps the package list and rebuilds those layers on the new release images. An empty list uses the stock images. Invalid package names stop preparation before any image build.
+- Each Settings section has its own page, grouped under **You** and, for owners and admins, **Instance**. **Agent access** explains agent tokens and project service accounts and links to the projects you administer. Project service account pages link back. Members see only their own settings, and the Swizzle version appears at the foot of the settings navigation.
+
+### Changed
+
+- Settings addresses use `/settings/<section>`. Old `/settings#<section>` links open Agent access; they do not select the former section.
+- A person's credential is consistently called an agent token in CLI hints, API messages, documentation and workspace guides. Token formats, error codes, API routes and fields stay the same.
+- Readiness checks a custom base image's own tool record when it has one. Without a record, the image keeps working and its declared language and binaries show as unverified in `swizzle inspect` and on the automation page. An invalid record or an unreadable image still reports an image issue.
+- Dependencies are updated within their existing major versions, including Better Auth 1.7.14.
+
+### Fixed
+
+- Readiness checks use the execution image's binaries, language versions and dependency packaging capabilities instead of the worker host's. A missing-binary error points to `SWIZZLE_RUNNER_APT_PACKAGES` for the default runner or names the custom image whose tool record needs updating.
+- Dashboard lists, automation details and deployment history check each deployment's selected runner image. An unresponsive historical image does not replace the active deployment's readiness result. Dashboard reads stop waiting for an image inspection after twenty seconds and report an image issue within the CLI's response deadline.
+- The `swizzle validate` summary includes declared binaries and version rules alongside dependency manifests, and lists webhook signing secrets with the automation's other required secrets.
+- Docker container creation uses the sixty-second storage deadline instead of the five-second control deadline, so storage load does not prematurely fail run image assembly.
+- Concurrent runner package preparations keep their selected base images, matching worker inventories and prepared image IDs even when another preparation updates the local tags. Repeated `just stack` starts reuse local tags. Temporary tags work from long directory names, and cleanup failures warn without replacing a successful preparation or its original build error.
+- The packaged Valkey health probe requires an authenticated `PONG`; a failed authentication no longer reports the service healthy.
+- Telegram run failure messages fit the complete message within the delivery limit, keeping the automation name and run ID. Run and API alerts truncate without splitting emoji, so a long error cannot prevent delivery or storage of notification metadata.
+- **Agent access** uses the CLI's default API address for a local packaged stack.
+- The dashboard header and automation Play page fit a 320 px screen without horizontal scrolling. Decision nodes draw one outline, and steps shorter than 50 ms show their duration in milliseconds.
+- Flow diagrams mark a decision lane only when recorded steps or a waiting station distinguish it from its sibling, including through narration nodes. When both lanes rejoin at the only reached step, both stay open. Unequal narration depth and node order no longer change the route shown.
+
 ## 1.0.5
 
 ### Added
