@@ -9,7 +9,7 @@ Keep your checkout clean. Commit any tracked configuration changes and remove un
 ```bash
 cd /opt/swizzle
 export PATH="$HOME/.local/bin:$PATH"
-mise x -- just upgrade v1.0.5
+mise x -- just upgrade v1.1.0
 ```
 
 Omit the tag to select the newest stable release tag from `origin`:
@@ -36,11 +36,11 @@ For the first upgrade to a release with image preparation, run the target releas
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
-git fetch --no-tags origin refs/tags/v1.0.5
+git fetch --no-tags origin refs/tags/v1.1.0
 mkdir -p "$(git rev-parse --git-path swizzle-upgrade)"
 git show FETCH_HEAD:scripts/upgrade.ts > "$(git rev-parse --git-path swizzle-upgrade/upgrade.ts)"
 git show FETCH_HEAD:scripts/stack-images.ts > "$(git rev-parse --git-path swizzle-upgrade/stack-images.ts)"
-mise x -- node "$(git rev-parse --git-path swizzle-upgrade/upgrade.ts)" v1.0.5
+mise x -- node "$(git rev-parse --git-path swizzle-upgrade/upgrade.ts)" v1.1.0
 ```
 
 In both places, use `v1.0.5`, the first release with image preparation, or a later release. Subsequent upgrades use `just upgrade`.
@@ -50,7 +50,7 @@ In both places, use `v1.0.5`, the first release with image preparation, or a lat
 Install [Cosign](https://docs.sigstore.dev/cosign/system_config/installation/) on the machine where you verify releases. The public tag workflow signs each multi-platform image digest with its GitHub identity and attaches BuildKit provenance. Verify the API image for your chosen version:
 
 ```bash
-VERSION=1.0.5
+VERSION=1.1.0
 cosign verify "ghcr.io/swizzletech/swizzle-api:$VERSION" \
   --certificate-identity "https://github.com/swizzletech/swizzle/.github/workflows/images.yml@refs/tags/v$VERSION" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com

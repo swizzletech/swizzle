@@ -24,7 +24,7 @@ Clone the repository and write `.env`:
 
 ```bash
 sudo apt-get install -y git libatomic1   # Debian and Ubuntu
-git clone --branch v1.0.5 https://github.com/swizzletech/swizzle.git /opt/swizzle
+git clone --branch v1.1.0 https://github.com/swizzletech/swizzle.git /opt/swizzle
 cd /opt/swizzle
 export PATH="$HOME/.local/bin:$PATH"
 mise trust && mise install

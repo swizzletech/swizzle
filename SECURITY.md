@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security fixes, when the maintainers make them, ship in the latest Swizzle 1.0.x patch release. Use the latest patch release in that series.
+Security fixes, when the maintainers make them, ship in the latest Swizzle 1.1.x patch release. Use the latest patch release in that series.
 Pre-releases are for evaluation and receive fixes in the next pre-release or stable version.
 
 ## Report a vulnerability privately
