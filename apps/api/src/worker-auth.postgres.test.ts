@@ -186,7 +186,16 @@ it("accepts a configured local identity only on the private worker listener, wit
   const authenticate = vi.spyOn(registry, "authenticate").mockResolvedValue(local);
   const { dispatch } = await import("../test/worker-dispatch.js");
   const tokens = await workerTokens();
-  const privateApp = buildLocalWorkerServer(dispatch, registry, local.id, tokens);
+  const { testPlatform } = await import("../../../test/platform.js");
+  const platform = await testPlatform();
+  onTestFinished(() => platform.close());
+  const privateApp = buildLocalWorkerServer(
+    dispatch,
+    registry,
+    local.id,
+    tokens,
+    platform.runnerImageChecks,
+  );
   const publicApp = await buildTestServer({
     workerRegistry: registry,
     dispatch,

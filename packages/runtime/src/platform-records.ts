@@ -17,7 +17,6 @@ import type {
   StoredRun,
   WorkerCapabilities,
 } from "@swizzle/db";
-
 import type { ArtifactStorageReadinessResult } from "./storage/types.js";
 
 export interface PlatformDeploymentRecord extends StoredDeployment {
@@ -83,6 +82,8 @@ export interface RuntimeRequirementIssue {
     | "NODE_LOCKFILE_MISSING"
     | "RUNTIME_CONTAINER_LIMIT_EXCEEDS_MAX"
     | "RUNTIME_TIMEOUT_EXCEEDS_MAX"
+    | "RUNNER_IMAGE_INVENTORY_UNAVAILABLE"
+    | "RUNNER_IMAGE_REQUIREMENTS_UNVERIFIED"
     | "RUNTIME_PROFILE_UNAVAILABLE"
     | "RUNTIME_SERVICE_NOT_GRANTED"
     | "SECRET_MISSING"
@@ -113,11 +114,17 @@ interface WorkerRuntimeProfile {
   readonly queueName: string;
 }
 
+export type RunnerImageResult =
+  | { readonly kind: "ready"; readonly capabilities: WorkerCapabilities }
+  | { readonly kind: "unverified" }
+  | { readonly kind: "unavailable"; readonly message: string };
+
 /**
  * A worker as deploy readiness judges it: its groups and services from the registry, and the
  * capabilities its last heartbeat reported. An offline worker counts with its grants only.
  */
 export interface ReadinessWorker {
+  readonly runnerImage?: RunnerImageResult;
   readonly availability: "online" | "offline";
   readonly capabilities: WorkerCapabilities;
   readonly concurrency: number;

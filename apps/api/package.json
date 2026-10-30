@@ -11,13 +11,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@fastify/cors": "^11.3.1",
+    "@fastify/multipart": "^10.1.6",
+    "@prometheus-io/client": "^0.16.1",
     "@swizzle/config": "workspace:*",
     "@swizzle/core": "workspace:*",
     "@swizzle/db": "workspace:*",
     "@swizzle/runtime": "workspace:*",
-    "@fastify/cors": "^11.3.1",
-    "@fastify/multipart": "^10.1.4",
-    "@prometheus-io/client": "^0.16.1",
     "bullmq": "catalog:",
     "fastify": "catalog:",
     "pino": "catalog:",

@@ -1,62 +1,36 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignoreIssues": {},
   "workspaces": {
     ".": {
       "entry": [
-        // Docker starts the control proxy configuration generator directly.
         "infra/docker/control-egress.mjs",
-        // The runner-base build records the image's binaries with it.
         "infra/docker/runner-tools.mjs",
-        // The worker runs each example's config.yaml entrypoint as a child process; nothing imports it.
+        "test/fixtures/runner-upgrade/{prepare,interleave-docker}.mjs",
         "infra/examples/**/main.{js,ts}",
-        // The verify-swizzle skill deploys these fixtures to a private stack; the worker runs them,
-        // and the API check fixture's check script.
-        ".agents/skills/verify-swizzle/fixtures/*/{main,check}.{js,ts}",
-        // Vendored copies of packages/sdk-ts: their exports are the helper API offered to authors.
         "infra/examples/**/swizzle-sdk.ts",
-        ".agents/skills/verify-swizzle/fixtures/*/swizzle-sdk.ts",
-        // justfile recipes run these scripts; knip cannot read a justfile.
         "scripts/*.{ts,mts}",
-        "scripts/conventions/main.ts",
-        // conventions-allow no-private-paths: the private repository's own checks; the export has none.
-        ".agents/checks/main.ts",
-        ".agents/*.mts"
+        "scripts/conventions/main.ts"
       ],
-      // The API check fixture imports the SDK copy that `swizzle init` writes beside it at drive time.
-      "ignoreUnresolved": ["./swizzle-sdk.ts"],
-      // justfile recipes invoke these binaries; knip cannot read a justfile.
       "ignoreDependencies": ["@biomejs/biome", "turbo"],
-      // mise.toml pins just; the conventions read the justfile through `just --dump`.
-      // dev-stack.mts publishes the dashboard with the host's tailscale when it runs, and skips it otherwise.
-      // The Linux migration tests drive a real terminal through util-linux script.
-      // runner-tools.mjs runs in the Debian runner image, which ships dpkg-query.
       "ignoreBinaries": ["just", "tailscale", "script", "dpkg-query"]
     },
     "apps/cli": {
-      // Scaffolding copies this SDK asset into user automations at runtime.
       "entry": ["assets/sdk/swizzle-sdk.ts"]
     },
     "apps/api": {
-      "entry": [
-        // The recover-owner recipe runs this file in the API container.
-        "src/recover-owner.ts"
-      ]
+      "entry": ["src/recover-owner.ts"]
     },
     "packages/db": {
       "entry": [
-        // The db-migrate and db-reencrypt recipes run these files, the compose migrate service their build.
         "src/migrate.ts",
         "src/reencrypt-credentials.ts",
-        // `just check` runs the migration drift check; `just db-migration-rebase` renumbers migrations.
         "check-migrations.ts",
         "rebase-migrations.ts"
       ]
     },
     "packages/runtime": {
-      "entry": [
-        // Runtime tests execute these fixture entrypoints as child processes; nothing imports them.
-        "test-fixtures/*/main.{js,ts}"
-      ]
+      "entry": ["test-fixtures/*/main.{js,ts}"]
     }
   }
 }

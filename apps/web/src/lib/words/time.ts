@@ -14,9 +14,11 @@ export function clockTime(date: Date): string {
   return date.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 }
 
-/** "0.4 s", "18 s", "3 min", "2 h 5 min", "12 days". */
+/** "12 ms", "0.4 s", "18 s", "3 min", "2 h 5 min", "12 days". */
 export function durationInWords(ms: number): string {
   if (ms >= 48 * 60 * 60_000) return `${Math.round(ms / (24 * 60 * 60_000))} days`;
+  // Under 50 ms a tenth of a second would print "0.0 s".
+  if (ms < 50) return `${Math.round(ms)} ms`;
   if (ms < 10_000) return `${(ms / 1_000).toFixed(1)} s`;
   if (ms < 60_000) return `${Math.round(ms / 1_000)} s`;
   if (ms < 60 * 60_000) return `${Math.round(ms / 60_000)} min`;

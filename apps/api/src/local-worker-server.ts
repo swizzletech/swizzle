@@ -2,7 +2,7 @@ import { createLogger } from "@swizzle/core";
 import type { WorkerRegistry } from "@swizzle/db";
 import { CodedError } from "@swizzle/db";
 import type { ApiTokenStore } from "@swizzle/db/postgres";
-import type { ServerDispatch } from "@swizzle/runtime/platform";
+import type { PlatformServices, ServerDispatch } from "@swizzle/runtime/platform";
 import Fastify from "fastify";
 import { registerDispatchRoutes } from "./dispatch-routes.js";
 import type { ApiServer } from "./http-shared.js";
@@ -14,6 +14,7 @@ export function buildLocalWorkerServer(
   registry: WorkerRegistry,
   configuredWorkerId: string,
   tokens: ApiTokenStore,
+  imageChecks: PlatformServices["runnerImageChecks"],
 ): ApiServer {
   const app: ApiServer = Fastify({
     loggerInstance: createLogger("swizzle-local-worker-api"),
@@ -34,6 +35,6 @@ export function buildLocalWorkerServer(
     request.actor = { kind: "worker", worker };
   });
   registerErrorHandler(app);
-  registerDispatchRoutes(app, dispatch, registry);
+  registerDispatchRoutes(app, dispatch, registry, imageChecks);
   return app;
 }

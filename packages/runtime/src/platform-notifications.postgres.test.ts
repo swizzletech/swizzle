@@ -12,7 +12,11 @@ import { TEST_ENCRYPTION_KEY, temporaryDirectory } from "../../../test/support.j
 
 import { createAutomationFixture, packageRoot } from "../test/platform-harness.js";
 
-import { deliverPendingNotification, processRunNotifications } from "./notifications.js";
+import {
+  deliverPendingNotification,
+  processRunNotifications,
+  sendApiAlert,
+} from "./notifications.js";
 
 // Run execution: retries, durable steps, child invokes, cancellation and failure alerts.
 
@@ -40,6 +44,142 @@ async function ruleTarget(
 }
 
 describe("platform notifications", () => {
+  it.each(["api-check", "api-sunset"] as const)(
+    "stores and delivers one %s alert when an emoji crosses the message limit",
+    async (eventType) => {
+      vi.stubEnv("SWIZZLE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
+      const platform = await testPlatform();
+      await platform.deployAutomationToPlatform({
+        environment: "local",
+        automationDirectory: path.join(packageRoot, "test-fixtures/invalid-json-output"),
+      });
+      const automation = await platform.findAutomation("invalid-json-output");
+      if (automation === null) throw new Error("Expected a deployed automation");
+      await platform.upsertSecret("SWIZZLE_TELEGRAM_BOT_TOKEN", "telegram-token", {
+        environment: "local",
+        projectId: DEFAULT_PROJECT_ID,
+      });
+      await platform.createNotificationRule({
+        ...(await ruleTarget(platform, "invalid-json-output")),
+        environment: "local",
+        chatId: "api-alerts",
+        eventType: "dead-lettered",
+      });
+      const header = eventType === "api-check" ? "⚠️ Swizzle API check" : "⚠️ Swizzle API sunset";
+      const prefix = `${header}\nautomation: invalid-json-output\nenvironment: local\n`;
+      const detail = "x".repeat(4095 - prefix.length);
+      await sendApiAlert({
+        alert: {
+          automation: { ...automation, automationName: "invalid-json-output" },
+          environment: "local",
+          eventType,
+          key: "split-emoji",
+          lines: [`${detail}😀tail`],
+          metadata: {},
+        },
+        store: platform.store,
+      });
+      const [intent] = await platform.listNotificationDeliveries({ environment: "local" });
+      if (intent === undefined) throw new Error("Expected a stored API alert");
+      expect(intent.status).toBe("pending");
+      expect(intent.metadata.telegramText).toBe(prefix + detail);
+      const texts: string[] = [];
+      vi.stubGlobal("fetch", async (_url: string, options: RequestInit) => {
+        const { text } = JSON.parse(String(options.body));
+        texts.push(text);
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 42 } }), {
+          status: text.length <= 4096 ? 200 : 400,
+        });
+      });
+      expect(await deliverPendingNotification(intent, platform.store)).toMatchObject({
+        status: "sent",
+      });
+      expect(texts).toEqual([prefix + detail]);
+      expect(texts[0]?.length).toBeLessThanOrEqual(4096);
+      expect(await platform.listNotificationDeliveries({ environment: "local" })).toEqual([
+        expect.objectContaining({
+          eventType,
+          status: "sent",
+          metadata: expect.objectContaining({ telegramText: prefix + detail }),
+        }),
+      ]);
+      await platform.close();
+    },
+  );
+
+  it.each([
+    ["dead-lettered", "ASCII", "failure detail ".repeat(1000)],
+    ["repeated-failures", "ASCII", "failure detail ".repeat(1000)],
+    ["dead-lettered", "emoji", "😀".repeat(10_000)],
+    ["repeated-failures", "emoji", "😀".repeat(10_000)],
+  ] as const)(
+    "delivers one bounded %s alert for a long %s error, naming the automation and run",
+    async (eventType, _errorKind, errorMessage) => {
+      vi.stubEnv("SWIZZLE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
+      const texts: string[] = [];
+      vi.stubGlobal("fetch", async (_url: string, options: RequestInit) => {
+        const { text } = JSON.parse(String(options.body));
+        texts.push(text);
+        return new Response(
+          JSON.stringify(
+            text.length <= 4096
+              ? { ok: true, result: { message_id: 42 } }
+              : { ok: false, description: "Bad Request: message is too long" },
+          ),
+          { status: text.length <= 4096 ? 200 : 400 },
+        );
+      });
+      const platform = await testPlatform({
+        artifactsDirectory: path.join(await temporaryDirectory("swizzle-platform-"), "artifacts"),
+      });
+      await platform.deployAutomationToPlatform({
+        environment: "local",
+        automationDirectory: await createAutomationFixture({
+          name: "long-error",
+          configLines: ["runtime:", "  retry:", "    max_attempts: 1"],
+          triggerLines: ["  type: webhook", "  path: /long-error"],
+        }),
+      });
+      await platform.upsertSecret("SWIZZLE_TELEGRAM_BOT_TOKEN", "telegram-token", {
+        environment: "local",
+        projectId: DEFAULT_PROJECT_ID,
+      });
+      await platform.createNotificationRule({
+        ...(await ruleTarget(platform, "long-error")),
+        environment: "local",
+        chatId: "long-error-alerts",
+        eventType,
+        threshold: 1,
+      });
+      const { runId } = await platform.startManualRun({
+        environment: "local",
+        automationName: "long-error",
+        payload: {},
+      });
+      await platform.store.updateRunState({
+        runId,
+        status: "dead-lettered",
+        errorMessage,
+        finishedAt: new Date().toISOString(),
+      });
+      const [intent] = await processRunNotifications({
+        run: await platform.getPlatformRun(runId),
+        store: platform.store,
+      });
+      if (intent === undefined) throw new Error("Expected a run failure alert");
+      await deliverPendingNotification(intent, platform.store);
+      expect(texts).toHaveLength(1);
+      expect(texts[0]).toContain("automation: long-error");
+      expect(texts[0]).toContain(`run: ${runId}`);
+      expect.soft(texts[0]?.length).toBeLessThanOrEqual(4096);
+      expect.soft(texts[0]).not.toMatch(/[\uD800-\uDFFF]/u);
+      const deliveries = await platform.listNotificationDeliveries({ environment: "local" });
+      expect(
+        deliveries.map(({ runId, eventType, status }) => ({ runId, eventType, status })),
+      ).toEqual([{ runId, eventType, status: "sent" }]);
+    },
+  );
+
   it("sends exactly one dead-letter notification through Telegram when credentials exist", async () => {
     vi.stubEnv("SWIZZLE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
     const stateDirectory = await temporaryDirectory("swizzle-platform-");

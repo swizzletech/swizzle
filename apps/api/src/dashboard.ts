@@ -69,6 +69,8 @@ const DEFAULT_VALKEY_URL = process.env.VALKEY_URL ?? "redis://localhost:6379";
 const DAY_MS = 24 * 60 * 60_000;
 /** How many of an automation's latest runs the static track counts reach over. */
 const STEP_REACH_RUNS = 50;
+// Leave room for database reads and the reply within the CLI's 30-second API timeout.
+const IMAGE_READINESS_RESPONSE_TIMEOUT_MS = 20_000;
 /** Who looks at the Overview: what Needs you lists depends on what they may act on. */
 interface OverviewViewer {
   /** The person and their teams, whose assigned approvals they may decide. */
@@ -173,6 +175,7 @@ export function createDashboardDataProvider(
     return {
       environment,
       grants: new Map(grants.map((grant) => [grant.automationId, grant.maxTimeoutMs])),
+      inspectImage: options.platform.runnerImageChecks.workers,
       schedulerEnvironments,
       workers,
     };
@@ -447,7 +450,7 @@ export function createDashboardDataProvider(
         dashboardStore.listAutomationSummaries(environment, scope),
         readinessContext(environment),
       ]);
-      return automations.map((automation) => withReadiness(automation, context));
+      return await Promise.all(automations.map((automation) => withReadiness(automation, context)));
     },
 
     async listRuns(query) {
@@ -502,6 +505,7 @@ interface ReadinessContext {
   /** The environments a live scheduler serves. */
   readonly schedulerEnvironments: ReadonlySet<string>;
   readonly workers: readonly RegisteredReadinessWorker[];
+  readonly inspectImage: PlatformServices["runnerImageChecks"]["workers"];
 }
 
 /** Whether a service's last heartbeat is recent enough that it still runs. */
@@ -513,14 +517,19 @@ function isAlive(
   return now.getTime() - Date.parse(heartbeat.observedAt) <= heartbeatTtlMs;
 }
 
-function runtimeReadiness(
+async function runtimeReadiness(
   automation: DashboardAutomationSummary,
   deployment: DashboardDeploymentSummary,
   context: ReadinessContext,
-): RuntimeReadinessReport {
+): Promise<RuntimeReadinessReport> {
+  const workers = await context.inspectImage(
+    deployment.runtimeSnapshot,
+    context.workers.filter((worker) => servesProject(worker, automation.projectId)),
+    AbortSignal.timeout(IMAGE_READINESS_RESPONSE_TIMEOUT_MS),
+  );
   return evaluateAutomationReadiness(
     { config: { runtime: deployment.runtimeSnapshot }, directory: deployment.sourceDirectory },
-    context.workers.filter((worker) => servesProject(worker, automation.projectId)),
+    workers,
     {
       grantMaxTimeoutMs: context.grants.get(automation.automationId) ?? null,
     },
@@ -531,12 +540,12 @@ function runtimeReadiness(
  * The automation with its active deployment's readiness: the persisted runtime snapshot judged
  * against the live workers and its timeout grant, and its secrets and connections as they stand.
  */
-export function withReadiness(
+export async function withReadiness(
   automation: DashboardAutomationSummary,
   context: ReadinessContext,
-): JudgedAutomationSummary {
+): Promise<JudgedAutomationSummary> {
   let readiness = addCredentialIssues(
-    runtimeReadiness(automation, automation.activeDeployment, context),
+    await runtimeReadiness(automation, automation.activeDeployment, context),
     {
       connections: automation.requiredConnections,
       environment: context.environment,
@@ -585,18 +594,24 @@ function judgeTrigger(
   };
 }
 
-function withDetailReadiness(
+async function withDetailReadiness(
   automation: DashboardAutomationDetail,
   context: ReadinessContext,
-): JudgedAutomationDetail {
+): Promise<JudgedAutomationDetail> {
+  const [summary, deploymentHistory] = await Promise.all([
+    withReadiness(automation, context),
+    // Secrets and connections belong to the active deployment, so earlier ones show the runtime.
+    Promise.all(
+      automation.deploymentHistory.map(async (deployment) => ({
+        ...deployment,
+        readiness: await runtimeReadiness(automation, deployment, context),
+      })),
+    ),
+  ]);
   return {
     ...automation,
-    ...withReadiness(automation, context),
-    // Secrets and connections belong to the active deployment, so earlier ones show the runtime.
-    deploymentHistory: automation.deploymentHistory.map((deployment) => ({
-      ...deployment,
-      readiness: runtimeReadiness(automation, deployment, context),
-    })),
+    ...summary,
+    deploymentHistory,
   };
 }
 

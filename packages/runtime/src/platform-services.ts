@@ -8,6 +8,7 @@ import {
   openWorkerRegistry,
 } from "./postgres-stores.js";
 import { checkQueueReadiness, createRunQueueProducer, DEFAULT_VALKEY_URL } from "./run-queue.js";
+import { createRunnerImageChecks } from "./runner-image-checks.js";
 import { checkConfiguredArtifactStorageReadiness } from "./storage.js";
 
 export async function createPlatformServices(
@@ -18,9 +19,11 @@ export async function createPlatformServices(
   const dashboardStore = options.dashboardStore ?? (await openDashboardStore());
   const ownDashboardStore = options.dashboardStore === undefined;
   const registry = options.workerRegistry ?? (await openWorkerRegistry());
+  const runnerImageChecks = createRunnerImageChecks();
   const valkeyUrl = options.valkeyUrl ?? DEFAULT_VALKEY_URL;
   const queue = createRunQueueProducer(valkeyUrl);
   return createPlatformServiceFacade({
+    runnerImageChecks,
     ...(options.artifactsDirectory !== undefined
       ? { artifactsDirectory: options.artifactsDirectory }
       : {}),
@@ -44,6 +47,7 @@ export async function createPlatformServices(
       };
     },
     close: async () => {
+      runnerImageChecks.close();
       await queue.close();
       if (options.workerRegistry === undefined) await registry.close();
       if (ownStore) {
@@ -53,8 +57,11 @@ export async function createPlatformServices(
         await dashboardStore.close();
       }
     },
-    listReadinessWorkers: ({ environment, projectId }) =>
-      listRegisteredReadinessWorkers(registry, environment, projectId),
+    listReadinessWorkers: async ({ config, environment, projectId }) =>
+      runnerImageChecks.workers(
+        config.runtime,
+        await listRegisteredReadinessWorkers(registry, environment, projectId),
+      ),
     placeRun: (run) =>
       registry.placement({
         runId: run.runId,

@@ -86,21 +86,21 @@ export function runImageDiskOverBudget(
     : null;
 }
 
-/** A language or binary a worker found on its host, with the version it reported. */
+/** A language or binary available to a worker's runs, with the version its inventory reported. */
 interface WorkerTool<Name extends string> {
   readonly name: Name;
   readonly version: string | null;
 }
 
 /**
- * What a worker's host can run, as its last heartbeat measured it. Deploy readiness compares an
+ * What a worker can execute, as its last heartbeat reported it. Deploy readiness compares an
  * automation's runtime block against it; placement does not read it.
  */
 export interface WorkerCapabilities {
   readonly languages: readonly WorkerTool<AutomationRuntimeConfig["language"]>[];
   readonly binaries: readonly WorkerTool<string>[];
   readonly executionModes: readonly AutomationRuntimeConfig["execution_mode"][];
-  /** Whether the host can install declared Node or Python dependencies. */
+  /** Whether the execution environment can install declared Node or Python dependencies. */
   readonly dependencyPackaging: { readonly node: boolean; readonly python: boolean };
 }
 

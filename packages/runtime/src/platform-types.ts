@@ -32,7 +32,6 @@ import type {
   StoredTrigger,
   Subject,
 } from "@swizzle/db";
-
 import type { DeployAutomationOptions } from "./deploy.js";
 import type { MaintenanceCycleResult, MaintenanceRetentionPolicy } from "./maintenance.js";
 import type { ConnectionCallbackResult, PlatformConnectionRecord } from "./platform-connections.js";
@@ -50,6 +49,7 @@ import type {
   TestConnectionResult,
 } from "./platform-records.js";
 import type { RateLimiter } from "./rate-limiter.js";
+import type { RunnerImageChecks } from "./runner-image-checks.js";
 import type { WaitLinkKind } from "./wait-links.js";
 
 export type PlatformRunRecord = StoredRun;
@@ -367,6 +367,7 @@ type PlatformCredentials = Pick<
 >;
 
 export interface PlatformServices {
+  readonly runnerImageChecks: RunnerImageChecks;
   beginConnectionAuthorization(
     options: BeginConnectionAuthorizationOptions,
   ): Promise<BeginConnectionAuthorizationResult>;

@@ -4,6 +4,7 @@ import type { ReadinessWorker } from "@swizzle/runtime";
 import type {
   PlatformMaintenanceRunRecord,
   PlatformNotificationDeliveryRecord,
+  PlatformServices,
 } from "@swizzle/runtime/platform";
 import { describe, expect, it, vi } from "vitest";
 
@@ -176,44 +177,51 @@ describe("withReadiness", () => {
     profiles: [{ name: "host-default", queueName: "platform-runs--host-default" }],
     services: [],
   };
+  const inspectImage: PlatformServices["runnerImageChecks"]["workers"] = async (
+    _runtime,
+    workers,
+  ) => workers;
   const context = (grants: Record<string, number> = {}) => ({
+    inspectImage,
     environment: "staging",
     grants: new Map(Object.entries(grants)),
     schedulerEnvironments: new Set(["staging"]),
     workers: [{ ...worker, projectIds: ["project-a"] }],
   });
 
-  it("judges cron next runs and omits scheduler state from webhook triggers", () => {
+  it("judges cron next runs and omits scheduler state from webhook triggers", async () => {
     const at = "2026-04-18T22:05:00.000Z";
     const cron = deployed("  language: node", {
       trigger: { triggerType: "cron", environment: "staging", nextRunAt: at },
     });
-    expect(withReadiness(cron, context()).trigger).toEqual({
+    expect((await withReadiness(cron, context())).trigger).toEqual({
       environment: "staging",
       nextRun: { kind: "at", at },
       triggerType: "cron",
     });
-    expect(withReadiness(cron, { ...context(), schedulerEnvironments: new Set() }).trigger).toEqual(
-      {
-        environment: "staging",
-        nextRun: { kind: "unserved", environment: "staging" },
-        triggerType: "cron",
-      },
-    );
     expect(
-      withReadiness(
-        deployed("  language: node", { trigger: { triggerType: "webhook", nextRunAt: null } }),
-        context(),
+      (await withReadiness(cron, { ...context(), schedulerEnvironments: new Set() })).trigger,
+    ).toEqual({
+      environment: "staging",
+      nextRun: { kind: "unserved", environment: "staging" },
+      triggerType: "cron",
+    });
+    expect(
+      (
+        await withReadiness(
+          deployed("  language: node", { trigger: { triggerType: "webhook", nextRunAt: null } }),
+          context(),
+        )
       ).trigger,
     ).toEqual({ triggerType: "webhook" });
-    expect(withReadiness(deployed("  language: node"), context()).trigger).toBeNull();
+    expect((await withReadiness(deployed("  language: node"), context())).trigger).toBeNull();
   });
 
-  it("filters list and detail readiness by the automation project", () => {
+  it("filters list and detail readiness by the automation project", async () => {
     const a = deployed("  language: node");
     const b = deployed("  language: node", { projectId: "project-b" });
-    expect(withReadiness(a, context()).activeDeployment.readiness.status).toBe("ready");
-    expect(withReadiness(b, context()).activeDeployment.readiness.status).toBe("not-ready");
+    expect((await withReadiness(a, context())).activeDeployment.readiness.status).toBe("ready");
+    expect((await withReadiness(b, context())).activeDeployment.readiness.status).toBe("not-ready");
   });
   // The automation as the dashboard store lists it, its snapshot persisted from `runtime`.
   function deployed(runtime: string, overrides: Record<string, unknown> = {}) {
@@ -230,19 +238,22 @@ describe("withReadiness", () => {
       ...overrides,
     } as unknown as DashboardAutomationSummary;
   }
-  const readinessOf = (automation: DashboardAutomationSummary, grants?: Record<string, number>) => {
-    const { errors, status } = withReadiness(automation, context(grants)).activeDeployment
+  const readinessOf = async (
+    automation: DashboardAutomationSummary,
+    grants?: Record<string, number>,
+  ) => {
+    const { errors, status } = (await withReadiness(automation, context(grants))).activeDeployment
       .readiness;
     return { errors: errors.map(({ code, subject }) => ({ code, subject })), status };
   };
 
-  it("judges the deployment's own container limits, not the default", () => {
+  it("judges the deployment's own container limits, not the default", async () => {
     vi.stubEnv("SWIZZLE_MAX_RUN_MEMORY_MB", "256");
     const container = (memory: number) =>
       `  language: node\n  execution_mode: container\n  container:\n    memory_mb: ${memory}`;
 
-    expect(readinessOf(deployed(container(64)))).toEqual({ errors: [], status: "ready" });
-    expect(readinessOf(deployed(container(1024)))).toEqual({
+    expect(await readinessOf(deployed(container(64)))).toEqual({ errors: [], status: "ready" });
+    expect(await readinessOf(deployed(container(1024)))).toEqual({
       errors: [
         { code: "RUNTIME_CONTAINER_LIMIT_EXCEEDS_MAX", subject: "runtime.container.memory_mb" },
       ],
@@ -250,15 +261,15 @@ describe("withReadiness", () => {
     });
   });
 
-  it("judges the deployment's own timeout against the ceiling and its grant", () => {
+  it("judges the deployment's own timeout against the ceiling and its grant", async () => {
     vi.stubEnv("SWIZZLE_MAX_RUN_TIMEOUT", "1h");
     const longRun = deployed("  language: node\n  timeout: 2h");
 
-    expect(readinessOf(longRun)).toEqual({
+    expect(await readinessOf(longRun)).toEqual({
       errors: [{ code: "RUNTIME_TIMEOUT_EXCEEDS_MAX", subject: "runtime.timeout" }],
       status: "not-ready",
     });
-    expect(readinessOf(longRun, { "automation-1": 3 * 60 * 60_000 })).toEqual({
+    expect(await readinessOf(longRun, { "automation-1": 3 * 60 * 60_000 })).toEqual({
       errors: [],
       status: "ready",
     });
@@ -266,17 +277,19 @@ describe("withReadiness", () => {
 
   // Runs wait in the queue until a worker comes online, as deploy and `swizzle list` report it, so a
   // worker restart does not mark every automation blocked.
-  it("keeps a registered sleeping worker group ready with a warning", () => {
-    const { status, warnings } = withReadiness(deployed("  language: node"), {
-      ...context(),
-      workers: context().workers.map((worker) => ({ ...worker, availability: "offline" })),
-    }).activeDeployment.readiness;
+  it("keeps a registered sleeping worker group ready with a warning", async () => {
+    const { status, warnings } = (
+      await withReadiness(deployed("  language: node"), {
+        ...context(),
+        workers: context().workers.map((worker) => ({ ...worker, availability: "offline" })),
+      })
+    ).activeDeployment.readiness;
 
     expect(status).toBe("ready");
     expect(warnings.map(({ code }) => code)).toEqual(["RUNTIME_PROFILE_UNAVAILABLE"]);
   });
 
-  it("is not ready while a declared secret is unset, and names it", () => {
+  it("is not ready while a declared secret is unset, and names it", async () => {
     const vault = deployed("  language: node", {
       requiredSecrets: [
         { name: "VERIFY_SECRET", state: "missing" },
@@ -284,7 +297,7 @@ describe("withReadiness", () => {
       ],
     });
 
-    const { errors, status } = withReadiness(vault, context()).activeDeployment.readiness;
+    const { errors, status } = (await withReadiness(vault, context())).activeDeployment.readiness;
     expect(status).toBe("not-ready");
     expect(errors).toEqual([
       {

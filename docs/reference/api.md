@@ -153,6 +153,7 @@ After the auth check, each route checks its path parameters, query and JSON body
 | POST | `/worker/drain` | worker | [dispatch-routes.ts](../../apps/api/src/dispatch-routes.ts) |
 | POST | `/worker/enroll` | public | [worker-routes.ts](../../apps/api/src/worker-routes.ts) |
 | POST | `/worker/heartbeat` | worker | [worker-routes.ts](../../apps/api/src/worker-routes.ts) |
+| POST | `/worker/image-checks` | worker | [dispatch-routes.ts](../../apps/api/src/dispatch-routes.ts) |
 | POST | `/worker/lease/renew` | worker | [dispatch-routes.ts](../../apps/api/src/dispatch-routes.ts) |
 | POST | `/worker/output` | worker | [dispatch-routes.ts](../../apps/api/src/dispatch-routes.ts) |
 | POST | `/worker/preparations` | worker | [dispatch-routes.ts](../../apps/api/src/dispatch-routes.ts) |

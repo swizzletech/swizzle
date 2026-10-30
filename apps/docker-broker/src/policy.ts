@@ -76,6 +76,7 @@ const RUN_IMAGE_REPOSITORY = "docker.io/library/swizzle-run";
 const CONTAINER_ACTIONS: Readonly<Record<string, ContainerAction>> = {
   "GET json": "inspect",
   "HEAD archive": "archive",
+  "GET archive": "archive",
   "PUT archive": "archive",
   "POST attach": "attach",
   "POST exec": "exec",

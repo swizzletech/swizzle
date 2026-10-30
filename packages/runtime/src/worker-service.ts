@@ -10,6 +10,8 @@ import { localExecutionProtocol } from "./execution-protocol.js";
 import { type ExecutionChannel, executeAssignment } from "./execution-wire.js";
 import { localLlmHealth } from "./local-llm-access.js";
 import type { PlatformWorkerController, StartPlatformWorkerOptions } from "./platform-types.js";
+import type { RunnerImageReport } from "./runner-image-checks.js";
+import { inspectRunnerImage } from "./runner-image-inspection.js";
 import { closeSandboxes } from "./sandbox.js";
 import { createWakeGate } from "./wake-gate.js";
 import { createWorkerRequest, WorkerHttpError } from "./worker-credential.js";
@@ -90,6 +92,34 @@ export async function startPlatformWorkerService(
       options.logger?.info({ removed }, "Removed leftover containers of this stack.");
   }
   const preparationAbort = new AbortController();
+  let imageReports: RunnerImageReport[] = [];
+  let checkingImages = Promise.resolve();
+  let checking = false;
+  const checkImages = () => {
+    if (checking || closing) return;
+    checking = true;
+    checkingImages = (async () => {
+      const { requests } = await call(
+        WORKER_ROUTES.imageChecks,
+        { reports: imageReports },
+        preparationAbort.signal,
+      );
+      imageReports = [];
+      imageReports = await Promise.all(requests.map(inspectRunnerImage));
+      if (imageReports.length > 0) {
+        await call(WORKER_ROUTES.imageChecks, { reports: imageReports }, preparationAbort.signal);
+        imageReports = [];
+      }
+    })()
+      .catch((error: unknown) => {
+        if (!closing) options.logger?.warn({ error }, "Runner image inspection failed.");
+      })
+      .finally(() => {
+        checking = false;
+      });
+  };
+  checkImages();
+  const imageCheckTimer = setInterval(checkImages, 2_000);
   const preparation = startDeploymentPreparation({
     poll: async (knownIds) =>
       await call(WORKER_ROUTES.preparations, { knownIds: [...knownIds] }, preparationAbort.signal),
@@ -284,6 +314,7 @@ export async function startPlatformWorkerService(
       credentialShutdown.abort();
       pulls.abort();
       clearInterval(heartbeatTimer);
+      clearInterval(imageCheckTimer);
       preparationAbort.abort();
       await call(WORKER_ROUTES.drain, { draining: true }, AbortSignal.timeout(10_000)).catch(
         (error) =>
@@ -294,6 +325,7 @@ export async function startPlatformWorkerService(
       );
       await Promise.all(loops);
       await preparation.close();
+      await checkingImages;
       await closeSandboxes();
       await closeDockerScopes();
     },

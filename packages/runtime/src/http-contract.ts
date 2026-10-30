@@ -493,6 +493,7 @@ const ROUTE_POLICY = {
   "POST /worker/preparations": { access: "worker", audit: false },
   "POST /worker/run-images": { access: "worker", audit: false },
   "POST /worker/run-images/keep": { access: "worker", audit: false },
+  "POST /worker/image-checks": { access: "worker", audit: false },
   "POST /worker/runtime": { access: "worker", audit: false },
   "POST /worker/pull": { access: "worker", audit: false },
   "POST /worker/lease/renew": { access: "worker", audit: false },

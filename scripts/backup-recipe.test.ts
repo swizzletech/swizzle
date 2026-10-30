@@ -99,7 +99,7 @@ it.each(
     await writeFile(
       path.join(bin, "docker"),
       `#!/bin/sh
-printf '%s\\n' "$*" >> '${dockerLog}'
+printf '%s\\n' "$*" >> "$FIXTURE_DOCKER_LOG"
 case " $* " in
   *" build "*)
     while [ "$#" -gt 0 ]; do
@@ -107,9 +107,9 @@ case " $* " in
       shift
     done ;;
   *" info "*) echo /tmp ;;
-  *" config "*) echo '{"name":"backup-test","services":{"backup":{"build":{"context":"${checkout}","dockerfile":"Dockerfile","target":"cli"}}}}' ;;
+  *" config "*) printf '%s\\n' "$FIXTURE_COMPOSE_CONFIG" ;;
   *" inspect "*) echo sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;
-  *" run "*) cat '${archive}' ;;
+  *" run "*) cat "$FIXTURE_BACKUP_ARCHIVE" ;;
 esac
 `,
       { mode: 0o755 },
@@ -133,6 +133,17 @@ esac
     ]) {
       await symlink(await locate(command), path.join(bin, command));
     }
+    vi.stubEnv("FIXTURE_DOCKER_LOG", dockerLog);
+    vi.stubEnv("FIXTURE_BACKUP_ARCHIVE", archive);
+    vi.stubEnv(
+      "FIXTURE_COMPOSE_CONFIG",
+      JSON.stringify({
+        name: "backup-test",
+        services: {
+          backup: { build: { context: checkout, dockerfile: "Dockerfile", target: "cli" } },
+        },
+      }),
+    );
     vi.stubEnv("PATH", bin);
     // The runner has no globally selected tools to mask a missing fixture toolchain.
     vi.stubEnv("MISE_GLOBAL_CONFIG_FILE", path.join(root, "global.toml"));

@@ -130,14 +130,14 @@ export async function sendApiAlert(input: {
     environment: alert.environment,
   });
   const header = alert.eventType === "api-check" ? "⚠️ Swizzle API check" : "⚠️ Swizzle API sunset";
-  const text = [
-    header,
-    `automation: ${alert.automation.automationName}`,
-    `environment: ${alert.environment}`,
-    ...alert.lines,
-  ]
-    .join("\n")
-    .slice(0, MAX_TELEGRAM_TEXT_CHARS);
+  const text = boundTelegramText(
+    [
+      header,
+      `automation: ${alert.automation.automationName}`,
+      `environment: ${alert.environment}`,
+      ...alert.lines,
+    ].join("\n"),
+  );
   const deliveries: StoredNotificationDelivery[] = [];
   for (const rule of rules) {
     if (!rule.enabled) continue;
@@ -397,7 +397,11 @@ function formatTelegramMessage(input: {
   }
 
   lines.push(`queued: ${input.run.queuedAt}`);
-  return lines.join("\n");
+  return boundTelegramText(lines.join("\n"));
+}
+
+function boundTelegramText(text: string): string {
+  return text.slice(0, MAX_TELEGRAM_TEXT_CHARS).replace(/[\uD800-\uDBFF]$/u, "");
 }
 
 async function sendTelegramMessage(input: TelegramMessageInput): Promise<TelegramMessageResult> {

@@ -31,7 +31,9 @@ mise trust && mise install
 mise x -- just init-env
 ```
 
-`just init-env` writes `.env` with unique credentials for Postgres, Valkey, encryption and the first account's setup. The file has mode 0600. It also sets a unique `COMPOSE_PROJECT_NAME` for the stack's containers, networks and volumes, and sizes the CPU limits to the Docker host (see [Configure the instance](#configure-the-instance)). A rerun keeps credentials and operator settings, removes the obsolete `SWIZZLE_IMAGE_TAG` line, and sizes legacy CPU defaults to the host. If a required credential or project name is missing or blank, or `SWIZZLE_LOCAL_WORKER_TOKEN` has a format from before 1.0.0, the recipe fails before any build and names the key. Restore the value or replace the token as the message shows, or delete `.env` and rerun `just init-env` to generate fresh credentials. `just stack` runs `just init-env` first, so a stack never starts without `.env`.
+`just init-env` writes `.env` with unique credentials for Postgres, Valkey, encryption, and the first account's setup. The file has mode 0600. It also sets a unique `COMPOSE_PROJECT_NAME` for the stack's containers, networks, and volumes, and sizes the CPU limits to the Docker host (see [Configure the instance](#configure-the-instance)). A rerun keeps credentials and operator settings, removes the obsolete `SWIZZLE_IMAGE_TAG` line, and sizes legacy CPU defaults to the host.
+
+If a required credential or project name is blank, or `SWIZZLE_LOCAL_WORKER_TOKEN` uses the pre-1.0.0 format, `just init-env` stops before a build and names the key. Follow its message to replace the token or regenerate the credentials. `just stack` runs `just init-env` first, so a stack never starts without `.env`.
 
 Choose the release tag you intend to install. On a release with published images, `just stack` pulls versioned images from `ghcr.io/swizzletech` for `linux/amd64` or `linux/arm64`, then starts the stack without building. Keep at least 5 GiB free in Docker's data directory for the images and backup. You need no registry login for the public packages.
 
@@ -145,9 +147,21 @@ Run `just stack` again after a change to `.env`.
 
 ## Add a tool to the runner image
 
-Deployed runs can call only binaries in the `runner-base` image from [infra/docker/Dockerfile](../../infra/docker/Dockerfile). `swizzle validate` and `swizzle apply` check each declared binary and optional version against that image's inventory. They fail with `RUNTIME_REQUIREMENTS_UNMET` when the image lacks a binary or cannot report a required version. The instance operator adds the binary's package to `runner-base`, then runs `just stack` to rebuild the images. The build records the executables on the run's `PATH`, and the worker reports that inventory. A remote worker builds its own runner image, so make the same Dockerfile change there and run `just worker` again ([add a remote worker](add-a-remote-worker.md)).
+To add Debian packages to the runner, set a space-separated list in `.env`:
 
-`just upgrade` refuses a checkout with uncommitted changes. Remove the package change before upgrading, then add it again after the upgrade ([upgrade an installed server](upgrade.md)).
+```dotenv
+SWIZZLE_RUNNER_APT_PACKAGES=jq imagemagick
+```
+
+Run `just stack`. On a release install, Swizzle pulls the release images and builds a thin runner layer with these packages. It records the extended runner's binaries, languages, and dependency packaging, then copies that inventory into a thin worker layer. An empty list uses the release images unchanged. Invalid package names stop preparation before any image build.
+
+`just upgrade` keeps the list in `.env` and rebuilds the layers on the new release images. Keep the checkout clean so it can switch releases ([upgrade an installed server](upgrade.md)). To move an existing Dockerfile edit to this setting, put its package names in `.env` and restore the tracked Dockerfile before upgrading.
+
+For tools that need a custom image rather than Debian packages, use `runtime.container.base_image` ([write an automation](write-an-automation.md)). Remote workers manage their own runner images ([add a remote worker](add-a-remote-worker.md)).
+
+To verify requirements in a custom `runtime.container.base_image`, create `/etc/swizzle/runner-tools.json` after the image's final tool install. Use [infra/docker/runner-tools.mjs](../../infra/docker/runner-tools.mjs) to create the record. Each eligible worker checks the image's record. A missing language or binary, or a version that does not satisfy a declared rule, blocks readiness on that worker. The default runner inventory does not apply to a custom image.
+
+The missing record alone does not block deployment or runs. Readiness reports the declared language and binaries as unverified in `swizzle inspect` and on the automation's dashboard page. Add the record to verify those requirements. If a worker cannot read the image or the record is invalid, readiness reports an image issue for that worker.
 
 ## Upgrade the instance
 

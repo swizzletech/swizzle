@@ -18,11 +18,12 @@ async function dockerFixture(projects: readonly string[], pruneBusy = false) {
   await cp(".env.example", path.join(root, ".env.example"));
   await writeFile(
     path.join(bin, "docker"),
-    `#!${process.execPath}
+    `#!/usr/bin/env node
 const fs = require("node:fs");
 const args = process.argv.slice(2);
-const state = ${JSON.stringify(state)};
-const imageFile = ${JSON.stringify(images)};
+const path = require("node:path");
+const state = path.join(process.env.FIXTURE_DIRECTORY, "networks.json");
+const imageFile = path.join(process.env.FIXTURE_DIRECTORY, "images.json");
 let images = JSON.parse(fs.readFileSync(imageFile, "utf8"));
 let networks = JSON.parse(fs.readFileSync(state, "utf8"));
 if (args[0] === "info") console.log(8);
@@ -55,7 +56,7 @@ if (args[0] === "image") {
   const owned = images.filter((id) => !project || id === project + "-image");
   if (args[1] === "ls") console.log(owned.join("\\n"));
   if (args[1] === "inspect") console.log(args.slice(4).map((id) => id.replace(/-image$/, "")).join("\\n"));
-  if (args[1] === "prune" && ${pruneBusy}) {
+  if (args[1] === "prune" && process.env.FIXTURE_PRUNE_BUSY === "true") {
     console.error("a prune operation is already running");
     process.exit(1);
   }
@@ -68,6 +69,8 @@ if (args[0] === "image") {
 `,
     { mode: 0o755 },
   );
+  vi.stubEnv("FIXTURE_DIRECTORY", root);
+  vi.stubEnv("FIXTURE_PRUNE_BUSY", String(pruneBusy));
   vi.stubEnv("PATH", `${bin}:${process.env.PATH}`);
   vi.spyOn(os, "tmpdir").mockReturnValue(root);
   return { root, state, images };

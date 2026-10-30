@@ -29,7 +29,7 @@ const REMOVE_RETRY_MS = 1_000;
 
 /** Deadline for daemon metadata and sandbox control commands. */
 export const CONTROL_TIMEOUT_MS = 5_000;
-/** Copying source and exporting image layers depend on their size and the daemon's storage. */
+/** Allocating a container, copying source and exporting layers depend on daemon storage and load. */
 export const TRANSFER_TIMEOUT_MS = 60_000;
 export type DockerDeadlines = Readonly<{ control: number; transfer: number }>;
 export const DOCKER_DEADLINES: DockerDeadlines = {
@@ -97,7 +97,7 @@ export class DockerScope {
     args: readonly string[],
     options: DockerOutputOptions & { readonly deadline?: DockerDeadline },
   ): Promise<DockerOutcome> {
-    const deadline = options.deadline ?? "control";
+    const deadline = options.deadline ?? (args[0] === "create" ? "transfer" : "control");
     return this.command(
       args,
       options,

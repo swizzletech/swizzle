@@ -331,7 +331,12 @@ export function buildServer(options: BuildServerOptions) {
   if (options.workerRegistry !== undefined) {
     registerWorkerRoutes(app, options.workerRegistry, accessStore);
     if (options.dispatch !== undefined)
-      registerDispatchRoutes(app, options.dispatch, options.workerRegistry);
+      registerDispatchRoutes(
+        app,
+        options.dispatch,
+        options.workerRegistry,
+        platform.runnerImageChecks,
+      );
   }
   registerAccessRoutes(app, { accessStore, auth, environmentStore, platform });
   registerPeopleRoutes(app, { accessStore, auth });

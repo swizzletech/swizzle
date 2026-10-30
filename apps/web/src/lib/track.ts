@@ -116,16 +116,69 @@ export function trackForRun(
   const started = run.startedAt !== null;
   const outgoing = groupBy(flow.edges, (edge) => edge.from);
   const incoming = groupBy(flow.edges, (edge) => edge.to);
-  const reached = (id: string) => REACHED.has(states.get(id)?.state ?? "idle");
   // The run comes through this lane: its source is done and has no other way out.
   const taken = (lane: FlowEdge) =>
     states.get(lane.from)?.state === "done" && (outgoing.get(lane.from) ?? []).length === 1;
+  // Evidence stays at recorded or waiting stations, even after narration becomes done.
+  const stations: ReadonlyMap<string, TrackNode> = new Map(states);
+  // The reached stations behind a node, found through narration; each node is visited once.
+  const reachedBehind = (id: string): ReadonlyMap<string, number> => {
+    const found = new Map<string, number>();
+    const seen = new Set([id]);
+    const queue = [id];
+    for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+      for (const lane of outgoing.get(next) ?? []) {
+        const node = stations.get(lane.to);
+        if (node === undefined || seen.has(lane.to)) continue;
+        seen.add(lane.to);
+        if (REACHED.has(node.state)) found.set(lane.to, node.at ?? 0);
+        else if (node.key === null) queue.push(lane.to);
+      }
+    }
+    return found;
+  };
+  const reachedBehindOrSelf = (id: string): ReadonlyMap<string, number> => {
+    const node = stations.get(id);
+    if (node === undefined) return new Map();
+    if (REACHED.has(node.state)) return new Map([[id, node.at ?? 0]]);
+    return node.key === null ? reachedBehind(id) : new Map();
+  };
+  const evidence: ReadonlyMap<FlowEdge, ReadonlyMap<string, number>> = new Map(
+    flow.edges.map((lane) => {
+      const siblings = (outgoing.get(lane.from) ?? []).filter((other) => other.to !== lane.to);
+      const shared = new Set(
+        siblings.flatMap((other) => [...reachedBehindOrSelf(other.to).keys()]),
+      );
+      return [
+        lane,
+        new Map([...reachedBehindOrSelf(lane.to)].filter(([key]) => !shared.has(key))),
+      ] as const;
+    }),
+  );
+  const evidenceAt: ReadonlyMap<FlowEdge, number | null> = new Map(
+    [...evidence].map(([lane, found]) => [
+      lane,
+      found.size === 0 ? null : Math.min(...found.values()),
+    ]),
+  );
   // The run never comes through this lane: its source is dead, or a done branch that left another way.
   const dead = new Set<string>();
   const untaken = (lane: FlowEdge) =>
     dead.has(lane.from) ||
     (states.get(lane.from)?.state === "done" &&
-      (outgoing.get(lane.from) ?? []).some((other) => other !== lane && reached(other.to)));
+      (outgoing.get(lane.from) ?? []).some(
+        (other) =>
+          (evidenceAt.get(other) ?? Number.POSITIVE_INFINITY) <
+          (evidenceAt.get(lane) ?? Number.POSITIVE_INFINITY),
+      ));
+  // Only stations exclusive to each incoming lane can prove this narration was reached.
+  const viaAt = (id: string): number | null => {
+    let found = reachedBehind(id);
+    for (const lane of incoming.get(id) ?? []) {
+      found = new Map([...found].filter(([key]) => evidence.get(lane)?.has(key)));
+    }
+    return found.size === 0 ? null : Math.min(...found.values());
+  };
   // Narration and death spread along lanes; a pass per rank is enough, bounded by the node count.
   for (let pass = 0; pass < flow.nodes.length; pass += 1) {
     let changed = false;
@@ -139,6 +192,12 @@ export function trackForRun(
         continue;
       }
       if (current.key !== null || !started) continue;
+      const through = viaAt(node.id);
+      if (through !== null) {
+        states.set(node.id, { ...current, at: through, state: "done" });
+        changed = true;
+        continue;
+      }
       const settled = lanes.every((lane) => taken(lane) || untaken(lane));
       if (!settled || (lanes.length > 0 && !lanes.some(taken))) continue;
       const at = Math.max(
@@ -151,7 +210,11 @@ export function trackForRun(
     if (!changed) break;
   }
   const nodes = flow.nodes.map((node) => states.get(node.id) as TrackNode);
-  return { direction: flow.direction, edges: lanesFor(flow.edges, states, finished), nodes };
+  return {
+    direction: flow.direction,
+    edges: lanesFor(flow.edges, states, finished, evidenceAt),
+    nodes,
+  };
 }
 
 /**
@@ -231,29 +294,36 @@ const REACHED = new Set<StationState>(["done", "running", "waiting", "failed"]);
 /**
  * A lane is done between two reached stations, active into the station the run is in, and
  * untaken when the run left its source another way, or ended without reaching its target. Where
- * a branch's targets were all reached, the run left through the lane to the one it reached first;
- * the others it reached by another path.
+ * recorded stations distinguish a branch, its earliest exclusive station identifies the lane.
+ * Shared stations leave the branch open, regardless of derived narration states.
  */
 function lanesFor(
   edges: readonly FlowEdge[],
   states: ReadonlyMap<string, TrackNode>,
   finished: boolean,
+  evidenceAt: ReadonlyMap<FlowEdge, number | null>,
 ): readonly TrackEdge[] {
   const outgoing = groupBy(edges, (edge) => edge.from);
-  const reachedAt = (id: string) => states.get(id)?.at ?? Number.POSITIVE_INFINITY;
+  const reachedAt = (edge: FlowEdge) => evidenceAt.get(edge) ?? Number.POSITIVE_INFINITY;
   return edges.map((edge) => {
     const from = states.get(edge.from)?.state ?? "idle";
     const to = states.get(edge.to)?.state ?? "idle";
     const siblings = (outgoing.get(edge.from) ?? []).filter(
-      (other) => other !== edge && REACHED.has(states.get(other.to)?.state ?? "idle"),
+      (other) => other !== edge && evidenceAt.get(other) !== null,
     );
     let state: LaneState = "idle";
-    if (from === "done" && REACHED.has(to)) {
-      const earlier = siblings.some((other) => reachedAt(other.to) < reachedAt(edge.to));
-      if (earlier) state = "untaken";
-      else if (to === "done") state = "done";
-      else state = "active";
-    } else if (from === "done" && to === "idle" && (finished || siblings.length > 0)) {
+    const branch = (outgoing.get(edge.from) ?? []).length > 1;
+    if (from === "done" && siblings.some((other) => reachedAt(other) < reachedAt(edge))) {
+      state = "untaken";
+    } else if (from === "done" && REACHED.has(to) && (!branch || evidenceAt.get(edge) !== null)) {
+      state = to === "done" ? "done" : "active";
+    } else if (
+      from === "done" &&
+      to === "idle" &&
+      // A branch with no side reached yet is open, even when the run is over: nothing says which
+      // way it went. Only a run that ended on a single way out left that lane untaken.
+      ((finished && (outgoing.get(edge.from) ?? []).length === 1) || siblings.length > 0)
+    ) {
       state = "untaken";
     }
     return { dashed: false, from: edge.from, label: edge.label, state, to: edge.to };
