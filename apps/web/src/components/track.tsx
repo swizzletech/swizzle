@@ -1,7 +1,9 @@
 // Draws a `TrackGraph`: dagre places the stations, an SVG underneath carries the lanes and their
 // labels, and each station is an HTML element on top, so its text wraps, its state is a class and
-// an approval station holds real buttons. Dagre loads on the first track drawn. A track wider than
-// its card shrinks to fit, down to MIN_SCALE, and scrolls sideways beyond that.
+// an approval station holds real buttons. A step is a card with a state symbol, its label and a
+// meta line (`StationFace`); a node that only narrates, such as the trigger, a decision or the end,
+// is a quiet text marker. Dagre loads on the first track drawn. A track wider than its card shrinks
+// to fit, down to MIN_SCALE, and scrolls sideways beyond that.
 
 import { type ReactNode, useEffect, useState } from "react";
 
@@ -87,21 +89,38 @@ function useInnerWidth(): readonly [(element: HTMLElement | null) => void, numbe
   return [setElement, width];
 }
 
-const BASE_WIDTH = 96;
-const MAX_WIDTH = 200;
-const BASE_HEIGHT = 46;
+/** A card: 12.5 px label characters, the symbol, gap and padding beside the text, and slack. */
+const CARD_CHAR = 6.6;
+const CARD_CHROME = 52;
+const CARD_SLACK = 8;
+const CARD_MIN = 150;
+const CARD_MAX = 220;
+/** A narration marker: 12 px characters, its padding, a decision's diamond, and slack. */
+const MARK_CHAR = 6.8;
+const MARK_CHROME = 22;
+const MARK_SLACK = 8;
+const MARK_DIAMOND = 15;
+const MARK_MAX = 200;
 
+/**
+ * The box dagre reserves. A card's size follows its label alone and always keeps room for its
+ * meta line, so the layout holds still while a live run changes the meta from step to item to
+ * duration.
+ */
 function stationSize(node: TrackNode, extra: StationExtra | null) {
-  const text = Math.max(node.label.length, (node.key ?? "").length) * 6.6 + 30;
-  const width = Math.max(Math.min(Math.round(text), MAX_WIDTH), BASE_WIDTH, extra?.width ?? 0);
-  const lines = Math.ceil((node.label.length * 6.6) / (width - 28));
-  const height =
-    BASE_HEIGHT +
-    Math.max(0, lines - 1) * 16 +
-    (node.meta === null ? 0 : 16) +
-    (node.durationMs === null ? 0 : 8) +
-    (extra?.height ?? 0);
-  return node.shape === "diamond" ? { height: height + 10, width: width + 24 } : { height, width };
+  if (node.key === null) {
+    const chrome = MARK_CHROME + (node.shape === "diamond" ? MARK_DIAMOND : 0);
+    const width = Math.min(
+      Math.round(node.label.length * MARK_CHAR + chrome + MARK_SLACK),
+      MARK_MAX,
+    );
+    const lines = Math.ceil((node.label.length * MARK_CHAR) / (width - chrome));
+    return { height: 24 + Math.max(0, lines - 1) * 15, width };
+  }
+  const text = node.label.length * CARD_CHAR + CARD_CHROME + CARD_SLACK;
+  const width = Math.max(Math.min(Math.round(text), CARD_MAX), CARD_MIN, extra?.width ?? 0);
+  const lines = Math.ceil((node.label.length * CARD_CHAR) / (width - CARD_CHROME));
+  return { height: 18 + lines * 16 + 15 + (extra?.height ?? 0), width };
 }
 
 function layoutTrack(
@@ -185,8 +204,44 @@ const STATE_WORDS: Record<StationState, string> = {
   failed: "failed",
   idle: "",
   running: "running",
+  untaken: "not taken",
   waiting: "waiting",
 };
+
+/** What a card draws on its state ring; idle and untaken draw the ring alone. */
+const STATE_SYMBOL: Record<StationState, ReactNode> = {
+  done: <path className="st-mark" d="M5 9.2 7.8 12 13 6.6" />,
+  failed: <path className="st-mark" d="M6.2 6.2 11.8 11.8 M11.8 6.2 6.2 11.8" />,
+  idle: null,
+  running: <path className="st-mark" d="M9 1a8 8 0 0 1 8 8" />,
+  untaken: null,
+  waiting: <path className="st-mark" d="M9 5.6V9l2.4 1.6" />,
+};
+
+/**
+ * A step's face: the state symbol, the label and the meta line, which ellipsizes and keeps the
+ * whole text in its title. The track's cards and the Play's phone cards both draw it.
+ */
+export function StationFace(props: {
+  readonly label: string;
+  readonly meta: string | null;
+  readonly state: StationState;
+}) {
+  return (
+    <>
+      <svg aria-hidden="true" className={`st-sym ${props.state}`} viewBox="0 0 18 18">
+        <circle cx="9" cy="9" r="8" />
+        {STATE_SYMBOL[props.state]}
+      </svg>
+      <span className="st-text">
+        <span className="st-label">{props.label}</span>
+        <span className="st-meta" title={props.meta ?? undefined}>
+          {props.meta}
+        </span>
+      </span>
+    </>
+  );
+}
 
 const LANE_CLASS: Record<LaneState, string> = {
   active: "active",
@@ -243,7 +298,6 @@ export function Track(props: {
     direction,
     new Map([...extras].map(([id, extra]) => [id, extra.size])),
   );
-  const longest = Math.max(0, ...track.nodes.map((node) => node.durationMs ?? 0));
   const scale =
     available === null || layout.width === 0
       ? 1
@@ -291,7 +345,6 @@ export function Track(props: {
             extra={extras.get(node.id)?.content ?? null}
             focused={props.focused === node.key && node.key !== null}
             key={node.id}
-            longestMs={longest}
             node={node}
             onSelect={props.onSelect}
           />
@@ -310,27 +363,21 @@ function Station(props: {
   };
   readonly extra: ReactNode;
   readonly focused: boolean;
-  readonly longestMs: number;
   readonly node: TrackNode;
   readonly onSelect: ((node: TrackNode) => void) | undefined;
 }) {
   const { box, node } = props;
   const words = STATE_WORDS[node.state];
-  const label = (
-    <>
+  const label =
+    node.key === null ? (
       <span className="st-label">{node.label}</span>
-      {node.meta === null ? null : <span className="st-meta">{node.meta}</span>}
-      {node.durationMs === null || props.longestMs === 0 ? null : (
-        <span className="st-bar" title={node.meta ?? undefined}>
-          <i style={{ width: `${Math.max(6, (node.durationMs / props.longestMs) * 100)}%` }} />
-        </span>
-      )}
-    </>
-  );
+    ) : (
+      <StationFace label={node.label} meta={node.meta} state={node.state} />
+    );
   return (
     <div
       aria-current={props.focused ? "step" : undefined}
-      className={`station ${node.shape} ${node.state} ${node.key === null ? "narration" : ""}`}
+      className={`station ${node.key === null ? `narration ${node.shape}` : "card"} ${node.state}`}
       data-state={node.state}
       data-step={node.key ?? undefined}
       data-testid="station"

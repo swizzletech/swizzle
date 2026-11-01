@@ -1,13 +1,13 @@
 {
   "name": "swizzle",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "license": "Apache-2.0",
   "private": true,
   "description": "Self-hosted runtime platform for code-based automations.",
   "type": "module",
   "packageManager": "pnpm@12.15.0",
   "devDependencies": {
-    "@biomejs/biome": "^2.6.3",
+    "@biomejs/biome": "^2.6.4",
     "@playwright/test": "^1.64.1",
     "@swizzle/cli": "workspace:*",
     "@swizzle/config": "workspace:*",
@@ -22,14 +22,14 @@
     "@vitejs/plugin-react": "^6.1.2",
     "bullmq": "catalog:",
     "dependency-cruiser": "^18.7.0",
-    "knip": "^6.43.0",
+    "knip": "^6.44.1",
     "marked": "^18.1.2",
     "pg": "catalog:",
     "rimraf": "^6.1.3",
     "tsx": "catalog:",
     "turbo": "^2.11.10",
     "typescript": "catalog:",
-    "unbash": "^6.0.1",
+    "unbash": "^6.0.2",
     "vitest": "^5.0.5",
     "yaml": "catalog:"
   }

@@ -9,7 +9,7 @@ catalog:
   # Held on 26: the types follow the Node that mise.toml and the images run.
   "@types/node": ^26.6.6
   "@types/pg": ^8.23.1
-  bullmq: ^6.5.1
+  bullmq: ^6.5.3
   fastify: ^5.12.7
   pg: ^8.23.1
   pino: ^10.4.0
@@ -27,6 +27,11 @@ verifyDepsBeforeRun: error
 overrides:
   # drizzle-kit bundles tsx and does not use this obsolete loader, which pulls vulnerable esbuild.
   "drizzle-kit>@esbuild-kit/esm-loader": "-"
+  # gaxios 7 declares rimraf but never loads it; the unused rimraf 5 pulls vulnerable glob 10.
+  "gaxios@7>rimraf": "-"
+  # rimraf 6 loads glob only for --glob, which no clean script passes. glob 14.0.2 fixes the
+  # advisories in glob 13 and its minimatch 10; no rimraf release depends on it yet.
+  "rimraf@6>glob": "^14.0.2"
 
 allowBuilds:
   esbuild: true

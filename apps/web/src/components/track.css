@@ -52,68 +52,29 @@
   .track-wait {
     height: 120px;
   }
+  /* A step is a card: a state symbol, then its label over a meta line. */
   .station {
     position: absolute;
     display: grid;
     box-sizing: border-box;
-    background: var(--raised);
-    /* The outline colour; a state sets it here so a decision's clipped hexagon takes it too. */
-    --edge: var(--line-2);
-    border: 1.5px solid var(--edge);
-    border-radius: var(--radius-s);
     color: var(--ink);
     font-size: 12.5px;
     line-height: 1.3;
   }
-  .station.pill {
-    border-radius: 999px;
-  }
-  /* A decision as a chamfered box: the border is a clipped layer under a clipped surface, because
-     a rotated square would rotate its text too. */
-  .station.diamond {
-    border-color: transparent;
-    background: none;
-  }
-  .station.diamond::before,
-  .station.diamond::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    clip-path: polygon(
-      14px 0,
-      calc(100% - 14px) 0,
-      100% 50%,
-      calc(100% - 14px) 100%,
-      14px 100%,
-      0 50%
-    );
-    background: var(--edge);
-  }
-  .station.diamond::after {
-    inset: 1.5px;
-    clip-path: polygon(
-      13px 0,
-      calc(100% - 13px) 0,
-      100% 50%,
-      calc(100% - 13px) 100%,
-      13px 100%,
-      0 50%
-    );
+  .station.card {
     background: var(--raised);
-  }
-  .station.diamond > * {
-    position: relative;
-    z-index: 1;
+    border: 1px solid var(--line-2);
+    border-radius: 10px;
+    box-shadow: var(--shadow-xs);
   }
   .st-hit {
-    display: grid;
-    gap: 2px;
+    display: flex;
+    gap: 9px;
     width: 100%;
     height: 100%;
-    padding: 8px 12px;
-    align-content: center;
-    justify-items: center;
-    text-align: center;
+    padding: 8px 11px;
+    align-items: center;
+    text-align: left;
     border: 0;
     border-radius: inherit;
     background: none;
@@ -127,29 +88,165 @@
     outline: 2px solid var(--coral);
     outline-offset: 2px;
   }
+  .st-text {
+    display: grid;
+    min-width: 0;
+  }
   .st-label {
     font-weight: 600;
     overflow-wrap: anywhere;
   }
+  /* One line always: a long item id is cut, and the title holds it whole. The card keeps room
+     for it, so a card without one centres its label. */
+  .st-meta:empty {
+    display: none;
+  }
   .st-meta {
+    min-height: 1.35em;
+    overflow: hidden;
     font-size: 11px;
     color: var(--ink-3);
     font-variant-numeric: tabular-nums;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
-  .st-bar {
-    display: block;
-    width: 100%;
-    height: 4px;
-    margin-top: 3px;
-    border-radius: 2px;
+  .st-sym {
+    flex: none;
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .st-sym circle {
+    stroke: var(--idle);
+    stroke-width: 1.5;
+  }
+  .st-mark {
+    stroke: #fff;
+    stroke-width: 1.8;
+  }
+  .station.idle .st-label {
+    color: var(--ink-2);
+    font-weight: 500;
+  }
+  .station.done {
+    border-color: color-mix(in srgb, var(--ok) 40%, var(--line-2));
+  }
+  .station.done .st-meta {
+    color: var(--ok-text);
+  }
+  .st-sym.done circle {
+    fill: var(--ok);
+    stroke: var(--ok);
+  }
+  .station.running {
+    border-color: var(--run);
+    background: var(--tint-warn);
+  }
+  .station.running .st-meta {
+    color: var(--warn-text);
+  }
+  /* The running ring: a quarter in the state colour on a faint track. */
+  .st-sym.running circle {
+    stroke: color-mix(in srgb, var(--run) 30%, transparent);
+    stroke-width: 2;
+  }
+  .st-sym.running .st-mark {
+    stroke: var(--run);
+    stroke-width: 2;
+  }
+  /* The halo blinks on opacity alone, so the layout never moves while a run is live. */
+  .station.running::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border: 2px solid color-mix(in srgb, var(--run) 45%, transparent);
+    border-radius: 13px;
+    pointer-events: none;
+    opacity: 0.8;
+    animation: halo-duty 2.4s steps(1, end) infinite;
+  }
+  @keyframes halo-duty {
+    0%,
+    60% {
+      opacity: 0.8;
+    }
+    61%,
+    100% {
+      opacity: 0.25;
+    }
+  }
+  .station.waiting {
+    border-color: var(--warn);
+    border-style: dashed;
+  }
+  .station.waiting .st-meta {
+    color: var(--warn-text);
+  }
+  .st-sym.waiting circle {
+    stroke: var(--warn);
+  }
+  .st-sym.waiting .st-mark {
+    stroke: var(--warn-text);
+    stroke-width: 1.5;
+  }
+  .station.failed {
+    border-color: var(--fail);
+    background: var(--tint-fail);
+  }
+  .station.failed .st-meta {
+    color: var(--fail-text);
+  }
+  .st-sym.failed circle {
+    fill: var(--fail);
+    stroke: var(--fail);
+  }
+  /* A station the run can no longer reach recedes with the lanes that lead to it. */
+  .station.untaken {
+    opacity: 0.45;
+  }
+  .station.untaken .st-label {
+    color: var(--ink-3);
+    font-weight: 500;
+  }
+  /* A node that only narrates, such as the trigger, a decision or the end, is a quiet marker. */
+  .station.narration {
+    border-radius: 999px;
     background: var(--surface-2);
-    overflow: hidden;
+    color: var(--ink-3);
+    font-size: 12px;
   }
-  .st-bar i {
-    display: block;
-    height: 100%;
-    border-radius: 2px;
+  .station.narration .st-hit {
+    justify-content: center;
+    padding: 3px 11px;
+    text-align: center;
+  }
+  .station.narration .st-label {
+    font-weight: 500;
+  }
+  .station.narration.done {
+    color: var(--ink-2);
+  }
+  /* A decision: a small diamond before the question, filled once the run passed it. */
+  .station.narration.diamond {
+    background: var(--surface);
+  }
+  .station.narration.diamond .st-hit::before {
+    content: "";
+    flex: none;
+    width: 8px;
+    height: 8px;
+    margin-right: 2px;
+    border: 1.5px solid var(--idle);
+    transform: rotate(45deg);
+  }
+  .station.narration.diamond.done .st-hit::before {
+    border-color: var(--ok);
     background: var(--ok);
+  }
+  .station.narration.untaken {
+    opacity: 0.45;
   }
   .st-act {
     display: flex;
@@ -188,69 +285,6 @@
     height: 30px;
     padding: 0 12px;
     font-size: 12.5px;
-  }
-  .station.idle {
-    color: var(--ink-2);
-  }
-  .station.narration {
-    border-style: dashed;
-    --edge: var(--line);
-    color: var(--ink-3);
-  }
-  .station.done {
-    --edge: var(--ok);
-  }
-  .station.done .st-meta {
-    color: var(--ok);
-  }
-  .station.running {
-    --edge: var(--run);
-  }
-  .station.running .st-meta {
-    color: var(--ink-2);
-  }
-  /* The halo blinks on opacity alone, so the layout never moves while a run is live. */
-  .station.running::after {
-    content: "";
-    position: absolute;
-    inset: -5px;
-    border: 2px solid var(--run);
-    border-radius: inherit;
-    pointer-events: none;
-    opacity: 0.6;
-    animation: halo-duty 2.4s steps(1, end) infinite;
-  }
-  .station.diamond.running::after {
-    inset: 1.5px;
-    border: 0;
-    opacity: 1;
-    animation: none;
-  }
-  @keyframes halo-duty {
-    0%,
-    60% {
-      opacity: 0.6;
-    }
-    61%,
-    100% {
-      opacity: 0.15;
-    }
-  }
-  .station.waiting {
-    --edge: var(--warn);
-    background: var(--tint-warn);
-  }
-  .station.waiting .st-meta {
-    color: var(--warn-text);
-  }
-  .station.failed {
-    --edge: var(--fail);
-  }
-  .station.failed .st-meta {
-    color: var(--fail);
-  }
-  .station.failed .st-bar i {
-    background: var(--fail);
   }
   .station[aria-current="step"] {
     box-shadow:

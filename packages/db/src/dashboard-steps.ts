@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, countDistinct, desc, eq, inArray, sql } from "drizzle-orm";
 import type { DatabaseClient } from "./client.js";
 import { inCurrentProject } from "./dashboard-shared.js";
 import type { DashboardRunStep, DashboardStepReach } from "./dashboard-types.js";
@@ -52,7 +52,11 @@ export async function listRunSteps(
   }));
 }
 
-/** Over the automation's last `limit` runs in the environment: how many runs reached each step. */
+/**
+ * Over the automation's last `limit` runs in the environment: how many runs reached each step
+ * family, the part of a step key before its first ':' (`stepFamily` in `@swizzle/config`), so a run
+ * that uploaded three items counts once for `upload`.
+ */
 export async function countStepReach(
   client: DatabaseClient,
   automationSlug: string,
@@ -74,16 +78,17 @@ export async function countStepReach(
     .orderBy(desc(runs.queuedAt))
     .limit(limit)
     .as("recent_runs");
+  const family = sql<string>`split_part(${runSteps.stepKey}, ':', 1)`;
   const [reachRows, [total]] = await Promise.all([
     client.db
-      .select({ reached: count(runSteps.runId), stepKey: runSteps.stepKey })
+      .select({ family, reached: countDistinct(runSteps.runId) })
       .from(runSteps)
       .where(inArray(runSteps.runId, client.db.select({ runId: recent.runId }).from(recent)))
-      .groupBy(runSteps.stepKey),
+      .groupBy(family),
     client.db.select({ runs: count() }).from(recent),
   ]);
   return {
-    reached: Object.fromEntries(reachRows.map((row) => [row.stepKey, row.reached])),
+    reached: Object.fromEntries(reachRows.map((row) => [row.family, row.reached])),
     runs: total?.runs ?? 0,
   };
 }

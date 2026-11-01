@@ -27,7 +27,6 @@ function pipelineTrack(members: readonly AutomationSummary[]): TrackGraph {
   const bySlug = new Map(members.map((member) => [member.automationSlug, member]));
   const nodes: TrackNode[] = members.map((member) => ({
     at: member.lastRun === null ? null : Date.parse(member.lastRun.queuedAt),
-    durationMs: null,
     id: member.automationSlug,
     key: member.automationSlug,
     label: member.automationName,

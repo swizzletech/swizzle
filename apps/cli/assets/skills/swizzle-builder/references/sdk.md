@@ -181,7 +181,7 @@ Use durable primitives when retrying the whole process would otherwise repeat ex
 
 `runStep` / `run_step` stores a successful JSON-serializable result for the current run. If the attempt later fails and the run retries, the entrypoint starts from the top, but the helper returns the stored result without calling `fn`. A second call with the same name in the same process also returns the cached result. TypeScript stores `undefined` as `null`.
 
-Steps are transaction boundaries. Work inside a step re-runs when that step fails before returning, so side effects inside a step still need to be idempotent or split into their own named step. Step names are unique per run; in loops, include the index or stable item id. Each step result is capped at 64KB, total step results per run are capped at 5MB, and results must be plain JSON, as for state values: a result that JSON would change on replay fails the step.
+Steps are transaction boundaries. Work inside a step re-runs when that step fails before returning, so side effects inside a step still need to be idempotent or split into their own named step. Step names are unique per run; in loops, name each step `<family>:<item id>`, such as `upload:INV-7`, so every item's step lights the flowchart node `upload`. Each step result is capped at 64KB, total step results per run are capped at 5MB, and results must be plain JSON, as for state values: a result that JSON would change on replay fails the step.
 
 ```typescript
 const invoice = await runStep("fetch-invoice-123", async () => {

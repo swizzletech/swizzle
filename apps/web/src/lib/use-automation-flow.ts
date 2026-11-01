@@ -7,6 +7,7 @@ import {
   type FlowDriftWarning,
   flowDrift,
   type StepSite,
+  stepFamily,
 } from "@swizzle/config/browser";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
@@ -29,7 +30,8 @@ export interface AutomationFlow {
   readonly sourceError: string | null;
   readonly refetchSource: () => void;
   readonly sites: readonly StepSite[];
-  readonly stepKeys: ReadonlySet<string>;
+  /** The step families the code calls (`stepFamily`); a node of one of these ids is a station. */
+  readonly families: ReadonlySet<string>;
   readonly reach: StepReach | null;
   readonly drift: readonly FlowDriftWarning[];
 }
@@ -76,7 +78,7 @@ export function useAutomationFlow(automationSlug: string, deploymentId: string):
       refetchSource: () => void source.refetch(),
       source: source.data ?? null,
       sourceError: source.error?.message ?? null,
-      stepKeys: new Set(sites.map((site) => site.key)),
+      families: new Set(sites.map((site) => stepFamily(site.key))),
     }),
     [
       diagram.data,
