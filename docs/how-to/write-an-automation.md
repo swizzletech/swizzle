@@ -149,7 +149,7 @@ invoice = run_step("fetch-invoice-123", lambda: fetch_invoice("123"))
 const invoice = await runStep("fetch-invoice-123", () => fetchInvoice("123"));
 ```
 
-Give every step a name that is unique in the run. In a loop, put the item id in the name. A step that fails before it returns runs again on the next attempt, so a side effect inside a step must be idempotent, or get a step of its own.
+Give every step a name that is unique in the run. In a loop, name each step `<family>:<item id>`, such as `upload:INV-7`: the family before the first `:` names what the step does and is the flowchart node it lights (see [Draw the flow](#draw-the-flow)), and the item id after it makes the name unique. A step that fails before it returns runs again on the next attempt, so a side effect inside a step must be idempotent, or get a step of its own.
 
 State, step, and run results must survive a JSON round trip without changing. The SDK raises an error that names the value when it cannot. In TypeScript, convert `Date`, `Map`, `Set`, and class instances to plain JSON data. Omit `undefined` fields, getters, and `toJSON` methods. Convert dates with `date.toISOString()`. Python's `log_step` rejects `NaN` in its details because the runtime cannot parse it as structured log data.
 
@@ -184,22 +184,35 @@ A Node.js automation without the SDK prints the suspend sentinel and reads the r
 
 ## Draw the flow
 
-Add `flow.mermaid` when you want the dashboard to show a flowchart for the automation. Give each step node the same id as its step name. Keep narration nodes, such as the trigger and result, under other ids:
+Add `flow.mermaid` when you want the dashboard to show a flowchart for the automation. A step lights the node whose id is the step's family: the part of its name before the first `:`, or the whole name when it has none. Keep narration nodes, such as the trigger and result, under ids that no step uses:
 
 ```mermaid
 flowchart LR
-  trigger([Webhook]) --> fetch-invoice-123[Fetch the invoice] --> publish{Approved?}
+  trigger([Cron]) --> fetch[Fetch the invoices] --> upload[Upload each invoice] --> done([Result])
 ```
 
-Here, `fetch-invoice-123` must match a step name in the entrypoint. `trigger` and `publish` remain narration nodes.
+```python
+invoices = run_step("fetch", fetch_invoices)
+for invoice in invoices:
+    run_step(f"upload:{invoice['id']}", lambda: upload(invoice))
+```
 
-The dashboard draws a flowchart as a track on the About tab and above the runs list. Other Mermaid diagram types still use Mermaid's renderer. The track follows the selected run, or shows reach counts when no run is selected. When recorded steps do not distinguish decision lanes, the track leaves both lanes open. You can fold the track. The browser remembers that choice. With a run selected, each finished step shows its duration beside its node.
+```ts
+const invoices = await runStep("fetch", fetchInvoices);
+for (const invoice of invoices) {
+  await runStep(`upload:${invoice.id}`, () => upload(invoice));
+}
+```
 
-The Play tab pairs the deployed entrypoint with the track. It colours the active step's code and dims other code. Each step's lines carry a state-coloured bracket and tag. You can replay a finished run. Replay compresses waits.
+Here, step `fetch` lights node `fetch`, and every `upload:<id>` step lights node `upload`. `trigger` and `done` remain narration nodes.
 
-Below 900 px, the track and pipeline stack top-down. The Play tab places each node card above its first code line and wraps the code. It pins the step bar at the top and the transport at the bottom. A waiting run's approval actions sit in a bottom bar.
+The dashboard draws a flowchart as a track on the About tab and above the runs list. Other Mermaid diagram types still use Mermaid's renderer. The track follows the selected run, or shows how many of the last runs reached each node when no run is selected. When recorded steps do not distinguish decision lanes, the track leaves both lanes open. You can fold the track. The browser remembers that choice. Each step node is a card with a state symbol: a ring when it has not run, an arc and a blinking halo while it runs, a check when done, a cross when it failed, and a clock while it waits. The trigger, decisions and ends are quiet text markers. A node on a branch the run did not take fades. With a run selected, each finished step shows its duration on its card. Once a run that looped over items succeeded, a node whose family ran for several items shows the item count and their summed time. While the run is open, or when it failed, the track shows the item it is on or ended in, such as `item 37 · INV-37` or `failed at item 37 · INV-37`. The number counts the items in the order they started. A run records only the items it reached, so the track cannot tell how many are left.
 
-`swizzle validate` warns when a literal step call in the entrypoint has no node of that id, because the dashboard cannot light that step. The dashboard shows the same drift beside the track. Both use `flowDrift` and `extractFlowNodeIds` from `packages/config`, which recognize YAML front matter and semicolon-separated statements. A node without a step call, such as the trigger, a decision or an end, is narration and never warns, so a correct diagram validates clean. Warnings do not fail validation or block deployment.
+The Play tab pairs the deployed entrypoint with the track. It colours the active step's code and dims other code. Each step's lines carry a state-coloured bracket and tag. You can replay a finished run. Replay compresses waits. A run that looped over items replays one pass per item, in the order the items started. The item counter under the track names the current item and its number. It reads `Item 2 of 3` when the run succeeded and `Item 37` otherwise. A live run shows the same counter, and a failed replay ends on the item the run failed at. A run that did no step replays its trigger and says so.
+
+Below 900 px, the track and pipeline stack top-down. The Play tab places each node card above its first code line and wraps the code. It pins the step bar at the top, and the transport or the live item counter at the bottom. A waiting run's approval actions sit in a bottom bar.
+
+`swizzle validate` warns when a step call in the entrypoint has no node of its family's id, because the dashboard cannot light that step. It reads the family of a literal name, and of a name that starts with a literal family and `:` before its first placeholder: `f"upload:{ref}"` in Python, `` `upload:${ref}` `` in TypeScript and JavaScript. It cannot see a name built any other way, and the dashboard does not bracket that call's code. The dashboard shows the same drift beside the track. Both use `flowDrift` and `extractFlowNodeIds` from `packages/config`, which recognize YAML front matter and semicolon-separated statements. A node without a step call, such as the trigger, a decision or an end, is narration and never warns, so a correct diagram validates clean. Warnings do not fail validation or block deployment.
 
 ## Check webhook input
 

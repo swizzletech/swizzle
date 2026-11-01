@@ -2,7 +2,7 @@
 // automations. Pure functions build it from API records; `components/track.tsx` lays it out and
 // draws it. Nothing here touches the DOM, so every rule about states, lanes and replay has a test.
 
-import type { StepKind, StepSite } from "@swizzle/config/browser";
+import { type StepKind, type StepSite, stepFamily, stepItem } from "@swizzle/config/browser";
 
 import { isOpenRun, type RunDetail, type RunStep } from "./api";
 import { durationInWords } from "./words/time";
@@ -29,22 +29,23 @@ interface FlowEdge {
   readonly label: string | null;
 }
 
-/** A station's state during a run. `idle` is also the state of every station with no run. */
-export type StationState = "idle" | "done" | "running" | "waiting" | "failed";
+/**
+ * A station's state during a run. `idle` is also the state of every station with no run;
+ * `untaken` is a station the run can no longer reach, because every lane into it was not taken.
+ */
+export type StationState = "idle" | "done" | "running" | "waiting" | "failed" | "untaken";
 
 export type LaneState = "idle" | "done" | "active" | "untaken";
 
 export interface TrackNode {
   readonly id: string;
   readonly label: string;
-  /** The step key under the label; null for a narration node. */
+  /** The step family the station stands for, which is its id; null for a narration node. */
   readonly key: string | null;
   readonly shape: FlowNode["shape"];
   readonly state: StationState;
-  /** The duration or count beside the label, such as "0.4 s" or "12 of 50 runs". */
+  /** The duration, count or item under the label, such as "0.4 s", "12 of 50 runs" or "failed at item 37 · INV-37". */
   readonly meta: string | null;
-  /** Milliseconds the step took, for the duration bar beside a done station. */
-  readonly durationMs: number | null;
   /** When the station reached its state, ms since the epoch; orders the done stations. */
   readonly at: number | null;
 }
@@ -66,6 +67,7 @@ export interface TrackGraph {
 
 /** What a run tells about each step, merged from the steps read and the live stream. */
 export interface RunPosition {
+  /** By step key; every key of one family lights the family's station. */
   readonly steps: ReadonlyMap<string, TrackStep>;
   /** The step the run waits at, while it waits. */
   readonly waiting: WaitingStep | null;
@@ -93,8 +95,53 @@ export function waitingStep(run: RunFacts): WaitingStep | null {
 }
 
 /**
- * The station and lane states of a flow for one run. A node is a station when its id is a step
- * key the run recorded, or the step it waits at; every other node narrates. A narration node is
+ * Which item a run that loops is on: the item id after the family (`stepItem`), its 1-based place
+ * among the items in the order they started, and how many items the run did in all. That total is
+ * known only for a run that succeeded, because a run records only the items it reached, so `of`
+ * is null while a run is open and after it failed.
+ */
+export interface ItemPass {
+  readonly item: string;
+  readonly index: number;
+  readonly of: number | null;
+}
+
+/** "item 37 of 200", or "item 37" while the total is unknown. */
+function itemInWords(pass: ItemPass): string {
+  return pass.of === null ? `item ${pass.index}` : `item ${pass.index} of ${pass.of}`;
+}
+
+/**
+ * The item a real run is on or ended in: the item of its wait, else of the open item step that
+ * started last (where a failed run died), else of the item step that started last. Only a family
+ * the code calls names items, so the SDK's `claim:<key>` steps never count.
+ */
+export function runPass(position: RunPosition, families: ReadonlySet<string>): ItemPass | null {
+  const itemOf = (key: string) => (families.has(stepFamily(key)) ? stepItem(key) : null);
+  const firstStart = new Map<string, number>();
+  let open: { item: string; at: number } | null = null;
+  let last: { item: string; at: number } | null = null;
+  for (const step of position.steps.values()) {
+    const item = itemOf(step.stepKey);
+    if (item === null) continue;
+    const at = Date.parse(step.startedAt ?? step.createdAt);
+    firstStart.set(item, Math.min(firstStart.get(item) ?? at, at));
+    if (last === null || at >= last.at) last = { at, item };
+    if (step.finishedAt === null && (open === null || at >= open.at)) open = { at, item };
+  }
+  const waited = position.waiting === null ? null : itemOf(position.waiting.stepKey);
+  const item = waited ?? open?.item ?? last?.item ?? null;
+  if (item === null) return null;
+  const order = [...firstStart].sort((a, b) => a[1] - b[1]).map(([id]) => id);
+  return { index: order.indexOf(item) + 1, item, of: null };
+}
+
+/**
+ * The station and lane states of a flow for one run. A node is a station when its id is the
+ * family of a step the run recorded or waits at (`stepFamily`); every other node narrates. A run
+ * that looped over items shows them all together once it succeeded, and otherwise only the steps
+ * of `pass`, the item it is on or ended in, so a later family never looks done from an earlier
+ * item. A replay names its own pass; a real run's comes from `runPass`. A narration node is
  * done when the run started and every lane into it is either taken (from a done node with no
  * other way out) or never coming (from a branch that left another way, or from a node behind
  * one), so a trigger lights at the start, a branch stays open until the run picks a side, and the
@@ -103,15 +150,30 @@ export function waitingStep(run: RunFacts): WaitingStep | null {
 export function trackForRun(
   flow: FlowGraph,
   run: Pick<RunDetail, "startedAt" | "status">,
-  position: RunPosition,
-  /** The step keys of the deployed code; a node named after one is a station even before the run reaches it. */
-  stepKeys: ReadonlySet<string>,
+  recorded: RunPosition,
+  /** The step families of the deployed code; a node named after one is a station even before the run reaches it. */
+  families: ReadonlySet<string>,
+  pass: ItemPass | null = runPass(recorded, families),
 ): TrackGraph {
+  const shown = run.status === "succeeded" ? null : pass;
+  const position = onePass(recorded, families, shown);
   const finished = !isOpenRun(run.status);
   const states = new Map<string, TrackNode>();
   const startOf = waitStarts(run, position);
+  const byFamily = groupBy([...position.steps.values()], (step) => stepFamily(step.stepKey));
   for (const node of flow.nodes) {
-    states.set(node.id, stationFor(node, run, position, stepKeys, startOf));
+    states.set(
+      node.id,
+      stationFor(
+        node,
+        run,
+        byFamily.get(node.id) ?? [],
+        position.waiting,
+        families,
+        startOf,
+        shown,
+      ),
+    );
   }
   const started = run.startedAt !== null;
   const outgoing = groupBy(flow.edges, (edge) => edge.from);
@@ -209,12 +271,47 @@ export function trackForRun(
     }
     if (!changed) break;
   }
-  const nodes = flow.nodes.map((node) => states.get(node.id) as TrackNode);
-  return {
+  return markUntaken({
     direction: flow.direction,
     edges: lanesFor(flow.edges, states, finished, evidenceAt),
-    nodes,
-  };
+    nodes: flow.nodes.map((node) => states.get(node.id) as TrackNode),
+  });
+}
+
+/** The steps without an item, and of those that name one, only `pass`'s; every step when null. */
+function onePass(
+  position: RunPosition,
+  families: ReadonlySet<string>,
+  pass: ItemPass | null,
+): RunPosition {
+  if (pass === null) return position;
+  const itemOf = (key: string) => (families.has(stepFamily(key)) ? stepItem(key) : null);
+  const steps = [...position.steps].filter(([key]) => [null, pass.item].includes(itemOf(key)));
+  return { ...position, steps: new Map(steps) };
+}
+
+/**
+ * An idle node whose every lane in is untaken can no longer be reached, so it is untaken and so are
+ * its lanes out. Spreads along lanes, one pass per rank at most.
+ */
+function markUntaken(track: TrackGraph): TrackGraph {
+  let { edges, nodes } = track;
+  for (let pass = 0; pass < nodes.length; pass += 1) {
+    const incoming = groupBy(edges, (edge) => edge.to);
+    const cut = new Set(
+      nodes
+        .filter((node) => node.state === "idle")
+        .filter((node) => {
+          const lanes = incoming.get(node.id) ?? [];
+          return lanes.length > 0 && lanes.every((lane) => lane.state === "untaken");
+        })
+        .map((node) => node.id),
+    );
+    if (cut.size === 0) break;
+    nodes = nodes.map((node) => (cut.has(node.id) ? { ...node, state: "untaken" } : node));
+    edges = edges.map((edge) => (cut.has(edge.from) ? { ...edge, state: "untaken" } : edge));
+  }
+  return { ...track, edges, nodes };
 }
 
 /**
@@ -239,47 +336,66 @@ function waitStarts(
   };
 }
 
+/**
+ * One station from the steps of its family. A family that ran for several items is in the state
+ * of its open item, or done when every item finished, with the items' summed time. A station whose
+ * open step is `pass`'s item names that item: "item 37 · INV-37", or "failed at item 37 · INV-37".
+ */
 function stationFor(
   node: FlowNode,
   run: Pick<RunDetail, "status">,
-  position: RunPosition,
-  stepKeys: ReadonlySet<string>,
+  steps: readonly TrackStep[],
+  runWaiting: WaitingStep | null,
+  families: ReadonlySet<string>,
   startOf: (step: TrackStep) => number | null,
+  pass: ItemPass | null,
 ): TrackNode {
-  const step = position.steps.get(node.id);
-  const waiting = position.waiting?.stepKey === node.id ? position.waiting : null;
+  const waitingHere = runWaiting !== null && stepFamily(runWaiting.stepKey) === node.id;
+  const waiting = waitingHere ? runWaiting : null;
   const key = node.id;
   const base = {
     at: null,
-    durationMs: null,
     id: node.id,
-    key: stepKeys.has(node.id) ? key : null,
+    key: families.has(node.id) ? key : null,
     label: node.label,
     meta: null,
     shape: node.shape,
     state: "idle" as const,
   };
-  if (step === undefined && waiting === null) return base;
-  if (waiting !== null && (step === undefined || step.finishedAt === null)) {
+  const waitedStep = steps.find((step) => step.stepKey === waiting?.stepKey);
+  if (waiting !== null && (waitedStep === undefined || waitedStep.finishedAt === null)) {
     return { ...base, key, meta: waitingInWords(waiting), state: "waiting" };
   }
-  if (step === undefined) return { ...base, key };
-  if (step.finishedAt !== null) {
-    const start = startOf(step);
-    const durationMs = start === null ? null : Date.parse(step.finishedAt) - start;
-    return {
-      ...base,
-      at: Date.parse(step.finishedAt),
-      durationMs,
-      key,
-      meta: durationMs === null ? null : durationInWords(durationMs),
-      state: "done",
-    };
-  }
+  if (steps.length === 0) return base;
+  const items = steps.length > 1 ? `${steps.length} items` : null;
   // Started and not finished: the run is in it, or its attempt died in it.
-  const at = step.startedAt === null ? null : Date.parse(step.startedAt);
-  if (run.status === "running") return { ...base, at, key, state: "running" };
-  return { ...base, at, key, meta: "did not finish", state: "failed" };
+  const open = steps.find((step) => step.finishedAt === null);
+  if (open !== undefined) {
+    const at = open.startedAt === null ? null : Date.parse(open.startedAt);
+    const item =
+      pass !== null && stepItem(open.stepKey) === pass.item
+        ? `${itemInWords(pass)} · ${pass.item}`
+        : null;
+    if (run.status === "running")
+      return { ...base, at, key, meta: item ?? items, state: "running" };
+    const meta = item === null ? "did not finish" : `failed at ${item}`;
+    return { ...base, at, key, meta, state: "failed" };
+  }
+  const ends = steps.map((step) => Date.parse(step.finishedAt ?? ""));
+  const spans = steps.map((step) => {
+    const start = startOf(step);
+    return start === null ? null : Date.parse(step.finishedAt ?? "") - start;
+  });
+  const duration = spans.includes(null)
+    ? null
+    : durationInWords(spans.reduce<number>((sum, span) => sum + (span ?? 0), 0));
+  return {
+    ...base,
+    at: Math.max(...ends),
+    key,
+    meta: [items, duration].filter((part) => part !== null).join(" · ") || null,
+    state: "done",
+  };
 }
 
 function waitingInWords(waiting: WaitingStep): string {
@@ -330,24 +446,23 @@ function lanesFor(
   });
 }
 
-/** Every station idle, with how many of the last runs reached each step beside its label. */
+/** Every station idle, with how many of the last runs reached each step family beside its label. */
 export function staticTrack(
   flow: FlowGraph,
-  stepKeys: ReadonlySet<string>,
+  families: ReadonlySet<string>,
   reach: { readonly runs: number; readonly reached: Readonly<Record<string, number>> } | null,
 ): TrackGraph {
   return {
     direction: flow.direction,
     edges: flow.edges.map((edge) => ({ ...edge, dashed: false, state: "idle" as const })),
     nodes: flow.nodes.map((node) => {
-      const key = stepKeys.has(node.id) ? node.id : null;
+      const key = families.has(node.id) ? node.id : null;
       const meta =
         key !== null && reach !== null && reach.runs > 0
           ? `${reach.reached[key] ?? 0} of ${reach.runs} ${reach.runs === 1 ? "run" : "runs"}`
           : null;
       return {
         at: null,
-        durationMs: null,
         id: node.id,
         key,
         label: node.label,
@@ -359,7 +474,7 @@ export function staticTrack(
   };
 }
 
-/** The step whose code the Play tab shows in colour: running, waiting or failed, else the last done. */
+/** The step family whose code the Play tab shows in colour: running, waiting or failed, else the last done. */
 export function activeStep(track: TrackGraph): string | null {
   const stations = track.nodes.filter((node) => node.key !== null);
   for (const state of ["running", "waiting", "failed"] as const) {
@@ -375,11 +490,18 @@ export function activeStep(track: TrackGraph): string | null {
 }
 
 // Replay: a finished run's step and wait spans on a compressed clock, so a two-day approval takes a
-// second to watch. `positionAt` turns a point on that clock back into station states.
+// second to watch. A run that looped over items replays one pass per item: the steps of a family
+// the code calls whose key names an item (`upload:INV-1`, see `stepItem`) play together, in the
+// order the items started, and
+// each pass lights the stations of its own item alone (`replayPass`, handed to `trackForRun`). A
+// step without an item keeps its place in time. `positionAt` turns a point on that clock back into
+// the steps done, running and waiting by then.
 
 interface ReplaySpan {
   readonly kind: "step" | "wait";
   readonly key: string;
+  /** The item the key names after its family (`stepItem`); null for a step that runs once. */
+  readonly item: string | null;
   /** Real time, ms since the run started. */
   readonly from: number;
   readonly to: number;
@@ -389,12 +511,22 @@ interface ReplaySpan {
 }
 
 export interface Replay {
+  /** In playback order: by item pass, then by the order the steps finished. */
   readonly spans: readonly ReplaySpan[];
   /** Compressed playback length in ms. */
   readonly length: number;
   readonly compressed: boolean;
   /** The run's start, ms since the epoch, which the spans count from. */
   readonly startedAt: number;
+  /** The items the run's steps named, in the order they started; one replay pass each. */
+  readonly items: readonly string[];
+  /** Whether the run succeeded, so `items` is every item it did and the counter can say "of". */
+  readonly succeeded: boolean;
+  /**
+   * Whether the run recorded no step at all. A run whose first step started and failed, or was
+   * canceled or timed out in it, has no span to play either, but it did a step.
+   */
+  readonly didNoStep: boolean;
 }
 
 /** The longest a span or the gap before it plays; what takes longer is compressed to this. */
@@ -402,55 +534,114 @@ const SPAN_PLAY_MS = 1_500;
 const GAP_PLAY_MS = 400;
 /** The shortest a span plays, so a 3 ms step is still seen. */
 const SPAN_PLAY_MIN_MS = 350;
+/** How long a run that recorded no step plays: long enough to see its trigger light. */
+const EMPTY_PLAY_MS = 1_000;
 
 const WAIT_KINDS = new Set<StepSite["kind"]>(["sleep", "child", "event", "approval"]);
 
 /**
- * The run's steps in the order they finished. A step that reported its start spans its own time;
+ * A span in real time, before it gets its place on the playback clock. `started` is when the run
+ * recorded the step starting, unclamped: it orders and numbers the item passes, so items that
+ * overlap play in the order they started even when a later one finished first.
+ */
+type RealSpan = Omit<ReplaySpan, "playFrom" | "playTo"> & { readonly started: number };
+
+/**
+ * The run's finished steps on the replay clock. A step that reported its start spans its own time;
  * a wait, which has no start, spans from the previous step's end to its resume.
  */
 export function buildReplay(
-  run: Pick<RunDetail, "startedAt" | "finishedAt">,
+  run: Pick<RunDetail, "startedAt" | "finishedAt" | "status">,
   steps: readonly TrackStep[],
   sites: readonly StepSite[],
 ): Replay {
   const startedAt = Date.parse(run.startedAt ?? "") || 0;
-  const kinds = new Map(sites.map((site) => [site.key, site.kind]));
+  const kinds = kindsByFamily(sites);
   const finishedSteps = steps
     .filter((step) => step.finishedAt !== null)
     .sort((a, b) => Date.parse(a.finishedAt ?? "") - Date.parse(b.finishedAt ?? ""));
+  const real: RealSpan[] = [];
+  let finishedCursor = 0;
+  for (const step of finishedSteps) {
+    const to = Date.parse(step.finishedAt ?? "") - startedAt;
+    const kind = WAIT_KINDS.has(kinds.get(stepFamily(step.stepKey)) ?? "step") ? "wait" : "step";
+    const from =
+      step.startedAt === null || kind === "wait"
+        ? finishedCursor
+        : Math.max(finishedCursor, Date.parse(step.startedAt) - startedAt);
+    // Only a family the code calls makes passes; a claim's `claim:<key>` names no item of the loop.
+    const item = kinds.has(stepFamily(step.stepKey)) ? stepItem(step.stepKey) : null;
+    // A wait reports no start; its row is written when the run reached it. `runPass` counts the same way.
+    const started = Date.parse(step.startedAt ?? step.createdAt) - startedAt;
+    real.push({ from, item, key: step.stepKey, kind, started, to });
+    finishedCursor = Math.max(finishedCursor, to);
+  }
+  const ordered = byItemPass(real);
   const spans: ReplaySpan[] = [];
   let realCursor = 0;
   let playCursor = 0;
   let compressed = false;
-  for (const step of finishedSteps) {
-    const to = Date.parse(step.finishedAt ?? "") - startedAt;
-    const kind = WAIT_KINDS.has(kinds.get(step.stepKey) ?? "step") ? "wait" : "step";
-    const from =
-      step.startedAt === null || kind === "wait"
-        ? realCursor
-        : Math.max(realCursor, Date.parse(step.startedAt) - startedAt);
-    const gap = from - realCursor;
+  for (const { started: _, ...span } of ordered) {
+    const gap = Math.max(0, span.from - realCursor);
     if (gap > GAP_PLAY_MS) compressed = true;
     playCursor += Math.min(gap, GAP_PLAY_MS);
-    const real = Math.max(0, to - from);
-    const play = Math.min(Math.max(real, SPAN_PLAY_MIN_MS), SPAN_PLAY_MS);
-    if (real > SPAN_PLAY_MS) compressed = true;
-    spans.push({
-      from,
-      key: step.stepKey,
-      kind,
-      playFrom: playCursor,
-      playTo: playCursor + play,
-      to,
-    });
+    const realMs = Math.max(0, span.to - span.from);
+    const play = Math.min(Math.max(realMs, SPAN_PLAY_MIN_MS), SPAN_PLAY_MS);
+    if (realMs > SPAN_PLAY_MS) compressed = true;
+    spans.push({ ...span, playFrom: playCursor, playTo: playCursor + play });
     playCursor += play;
-    realCursor = Math.max(realCursor, to);
+    realCursor = Math.max(realCursor, span.to);
   }
   const end = run.finishedAt === null ? realCursor : Date.parse(run.finishedAt) - startedAt;
   const tail = Math.max(0, end - realCursor);
   if (tail > GAP_PLAY_MS) compressed = true;
-  return { compressed, length: playCursor + Math.min(tail, GAP_PLAY_MS), spans, startedAt };
+  const length = playCursor + Math.min(tail, GAP_PLAY_MS);
+  return {
+    compressed,
+    didNoStep: steps.length === 0,
+    items: [...new Set(ordered.flatMap((span) => (span.item === null ? [] : [span.item])))],
+    length: spans.length === 0 ? Math.max(length, EMPTY_PLAY_MS) : length,
+    spans,
+    startedAt,
+    succeeded: run.status === "succeeded",
+  };
+}
+
+/**
+ * The spans in playback order: an item's steps together, where its first step started; a step
+ * without an item where it started. Both by the recorded start, never the clamped `from`. Within a
+ * group the steps keep the order they finished in.
+ */
+function byItemPass(spans: readonly RealSpan[]): readonly RealSpan[] {
+  const groups: { at: number; spans: RealSpan[] }[] = [];
+  const passes = new Map<string, { at: number; spans: RealSpan[] }>();
+  for (const span of spans) {
+    const pass = span.item === null ? undefined : passes.get(span.item);
+    if (pass !== undefined) {
+      pass.spans.push(span);
+      pass.at = Math.min(pass.at, span.started);
+      continue;
+    }
+    const group = { at: span.started, spans: [span] };
+    if (span.item !== null) passes.set(span.item, group);
+    groups.push(group);
+  }
+  return groups.sort((a, b) => a.at - b.at).flatMap((group) => group.spans);
+}
+
+/** The pass at `playMs`: the item of the last item step started by then; null before the first. */
+export function replayPass(replay: Replay, playMs: number): ItemPass | null {
+  let item: string | null = null;
+  for (const span of replay.spans) {
+    if (span.playFrom > playMs) break;
+    if (span.item !== null) item = span.item;
+  }
+  if (item === null) return null;
+  return {
+    index: replay.items.indexOf(item) + 1,
+    item,
+    of: replay.succeeded ? replay.items.length : null,
+  };
 }
 
 /** The wait reason a replayed step stands for, by the kind of its call site. */
@@ -461,7 +652,11 @@ const WAIT_REASON: Partial<Record<StepKind, WaitingStep["reason"]>> = {
   sleep: "sleep",
 };
 
-/** The run as it looked at `playMs` of the replay: done, running and waiting steps at that moment. */
+/**
+ * The run as it looked at `playMs` of the replay: done, running and waiting steps at that moment.
+ * `trackForRun` with `replayPass` at the same point shows only the current item's, so each item
+ * lights its stations anew.
+ */
 export function positionAt(
   replay: Replay,
   playMs: number,
@@ -469,9 +664,9 @@ export function positionAt(
 ): RunPosition {
   const steps = new Map<string, TrackStep>();
   let waiting: WaitingStep | null = null;
-  const kinds = new Map(sites.map((site) => [site.key, site.kind]));
+  const kinds = kindsByFamily(sites);
   for (const span of replay.spans) {
-    if (span.playFrom > playMs) continue;
+    if (span.playFrom > playMs) break;
     const startedAt = new Date(replay.startedAt + span.from).toISOString();
     const open = span.playTo > playMs;
     const finishedAt = open ? null : new Date(replay.startedAt + span.to).toISOString();
@@ -487,7 +682,7 @@ export function positionAt(
       value: null,
     });
     if (open && span.kind === "wait") {
-      const kind = kinds.get(span.key);
+      const kind = kinds.get(stepFamily(span.key));
       waiting = {
         approval:
           kind === "approval"
@@ -505,6 +700,16 @@ export function positionAt(
     }
   }
   return { steps, waiting };
+}
+
+/** What each step family waits for, from its first call site. */
+function kindsByFamily(sites: readonly StepSite[]): ReadonlyMap<string, StepKind> {
+  const kinds = new Map<string, StepKind>();
+  for (const site of sites) {
+    const family = stepFamily(site.key);
+    if (!kinds.has(family)) kinds.set(family, site.kind);
+  }
+  return kinds;
 }
 
 function groupBy<T>(items: readonly T[], key: (item: T) => string): ReadonlyMap<string, T[]> {

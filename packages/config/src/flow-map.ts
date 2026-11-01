@@ -1,5 +1,7 @@
 // The convention that joins an automation's code to its flow.mermaid: a flowchart node whose id
-// equals a step name in the entrypoint is a station the dashboard can light up during a run. This
+// equals a step's family is a station the dashboard can light up during a run. A step key's family
+// is the part before its first ':', so `upload:INV-1` and `upload:INV-2` both light node `upload`,
+// and a key without ':' is its own family. This
 // module finds both sides without a parser dependency: the durable step call sites in an entrypoint
 // (`runStep("key", …)` and the wait helpers, in TypeScript, JavaScript and Python) and the node ids
 // of a Mermaid flowchart. `swizzle validate` compares them and warns; deploy scans the entrypoint
@@ -10,6 +12,11 @@ export type StepKind = "step" | "sleep" | "child" | "event" | "approval";
 
 /** One durable step call in an entrypoint, with the lines it spans. */
 export interface StepSite {
+  /**
+   * The literal step key, or, for a key built at run time from a literal prefix such as
+   * `f"upload:{ref}"` or `` `upload:${ref}` ``, the family before the ':'. Compare it with a step
+   * key or a node id through `stepFamily`.
+   */
   readonly key: string;
   readonly kind: StepKind;
   /** 1-based line of the helper call. */
@@ -21,6 +28,18 @@ export interface StepSite {
 }
 
 export type StepSourceLanguage = "node" | "python";
+
+/** The flow node a step key belongs to: the part before the first ':', or the whole key. */
+export function stepFamily(key: string): string {
+  const colon = key.indexOf(":");
+  return colon === -1 ? key : key.slice(0, colon);
+}
+
+/** The item a step key names after its family, such as `INV-1` in `upload:INV-1`; null without ':'. */
+export function stepItem(key: string): string | null {
+  const colon = key.indexOf(":");
+  return colon === -1 ? null : key.slice(colon + 1);
+}
 
 /** The scanner's language for a config `runtime.language`; TypeScript and JavaScript scan as node. */
 export function stepSourceLanguage(language: unknown): StepSourceLanguage {
@@ -47,8 +66,9 @@ const HELPERS: Readonly<Record<StepSourceLanguage, Readonly<Record<string, StepK
 };
 
 /**
- * The step call sites of one entrypoint, in source order. A call whose first argument is not a
- * string literal is skipped: its key is only known at run time.
+ * The step call sites of one entrypoint, in source order. A key built at run time counts when its
+ * literal start names a family: `f"upload:{ref}"` in Python or `` `upload:${ref}` `` in TypeScript
+ * and JavaScript is a site of family `upload`. Any other key built at run time is skipped.
  */
 export function scanStepSites(language: StepSourceLanguage, source: string): readonly StepSite[] {
   const helpers = HELPERS[language];
@@ -69,7 +89,7 @@ export function scanStepSites(language: StepSourceLanguage, source: string): rea
     if (lexer.peek() !== "(") continue;
     lexer.advance();
     lexer.skipSpace();
-    const key = lexer.readStringArgument();
+    const key = lexer.readKeyArgument();
     if (key === null) continue;
     const target = kind === "child" ? lexer.readSecondStringArgument() : null;
     // The scan goes on inside the arguments, so a call nested in a step's callback is found too.
@@ -280,6 +300,53 @@ class Lexer {
     return null;
   }
 
+  /**
+   * A step key that is the whole argument: a string literal, or the family of a template literal
+   * or Python f-string whose text before its first interpolation holds a ':'. Null otherwise.
+   */
+  readKeyArgument(): string | null {
+    const start = this.index;
+    const literal = this.readStringArgument();
+    if (literal !== null) return literal;
+    this.index = start;
+    const prefix = this.readInterpolatedPrefix();
+    if (prefix === null) return null;
+    const after = this.index;
+    this.skipSpace();
+    const next = this.peek();
+    this.index = after;
+    const colon = prefix.indexOf(":");
+    return (next === "," || next === ")") && colon > 0 ? prefix.slice(0, colon) : null;
+  }
+
+  /**
+   * The text before the first interpolation of a template literal or a single-line Python f-string
+   * at the position, moving past the whole string; null for anything else. A prefix with an escape
+   * is null too: a family is a plain name.
+   */
+  private readInterpolatedPrefix(): string | null {
+    if (this.language === "node") {
+      if (this.peek() !== "`") return null;
+      const open = this.source.indexOf("${", this.index + 1);
+      const text = open === -1 ? null : this.source.slice(this.index + 1, open);
+      this.skipQuoted("`");
+      return text === null || /[\\`]/u.test(text) ? null : text;
+    }
+    const prefix = /^(?:[rR]?[fF]|[fF][rR])(["'])/u.exec(
+      this.source.slice(this.index, this.index + 3),
+    );
+    if (prefix === null) return null;
+    const quote = prefix[1] ?? "";
+    const body = this.index + prefix[0].length;
+    if (this.source[body] === quote && this.source[body + 1] === quote) return null;
+    const end = pythonFStringEnd(this.source, body, quote);
+    if (end === null) return null;
+    const open = this.source.indexOf("{", body);
+    const text = this.source.slice(body, open === -1 || open > end ? end : open);
+    this.index = end + 1;
+    return text.includes("\\") ? null : text;
+  }
+
   /** After the first argument: the second argument when it is a string literal. */
   readSecondStringArgument(): string | null {
     this.skipSpace();
@@ -314,6 +381,41 @@ class Lexer {
       this.advance();
     }
   }
+}
+
+/**
+ * The index of the quote that closes a single-line f-string whose text starts at `from`; null when
+ * the line ends first. Quotes inside a replacement field belong to the expression.
+ */
+function pythonFStringEnd(source: string, from: number, quote: string): number | null {
+  let depth = 0;
+  let i = from;
+  while (i < source.length) {
+    const char = source[i] ?? "";
+    if (char === "\\") {
+      i += 2;
+      continue;
+    }
+    if (char === "\n") return null;
+    if (depth === 0) {
+      if (char === quote) return i;
+      if ((char === "{" || char === "}") && source[i + 1] === char) i += 2;
+      else {
+        if (char === "{") depth = 1;
+        i += 1;
+      }
+      continue;
+    }
+    if (char === "{") depth += 1;
+    else if (char === "}") depth -= 1;
+    else if (char === '"' || char === "'") {
+      const close = source.indexOf(char, i + 1);
+      if (close === -1) return null;
+      i = close;
+    }
+    i += 1;
+  }
+  return null;
 }
 
 /**
@@ -504,15 +606,15 @@ function skipArrow(line: string, from: number): number {
 }
 
 export interface FlowDriftWarning {
-  /** The step key without a node. */
+  /** The step family without a node. */
   readonly id: string;
   readonly message: string;
 }
 
 /**
- * Where the flow and the code disagree: a step the entrypoint calls that no node of flow.mermaid
- * names, so the dashboard cannot light it. A node without a step is narration, such as a trigger
- * or a decision, and never drifts.
+ * Where the flow and the code disagree: a step family the entrypoint calls that no node of
+ * flow.mermaid names, so the dashboard cannot light it. A node without a step is narration, such
+ * as a trigger or a decision, and never drifts.
  */
 export function flowDrift(
   nodeIds: readonly string[],
@@ -520,9 +622,12 @@ export function flowDrift(
 ): readonly FlowDriftWarning[] {
   const nodes = new Set(nodeIds);
   return sites
-    .filter((site) => !nodes.has(site.key))
-    .map((site) => ({
-      id: site.key,
-      message: `step "${site.key}" (line ${site.startLine}) has no node of that id in flow.mermaid; the dashboard cannot light it up.`,
-    }));
+    .filter((site) => !nodes.has(stepFamily(site.key)))
+    .map((site) => {
+      const family = stepFamily(site.key);
+      return {
+        id: family,
+        message: `step "${family}" (line ${site.startLine}) has no node of that id in flow.mermaid; the dashboard cannot light it up.`,
+      };
+    });
 }

@@ -2,7 +2,11 @@
 // with no run selected, every station with how many recent runs reached it. It folds away, and the
 // browser remembers the fold. A run waiting at an approval station is decided on that station.
 
-import { type ApprovalDetailsInWords, approvalDetailsInWords } from "@swizzle/config/browser";
+import {
+  type ApprovalDetailsInWords,
+  approvalDetailsInWords,
+  stepFamily,
+} from "@swizzle/config/browser";
 import { useEffect, useState } from "react";
 import type { RunDetail } from "../lib/api";
 import { activeStep, staticTrack, type TrackNode, trackForRun } from "../lib/track";
@@ -55,7 +59,7 @@ export function FlowTrack(props: {
         <DriftNote flow={flow} />
       </div>
       {folded ? null : run === null ? (
-        <Track testId="track" track={staticTrack(graph, flow.stepKeys, flow.reach)} />
+        <Track testId="track" track={staticTrack(graph, flow.families, flow.reach)} />
       ) : (
         <RunTrack
           approvalOnTrack={props.approvalOnTrack}
@@ -99,7 +103,7 @@ function RunTrack(props: {
 }) {
   const { position } = useRunPosition(props.run);
   const phone = usePhone();
-  const track = trackForRun(props.graph, props.run, position, props.flow.stepKeys);
+  const track = trackForRun(props.graph, props.run, position, props.flow.families);
   return (
     <Track
       direction={phone ? "TB" : props.graph.direction}
@@ -116,7 +120,11 @@ function RunTrack(props: {
  * asks, who decides, and Approve and Reject.
  */
 export function approvalOnStation(node: TrackNode, run: RunDetail) {
-  if (node.state !== "waiting" || run.approval === null || run.approval.stepKey !== node.key) {
+  if (
+    node.state !== "waiting" ||
+    run.approval === null ||
+    stepFamily(run.approval.stepKey) !== node.key
+  ) {
     return null;
   }
   const asks = approvalDetailsInWords(run.approval.details);

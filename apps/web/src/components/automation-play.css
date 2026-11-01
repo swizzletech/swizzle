@@ -71,8 +71,12 @@
     white-space: pre;
     min-height: 1.65em;
   }
+  /* A long tag, such as the item a step failed at, is cut; its title holds it whole. */
   .pl .tag {
     flex: none;
+    max-width: 26ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
     margin-left: auto;
     padding: 1px 7px;
     border-radius: 6px;
@@ -127,7 +131,7 @@
   }
   .play-inline,
   .play-pin,
-  .play-bar {
+  .play-bars {
     display: none;
   }
   /* Without a flowchart there is no rail; the replay transport then sits under the code. */
@@ -140,9 +144,25 @@
   }
   .play-transport {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
+    gap: 6px 10px;
     width: 100%;
+  }
+  /* The item counter of a run that looped, and the line of a run that did no step, take a row of
+     their own under the scrubber; a long item id is cut, its title holds it whole. */
+  .play-transport > .t-meta {
+    display: flex;
+    flex: 1 0 100%;
+    gap: 8px;
+    min-width: 0;
+  }
+  .play-pass code {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--ink-2);
   }
   .play-transport input[type="range"] {
     flex: 1 1 auto;
@@ -170,20 +190,18 @@
       display: block;
       padding: 8px 12px 4px;
     }
+    /* In the code's flow rather than placed by the track; relative, so a running card's halo
+       rings the card. */
     .station.st-card {
-      position: static;
+      position: relative;
       display: flex;
       width: 100%;
       align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      padding: 7px 12px;
-      font: 600 12.5px var(--font-sans);
+      gap: 9px;
+      padding: 8px 11px;
+      font: 400 12.5px / 1.3 var(--font-sans);
       text-align: left;
       cursor: pointer;
-    }
-    .station.st-card .st-meta {
-      font-weight: 500;
     }
     .play-pin {
       position: sticky;
@@ -198,10 +216,29 @@
       background: var(--surface);
       font-size: 13px;
     }
-    .play-bar {
+    /* One line: the label keeps what it needs, and a long meta such as an item id is cut. */
+    .play-pin b,
+    .play-pin .t-meta {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .play-pin .t-meta {
+      flex: 1 1 0;
+    }
+    /* The transport or live item counter and the Approve and Reject bar stack at the bottom. */
+    .play-bars {
       position: sticky;
       bottom: 0;
       z-index: 2;
+      display: grid;
+      gap: 8px;
+    }
+    .play-bars:empty {
+      display: none;
+    }
+    .play-bar {
       display: flex;
       align-items: center;
       gap: 10px;
@@ -211,7 +248,6 @@
       background: var(--surface);
     }
     .play-approve {
-      bottom: 0;
       flex-wrap: wrap;
       justify-content: space-between;
       background: var(--tint-warn);

@@ -3,6 +3,27 @@
 Each release lists changes for people who run Swizzle and write automations.
 Versions follow Semantic Versioning. Tags use `vX.Y.Z`; pre-releases use `X.Y.Z-rc.N`.
 
+## 1.2.0
+
+### Added
+
+- The Play tab follows automations that loop over items. A step named `<family>:<item>`, such as `upload:INV-7`, lights the flowchart node whose id is the family, here `upload`. The step scan reads the family of f-string and template literal step names, so the code view brackets steps inside loops and `swizzle validate` reports a family without a node. [Write an automation](docs/how-to/write-an-automation.md) describes the convention.
+- Replaying a run that looped over items plays one pass per item, in the order the items started, with an item counter. While a looping run is open or after it failed, the flowchart and the counter show the item it is on or ended in.
+
+### Changed
+
+- Flow steps are drawn as cards with a state symbol. Triggers, decisions and ends are quiet markers, and a branch the run did not take fades.
+- Dependencies are updated within their existing major versions.
+
+### Fixed
+
+- Later nodes of a looping run no longer look done because an earlier item passed them.
+- A run that failed in its first step no longer says it did no step.
+
+### Security
+
+- glob moves to 14.0.2, which fixes moderate advisories in glob (GHSA-3g3m-2fjr-6pw4) and minimatch (GHSA-g3hv-75wg-m249) reached through development and telemetry dependencies.
+
 ## 1.1.0
 
 ### Added

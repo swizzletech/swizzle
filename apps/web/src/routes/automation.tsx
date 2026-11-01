@@ -4,6 +4,7 @@ import { useConfirm } from "../components/confirm";
 // under the live track and beside the selected run, About (README, flow, trigger, what it needs,
 // API check, vars), Play (the deployed code with a run moving through it) and Versions.
 
+import { stepFamily } from "@swizzle/config/browser";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
@@ -319,7 +320,9 @@ function RunsTab(props: {
   // run chosen the track sits below the panel, so the panel decides. Track and panel read this one
   // answer, so exactly one of them shows Approve and Reject.
   const approvalOnTrack = (stepKey: string) =>
-    view.list && !folded && (flow.graph?.nodes.some((node) => node.id === stepKey) ?? false);
+    view.list &&
+    !folded &&
+    (flow.graph?.nodes.some((node) => node.id === stepFamily(stepKey)) ?? false);
 
   if (runsQuery.isError) {
     return (
@@ -415,7 +418,7 @@ function AboutTab({ automation }: { readonly automation: AutomationDetail }) {
         {/* A flowchart is drawn as the track with reach counts; any other diagram by Mermaid. */}
         {flow.graph !== null ? (
           <AboutCard title="Flow">
-            <Track testId="track" track={staticTrack(flow.graph, flow.stepKeys, flow.reach)} />
+            <Track testId="track" track={staticTrack(flow.graph, flow.families, flow.reach)} />
           </AboutCard>
         ) : flow.mermaid !== null && !flow.pending ? (
           <AboutCard title="Flow">

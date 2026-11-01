@@ -8,6 +8,8 @@ import {
   type FlowGraph,
   type FlowNode,
   positionAt,
+  replayPass,
+  runPass,
   staticTrack,
   type TrackStep,
   trackForRun,
@@ -91,7 +93,6 @@ describe("trackForRun", () => {
       trigger: "done",
     });
     expect(track.nodes.find((node) => node.id === "fetch")).toMatchObject({
-      durationMs: 400,
       key: "fetch",
       meta: "0.4 s",
     });
@@ -106,7 +107,7 @@ describe("trackForRun", () => {
     });
   });
 
-  it("dots the branch a finished run never took", () => {
+  it("dots the branch a finished run never took, and the station and lanes behind it", () => {
     const steps = new Map([
       ["fetch", step("fetch", 100, 500)],
       ["notify", step("notify", 600, 900)],
@@ -117,9 +118,9 @@ describe("trackForRun", () => {
       "check>notify": "done",
       "check>review": "untaken",
       "notify>done": "done",
-      "review>notify": "idle",
+      "review>notify": "untaken",
     });
-    expect(states(track.nodes).done).toBe("done");
+    expect(states(track.nodes)).toMatchObject({ done: "done", review: "untaken" });
   });
 
   it("times a wait from the step before it, and dots the branch the run reached by another path", () => {
@@ -132,7 +133,7 @@ describe("trackForRun", () => {
     const finished = run({ finishedAt: at(60_400), status: "succeeded" });
     const track = trackForRun(FLOW, finished, { steps, waiting: null }, KEYS);
     expect(track.nodes.find((node) => node.id === "review")).toMatchObject({
-      durationMs: 59_500,
+      meta: "60 s",
       state: "done",
     });
     expect(lanes(track.edges)).toMatchObject({
@@ -171,12 +172,12 @@ describe("trackForRun", () => {
       { steps, waiting: null },
       new Set(["fetch", "review", "skip"]),
     );
-    expect(states(live.nodes)).toMatchObject({ check: "done", result: "done", skip: "idle" });
+    expect(states(live.nodes)).toMatchObject({ check: "done", result: "done", skip: "untaken" });
     expect(lanes(live.edges)).toMatchObject({
       "check>review": "done",
       "check>skip": "untaken",
       "review>result": "done",
-      "skip>result": "idle",
+      "skip>result": "untaken",
     });
     // Undecided, the end waits: review is still running.
     const open = trackForRun(
@@ -191,7 +192,11 @@ describe("trackForRun", () => {
       },
       new Set(["fetch", "review", "skip"]),
     );
-    expect(states(open.nodes)).toMatchObject({ result: "idle", review: "running", skip: "idle" });
+    expect(states(open.nodes)).toMatchObject({
+      result: "idle",
+      review: "running",
+      skip: "untaken",
+    });
   });
 
   it("shows the approval station waiting with its words, and a step the attempt died in as failed", () => {
@@ -318,6 +323,190 @@ describe("replay", () => {
   });
 });
 
+// trigger → fetch → classify → upload → done, where classify and upload run once per mail.
+const LOOP: FlowGraph = {
+  direction: "TB",
+  edges: [
+    { from: "trigger", label: null, to: "fetch" },
+    { from: "fetch", label: null, to: "classify" },
+    { from: "classify", label: null, to: "upload" },
+    { from: "upload", label: null, to: "done" },
+  ],
+  nodes: [
+    { id: "trigger", label: "Cron", shape: "pill" },
+    { id: "fetch", label: "Fetch mails", shape: "box" },
+    { id: "classify", label: "Classify", shape: "box" },
+    { id: "upload", label: "Upload", shape: "box" },
+    { id: "done", label: "Result", shape: "pill" },
+  ],
+};
+const LOOP_FAMILIES: ReadonlySet<string> = new Set(["fetch", "classify", "upload"]);
+const LOOP_SITES: readonly StepSite[] = [
+  { endLine: 4, key: "fetch", kind: "step", startLine: 4, target: null },
+  { endLine: 6, key: "classify", kind: "step", startLine: 6, target: null },
+  { endLine: 7, key: "upload", kind: "step", startLine: 7, target: null },
+];
+
+describe("step families", () => {
+  const finished = run({ finishedAt: at(10_000), status: "succeeded" });
+  // The mails classify side by side, then upload one by one: b starts first, so it plays first.
+  const steps = [
+    step("fetch", 0, 1_000),
+    // The SDK's claim is a step too; its family has no call site, so it names no pass.
+    step("claim:inbox:b", 1_000, 1_000),
+    step("classify:b", 1_000, 1_800),
+    step("classify:a", 1_100, 2_000),
+    step("classify:c", 1_200, 2_200),
+    step("upload:b", 2_200, 2_600),
+    step("upload:a", 2_600, 3_000),
+    step("upload:c", 3_000, 3_400),
+  ];
+
+  it("lights one station for every item of its family, with the item count and summed time", () => {
+    const all = new Map(steps.map((one) => [one.stepKey, one]));
+    const track = trackForRun(LOOP, finished, { steps: all, waiting: null }, LOOP_FAMILIES);
+    expect(track.nodes.map((node) => [node.id, node.key, node.state, node.meta])).toEqual([
+      ["trigger", null, "done", null],
+      ["fetch", "fetch", "done", "1.0 s"],
+      ["classify", "classify", "done", "3 items · 2.7 s"],
+      ["upload", "upload", "done", "3 items · 1.2 s"],
+      ["done", null, "done", null],
+    ]);
+
+    all.set("upload:c", step("upload:c", 3_000, null));
+    const live = trackForRun(LOOP, run({}), { steps: all, waiting: null }, LOOP_FAMILIES);
+    expect(states(live.nodes)).toMatchObject({ classify: "done", upload: "running" });
+    expect(activeStep(live)).toBe("upload");
+  });
+
+  it("shows the item a failed run died in, so later stations and the end stay dark", () => {
+    const died = new Map(
+      [
+        step("fetch", 0, 1_000),
+        step("classify:a", 1_000, 1_500),
+        step("upload:a", 1_500, 2_000),
+        step("classify:b", 2_000, null),
+      ].map((one) => [one.stepKey, one]),
+    );
+    const dead = run({ finishedAt: at(3_000), status: "dead-lettered" });
+    const position = { steps: died, waiting: null };
+    const track = trackForRun(LOOP, dead, position, LOOP_FAMILIES);
+    expect(states(track.nodes)).toEqual({
+      classify: "failed",
+      done: "idle",
+      fetch: "done",
+      trigger: "done",
+      upload: "idle",
+    });
+    // The total is unknown: the run never reached the items after b.
+    expect(runPass(position, LOOP_FAMILIES)).toEqual({ index: 2, item: "b", of: null });
+    expect(track.nodes.find((node) => node.id === "classify")?.meta).toBe("failed at item 2 · b");
+    const replay = buildReplay(dead, [...died.values()], LOOP_SITES);
+    expect(replayPass(replay, replay.length)).toEqual({ index: 1, item: "a", of: null });
+  });
+
+  it("replays one pass per item, in the order the items started, lighting that item alone", () => {
+    const replay = buildReplay(finished, steps, LOOP_SITES);
+    expect(replay.items).toEqual(["b", "a", "c"]);
+    expect(replay.spans.map((span) => span.key)).toEqual([
+      "fetch",
+      "claim:inbox:b",
+      "classify:b",
+      "upload:b",
+      "classify:a",
+      "upload:a",
+      "classify:c",
+      "upload:c",
+    ]);
+
+    const uploadA = replay.spans[5];
+    const midUploadA = ((uploadA?.playFrom ?? 0) + (uploadA?.playTo ?? 0)) / 2;
+    expect(replayPass(replay, midUploadA)).toEqual({ index: 2, item: "a", of: 3 });
+    const track = trackForRun(
+      LOOP,
+      run({}),
+      positionAt(replay, midUploadA, LOOP_SITES),
+      LOOP_FAMILIES,
+      replayPass(replay, midUploadA),
+    );
+    expect(states(track.nodes)).toEqual({
+      classify: "done",
+      done: "idle",
+      fetch: "done",
+      trigger: "done",
+      upload: "running",
+    });
+    expect(track.nodes.find((node) => node.id === "upload")?.meta).toBe("item 2 of 3 · a");
+
+    const startOfC = replay.spans[6]?.playFrom ?? 0;
+    const newPass = trackForRun(
+      LOOP,
+      run({}),
+      positionAt(replay, startOfC, LOOP_SITES),
+      LOOP_FAMILIES,
+      replayPass(replay, startOfC),
+    );
+    expect(states(newPass.nodes)).toMatchObject({ classify: "running", upload: "idle" });
+    expect(replayPass(replay, 0)).toBeNull();
+  });
+
+  it("orders and numbers overlapping items by when they started, not when they finished", () => {
+    // a starts first and finishes last; b and c start later and finish before it.
+    const overlapping = [
+      step("fetch", 0, 1_000),
+      step("upload:a", 1_000, 3_000),
+      step("upload:b", 1_100, 1_500),
+      step("upload:c", 1_200, 2_000),
+    ];
+    const replay = buildReplay(finished, overlapping, LOOP_SITES);
+    expect(replay.items).toEqual(["a", "b", "c"]);
+    expect(replay.spans.map((span) => span.key)).toEqual([
+      "fetch",
+      "upload:a",
+      "upload:b",
+      "upload:c",
+    ]);
+    const passes = replay.spans.slice(1).map((span) => replayPass(replay, span.playFrom));
+    expect(passes).toEqual([
+      { index: 1, item: "a", of: 3 },
+      { index: 2, item: "b", of: 3 },
+      { index: 3, item: "c", of: 3 },
+    ]);
+    // A live run numbers the same items the same way.
+    const live = new Map(overlapping.map((one) => [one.stepKey, one]));
+    live.set("upload:a", step("upload:a", 1_000, null));
+    expect(runPass({ steps: live, waiting: null }, LOOP_FAMILIES)).toEqual({
+      index: 1,
+      item: "a",
+      of: null,
+    });
+  });
+
+  it("does not call a run that failed in its first step a run that did no step", () => {
+    const dead = run({ finishedAt: at(2_000), status: "dead-lettered" });
+    const replay = buildReplay(dead, [step("upload:a", 100, null)], LOOP_SITES);
+    expect([replay.spans, replay.didNoStep]).toEqual([[], false]);
+  });
+
+  it("gives a run that recorded no step a replay of its trigger alone", () => {
+    const replay = buildReplay(run({ finishedAt: at(5), status: "succeeded" }), [], LOOP_SITES);
+    expect([replay.spans, replay.items, replay.length, replay.didNoStep]).toEqual([
+      [],
+      [],
+      1_000,
+      true,
+    ]);
+    const track = trackForRun(LOOP, run({}), positionAt(replay, 500, LOOP_SITES), LOOP_FAMILIES);
+    expect(states(track.nodes)).toEqual({
+      classify: "idle",
+      done: "idle",
+      fetch: "idle",
+      trigger: "done",
+      upload: "idle",
+    });
+  });
+});
+
 // check{Taken?} ─yes→ accepted ─→ ship (step)
 //               ─no→  rejected ─→ archive (step)
 // Both lanes of the decision lead to narration nodes, and only the step behind a lane tells which
@@ -349,9 +538,13 @@ describe("trackForRun with a decision between narration nodes", () => {
       "accepted>ship": "done",
       "check>accepted": "done",
       "check>rejected": "untaken",
-      "rejected>archive": "idle",
+      "rejected>archive": "untaken",
     });
-    expect(states(track.nodes)).toMatchObject({ accepted: "done", rejected: "idle" });
+    expect(states(track.nodes)).toMatchObject({
+      accepted: "done",
+      archive: "untaken",
+      rejected: "untaken",
+    });
   });
 
   it("leaves both lanes open when no step shows which one the run took", () => {

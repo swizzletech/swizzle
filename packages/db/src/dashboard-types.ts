@@ -471,7 +471,7 @@ export interface DashboardAutomationSource {
   readonly steps: readonly StepSite[];
 }
 
-/** How many of an automation's last runs reached each step, for the track without a run. */
+/** How many of an automation's last runs reached each step family, for the track without a run. */
 export interface DashboardStepReach {
   readonly runs: number;
   readonly reached: Readonly<Record<string, number>>;
@@ -553,7 +553,7 @@ export interface DashboardStore {
   listRuns(query: DashboardRunsQuery): Promise<DashboardRunsResult>;
   listQueuedRuns(environment: string, scope: ReadScope): Promise<readonly DashboardQueuedRuns[]>;
   listRunSteps(runId: string): Promise<readonly DashboardRunStep[]>;
-  /** Over the automation's last `limit` runs: how many reached each step. */
+  /** Over the automation's last `limit` runs: how many reached each step family. */
   countStepReach(
     automationSlug: string,
     environment: string,

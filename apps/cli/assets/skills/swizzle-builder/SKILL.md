@@ -320,7 +320,7 @@ Rules:
 - **Update both whenever the logic changes.** Any change to behavior, inputs or outputs, triggers, branching, external services, secrets or connections, state, failure handling, or operational usage requires a matching README and Mermaid update. Treat `config.yaml`, the entrypoint, `README.md`, and `flow.mermaid` as a synchronized set.
 - **Keep the README operationally useful.** Document purpose, trigger/input, output or side effects, required secrets/connections, relevant state or idempotency behavior, and how to test or operate the automation. Do not include secret values.
 - **Keep the diagram honest.** Show actual branching (success / error / skip), external services touched, state reads/writes. Don't hide the retry or dead-letter paths if they matter.
-- **Name a node after its step.** A node whose id equals a step name (`parse[Parse the payload]` for `runStep("parse", …)`) is lit in the dashboard while that step runs. `swizzle validate` warns where the ids and the step names differ; the warning never blocks a deploy.
+- **Name a node after its step.** A node whose id equals a step's family, the step name before its first `:` or the whole name, is lit in the dashboard while that step runs: `parse[Parse the payload]` for `runStep("parse", …)`, and `upload[Upload each invoice]` for every `` runStep(`upload:${invoice.id}`, …) `` in a loop. `swizzle validate` warns where a family has no node; the warning never blocks a deploy.
 - Pure formatting, comment-only, or internal refactors that do not change behavior do not require rewriting the files, but verify that both still describe the resulting automation accurately.
 
 Minimal example, for an entrypoint with the steps `check`, `charge` and `notify`:

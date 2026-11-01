@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { extractFlowNodeIds, flowDrift, scanStepSites } from "./flow-map.js";
+import { extractFlowNodeIds, flowDrift, scanStepSites, stepFamily, stepItem } from "./flow-map.js";
 
 const NODE_SOURCE = `import { runStep, requestApproval, invokeAutomation, sleep } from "./swizzle-sdk.ts";
 // runStep("in-a-comment", () => 1)
@@ -77,6 +77,32 @@ await runStep("after", fn);
     ]);
   });
 
+  it("reads the family of a key built in a loop, in Python and TypeScript", () => {
+    const python = `for ref in refs:
+    run_step(f"upload:{ref}", lambda: upload(ref))
+    run_step(f'move:{refs[ref]["id"]}:{n}', lambda: move(ref))
+    run_step(f"upload-{ref}", lambda: 1)
+    run_step(f"{ref}:upload", lambda: 1)
+    run_step(F"Check:{ref}",
+        lambda: 1)
+`;
+    expect(scanStepSites("python", python)).toEqual([
+      { endLine: 2, key: "upload", kind: "step", startLine: 2, target: null },
+      { endLine: 3, key: "move", kind: "step", startLine: 3, target: null },
+      { endLine: 7, key: "Check", kind: "step", startLine: 6, target: null },
+    ]);
+    const node = `for (const ref of refs) {
+  await runStep(\`upload:\${ref}\`, () => upload(ref));
+  await runStep(\`upload-\${ref}\`, () => 1);
+  await requestApproval(\`approve:\${ref.id}\`, { details: {} });
+}
+`;
+    expect(scanStepSites("node", node)).toEqual([
+      { endLine: 2, key: "upload", kind: "step", startLine: 2, target: null },
+      { endLine: 4, key: "approve", kind: "approval", startLine: 4, target: null },
+    ]);
+  });
+
   it("ignores the helper's own definition in an SDK copy", () => {
     const sdk = `export async function runStep<T>(name: string, fn: () => T): Promise<T> {\n  return fn();\n}\n`;
     expect(scanStepSites("node", sdk)).toEqual([]);
@@ -144,9 +170,31 @@ describe("flowDrift", () => {
     expect(drift[0]?.message).toContain("line 8");
   });
 
+  it("checks a step family against the node ids", () => {
+    const loop = scanStepSites("python", 'run_step(f"upload:{ref}", f)\nrun_step("move:all", g)\n');
+    expect(flowDrift(["upload", "move"], loop)).toEqual([]);
+    expect(flowDrift(["uploads", "move"], loop)).toEqual([
+      {
+        id: "upload",
+        message:
+          'step "upload" (line 1) has no node of that id in flow.mermaid; the dashboard cannot light it up.',
+      },
+    ]);
+  });
+
   it("finds nothing when every step has a node", () => {
     expect(
       flowDrift(["trigger", "parse", "cool-down", "review", "notify", "plain-template"], sites),
     ).toEqual([]);
+  });
+});
+
+describe("stepFamily", () => {
+  it("splits a key at its first ':'", () => {
+    expect([stepFamily("upload:INV-1:2"), stepItem("upload:INV-1:2")]).toEqual([
+      "upload",
+      "INV-1:2",
+    ]);
+    expect([stepFamily("fetch"), stepItem("fetch")]).toEqual(["fetch", null]);
   });
 });
