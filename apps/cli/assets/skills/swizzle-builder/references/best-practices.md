@@ -60,7 +60,7 @@ Pick the platform primitive that matches the durability boundary:
 
 Rules:
 - Treat each durable step as a transaction boundary. If the step body performs a side effect and then crashes before returning, that side effect can happen again on retry. Make the side effect idempotent or split it into smaller named steps.
-- Use stable, unique step names per run. In loops, include the item id or index.
+- Use stable, unique step names per run. In loops, name each step `<family>:<item id>` (`upload:INV-7`); the family before the `:` is the flowchart node the step lights.
 - Do not use worker-local files as durable ledgers. Use state for small JSON, external storage for files, and durable waits instead of polling loops.
 
 Signatures, semantics, and caps for all of these: [SDK Usage — durable execution primitives](sdk.md#durable-execution-primitives). Resolving waiting runs from the operator side: [Operations — waiting runs](operations.md#waiting-runs-and-durable-resumes).

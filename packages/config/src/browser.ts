@@ -17,6 +17,8 @@ export {
   type StepSite,
   type StepSourceLanguage,
   scanStepSites,
+  stepFamily,
+  stepItem,
   stepSourceLanguage,
 } from "./flow-map.js";
 export { formatIntervalMs } from "./intervals.js";

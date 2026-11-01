@@ -1,9 +1,12 @@
 // Automation Play: the deployed code of a run beside its track. The step the run is in reads in
 // full colour, the rest greys out, and every step's lines carry a bracket and a tag in the state's
 // colour. An open run follows the worker live; a finished run replays on a compressed clock, so a
-// two-day approval passes in a second and a half. Display only: nothing here edits code.
+// two-day approval passes in a second and a half, and a run that looped over items replays one
+// pass per item. The item counter under the track reads the same live, in the replay and at its
+// end, where a failed run names the item it died in. A step's code and its station meet through
+// the step family (`stepFamily`). Display only: nothing here edits code.
 
-import type { StepKind, StepSite } from "@swizzle/config/browser";
+import { type StepKind, type StepSite, stepFamily } from "@swizzle/config/browser";
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
@@ -12,9 +15,12 @@ import { useDashboardClient } from "../lib/dashboard-client";
 import {
   activeStep,
   buildReplay,
+  type ItemPass,
   positionAt,
   type Replay,
   type RunPosition,
+  replayPass,
+  runPass,
   staticTrack,
   type TrackGraph,
   type TrackNode,
@@ -26,7 +32,7 @@ import { assigneeInWords, runStatusInWords } from "../lib/words/runs";
 import { ageInWords, durationInWords } from "../lib/words/time";
 import { ApprovalActions } from "./actions";
 import { approvalOnStation, DriftNote } from "./flow-track";
-import { Track } from "./track";
+import { StationFace, Track } from "./track";
 import { Dot, ErrorNote, Skeleton, useNow } from "./ui";
 import "./automation-play.css";
 
@@ -143,7 +149,7 @@ function StaticPlay(props: { readonly flow: AutomationFlow; readonly source: str
   const track =
     props.flow.graph === null
       ? null
-      : staticTrack(props.flow.graph, props.flow.stepKeys, props.flow.reach);
+      : staticTrack(props.flow.graph, props.flow.families, props.flow.reach);
   return (
     <PlayBody
       active={null}
@@ -162,10 +168,11 @@ function LivePlay(props: {
   readonly source: string;
 }) {
   const { position } = useRunPosition(props.run);
+  const pass = runPass(position, props.flow.families);
   const track =
     props.flow.graph === null
       ? null
-      : trackForRun(props.flow.graph, props.run, position, props.flow.stepKeys);
+      : trackForRun(props.flow.graph, props.run, position, props.flow.families, pass);
   return (
     <PlayBody
       active={track === null ? liveActive(position) : activeStep(track)}
@@ -173,20 +180,26 @@ function LivePlay(props: {
       flow={props.flow}
       source={props.source}
       track={track}
-      transport={null}
+      transport={
+        pass === null ? null : (
+          <div className="play-transport" data-testid="play-transport">
+            <ItemCounter items={null} pass={pass} />
+          </div>
+        )
+      }
     />
   );
 }
 
-/** Without a flowchart there is no track to ask; the newest started step is the active one. */
+/** Without a flowchart there is no track to ask; the newest started step's family is the active one. */
 function liveActive(position: RunPosition): string | null {
-  if (position.waiting !== null) return position.waiting.stepKey;
+  if (position.waiting !== null) return stepFamily(position.waiting.stepKey);
   let latest: { key: string; at: number } | null = null;
   for (const step of position.steps.values()) {
     const at = Date.parse(step.finishedAt ?? step.startedAt ?? "") || 0;
     if (latest === null || at >= latest.at) latest = { at, key: step.stepKey };
   }
-  return latest?.key ?? null;
+  return latest === null ? null : stepFamily(latest.key);
 }
 
 function ReplayPlay(props: {
@@ -236,9 +249,15 @@ function ReplayPlay(props: {
       </div>
     );
   }
-  // At the end the run's own record shows, with every duration exact.
+  // At the end the run's own record shows, with every duration exact: a succeeded run all its
+  // items together, any other the item it ended in.
   const atEnd = playMs === null;
   const position = atEnd ? final : positionAt(replay, playMs, props.flow.sites);
+  const pass = !atEnd
+    ? replayPass(replay, playMs)
+    : props.run.status === "succeeded"
+      ? null
+      : runPass(final, props.flow.families);
   const track =
     props.flow.graph === null
       ? null
@@ -246,7 +265,8 @@ function ReplayPlay(props: {
           props.flow.graph,
           atEnd ? props.run : { startedAt: props.run.startedAt, status: "running" },
           position,
-          props.flow.stepKeys,
+          props.flow.families,
+          pass,
         );
   const transport = (
     <Transport
@@ -259,6 +279,7 @@ function ReplayPlay(props: {
         setPlaying(false);
         setClock(ms >= replay.length ? null : ms);
       }}
+      pass={pass}
       playMs={playMs ?? replay.length}
       playing={playing}
       replay={replay}
@@ -276,11 +297,15 @@ function ReplayPlay(props: {
   );
 }
 
-/** Play, pause and a scrubber over the replay's compressed clock, with the real time it stands for. */
+/**
+ * Play, pause and a scrubber over the replay's compressed clock, with the real time it stands for,
+ * the item counter when the run looped, and a line when the run did no step.
+ */
 function Transport(props: {
   readonly onPause: () => void;
   readonly onPlay: () => void;
   readonly onSeek: (ms: number) => void;
+  readonly pass: ItemPass | null;
   readonly playMs: number;
   readonly playing: boolean;
   readonly replay: Replay;
@@ -291,7 +316,6 @@ function Transport(props: {
       <button
         aria-label={props.playing ? "Pause" : "Play"}
         className="btn small"
-        disabled={replay.spans.length === 0}
         onClick={props.playing ? props.onPause : props.onPlay}
         type="button"
       >
@@ -310,7 +334,30 @@ function Transport(props: {
         {durationInWords(realTimeAt(replay, props.playMs))} in
         {replay.compressed ? " · waits compressed" : ""}
       </span>
+      <ItemCounter items={replay.items.length} pass={props.pass} />
+      {replay.didNoStep ? (
+        <span className="t-meta" data-testid="play-no-steps">
+          This run did no step.
+        </span>
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * The item a looping run is on, "Item 37 of 200" with its id, or "Item 37" while the total is
+ * unknown; without a current item, how many items the run did. Nothing for a run that named none.
+ */
+function ItemCounter(props: { readonly items: number | null; readonly pass: ItemPass | null }) {
+  const { pass } = props;
+  if (pass === null && (props.items ?? 0) === 0) return null;
+  return (
+    <span className="play-pass t-meta" data-testid="play-pass">
+      {pass === null
+        ? `${props.items} ${props.items === 1 ? "item" : "items"}`
+        : `Item ${pass.index}${pass.of === null ? "" : ` of ${pass.of}`}`}
+      {pass === null ? null : <code title={pass.item}>{pass.item}</code>}
+    </span>
   );
 }
 
@@ -340,6 +387,7 @@ const KIND_WORDS: Record<StepKind, string> = {
 };
 
 function tagWords(site: StepSite, station: TrackNode | undefined): string {
+  if (station?.state === "untaken") return "not taken";
   if (station === undefined || station.state === "idle") return KIND_WORDS[site.kind];
   if (station.state === "done") {
     return station.meta === null ? "done" : `done · ${station.meta}`;
@@ -379,7 +427,9 @@ function PlayBody(props: {
         <div className="play-pin" data-testid="play-pin">
           <span className={`dot ${PIN_TONE[pinned.state]}`} />
           <b>{pinned.label}</b>
-          <span className="t-meta">{pinned.meta ?? pinned.state}</span>
+          <span className="t-meta" title={pinned.meta ?? undefined}>
+            {pinned.meta ?? pinned.state}
+          </span>
         </div>
       )}
       <CodePane
@@ -407,22 +457,24 @@ function PlayBody(props: {
       {props.track === null && props.transport !== null ? (
         <div className="play-transport-row">{props.transport}</div>
       ) : null}
-      {props.transport === null ? null : <div className="play-bar">{props.transport}</div>}
-      {props.approval?.approval === null || props.approval === null ? null : (
-        <div className="play-bar play-approve" data-testid="play-approve">
-          <span className="t-meta">
-            Asks: <b>{props.approval.approval.stepKey}</b>
-            {props.approval.approval.assignee === null
-              ? null
-              : ` · assigned to ${assigneeInWords(props.approval.approval.assignee)}`}
-          </span>
-          <ApprovalActions
-            may={props.approval.approval.may}
-            runId={props.approval.runId}
-            stepKey={props.approval.approval.stepKey}
-          />
-        </div>
-      )}
+      <div className="play-bars">
+        {props.transport === null ? null : <div className="play-bar">{props.transport}</div>}
+        {props.approval?.approval === null || props.approval === null ? null : (
+          <div className="play-bar play-approve" data-testid="play-approve">
+            <span className="t-meta">
+              Asks: <b>{props.approval.approval.stepKey}</b>
+              {props.approval.approval.assignee === null
+                ? null
+                : ` · assigned to ${assigneeInWords(props.approval.approval.assignee)}`}
+            </span>
+            <ApprovalActions
+              may={props.approval.approval.may}
+              runId={props.approval.runId}
+              stepKey={props.approval.approval.stepKey}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -438,6 +490,7 @@ const PIN_TONE: Record<TrackNode["state"], string> = {
   failed: "fail",
   idle: "idle",
   running: "run",
+  untaken: "idle",
   waiting: "warn",
 };
 
@@ -450,6 +503,11 @@ function CodePane(props: {
 }) {
   const lines = props.source.split("\n");
   const sites = props.flow.sites;
+  // The first call of each family is where a click on its station scrolls to.
+  const anchors = new Map<string, number>();
+  for (const site of sites) {
+    if (!anchors.has(stepFamily(site.key))) anchors.set(stepFamily(site.key), site.startLine);
+  }
   // The innermost site that spans a line owns it, so a step nested in a step keeps its own bracket.
   const siteAt = (line: number): StepSite | undefined =>
     sites
@@ -463,13 +521,14 @@ function CodePane(props: {
       {lines.map((text, index) => {
         const line = index + 1;
         const site = siteAt(line);
-        const station = site === undefined ? undefined : props.stations.get(site.key);
+        const family = site === undefined ? null : stepFamily(site.key);
+        const station = family === null ? undefined : props.stations.get(family);
         const state = station?.state ?? "idle";
         const first = site?.startLine === line;
         const classes = [
           "pl",
           site === undefined ? "" : `in-step ${state}`,
-          site !== undefined && site.key === props.active ? "focus" : "",
+          family !== null && family === props.active ? "focus" : "",
           first ? "first" : "",
           site?.endLine === line ? "last" : "",
         ].join(" ");
@@ -483,12 +542,14 @@ function CodePane(props: {
             <div
               className={classes}
               data-step={site?.key}
-              id={first && site !== undefined ? `play-step-${site.key}` : undefined}
+              id={first && anchors.get(family ?? "") === line ? `play-step-${family}` : undefined}
             >
               <span className="ln">{line}</span>
               <span className="code">{text}</span>
               {first && site !== undefined ? (
-                <span className={`tag ${state}`}>{tagWords(site, station)}</span>
+                <span className={`tag ${state}`} title={tagWords(site, station)}>
+                  {tagWords(site, station)}
+                </span>
               ) : null}
             </div>
           </div>
@@ -508,14 +569,17 @@ function StationCard(props: {
   const state = station?.state ?? "idle";
   return (
     <button
-      className={`station st-card ${state}`}
+      className={`station card st-card ${state}`}
       data-state={state}
       data-step={props.site.key}
       onClick={() => station && props.onSelect(station)}
       type="button"
     >
-      <span className="st-label">{station?.label ?? props.site.key}</span>
-      <span className="st-meta">{tagWords(props.site, station)}</span>
+      <StationFace
+        label={station?.label ?? props.site.key}
+        meta={tagWords(props.site, station)}
+        state={state}
+      />
     </button>
   );
 }
