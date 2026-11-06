@@ -12,7 +12,6 @@ export type TrackStep = RunStep;
 
 /** A flowchart as Mermaid parsed it, reduced to what the track needs. */
 export interface FlowGraph {
-  readonly direction: "TB" | "LR";
   readonly nodes: readonly FlowNode[];
   readonly edges: readonly FlowEdge[];
 }
@@ -60,7 +59,6 @@ export interface TrackEdge {
 }
 
 export interface TrackGraph {
-  readonly direction: FlowGraph["direction"];
   readonly nodes: readonly TrackNode[];
   readonly edges: readonly TrackEdge[];
 }
@@ -272,7 +270,6 @@ export function trackForRun(
     if (!changed) break;
   }
   return markUntaken({
-    direction: flow.direction,
     edges: lanesFor(flow.edges, states, finished, evidenceAt),
     nodes: flow.nodes.map((node) => states.get(node.id) as TrackNode),
   });
@@ -453,7 +450,6 @@ export function staticTrack(
   reach: { readonly runs: number; readonly reached: Readonly<Record<string, number>> } | null,
 ): TrackGraph {
   return {
-    direction: flow.direction,
     edges: flow.edges.map((edge) => ({ ...edge, dashed: false, state: "idle" as const })),
     nodes: flow.nodes.map((node) => {
       const key = families.has(node.id) ? node.id : null;

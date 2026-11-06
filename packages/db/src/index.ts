@@ -341,6 +341,7 @@ export {
   stepResultView,
   storedStepResult,
 } from "./run-approval.js";
+export { decodeRunCursor, type RunCursor } from "./run-cursor.js";
 export {
   FINISHED_RUN_STATUSES,
   isFinishedRun,

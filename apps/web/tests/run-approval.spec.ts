@@ -24,9 +24,9 @@ for (const overview of ["newest 200 approvals", "failed request"] as const) {
       await expect(panel.getByRole("button", { name: "Cancel run" })).toBeVisible();
       await expect(panel.getByRole("button", { name: decision, exact: true })).toBeVisible();
       await expect(panel.getByRole("heading", { name: "Waiting for approval" })).toBeVisible();
-      await expect(
-        page.getByTestId("run-row").filter({ hasText: APPROVAL_RUN_ID.slice(0, 8) }),
-      ).toContainText("Waiting for approval");
+      await expect(page.locator(`[data-run-id="${APPROVAL_RUN_ID}"]`)).toContainText(
+        "Waiting for approval",
+      );
       await panel.getByLabel("Comment").fill("Checked this older request");
       await panel.getByRole("button", { name: decision, exact: true }).click();
       await expect
@@ -39,9 +39,7 @@ for (const overview of ["newest 200 approvals", "failed request"] as const) {
         .toEqual({ approved: decision === "Approve", comment: "Checked this older request" });
       await expect(panel.getByTestId("approval-card")).toHaveCount(0);
       await expect(panel.getByRole("heading", { name: "Queued", exact: true })).toBeVisible();
-      await expect(
-        page.getByTestId("run-row").filter({ hasText: APPROVAL_RUN_ID.slice(0, 8) }),
-      ).toContainText("Queued");
+      await expect(page.locator(`[data-run-id="${APPROVAL_RUN_ID}"]`)).toContainText("Queued");
     });
   }
 }

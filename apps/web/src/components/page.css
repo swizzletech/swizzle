@@ -1,0 +1,93 @@
+/* Every page: the head, an optional tab bar and the body. The head stays put and the body scrolls;
+   a workbench has no body, its panes scroll themselves. */
+@layer components {
+  .page {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+  }
+  .page-head {
+    display: flex;
+    flex: none;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 12px 16px;
+    max-width: var(--page-width);
+    padding: 24px var(--page-margin) 16px;
+  }
+  .page-title {
+    flex: 1 1 320px;
+    min-width: 0;
+  }
+  .page-path {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 4px;
+    color: var(--ink-3);
+    font-size: 12px;
+    line-height: 16px;
+  }
+  .page-path a {
+    text-decoration: none;
+  }
+  .page-path a:hover {
+    color: var(--ink);
+  }
+  .page-name {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+  }
+  .page-name .dot {
+    align-self: center;
+  }
+  .page-description {
+    max-width: 720px;
+    margin-top: 4px;
+    color: var(--ink-3);
+    font-size: 13px;
+    line-height: 20px;
+  }
+  .page-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .page > .dtabs {
+    padding: 0 var(--page-margin);
+  }
+  .page-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-2) transparent;
+  }
+  .page-content {
+    max-width: var(--page-width);
+    padding: 0 var(--page-margin) var(--page-margin);
+  }
+  .page > .dtabs + .page-body > .page-content {
+    padding-top: 16px;
+  }
+  /* Every page type's width: what a 1920 px window leaves beside the sidebar. A wider window keeps
+     this one right edge, and a narrower one fills up. */
+  .page {
+    --page-width: 1696px;
+  }
+
+  @media (max-width: 900px) {
+    .page {
+      --page-margin: 16px;
+    }
+    .page-head {
+      padding-block: 16px 12px;
+    }
+    .page-content {
+      padding-bottom: 24px;
+    }
+  }
+}

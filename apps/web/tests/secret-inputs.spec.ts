@@ -9,6 +9,7 @@ import { mockDashboardApi, seededState } from "./dashboard-mock";
 test("secret value fields are masked text that password managers skip", async ({ page }) => {
   await mockDashboardApi(page, seededState());
   await page.goto("/credentials?connect=google&name=google-jan");
+  await page.getByTestId("page-head").getByRole("button", { name: "Add secret" }).click();
 
   for (const field of [
     page.getByLabel("Value of VERIFY_SECRET"),
@@ -32,6 +33,7 @@ test("a typed secret value stays out of the accessibility tree", async ({ contex
   const state = seededState();
   await mockDashboardApi(page, state);
   await page.goto("/credentials");
+  await page.getByTestId("page-head").getByRole("button", { name: "Add secret" }).click();
   const form = page.getByTestId("add-secret");
   await form.getByLabel("Secret name").fill("probe");
   const field = form.getByLabel("Secret value");
@@ -59,6 +61,7 @@ test("editing a secret value keeps whole characters", async ({ page }) => {
   const state = seededState();
   await mockDashboardApi(page, state);
   await page.goto("/credentials");
+  await page.getByTestId("page-head").getByRole("button", { name: "Add secret" }).click();
   const field = page.getByTestId("add-secret").getByLabel("Secret value");
   await page.getByTestId("add-secret").getByLabel("Secret name").fill("probe");
 
@@ -82,6 +85,7 @@ test("a secret value set without an edit event is masked and sent", async ({ pag
   const state = seededState();
   await mockDashboardApi(page, state);
   await page.goto("/credentials");
+  await page.getByTestId("page-head").getByRole("button", { name: "Add secret" }).click();
   const form = page.getByTestId("add-secret");
   await form.getByLabel("Secret name").fill("probe");
   const field = form.getByLabel("Secret value");

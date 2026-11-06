@@ -11,6 +11,7 @@ import { flushSync } from "react-dom";
 import { ActionError } from "../components/actions";
 import { useConfirm } from "../components/confirm";
 import { HolderList } from "../components/holder-list";
+import { MenuItem, RowMenu } from "../components/menu";
 import { type Scope, ScopeFields, scopeInput } from "../components/scope-fields";
 import { ShareForm, subjectKey } from "../components/share-form";
 import { CopyButton, ErrorNote, Skeleton, useNow } from "../components/ui";
@@ -59,7 +60,7 @@ export function ServiceAccounts({ access }: { readonly access: ProjectAccess }) 
         </p>
       </div>
       <form
-        className="card setting mb-3.5"
+        className="card setting mb-3"
         onSubmit={(event) => {
           event.preventDefault();
           if (name.trim() !== "" && !create.isPending) create.mutate();
@@ -89,9 +90,9 @@ export function ServiceAccounts({ access }: { readonly access: ProjectAccess }) 
           <Skeleton label="Loading service accounts" lines={3} />
         </div>
       ) : accounts.data.length === 0 ? (
-        <p className="card t-meta px-5 py-4">This project has no service account yet.</p>
+        <p className="card t-meta px-4 py-4">This project has no service account yet.</p>
       ) : (
-        <div className="grid gap-3.5">
+        <div className="grid gap-3">
           {accounts.data.map((account) => (
             <Account access={access} account={account} key={account.id} onChanged={changed} />
           ))}
@@ -124,7 +125,7 @@ function Account(props: {
   return (
     <article
       aria-label={`Service account ${account.name}`}
-      className="card rows overflow-hidden"
+      className="card rows"
       data-testid="service-account"
     >
       <div className="setting">
@@ -148,11 +149,11 @@ function Account(props: {
         </button>
       </div>
       {remove.isError ? (
-        <div className="px-[18px] py-2">
+        <div className="px-4 py-2">
           <ActionError error={remove.error} />
         </div>
       ) : null}
-      <div className="grid gap-2 px-[18px] py-3.5">
+      <div className="grid gap-2 px-4 py-3">
         <div className="flex flex-wrap items-baseline gap-3">
           <b>What it may do</b>
           <button className="btn quiet small" onClick={() => setSharing(true)} type="button">
@@ -233,7 +234,7 @@ function Tokens(props: {
   const error = create.error ?? rotate.error ?? revoke.error;
 
   return (
-    <div className="grid gap-3 px-[18px] py-3.5">
+    <div className="grid gap-3 px-4 py-3">
       <b>Tokens</b>
       {shown === null ? null : (
         <div className="grid gap-2" data-testid="service-token">
@@ -263,7 +264,7 @@ function Tokens(props: {
               {token.issuedBy === null ? "" : ` · issued by ${token.issuedBy.name}`}
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <button
               className="btn quiet small"
               disabled={rotate.isPending}
@@ -275,22 +276,23 @@ function Tokens(props: {
             >
               Rotate
             </button>
-            <button
-              className="btn danger small"
-              disabled={revoke.isPending}
-              onClick={async () => {
-                const question = `Revoke ${token.name}? Whatever uses it loses access at once.`;
-                if (await confirm({ action: "Revoke", question })) revoke.mutate(token.id);
-              }}
-              type="button"
-            >
-              Revoke
-            </button>
+            <RowMenu>
+              <MenuItem
+                danger
+                disabled={revoke.isPending}
+                onClick={async () => {
+                  const question = `Revoke ${token.name}? Whatever uses it loses access at once.`;
+                  if (await confirm({ action: "Revoke", question })) revoke.mutate(token.id);
+                }}
+              >
+                Revoke
+              </MenuItem>
+            </RowMenu>
           </div>
         </div>
       ))}
       <form
-        className="grid gap-3 rounded-[var(--radius-m)] bg-surface-2 p-3"
+        className="grid gap-3 rounded-[var(--radius-card)] bg-surface-2 p-3"
         onSubmit={(event) => {
           event.preventDefault();
           if (name.trim() !== "" && !create.isPending) create.mutate();
@@ -350,7 +352,7 @@ function AccountAudit({ account }: { readonly account: ServiceAccount }) {
   const tokenName = (tokenId: string) =>
     account.tokens.find((token) => token.id === tokenId)?.name ?? "a deleted token";
   return (
-    <div className="grid gap-2 px-[18px] py-3.5" data-testid="service-account-audit">
+    <div className="grid gap-2 px-4 py-3" data-testid="service-account-audit">
       <b>What it did</b>
       {events.isError ? (
         <ErrorNote error={events.error} title="The audit could not be loaded." />
@@ -361,7 +363,7 @@ function AccountAudit({ account }: { readonly account: ServiceAccount }) {
       ) : (
         <div className="rows">
           {events.data.events.map((event) => (
-            <div className="setting px-0 py-1.5" data-testid="audit-event" key={event.id}>
+            <div className="setting px-0 py-2" data-testid="audit-event" key={event.id}>
               <div className="min-w-0">
                 <span>{auditActionInWords(event)}</span>
                 {event.target.automationSlug === null ? null : (

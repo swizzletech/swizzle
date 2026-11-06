@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Chip, ErrorNote, Skeleton } from "../../components/ui";
 import { useDashboardClient } from "../../lib/dashboard-client";
-import { Section } from "./section";
+import { versionInWords } from "../../lib/words/runs";
 
 export function Status() {
   const { api, environment, environments } = useDashboardClient();
@@ -14,22 +14,20 @@ export function Status() {
     queryKey: ["health"],
   });
   return (
-    <Section intro="Whether the platform runs. Problems also show on the Overview." title="Status">
-      <div className="card rows overflow-hidden" data-testid="status">
-        <StatusFact label="Version">
-          <span className="mono">{health.data?.version ?? "…"}</span>
-        </StatusFact>
-        <StatusFact label="Environments">
-          {environments.map((name) => (
-            <span className="mr-2" key={name}>
-              <span className="mono">{name}</span>
-              {name === environment ? <span className="t-faint"> (shown)</span> : null}
-            </span>
-          ))}
-        </StatusFact>
-        <PlatformState />
-      </div>
-    </Section>
+    <div className="card rows overflow-hidden" data-testid="status">
+      <StatusFact label="Version">
+        {health.data === undefined ? "…" : versionInWords(health.data.version)}
+      </StatusFact>
+      <StatusFact label="Environments">
+        {environments.map((name) => (
+          <span className="mr-2" key={name}>
+            <span className="mono">{name}</span>
+            {name === environment ? <span className="t-faint"> (shown)</span> : null}
+          </span>
+        ))}
+      </StatusFact>
+      <PlatformState />
+    </div>
   );
 }
 

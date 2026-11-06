@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { ranOnInWords, runDetailStatusInWords, runDurationInWords, runStatusInWords } from "./runs";
+import {
+  ranOnInWords,
+  runCountInWords,
+  runDetailStatusInWords,
+  runDurationInWords,
+  runRowInWords,
+  runStatusInWords,
+} from "./runs";
 
 const run = {
   approval: null,
@@ -88,5 +95,48 @@ describe("runDetailStatusInWords", () => {
     expect(
       runDetailStatusInWords({ ...run, status: "succeeded", executions: [{ phase: "preparing" }] }),
     ).toBe("Succeeded in 2.0 s");
+  });
+});
+
+describe("runRowInWords", () => {
+  const failed = {
+    ...run,
+    attemptsMade: 3,
+    automationName: "Invoices",
+    status: "failed",
+    triggerType: "cron",
+    version: "1.3.1",
+  } as const;
+
+  it("leads with the automation in a list of all runs", () => {
+    expect(runRowInWords(failed, "automation")).toEqual({
+      line: "Failed · 3 attempts · 2.0 s",
+      title: "Invoices",
+    });
+  });
+
+  it("leads with the state on one automation's page, where the name is the page's", () => {
+    expect(runRowInWords(failed, "state")).toEqual({
+      line: "3 attempts · 2.0 s · cron · v1.3.1",
+      title: "Failed",
+    });
+  });
+
+  it("calls a run its owner cancelled cancelled, and leaves out one attempt", () => {
+    const cancelled = {
+      ...failed,
+      attemptsMade: 1,
+      deadLetterReason: "user-cancelled",
+      status: "dead-lettered",
+    } as const;
+    expect(runRowInWords(cancelled, "automation").line).toBe("Cancelled · 2.0 s");
+  });
+});
+
+describe("runCountInWords", () => {
+  it("says a loaded count is the newest until the list reached its end", () => {
+    expect(runCountInWords(100, false)).toBe("100 newest");
+    expect(runCountInWords(451, true)).toBe("451 runs");
+    expect(runCountInWords(1, true)).toBe("1 run");
   });
 });

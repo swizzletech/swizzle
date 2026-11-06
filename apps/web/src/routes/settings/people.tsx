@@ -9,6 +9,7 @@ import { type UseQueryResult, useMutation, useQuery, useQueryClient } from "@tan
 import { useState } from "react";
 import { ActionError } from "../../components/actions";
 import { type ConfirmRequest, useConfirm } from "../../components/confirm";
+import { MenuItem, RowMenu } from "../../components/menu";
 import { Chip, CopyButton, ErrorNote, Skeleton, useNow } from "../../components/ui";
 import type { InstanceRole, Person, ProjectRole, SentInvitationResponse } from "../../lib/api";
 import { useDashboardClient } from "../../lib/dashboard-client";
@@ -49,7 +50,7 @@ export function People(props: {
   });
 
   return (
-    <div className="card rows overflow-hidden" data-testid="people">
+    <div className="card rows" data-testid="people">
       <Invite mailConfigured={props.mailConfigured} me={props.me.role} onSent={changed} />
       {invitations.isError ? (
         <div className="p-4">
@@ -79,7 +80,7 @@ export function People(props: {
         ))
       )}
       {revoke.isError ? (
-        <div className="px-[18px] py-2">
+        <div className="px-4 py-2">
           <ActionError error={revoke.error} />
         </div>
       ) : null}
@@ -149,13 +150,13 @@ function Invite(props: {
 
   return (
     <form
-      className="setting items-start"
+      className="setting-form"
       onSubmit={(event) => {
         event.preventDefault();
         if (ready) invite.mutate();
       }}
     >
-      <div className="grid gap-3">
+      <div className="grid w-full gap-3">
         {props.mailConfigured ? null : (
           <p className="t-meta m-0">
             This instance sends no mail, so you get a link to send the person yourself.
@@ -188,10 +189,13 @@ function Invite(props: {
               ))}
             </select>
           </label>
+          <button className="btn" disabled={!ready} type="submit">
+            {inviteLabel(invite.isPending, props.mailConfigured)}
+          </button>
         </div>
         {role === "member" ? (
-          <fieldset className="grid gap-1.5 border-0 p-0">
-            <legend className="form-label mb-1.5">Projects</legend>
+          <fieldset className="grid gap-2 border-0 p-0">
+            <legend className="form-label mb-2">Projects</legend>
             {projects.isError ? (
               <ErrorNote error={projects.error} title="The projects could not be loaded." />
             ) : (
@@ -243,9 +247,6 @@ function Invite(props: {
           <InvitationLink invitation={shown} onDone={() => setShown(null)} />
         )}
       </div>
-      <button className="btn" disabled={!ready} type="submit">
-        {inviteLabel(invite.isPending, props.mailConfigured)}
-      </button>
     </form>
   );
 }
@@ -359,71 +360,59 @@ function PersonRow(props: {
             </option>
           ))}
         </select>
-        {manageable && person.twoFactorEnabled && !self ? (
-          <button
-            className="btn quiet small"
-            disabled={change.isPending}
-            onClick={() =>
-              confirmThen(
-                {
-                  action: "Turn off",
-                  question: `Turn off two-factor sign-in for ${person.name}? They sign in with the password alone until they set it up again.`,
-                },
-                () => api.resetTwoFactor(person.id),
-              )
-            }
-            type="button"
-          >
-            Turn off two-factor
-          </button>
-        ) : null}
         {manageable && !self ? (
-          <button
-            className="btn quiet small"
-            disabled={resetLink.isPending}
-            onClick={() => resetLink.mutate()}
-            type="button"
-          >
-            {resetLink.isPending ? "Creating…" : "Reset link"}
-          </button>
-        ) : null}
-        {manageable && !self ? (
-          <button
-            className="btn quiet small"
-            disabled={change.isPending}
-            onClick={() =>
-              person.suspended
-                ? change.mutate(() => api.setSuspended(person.id, false))
-                : confirmThen(
+          <RowMenu>
+            {person.twoFactorEnabled ? (
+              <MenuItem
+                disabled={change.isPending}
+                onClick={() =>
+                  confirmThen(
                     {
-                      action: "Suspend",
-                      question: `Suspend ${person.name}? They are signed out at once and their agent tokens stop working.`,
+                      action: "Turn off",
+                      question: `Turn off two-factor sign-in for ${person.name}? They sign in with the password alone until they set it up again.`,
                     },
-                    () => api.setSuspended(person.id, true),
+                    () => api.resetTwoFactor(person.id),
                   )
-            }
-            type="button"
-          >
-            {person.suspended ? "Reactivate" : "Suspend"}
-          </button>
-        ) : null}
-        {manageable && !self ? (
-          <button
-            className="btn danger small"
-            disabled={change.isPending}
-            onClick={() =>
-              confirmThen(
-                {
-                  action: "Remove",
-                  question: `Remove ${person.name}? Their account, grants and agent tokens are deleted. Their automations and runs stay.`,
-                },
-                () => api.removePerson(person.id),
-              )
-            }
-            type="button"
-          >
-            Remove
-          </button>
+                }
+              >
+                Turn off two-factor
+              </MenuItem>
+            ) : null}
+            <MenuItem disabled={resetLink.isPending} onClick={() => resetLink.mutate()}>
+              {resetLink.isPending ? "Creating…" : "Reset link"}
+            </MenuItem>
+            <MenuItem
+              disabled={change.isPending}
+              onClick={() =>
+                person.suspended
+                  ? change.mutate(() => api.setSuspended(person.id, false))
+                  : confirmThen(
+                      {
+                        action: "Suspend",
+                        question: `Suspend ${person.name}? They are signed out at once and their agent tokens stop working.`,
+                      },
+                      () => api.setSuspended(person.id, true),
+                    )
+              }
+            >
+              {person.suspended ? "Reactivate" : "Suspend"}
+            </MenuItem>
+            <MenuItem
+              danger
+              disabled={change.isPending}
+              onClick={() =>
+                confirmThen(
+                  {
+                    action: "Remove",
+                    question: `Remove ${person.name}? Their account, grants and agent tokens are deleted. Their automations and runs stay.`,
+                  },
+                  () => api.removePerson(person.id),
+                )
+              }
+            >
+              Remove
+            </MenuItem>
+          </RowMenu>
         ) : null}
       </div>
     </div>

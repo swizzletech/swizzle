@@ -3,8 +3,10 @@ import {
   type DashboardAutomationRefusals,
   type DashboardRunDetail,
   type DashboardRunListItem,
+  decodeRunCursor,
   getRunApproval,
   RUN_STATUSES,
+  type RunCursor,
   type RunTriggerType,
 } from "@swizzle/db";
 import type {
@@ -40,6 +42,10 @@ function parseRunStatuses(raw: string): DashboardRunListItem["status"][] {
     }
     return status;
   });
+}
+
+function parseRunCursor(raw: string): RunCursor {
+  return decodeRunCursor(raw) ?? requestValidationError("Unknown run list cursor.");
 }
 
 export function registerDashboardRoutes(
@@ -211,6 +217,7 @@ export function registerDashboardRoutes(
       querystring: objectSchema({
         approvalOnly: queryBoolean,
         automation: urlText,
+        cursor: urlText,
         limit: queryInteger,
         parentRunId: uuid,
         status: urlText,
@@ -229,6 +236,7 @@ export function registerDashboardRoutes(
       ...(query?.approvalOnly !== undefined ? { approvalOnly } : {}),
       ...(subjects === null ? {} : { assignedTo: subjects }),
       ...(query?.automation !== undefined ? { automationSlug: query.automation } : {}),
+      ...(query?.cursor !== undefined ? { cursor: parseRunCursor(query.cursor) } : {}),
       environment,
       ...(query?.limit !== undefined ? { limit: Number(query.limit) } : {}),
       ...(query?.parentRunId !== undefined ? { parentRunId: query.parentRunId } : {}),

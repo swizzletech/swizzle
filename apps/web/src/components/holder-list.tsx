@@ -17,6 +17,7 @@ import { useAutomations } from "../lib/queries";
 import { grantInWords } from "../lib/words/access";
 import { ActionError } from "./actions";
 import { HolderRow } from "./holder-row";
+import { MenuItem, RowMenu } from "./menu";
 import { accessChanged, placeOf, subjectKey, subjectRef } from "./share-form";
 
 /** Holder rows: what each may do per environment, and each grant with its remove button. */
@@ -41,12 +42,12 @@ export function HolderList(props: {
   });
 
   if (props.holders.length === 0) {
-    return <p className="card t-meta px-5 py-4">Nobody holds a role here yet.</p>;
+    return <p className="card t-meta px-4 py-4">Nobody holds a role here yet.</p>;
   }
   return (
-    <div className="card rows overflow-hidden" data-testid="holders">
+    <div className="card rows" data-testid="holders">
       {remove.isError ? (
-        <div className="px-[18px] py-2">
+        <div className="px-4 py-2">
           <ActionError error={remove.error} />
         </div>
       ) : null}
@@ -56,13 +57,29 @@ export function HolderList(props: {
         return (
           <HolderRow
             action={
-              <button
-                className="btn quiet small"
-                onClick={() => props.onChange(holder.subject)}
-                type="button"
-              >
-                Change
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  className="btn quiet small"
+                  onClick={() => props.onChange(holder.subject)}
+                  type="button"
+                >
+                  Change
+                </button>
+                {own.length === 0 ? null : (
+                  <RowMenu>
+                    {own.map((grant) => (
+                      <MenuItem
+                        danger
+                        disabled={remove.isPending}
+                        key={JSON.stringify(grant)}
+                        onClick={() => remove.mutate(grant)}
+                      >
+                        Remove {grantInWords(grant, nameOf, null)}
+                      </MenuItem>
+                    ))}
+                  </RowMenu>
+                )}
+              </div>
             }
             holder={holder}
             key={key}
@@ -75,18 +92,7 @@ export function HolderList(props: {
               </span>
             ) : null}
             {own.map((grant) => (
-              <span className="flex flex-wrap items-center gap-2" key={JSON.stringify(grant)}>
-                <span>{grantInWords(grant, nameOf, null)}</span>
-                <button
-                  aria-label={`Remove ${grantInWords(grant, nameOf, null)} from ${holder.name}`}
-                  className="btn quiet small"
-                  disabled={remove.isPending}
-                  onClick={() => remove.mutate(grant)}
-                  type="button"
-                >
-                  Remove
-                </button>
-              </span>
+              <span key={JSON.stringify(grant)}>{grantInWords(grant, nameOf, null)}</span>
             ))}
             {holder.teamGrants.map(({ grant, teamName }) => (
               <span className="t-meta" key={`${teamName}:${JSON.stringify(grant)}`}>

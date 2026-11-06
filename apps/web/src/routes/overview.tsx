@@ -9,6 +9,7 @@ import { ActionError } from "../components/actions";
 import { useConfirm } from "../components/confirm";
 import { Menu } from "../components/menu";
 import { NeedsYou } from "../components/needs-you";
+import { Page } from "../components/page";
 import { PipelineGraph } from "../components/pipeline-graph";
 import {
   Chip,
@@ -34,13 +35,14 @@ import { nextRunInWords, triggerInWords } from "../lib/words/triggers";
 import "./overview.css";
 
 export function OverviewPage() {
+  const { environment } = useDashboardClient();
   const overview = useOverview();
   const automations = useAutomations();
 
   if (automations.data?.length === 0) return <EmptyInstance />;
 
   return (
-    <>
+    <Page description={`${environment} · last 24 hours`} title="Overview" type="overview">
       {overview.isError ? (
         <ErrorNote
           error={overview.error}
@@ -88,12 +90,13 @@ export function OverviewPage() {
       overview.data.recentChanges.length > 0 ? (
         <RecentlyChanged changes={overview.data.recentChanges} />
       ) : null}
-    </>
+    </Page>
   );
 }
 
 function StatusCard({ overview }: { readonly overview: Overview }) {
-  const { emphasis, lead } = statusSentence(overview);
+  const now = useNow();
+  const { failures, title } = statusSentence(overview, now);
   const counts = overview.last24h;
   const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
   const stats: readonly { readonly label: string; readonly count: number; readonly tone?: Tone }[] =
@@ -104,19 +107,26 @@ function StatusCard({ overview }: { readonly overview: Overview }) {
       { count: counts.waiting, label: "Waiting", tone: "warn" },
     ];
   return (
-    <div data-testid="status-card">
-      <h1 className="t-page">
-        {lead} <em>{emphasis}</em>
-      </h1>
-      <p className="t-meta mt-1">{overview.environment} · last 24 hours</p>
+    <div className="grid gap-4" data-testid="status-card">
+      <div className="card state">
+        <p>
+          <b>{title}</b>
+          {failures === null ? null : ` ${failures}`}
+        </p>
+        {failures === null ? null : (
+          <Link className="btn quiet small" search={{ status: "failed" }} to="/runs">
+            Show failed runs
+          </Link>
+        )}
+      </div>
       <div className="card stats">
         {stats.map((stat) => (
           <div key={stat.label}>
-            <span className="t-label">
+            <span className="t-faint">
               {stat.tone === undefined ? null : <Dot tone={stat.tone} />}
               {stat.label}
             </span>
-            <b>{stat.count}</b>
+            <b className="t-stat">{stat.count}</b>
           </div>
         ))}
       </div>
@@ -149,7 +159,7 @@ function Automations({ automations }: { readonly automations: readonly Automatio
           <AutomationRow item={item} key={rowKey(item)} />
         ))}
         {shown.length === 0 ? (
-          <p className="t-meta px-[18px] py-3.5">
+          <p className="t-meta px-4 py-3">
             No automation is in this folder. Move one here from its ⋯ menu.
           </p>
         ) : null}
@@ -227,7 +237,10 @@ function AutomationRow({ item }: { readonly item: AutomationListItem }) {
             <div className="t-meta">{automation.description}</div>
           ) : null}
         </div>
-        <span className="t-meta">
+        <span
+          className="t-meta truncate"
+          title={triggerInWords(automation.trigger).replaceAll("`", "")}
+        >
           <WithCode text={triggerInWords(automation.trigger)} />
         </span>
         <HealthStrip runs={automation.recentRuns} />
@@ -285,7 +298,7 @@ function RefusedFolders(props: { readonly folderId: string | null }) {
       : []),
   ];
   return refused.length === 0 ? null : (
-    <p className="t-meta -mt-1 mb-2" data-testid="refused-controls">
+    <p className="t-meta m-0" data-testid="refused-controls">
       {refusedControlsInWords(refused)}
     </p>
   );
@@ -318,7 +331,7 @@ function FolderTabs(props: {
     props.automations.filter((automation) => automation.folderId === folderId).length;
 
   return (
-    <div aria-label="Folders" className="tabs ml-2.5" role="tablist">
+    <div aria-label="Folders" className="tabs" role="tablist">
       <button
         aria-selected={props.folderId === null}
         className="tab"
@@ -352,7 +365,7 @@ function FolderTabs(props: {
       ) : null}
       {mayCreate && adding ? (
         <form
-          className="flex items-center gap-1.5"
+          className="flex items-center gap-2"
           onSubmit={(event) => {
             event.preventDefault();
             if (name.trim() !== "" && !create.isPending) create.mutate();
@@ -360,7 +373,7 @@ function FolderTabs(props: {
         >
           <input
             aria-label="Folder name"
-            className="field h-[30px] w-40"
+            className="field small w-40"
             onChange={(event) => setName(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Escape") setAdding(false);
@@ -415,13 +428,13 @@ function FolderMenu(props: { readonly folder: AutomationFolder; readonly onDelet
     <>
       <Menu
         alignStart
-        bodyClassName="grid gap-2.5"
+        bodyClassName="grid gap-2"
         button="⋯"
         buttonClassName="tab"
         label="Folder actions"
       >
         <form
-          className="flex items-center gap-1.5"
+          className="flex items-center gap-2"
           onSubmit={(event) => {
             event.preventDefault();
             if (!unchanged && !rename.isPending) rename.mutate();
@@ -479,7 +492,7 @@ function RecentlyChanged({ changes }: { readonly changes: Overview["recentChange
             <b className="truncate font-medium">{change.automationName}</b>
             <span className="t-meta">
               {changeInWords(change.change).verb}{" "}
-              <span className="mono">{changeInWords(change.change).versions}</span>
+              <span>{changeInWords(change.change).versions}</span>
             </span>
             <span className="t-faint text-right">{ageInWords(change.occurredAt, now)}</span>
           </Link>
@@ -495,15 +508,11 @@ const EXAMPLE_PROMPT =
 function EmptyInstance() {
   const { environment } = useDashboardClient();
   return (
-    <>
+    <Page description={environment} title="Nothing runs here yet." type="overview">
       <div data-testid="status-card">
-        <h1 className="t-page">
-          Nothing runs here <em>yet.</em>
-        </h1>
-        <p className="t-meta mt-1">{environment}</p>
+        <FirstSteps />
       </div>
-      <FirstSteps />
-    </>
+    </Page>
   );
 }
 
@@ -521,7 +530,7 @@ function FirstSteps() {
   }
   if (overview.data === undefined) {
     return (
-      <div className="card mt-5">
+      <div className="card">
         <Skeleton label="Loading the status" lines={3} />
       </div>
     );
@@ -529,7 +538,7 @@ function FirstSteps() {
   if (overview.data.deploy !== null) {
     return (
       <>
-        <p className="mt-3">
+        <p className="m-0">
           An automation shows up here with its health, its trigger and its next run once someone
           deploys it.
         </p>
@@ -541,7 +550,7 @@ function FirstSteps() {
   }
   return (
     <>
-      <p className="mt-3">
+      <p className="m-0">
         Your agent writes the automations. Three steps until the first one runs.
       </p>
       <div className="steps3" data-testid="empty-steps">
@@ -559,12 +568,8 @@ function FirstSteps() {
           <div className="num">2</div>
           <h3>Ask your agent</h3>
           <p className="t-meta">Describe the result you want, for example:</p>
-          <div className="screen mt-2.5 text-[12px]">{EXAMPLE_PROMPT}</div>
-          <CopyButton
-            className="btn quiet small mt-2.5"
-            label="Copy prompt"
-            text={EXAMPLE_PROMPT}
-          />
+          <div className="screen mt-2">{EXAMPLE_PROMPT}</div>
+          <CopyButton className="btn quiet small mt-2" label="Copy prompt" text={EXAMPLE_PROMPT} />
         </div>
         <div className="card step">
           <div className="num">3</div>

@@ -2,13 +2,15 @@
 // labels, and each station is an HTML element on top, so its text wraps, its state is a class and
 // an approval station holds real buttons. A step is a card with a state symbol, its label and a
 // meta line (`StationFace`); a node that only narrates, such as the trigger, a decision or the end,
-// is a quiet text marker. Dagre loads on the first track drawn. A track wider than its card shrinks
-// to fit, down to MIN_SCALE, and scrolls sideways beyond that.
+// is a quiet text marker. Dagre loads on the first track drawn. A track runs left to right, top down
+// at phone width. Labels wrap to keep it short; `TrackView` scrolls what still does not fit, and its
+// type never shrinks.
 
 import { type ReactNode, useEffect, useState } from "react";
 
 import type { LaneState, StationState, TrackEdge, TrackGraph, TrackNode } from "../lib/track";
-import { ErrorNote } from "./ui";
+import { TrackView } from "./track-view";
+import { ErrorNote, usePhone } from "./ui";
 import "./track.css";
 
 interface Placed {
@@ -44,6 +46,9 @@ function dagre(): Promise<Dagre> {
   dagreModule ??= Promise.all([
     import("dagre-d3-es/src/graphlib/index.js"),
     import("dagre-d3-es/src/dagre/index.js"),
+    // Labels are measured in these; if one never loads, the fallback that renders is what is measured.
+    document.fonts.load(sansFont(CARD_TYPE)).catch(() => []),
+    document.fonts.load(sansFont(MARK_TYPE)).catch(() => []),
   ])
     .then(([graphlib, layout]) => ({ Graph: graphlib.Graph, layout: layout.layout }))
     .catch((error: unknown) => {
@@ -60,47 +65,72 @@ function loadDagre(onLoaded: (lib: Dagre) => void, onError: (message: string) =>
   });
 }
 
+type TrackDirection = "LR" | "TB";
+
 /** Extra height a station needs for what sits under its label. */
 export interface StationExtra {
   readonly height: number;
   readonly width: number;
 }
 
-/** The smallest a track shrinks to fit its card, so 12.5 px labels stay 10 px. */
-const MIN_SCALE = 0.8;
+/** What a label may take: its lines, then a text column as narrow as those lines allow. */
+const LABEL_LINES = 3;
+const LABEL_STEP = 8;
+/** A card: its type, the text column, and the symbol, gap and padding beside it. */
+const CARD_TYPE = "500 13px";
+const CARD_TEXT_MIN = 84;
+const CARD_TEXT_MAX = 132;
+const CARD_CHROME = 52;
+/** A card's padding and border, a label line, and the meta line it always keeps room for. */
+const CARD_FRAME = 18;
+const CARD_LINE = 20;
+const CARD_META = 16;
+/** A narration marker: its type, text column, padding, and a decision's diamond. */
+const MARK_TYPE = "500 12px";
+const MARK_TEXT_MIN = 76;
+const MARK_TEXT_MAX = 124;
+const MARK_CHROME = 32;
+const MARK_DIAMOND = 16;
+const MARK_LINE = 16;
 
-/** The width inside an element, kept current as the window resizes; null until it mounts. */
-function useInnerWidth(): readonly [(element: HTMLElement | null) => void, number | null] {
-  const [element, setElement] = useState<HTMLElement | null>(null);
-  const [width, setWidth] = useState<number | null>(null);
-  useEffect(() => {
-    if (element === null) return;
-    const measure = () => {
-      const style = getComputedStyle(element);
-      setWidth(
-        element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight),
-      );
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [element]);
-  return [setElement, width];
+const ruler = document.createElement("canvas").getContext("2d");
+
+function sansFont(type: string): string {
+  return `${type} ${getComputedStyle(document.documentElement).getPropertyValue("--font-sans")}`;
 }
 
-/** A card: 12.5 px label characters, the symbol, gap and padding beside the text, and slack. */
-const CARD_CHAR = 6.6;
-const CARD_CHROME = 52;
-const CARD_SLACK = 8;
-const CARD_MIN = 150;
-const CARD_MAX = 220;
-/** A narration marker: 12 px characters, its padding, a decision's diamond, and slack. */
-const MARK_CHAR = 6.8;
-const MARK_CHROME = 22;
-const MARK_SLACK = 8;
-const MARK_DIAMOND = 15;
-const MARK_MAX = 200;
+/** The lines words of these widths take in a column, breaking as the browser does. */
+function wrappedLines(words: readonly number[], space: number, column: number): number {
+  let lines = 1;
+  let used = 0;
+  for (const word of words) {
+    if (used > 0 && used + space + word > column) {
+      lines += 1;
+      used = 0;
+    }
+    // A word wider than the column, such as a run of CJK, breaks over the lines it needs.
+    lines += Math.max(Math.ceil(word / column) - 1, 0);
+    used += (used > 0 ? space : 0) + (word > column ? word % column : word);
+  }
+  return lines;
+}
+
+/**
+ * The narrowest column that keeps a label to its lines without breaking a word, and how many it
+ * takes there, measured in the type the label renders in. A track is as wide as its columns add
+ * up to, so this is what keeps a long flow short.
+ */
+function labelColumn(label: string, type: string, min: number, max: number) {
+  if (ruler === null) return { column: max, lines: LABEL_LINES };
+  ruler.font = sansFont(type);
+  const widthOf = (text: string) => ruler.measureText(text).width;
+  const words = label.split(/\s+/u).map(widthOf);
+  const space = widthOf(" ");
+  let column = Math.min(Math.max(min, Math.ceil(Math.max(...words))), max);
+  while (column < max && wrappedLines(words, space, column) > LABEL_LINES) column += LABEL_STEP;
+  column = Math.min(column, Math.ceil(widthOf(label)));
+  return { column, lines: wrappedLines(words, space, column) };
+}
 
 /**
  * The box dagre reserves. A card's size follows its label alone and always keeps room for its
@@ -109,34 +139,29 @@ const MARK_MAX = 200;
  */
 function stationSize(node: TrackNode, extra: StationExtra | null) {
   if (node.key === null) {
+    const { column, lines } = labelColumn(node.label, MARK_TYPE, MARK_TEXT_MIN, MARK_TEXT_MAX);
     const chrome = MARK_CHROME + (node.shape === "diamond" ? MARK_DIAMOND : 0);
-    const width = Math.min(
-      Math.round(node.label.length * MARK_CHAR + chrome + MARK_SLACK),
-      MARK_MAX,
-    );
-    const lines = Math.ceil((node.label.length * MARK_CHAR) / (width - chrome));
-    return { height: 24 + Math.max(0, lines - 1) * 15, width };
+    return { height: 24 + (lines - 1) * MARK_LINE, width: column + chrome };
   }
-  const text = node.label.length * CARD_CHAR + CARD_CHROME + CARD_SLACK;
-  const width = Math.max(Math.min(Math.round(text), CARD_MAX), CARD_MIN, extra?.width ?? 0);
-  const lines = Math.ceil((node.label.length * CARD_CHAR) / (width - CARD_CHROME));
-  return { height: 18 + lines * 16 + 15 + (extra?.height ?? 0), width };
+  const { column, lines } = labelColumn(node.label, CARD_TYPE, CARD_TEXT_MIN, CARD_TEXT_MAX);
+  const width = Math.max(Math.max(column, CARD_TEXT_MIN) + CARD_CHROME, extra?.width ?? 0);
+  return { height: CARD_FRAME + lines * CARD_LINE + CARD_META + (extra?.height ?? 0), width };
 }
 
 function layoutTrack(
   lib: Dagre,
   track: TrackGraph,
-  direction: TrackGraph["direction"],
+  direction: TrackDirection,
   extras: ReadonlyMap<string, StationExtra>,
 ): Layout {
   const graph = new lib.Graph({ multigraph: true })
     .setGraph({
-      edgesep: 18,
-      marginx: 6,
-      marginy: 6,
-      nodesep: 20,
+      edgesep: 8,
+      marginx: 4,
+      marginy: 4,
+      nodesep: 12,
       rankdir: direction,
-      ranksep: direction === "LR" ? 36 : 32,
+      ranksep: 16,
     })
     .setDefaultEdgeLabel(() => ({}));
   for (const node of track.nodes) {
@@ -148,9 +173,9 @@ function layoutTrack(
       edge.from,
       edge.to,
       {
-        height: label === "" ? 0 : 18,
+        height: label === "" ? 0 : 16,
         labelpos: "c",
-        width: label === "" ? 0 : label.length * 6.5 + 10,
+        width: label === "" ? 0 : label.length * 7 + 8,
       },
       `lane-${index}`,
     );
@@ -252,8 +277,8 @@ const LANE_CLASS: Record<LaneState, string> = {
 
 export function Track(props: {
   readonly track: TrackGraph;
-  /** Overrides the flow's direction; the phone draws every track top-down. */
-  readonly direction?: TrackGraph["direction"];
+  /** Overrides the direction for a view with its own shape, such as the Play's narrow rail. */
+  readonly direction?: TrackDirection;
   /** What a station holds under its label, such as the approval's buttons. */
   readonly extra?: (
     node: TrackNode,
@@ -264,10 +289,10 @@ export function Track(props: {
   readonly testId?: string;
 }) {
   const { track } = props;
-  const direction = props.direction ?? track.direction;
+  const phone = usePhone();
+  const direction = props.direction ?? (phone ? "TB" : "LR");
   const [lib, setLib] = useState<Dagre | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [measured, available] = useInnerWidth();
   useEffect(() => {
     loadDagre(setLib, setLoadError);
   }, []);
@@ -298,18 +323,14 @@ export function Track(props: {
     direction,
     new Map([...extras].map(([id, extra]) => [id, extra.size])),
   );
-  const scale =
-    available === null || layout.width === 0
-      ? 1
-      : Math.min(1, Math.max(MIN_SCALE, available / layout.width));
 
   return (
-    <div className="track-scroll" ref={measured}>
+    <TrackView focused={props.focused ?? null}>
       <div
         className="track"
         data-direction={direction}
         data-testid={props.testId}
-        style={{ height: layout.height, width: layout.width, zoom: scale }}
+        style={{ height: layout.height, width: layout.width }}
       >
         <svg aria-hidden="true" className="lanes" height={layout.height} width={layout.width}>
           <defs>
@@ -350,7 +371,7 @@ export function Track(props: {
           />
         ))}
       </div>
-    </div>
+    </TrackView>
   );
 }
 

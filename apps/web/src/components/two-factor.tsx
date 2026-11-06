@@ -39,7 +39,7 @@ export function TwoFactorSetup(props: {
         if (ready) confirm.mutate();
       }}
     >
-      <div className="flex flex-wrap items-start gap-5">
+      <div className="flex flex-wrap items-start gap-4">
         <QrCode text={props.enrollment.totpURI} />
         <div className="grid max-w-[420px] gap-3">
           <p className="t-meta m-0">
@@ -88,7 +88,7 @@ export function RecoveryCodes(props: {
 }) {
   const text = props.codes.join("\n");
   return (
-    <div className="card mb-3.5 grid gap-3 px-5 py-4" data-testid="recovery-codes">
+    <div className="card mb-3 grid gap-3 px-4 py-4" data-testid="recovery-codes">
       <div className="flex flex-wrap items-baseline gap-3">
         <h3 className="t-section">Save your recovery codes</h3>
         <span className="t-faint">
@@ -142,7 +142,7 @@ function QrCode({ text }: { readonly text: string }) {
   return (
     <svg
       aria-label="QR code for your authenticator app"
-      className="h-[200px] w-[200px] shrink-0 rounded"
+      className="h-[200px] w-[200px] shrink-0 rounded-lg"
       data-testid="two-factor-qr"
       role="img"
       shapeRendering="crispEdges"

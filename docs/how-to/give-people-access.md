@@ -122,8 +122,8 @@ An agent token acts with its person's current rights and loses them on the next 
 
 ## When someone leaves
 
-1. Open **Settings → People** and select **Suspend** on the person. Their browser sessions end at once and their tokens are refused on the next request.
-2. When nothing of theirs needs a look anymore, select **Remove**.
+1. Open **Settings → People** and select **Suspend** in the person's **⋯** menu. Their browser sessions end at once and their tokens are refused on the next request.
+2. When nothing of theirs needs a look anymore, select **Remove** in the same menu.
 
 | Stops | Keeps working |
 |---|---|

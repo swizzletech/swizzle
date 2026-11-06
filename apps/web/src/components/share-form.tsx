@@ -183,7 +183,7 @@ export function ShareForm(props: ShareFormProps) {
   return (
     <form
       aria-label={`Share ${access.project.name}`}
-      className="card grid gap-4 px-5 py-4"
+      className="card grid gap-4 px-4 py-4"
       data-testid="share-form"
       onSubmit={(event) => {
         event.preventDefault();
@@ -218,8 +218,8 @@ export function ShareForm(props: ShareFormProps) {
         </div>
       )}
       {props.place === undefined ? (
-        <fieldset className="grid gap-1.5 border-0 p-0">
-          <legend className="form-label mb-1.5">Where</legend>
+        <fieldset className="grid gap-2 border-0 p-0">
+          <legend className="form-label mb-2">Where</legend>
           <label className="flex items-center gap-2">
             <input
               checked={placeKind === "project"}
@@ -284,7 +284,7 @@ export function ShareForm(props: ShareFormProps) {
         </fieldset>
       ) : null}
       <fieldset className="grid gap-2 border-0 p-0">
-        <legend className="form-label mb-1.5">Role</legend>
+        <legend className="form-label mb-2">Role</legend>
         {allowed.map((option) => (
           <label className="flex items-start gap-2" key={option}>
             <input

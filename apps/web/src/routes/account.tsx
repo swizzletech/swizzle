@@ -80,7 +80,7 @@ function Invitation({ token }: { readonly token: string }) {
   if (token === "" || offer.isError) {
     return (
       <AuthScreen title="This invitation does not work">
-        <p className="errbox mt-5 max-w-[420px] text-[13px]" role="alert">
+        <p className="errbox mt-4 max-w-[420px] text-[13px]" role="alert">
           {token === ""
             ? "The link is incomplete. Open it again from the invitation mail."
             : problemInWords(offer.error)}
@@ -91,7 +91,7 @@ function Invitation({ token }: { readonly token: string }) {
   if (offer.data === undefined) {
     return (
       <AuthScreen title="Join Swizzle">
-        <div className="mt-5 max-w-[420px]">
+        <div className="mt-4 max-w-[420px]">
           <Skeleton label="Reading the invitation" lines={3} />
         </div>
       </AuthScreen>
@@ -137,7 +137,7 @@ function AcceptInvitation(props: {
             {inviter} invited you to this Swizzle instance as {ROLE_IN_WORDS[offer.role]}.
           </p>
           {offer.projects.length === 0 ? null : (
-            <ul className="mt-2 mb-0 pl-5" data-testid="invitation-projects">
+            <ul className="mt-2 mb-0 pl-4" data-testid="invitation-projects">
               {offer.projects.map((grant) => (
                 <li key={grant.project.id}>
                   {grant.project.name} <span className="t-faint">as {grant.role}</span>
@@ -150,7 +150,7 @@ function AcceptInvitation(props: {
       title="Join Swizzle"
     >
       <form
-        className="mt-5 grid max-w-[420px] gap-3"
+        className="mt-4 grid max-w-[420px] gap-3"
         onSubmit={(event) => {
           event.preventDefault();
           if (ready) accept.mutate();
@@ -158,13 +158,13 @@ function AcceptInvitation(props: {
       >
         <label className="form-label">
           Email
-          <input className="field h-10" readOnly type="email" value={offer.email} />
+          <input className="field" readOnly type="email" value={offer.email} />
         </label>
         <label className="form-label">
           Name
           <input
             autoComplete="name"
-            className="field h-10"
+            className="field"
             onChange={(event) => setName(event.target.value)}
             value={name}
           />
@@ -176,7 +176,7 @@ function AcceptInvitation(props: {
             {problemInWords(accept.error)}
           </p>
         ) : null}
-        <button className="btn mt-1.5 h-10" disabled={!ready} type="submit">
+        <button className="btn mt-2" disabled={!ready} type="submit">
           {accept.isPending ? "Creating account…" : "Create account"}
         </button>
       </form>
@@ -210,7 +210,7 @@ function ResetPassword({ token }: { readonly token: string }) {
         title="Your password is changed"
       >
         <button
-          className="btn mt-5 h-10 self-start"
+          className="btn mt-4 self-start"
           onClick={() => void navigate({ replace: true, to: "/" })}
           type="button"
         >
@@ -223,7 +223,7 @@ function ResetPassword({ token }: { readonly token: string }) {
   return (
     <AuthScreen title="Set a new password">
       <form
-        className="mt-5 grid max-w-[420px] gap-3"
+        className="mt-4 grid max-w-[420px] gap-3"
         onSubmit={(event) => {
           event.preventDefault();
           if (ready) reset.mutate();
@@ -234,7 +234,7 @@ function ResetPassword({ token }: { readonly token: string }) {
           New password again
           <input
             autoComplete="new-password"
-            className="field h-10"
+            className="field"
             onChange={(event) => setConfirm(event.target.value)}
             type="password"
             value={confirm}
@@ -250,7 +250,7 @@ function ResetPassword({ token }: { readonly token: string }) {
             {problemInWords(reset.error)}
           </p>
         ) : null}
-        <button className="btn mt-1.5 h-10" disabled={!ready} type="submit">
+        <button className="btn mt-2" disabled={!ready} type="submit">
           {reset.isPending ? "Saving…" : "Set password"}
         </button>
       </form>

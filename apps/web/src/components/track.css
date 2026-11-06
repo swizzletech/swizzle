@@ -2,13 +2,62 @@
 @layer components {
   /* Dagre places each station; the SVG beneath draws the lanes. A station is an HTML box, so its
      label wraps and an approval station holds real buttons. */
+  .track-view {
+    position: relative;
+    min-width: 0;
+  }
   .track-scroll {
-    overflow-x: auto;
-    padding: 10px 12px;
+    overflow: auto;
+    padding: 8px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-2) transparent;
+  }
+  /* An edge that clips the track: a fade over the cut, and the button that moves past it. */
+  .track-edge {
+    position: absolute;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    pointer-events: none;
+  }
+  .track-edge .btn {
+    background: var(--surface);
+    pointer-events: auto;
+  }
+  .track-edge.left,
+  .track-edge.right {
+    top: 0;
+    bottom: 0;
+    width: 64px;
+  }
+  .track-edge.up,
+  .track-edge.down {
+    right: 0;
+    left: 0;
+    height: 48px;
+  }
+  .track-edge.left {
+    left: 0;
+    justify-content: flex-start;
+    background: linear-gradient(to right, var(--surface) 40%, transparent);
+  }
+  .track-edge.right {
+    right: 0;
+    justify-content: flex-end;
+    background: linear-gradient(to left, var(--surface) 40%, transparent);
+  }
+  .track-edge.up {
+    top: 0;
+    background: linear-gradient(to bottom, var(--surface) 40%, transparent);
+  }
+  .track-edge.down {
+    bottom: 0;
+    background: linear-gradient(to top, var(--surface) 40%, transparent);
   }
   .track {
     position: relative;
-    margin: 0 auto;
   }
   .track .lanes {
     position: absolute;
@@ -21,7 +70,7 @@
   .lane path {
     fill: none;
     stroke: var(--line-2);
-    stroke-width: 1.5;
+    stroke-width: 1;
   }
   .lane.done path {
     stroke: var(--ok);
@@ -42,7 +91,7 @@
     stroke-dasharray: 2 4;
   }
   .lane text {
-    font: 500 11px var(--font-sans);
+    font: 500 12px var(--font-sans);
     fill: var(--ink-3);
   }
   .lane.done text,
@@ -58,21 +107,20 @@
     display: grid;
     box-sizing: border-box;
     color: var(--ink);
-    font-size: 12.5px;
-    line-height: 1.3;
+    font-size: 13px;
+    line-height: 20px;
   }
   .station.card {
     background: var(--raised);
     border: 1px solid var(--line-2);
-    border-radius: 10px;
-    box-shadow: var(--shadow-xs);
+    border-radius: var(--radius-control);
   }
   .st-hit {
     display: flex;
-    gap: 9px;
+    gap: 8px;
     width: 100%;
     height: 100%;
-    padding: 8px 11px;
+    padding: 8px 12px;
     align-items: center;
     text-align: left;
     border: 0;
@@ -93,7 +141,7 @@
     min-width: 0;
   }
   .st-label {
-    font-weight: 600;
+    font-weight: 500;
     overflow-wrap: anywhere;
   }
   /* One line always: a long item id is cut, and the title holds it whole. The card keeps room
@@ -102,11 +150,11 @@
     display: none;
   }
   .st-meta {
-    min-height: 1.35em;
+    min-height: 16px;
     overflow: hidden;
-    font-size: 11px;
+    font-size: 12px;
+    line-height: 16px;
     color: var(--ink-3);
-    font-variant-numeric: tabular-nums;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -120,7 +168,7 @@
   }
   .st-sym circle {
     stroke: var(--idle);
-    stroke-width: 1.5;
+    stroke-width: 1;
   }
   .st-mark {
     stroke: #fff;
@@ -162,7 +210,7 @@
     position: absolute;
     inset: -4px;
     border: 2px solid color-mix(in srgb, var(--run) 45%, transparent);
-    border-radius: 13px;
+    border-radius: var(--radius-card);
     pointer-events: none;
     opacity: 0.8;
     animation: halo-duty 2.4s steps(1, end) infinite;
@@ -202,24 +250,26 @@
     fill: var(--fail);
     stroke: var(--fail);
   }
-  /* A station the run can no longer reach recedes with the lanes that lead to it. */
+  /* A station the run can no longer reach recedes with the lanes that lead to it: outlined, in the
+     faintest ink that still reads, never faded below it. */
   .station.untaken {
-    opacity: 0.45;
+    border-style: dashed;
+    background: none;
   }
   .station.untaken .st-label {
     color: var(--ink-3);
-    font-weight: 500;
   }
   /* A node that only narrates, such as the trigger, a decision or the end, is a quiet marker. */
   .station.narration {
-    border-radius: 999px;
+    border-radius: var(--radius-full);
     background: var(--surface-2);
     color: var(--ink-3);
     font-size: 12px;
+    line-height: 16px;
   }
   .station.narration .st-hit {
     justify-content: center;
-    padding: 3px 11px;
+    padding: 4px 12px;
     text-align: center;
   }
   .station.narration .st-label {
@@ -232,13 +282,16 @@
   .station.narration.diamond {
     background: var(--surface);
   }
+  .station.narration.diamond .st-hit {
+    text-align: left;
+  }
   .station.narration.diamond .st-hit::before {
     content: "";
     flex: none;
     width: 8px;
     height: 8px;
-    margin-right: 2px;
-    border: 1.5px solid var(--idle);
+    margin-right: 4px;
+    border: 1px solid var(--idle);
     transform: rotate(45deg);
   }
   .station.narration.diamond.done .st-hit::before {
@@ -246,21 +299,21 @@
     background: var(--ok);
   }
   .station.narration.untaken {
-    opacity: 0.45;
+    background: none;
   }
   .st-act {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 8px;
     justify-content: center;
-    padding: 0 10px 10px;
+    padding: 0 8px 8px;
   }
   .station .st-act .st-ask {
     display: -webkit-box;
     width: 100%;
     overflow: hidden;
-    font-size: 11.5px;
-    line-height: 1.3;
+    font-size: 12px;
+    line-height: 16px;
     color: var(--ink-2);
     text-align: left;
     -webkit-box-orient: vertical;
@@ -273,18 +326,17 @@
     text-align: left;
   }
   .station .st-details .t-meta {
-    font-size: 11.5px;
-    line-height: 1.3;
+    font-size: 12px;
+    line-height: 16px;
   }
   .station .st-act .field {
     width: 100%;
-    height: 30px;
-    font-size: 12.5px;
+    height: 28px;
+    padding: 0 8px;
   }
   .station .st-act .btn {
-    height: 30px;
-    padding: 0 12px;
-    font-size: 12.5px;
+    height: 28px;
+    padding: 0 8px;
   }
   .station[aria-current="step"] {
     box-shadow:

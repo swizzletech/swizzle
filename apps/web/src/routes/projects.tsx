@@ -6,6 +6,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { ActionError } from "../components/actions";
+import { Page } from "../components/page";
 import { Chip, ErrorNote, Skeleton } from "../components/ui";
 import { useDashboardClient } from "../lib/dashboard-client";
 import { useMe, useProjects } from "../lib/queries";
@@ -15,17 +16,26 @@ export function ProjectsPage() {
   const projects = useProjects();
   const me = useMe();
   const operator = me?.role === "owner" || me?.role === "admin";
+  const [adding, setAdding] = useState(false);
   return (
-    <>
-      <h1 className="t-page">Projects</h1>
-      <p className="t-meta mt-1">
-        A project holds automations and their credentials and decides who may see or change them.
-        {operator
+    <Page
+      actions={
+        operator ? (
+          <button className="btn" onClick={() => setAdding(true)} type="button">
+            New project
+          </button>
+        ) : undefined
+      }
+      description={`A project holds automations and their credentials and decides who may see or change them.${
+        operator
           ? " As an instance owner or admin you see every project; that access is audited."
-          : " You see the projects a grant gives you."}
-      </p>
-      {operator ? <NewProject /> : null}
-      <div className="mt-4">
+          : " You see the projects a grant gives you."
+      }`}
+      title="Projects"
+      type="administration"
+    >
+      {operator && adding ? <NewProject onClose={() => setAdding(false)} /> : null}
+      <div>
         {projects.isError ? (
           <ErrorNote error={projects.error} title="The projects could not be loaded." />
         ) : projects.data === undefined ? (
@@ -33,7 +43,7 @@ export function ProjectsPage() {
             <Skeleton label="Loading projects" lines={3} />
           </div>
         ) : projects.data.length === 0 ? (
-          <p className="card t-meta px-5 py-4">
+          <p className="card t-meta m-0 p-4">
             No project gives you a role yet. An owner or admin of this instance, or an admin of a
             project, can add you.
           </p>
@@ -65,11 +75,11 @@ export function ProjectsPage() {
           </div>
         )}
       </div>
-    </>
+    </Page>
   );
 }
 
-function NewProject() {
+function NewProject({ onClose }: { readonly onClose: () => void }) {
   const { api } = useDashboardClient();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -91,7 +101,7 @@ function NewProject() {
   const ready = name.trim() !== "" && effectiveSlug !== "" && !create.isPending;
   return (
     <form
-      className="card setting mt-4"
+      className="card setting"
       onSubmit={(event) => {
         event.preventDefault();
         if (ready) create.mutate();
@@ -125,9 +135,14 @@ function NewProject() {
           you share it.
         </span>
       </div>
-      <button className="btn" disabled={!ready} type="submit">
-        {create.isPending ? "Creating…" : "Create project"}
-      </button>
+      <div className="flex gap-2">
+        <button className="btn quiet" onClick={onClose} type="button">
+          Cancel
+        </button>
+        <button className="btn" disabled={!ready} type="submit">
+          {create.isPending ? "Creating…" : "Create project"}
+        </button>
+      </div>
     </form>
   );
 }

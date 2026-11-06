@@ -28,6 +28,28 @@ export function durationInWords(ms: number): string {
   return minutes === 0 ? `${hours} h` : `${hours} h ${minutes} min`;
 }
 
+/**
+ * A day of a run list, in the viewer's time zone: its name ("Today", "Yesterday", or the weekday)
+ * and its date, which names the year only when it is not this one.
+ */
+export function dayInWords(
+  iso: string,
+  now: Date,
+): { readonly name: string; readonly date: string } {
+  const day = new Date(iso);
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  let name = day.toLocaleDateString("en-GB", { weekday: "long" });
+  if (day.toDateString() === now.toDateString()) name = "Today";
+  else if (day.toDateString() === yesterday.toDateString()) name = "Yesterday";
+  const date = day.toLocaleDateString("en-GB", {
+    day: "numeric",
+    month: "short",
+    ...(day.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+  });
+  return { date, name };
+}
+
 /** "does not expire", "expired" or "expires in 29 days". */
 export function expiryInWords(expiresAt: string | null, now: Date): string {
   if (expiresAt === null) return "does not expire";

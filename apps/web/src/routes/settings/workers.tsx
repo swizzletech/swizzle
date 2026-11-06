@@ -14,7 +14,6 @@ import type { WorkerEnrollment, WorkerListing } from "../../lib/api";
 import { useDashboardClient } from "../../lib/dashboard-client";
 import { useProjects } from "../../lib/queries";
 import { workerKindInWords, workerStateInWords, workerTone } from "../../lib/words/workers";
-import { Section } from "./section";
 
 export function Workers() {
   const confirm = useConfirm();
@@ -118,7 +117,7 @@ export function Workers() {
         {worker.state === "revoked" ? null : (
           <button
             aria-label={`Revoke worker ${worker.name}`}
-            className="btn danger"
+            className="btn danger small"
             type="button"
             disabled={revoke.isPending}
             onClick={async () => {
@@ -133,10 +132,11 @@ export function Workers() {
     ));
   }
   return (
-    <Section
-      intro={`Every machine that runs automations, its groups and what it runs now. To enroll another, approve groups and a project in ${environment} below. New workers receive no default group. Each code admits one machine and expires in ten minutes.`}
-      title="Workers"
-    >
+    <>
+      <p className="t-meta m-0">
+        To enroll a machine, approve groups and a project in {environment} below. New workers
+        receive no default group. Each code admits one machine and expires in ten minutes.
+      </p>
       <div className="card rows overflow-hidden">
         {revoke.isError ? <ActionError error={revoke.error} /> : null}
         {workerList()}
@@ -220,7 +220,7 @@ export function Workers() {
           </div>
         )}
       </div>
-    </Section>
+    </>
   );
 }
 

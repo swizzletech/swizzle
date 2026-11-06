@@ -19,7 +19,6 @@ import {
 // trigger → fetch → check{Over 100?} ─yes→ review → notify → done
 //                                    ─no→ notify
 const FLOW: FlowGraph = {
-  direction: "LR",
   edges: [
     { from: "trigger", label: null, to: "fetch" },
     { from: "fetch", label: null, to: "check" },
@@ -146,7 +145,6 @@ describe("trackForRun", () => {
   it("lights the end of a flow when the run reached it through one branch only", () => {
     // check ─yes→ review → result; check ─no→ skip → result. Only review ran.
     const flow: FlowGraph = {
-      direction: "LR",
       edges: [
         { from: "fetch", label: null, to: "check" },
         { from: "check", label: "yes", to: "review" },
@@ -325,7 +323,6 @@ describe("replay", () => {
 
 // trigger → fetch → classify → upload → done, where classify and upload run once per mail.
 const LOOP: FlowGraph = {
-  direction: "TB",
   edges: [
     { from: "trigger", label: null, to: "fetch" },
     { from: "fetch", label: null, to: "classify" },
@@ -513,7 +510,6 @@ describe("step families", () => {
 // one the run took.
 describe("trackForRun with a decision between narration nodes", () => {
   const BRANCH: FlowGraph = {
-    direction: "LR",
     edges: [
       { from: "check", label: "yes", to: "accepted" },
       { from: "check", label: "no", to: "rejected" },
@@ -573,7 +569,7 @@ describe("trackForRun with a decision between narration nodes", () => {
       [check, accepted, rejected, ship],
       [check, rejected, accepted, ship],
     ]) {
-      const flow: FlowGraph = { direction: "LR", edges, nodes: order };
+      const flow: FlowGraph = { edges, nodes: order };
       const track = trackForRun(flow, finished, { steps, waiting: null }, new Set(["ship"]));
       expect(lanes(track.edges)).toMatchObject({
         "check>accepted": "idle",
@@ -609,7 +605,7 @@ describe("trackForRun with a decision between narration nodes", () => {
         stationState === "done" ? new Map([["ship", step("ship", 100, 400)]]) : new Map();
       for (const order of orders(nodes)) {
         const track = trackForRun(
-          { direction: "LR", edges, nodes: order },
+          { edges, nodes: order },
           stationState === "done" ? finished : run({ status: "waiting" }),
           {
             steps,
@@ -648,7 +644,7 @@ describe("trackForRun with a decision between narration nodes", () => {
         edges.push({ from: `${side}${index}`, label: null, to: `d${index + 1}` });
       }
     }
-    const flow: FlowGraph = { direction: "LR", edges, nodes };
+    const flow: FlowGraph = { edges, nodes };
     // Path enumeration would not return within the test timeout.
     const track = trackForRun(flow, run({}), { steps: new Map(), waiting: null }, new Set());
     expect(track.nodes).toHaveLength(nodes.length);

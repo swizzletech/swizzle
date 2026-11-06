@@ -1,6 +1,12 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 
-import { APPROVAL_RUN_ID, mockDashboardApi, OK_RUN_ID, seededState } from "./dashboard-mock";
+import {
+  APPROVAL_RUN_ID,
+  mockDashboardApi,
+  OK_RUN_ID,
+  seededState,
+  serveWideFlow,
+} from "./dashboard-mock";
 
 for (const [syntax, source] of [
   ["front matter", (nodes: string) => `---\ntitle: Steps\n---\nflowchart LR\n ${nodes}\n`],
@@ -209,7 +215,9 @@ test("the Overview pipeline row opens its graph", async ({ page }) => {
   await expect(graph.locator(".lane")).toHaveCount(1);
 });
 
-test("at 1280x720 a seven-station track fits its card", async ({ page }) => {
+test("at 1280x720 a track wider than the run pane scrolls sideways inside its band", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await mockDashboardApi(page, seededState());
   await page.route("**/dashboard/automations/verify-probe/mermaid?*", (route) =>
@@ -232,15 +240,14 @@ test("at 1280x720 a seven-station track fits its card", async ({ page }) => {
 
   const track = page.getByTestId("flow-track");
   await expect(track.getByTestId("station")).toHaveCount(7);
-  // The whole station, border included, inside what the track's scroll area shows.
-  const visible = await track.locator(".track-scroll").boundingBox();
-  const last = await track.getByTestId("station").filter({ hasText: "Result" }).boundingBox();
-  if (visible === null || last === null)
-    throw new Error("The track or its last station is missing.");
-  expect(last.x + last.width).toBeLessThanOrEqual(visible.x + visible.width);
-  expect(
-    await track.locator(".track-scroll").evaluate((area) => area.scrollWidth - area.clientWidth),
-  ).toBeLessThanOrEqual(0);
+  // Wider than the band, the track keeps its size and scrolls; the page does not.
+  const band = track.locator(".track-scroll");
+  expect(await band.evaluate((area) => area.scrollWidth - area.clientWidth)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1280);
+  const last = track.getByTestId("station").filter({ hasText: "Result" });
+  await last.scrollIntoViewIfNeeded();
+  await expect(last).toBeInViewport({ ratio: 1 });
+  await expect(last).toHaveCSS("font-size", "12px");
 });
 
 // The track lays stations out before it renders, so it estimates how tall the details grow. A
@@ -275,4 +282,121 @@ test("an approval with long CJK details keeps its buttons inside the station", a
     stationBottom: station.getBoundingClientRect().bottom,
   }));
   expect(approveBottom).toBeLessThanOrEqual(stationBottom);
+});
+
+// A flow wider than its band, measured on the shape that first cut its text: it stays as short as
+// its labels allow, opens on the run's last station, and no edge cuts a station without a cue.
+test.describe("a flow wider than its band", () => {
+  test.use({ viewport: { height: 900, width: 1440 } });
+
+  /** Which sides of the window cut a station, and which sides show the cue. */
+  function edges(rail: Locator) {
+    return rail.locator(".track-view").evaluate((view) => {
+      const port = view.querySelector(".track-scroll")?.getBoundingClientRect();
+      if (port === undefined) throw new Error("no track window");
+      const boxes = [...view.querySelectorAll('[data-testid="station"]')].map((station) =>
+        station.getBoundingClientRect(),
+      );
+      const cut = [
+        boxes.some((box) => box.left < port.left - 1) ? "left" : null,
+        boxes.some((box) => box.right > port.right + 1) ? "right" : null,
+        boxes.some((box) => box.top < port.top - 1) ? "up" : null,
+        boxes.some((box) => box.bottom > port.bottom + 1) ? "down" : null,
+      ].filter((edge) => edge !== null);
+      const cues = [...view.querySelectorAll(".track-edge")].map((edge) => edge.classList[1] ?? "");
+      return { cues: cues.sort(), cut: cut.sort() };
+    });
+  }
+
+  /** The text of every station: its smallest size, and any label a word breaks or a box cuts. */
+  function labels(rail: Locator) {
+    return rail.locator('[data-testid="station"]').evaluateAll((stations) => {
+      const sizes = stations.flatMap((station) =>
+        [...station.querySelectorAll("*")].map((part) =>
+          Number.parseFloat(getComputedStyle(part).fontSize),
+        ),
+      );
+      const brokenWord = (label: Element) => {
+        const text = label.firstChild;
+        if (text === null) return false;
+        const range = document.createRange();
+        let at = 0;
+        return (label.textContent ?? "").split(" ").some((word) => {
+          range.setStart(text, at);
+          range.setEnd(text, at + word.length);
+          at += word.length + 1;
+          return range.getClientRects().length > 1;
+        });
+      };
+      return {
+        cut: stations
+          .filter((station) => station.scrollHeight > station.clientHeight + 1)
+          .map((station) => station.textContent),
+        smallest: Math.min(...sizes),
+        split: stations
+          .flatMap((station) => [...station.querySelectorAll(".st-label")])
+          .filter(brokenWord)
+          .map((label) => label.textContent),
+      };
+    });
+  }
+
+  async function open(page: Page, path: string, rail: string) {
+    await mockDashboardApi(page, seededState());
+    await serveWideFlow(page);
+    await page.goto(path);
+    const scope = page.getByTestId(rail);
+    await expect(scope.locator('[data-testid="station"]')).toHaveCount(10);
+    return scope;
+  }
+
+  test("on the Runs tab it opens on the last station, short, and says what follows", async ({
+    page,
+  }) => {
+    const band = await open(page, `/automations/verify-probe?run=${OK_RUN_ID}`, "flow-track");
+    const last = band.locator('[data-testid="station"][data-step="move"]');
+    await expect(last).toHaveAttribute("aria-current", "step");
+    await expect(last).toBeInViewport({ ratio: 1 });
+    await expect.poll(() => edges(band)).toEqual({ cues: ["left"], cut: ["left"] });
+
+    const size = await band.locator(".track").evaluate((track) => {
+      const boxes = [...track.querySelectorAll('[data-testid="station"]')].map((station) =>
+        station.getBoundingClientRect(),
+      );
+      const window = track.parentElement?.getBoundingClientRect();
+      return {
+        band: window?.height ?? 0,
+        stations:
+          Math.max(...boxes.map((box) => box.bottom)) - Math.min(...boxes.map((box) => box.top)),
+        width: track.getBoundingClientRect().width,
+      };
+    });
+    expect(size.width).toBeLessThan(1700);
+    // The window's padding and the layout's margin, and no empty row above or below.
+    expect(size.band - size.stations).toBeLessThanOrEqual(24);
+    expect(await labels(band)).toEqual({ cut: [], smallest: 12, split: [] });
+
+    await band.getByRole("button", { name: "Scroll left" }).click();
+    await expect.poll(() => edges(band).then(({ cues }) => cues)).toEqual(["left", "right"]);
+    await band.locator(".track-scroll").evaluate((view) => view.scrollTo({ left: 0 }));
+    await expect.poll(() => edges(band)).toEqual({ cues: ["right"], cut: ["right"] });
+  });
+
+  test("on the Play rail its text stays whole and every clipped edge shows a cue", async ({
+    page,
+  }) => {
+    const rail = await open(
+      page,
+      `/automations/verify-probe?tab=play&run=${OK_RUN_ID}`,
+      "play-rail",
+    );
+    await expect(rail.locator('[data-testid="station"][data-step="read"]')).toBeVisible();
+    const { cues, cut } = await edges(rail);
+    expect(cues).toEqual(cut);
+    await expect(rail).toBeInViewport({ ratio: 1 });
+    expect(
+      await rail.locator(".track-scroll").evaluate((view) => view.scrollWidth - view.clientWidth),
+    ).toBeLessThanOrEqual(1);
+    expect(await labels(rail)).toEqual({ cut: [], smallest: 12, split: [] });
+  });
 });

@@ -3,38 +3,44 @@
 @layer components {
   .settings {
     display: grid;
-    grid-template-columns: 180px minmax(0, 1fr);
+    grid-template-columns: 176px minmax(0, 1fr);
     gap: 32px;
     align-items: start;
   }
   .snav {
     position: sticky;
-    top: 24px;
+    top: 0;
     display: grid;
-    gap: 14px;
+    gap: 16px;
   }
   .snav-group {
     display: grid;
-    gap: 1px;
+    gap: 4px;
   }
   .snav-label {
-    padding: 0 10px 4px;
-    color: var(--ink-3);
-    font-size: 11.5px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
-  .snav-version {
-    padding: 0 10px;
+    margin: 0;
+    padding: 0 8px 4px;
     color: var(--ink-3);
     font-size: 12px;
+    font-weight: 500;
+    line-height: 16px;
+  }
+  .snav-version {
+    margin: 0;
+    padding: 0 8px;
+    color: var(--ink-3);
+    font-size: 12px;
+    line-height: 16px;
   }
   .snav a {
-    padding: 6px 10px;
-    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    height: 32px;
+    padding: 0 8px;
+    border-radius: var(--radius-control);
     color: var(--ink-2);
-    font-size: 13.5px;
+    font-size: 13px;
+    line-height: 20px;
     text-decoration: none;
   }
   .snav a:hover {
@@ -60,10 +66,13 @@
       display: flex;
       flex-wrap: wrap;
       align-items: baseline;
-      gap: 2px;
+      gap: 4px;
     }
     .snav-label {
       flex-basis: 100%;
+    }
+    .snav a {
+      height: 40px;
     }
   }
 }

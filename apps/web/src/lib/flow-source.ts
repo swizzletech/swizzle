@@ -49,7 +49,6 @@ export async function parseFlow(code: string): Promise<FlowGraph | null> {
   const diagram = await instance.mermaidAPI.getDiagramFromText(code).catch(() => null);
   if (diagram === null || !diagram.type.startsWith("flowchart")) return null;
   const db = diagram.db as unknown as FlowDbLike;
-  const direction = db.getDirection() ?? "TB";
   const nodes = [...db.getVertices().values()].map((vertex) => ({
     id: vertex.id,
     label: vertex.text === undefined || vertex.text === "" ? vertex.id : vertex.text,
@@ -60,5 +59,5 @@ export async function parseFlow(code: string): Promise<FlowGraph | null> {
     label: edge.text === undefined || edge.text === "" ? null : edge.text,
     to: edge.end,
   }));
-  return { direction: direction === "LR" || direction === "RL" ? "LR" : "TB", edges, nodes };
+  return { edges, nodes };
 }

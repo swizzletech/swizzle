@@ -136,6 +136,7 @@ test("a manager sees each holder's source, grants a person use and removes a tea
   const sent = await serveAccess(page, "manage");
 
   await page.goto("/credentials");
+  await page.getByTestId("secret").getByLabel("More").click();
   await page.getByTestId("secret").getByRole("button", { name: "Access" }).click();
   const panel = page.getByTestId("credential-access");
   await expect(panel.getByTestId("credential-holder").filter({ hasText: "Olga" })).toContainText(
@@ -188,6 +189,7 @@ test("a manager grants and removes rights on an account through its own routes",
 
   await page.goto("/credentials");
   const row = page.getByTestId("account").filter({ hasText: "crm-google" });
+  await row.getByLabel("More").click();
   await expect(row.getByRole("button", { name: "Delete" })).toBeVisible();
   await row.getByRole("button", { name: "Access" }).click();
   const panel = page.getByTestId("credential-access");
@@ -219,6 +221,7 @@ test("a holder with use tests an account but neither changes it nor who holds it
   await page.goto("/credentials");
   const row = page.getByTestId("account").filter({ hasText: "crm-google" });
   await expect(row.getByRole("button", { name: "Test" })).toBeVisible();
+  await row.getByLabel("More").click();
   await expect(row.getByRole("button", { name: /^(Reconnect|Delete)$/u })).toHaveCount(0);
   await row.getByRole("button", { name: "Access" }).click();
   const panel = page.getByTestId("credential-access");
@@ -250,6 +253,7 @@ test("a new secret joins the project in view, or the one the form picks", async 
   await mockDashboardApi(page, state);
 
   await page.goto("/credentials?project=finance");
+  await page.getByTestId("page-head").getByRole("button", { name: "Add secret" }).click();
   const form = page.getByTestId("add-secret");
   // Only the project the person edits is offered.
   await expect(

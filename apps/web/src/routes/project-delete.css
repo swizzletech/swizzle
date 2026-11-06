@@ -3,10 +3,10 @@
   .sheet-choice {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
-    gap: 10px;
-    padding: 12px 14px;
+    gap: 12px;
+    padding: 12px 16px;
     border: 1px solid var(--line);
-    border-radius: 10px;
+    border-radius: var(--radius-control);
     cursor: pointer;
   }
   .sheet-choice:has(input:checked) {

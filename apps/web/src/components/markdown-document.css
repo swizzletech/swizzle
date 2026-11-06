@@ -6,8 +6,12 @@
     contain: paint;
     overflow-x: auto;
     font-size: 14px;
-    line-height: 1.65;
+    line-height: 24px;
     overflow-wrap: anywhere;
+  }
+  /* Text keeps its reading measure in a wide card; a table or code block may use the width. */
+  .markdown-document > :not(table, pre) {
+    max-width: 720px;
   }
   .markdown-document > :first-child {
     margin-top: 0;
@@ -19,21 +23,21 @@
   .markdown-document h2,
   .markdown-document h3,
   .markdown-document h4 {
-    margin: 1.4em 0 0.5em;
-    font-weight: 800;
-    font-stretch: 115%;
-    letter-spacing: -0.015em;
-    line-height: 1.2;
+    margin: 24px 0 8px;
+    font-weight: 600;
   }
   .markdown-document h1 {
-    font-size: 22px;
+    font-size: 20px;
+    line-height: 28px;
   }
   .markdown-document h2 {
-    font-size: 18px;
+    font-size: 16px;
+    line-height: 24px;
   }
   .markdown-document h3,
   .markdown-document h4 {
-    font-size: 15px;
+    font-size: 14px;
+    line-height: 20px;
   }
   .markdown-document p,
   .markdown-document ul,
@@ -41,11 +45,11 @@
   .markdown-document pre,
   .markdown-document table,
   .markdown-document blockquote {
-    margin: 0 0 0.9em;
+    margin: 0 0 12px;
   }
   .markdown-document ul,
   .markdown-document ol {
-    padding-left: 1.3em;
+    padding-left: 24px;
   }
   /* Preflight removes list markers; a README list keeps them. */
   .markdown-document ul {
@@ -58,13 +62,13 @@
     color: var(--accent-text);
   }
   .markdown-document code {
-    padding: 1px 5px;
-    border-radius: 5px;
+    padding: 0 4px;
+    border-radius: var(--radius-badge);
     background: var(--surface-2);
   }
   .markdown-document pre {
-    padding: 12px 14px;
-    border-radius: var(--radius-m);
+    padding: 12px 16px;
+    border-radius: var(--radius-control);
     background: var(--screen);
     color: var(--screen-ink);
     overflow: auto;
@@ -78,13 +82,13 @@
   }
   .markdown-document th,
   .markdown-document td {
-    padding: 6px 10px;
+    padding: 4px 8px;
     border: 1px solid var(--line);
     text-align: left;
   }
   .markdown-document blockquote {
     padding-left: 12px;
-    border-left: 3px solid var(--line-2);
+    border-left: 2px solid var(--line-2);
     color: var(--ink-2);
   }
 }

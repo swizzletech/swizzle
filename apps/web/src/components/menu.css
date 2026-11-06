@@ -12,16 +12,47 @@
   .menu > .menu-body {
     position: absolute;
     right: 0;
-    top: calc(100% + 6px);
+    top: calc(100% + 4px);
     z-index: 20;
     min-width: 240px;
     padding: 12px;
     border: 1px solid var(--line);
-    border-radius: 10px;
+    border-radius: var(--radius-card);
     box-shadow: var(--shadow-pop);
   }
   .menu.start > .menu-body {
     left: 0;
     right: auto;
+  }
+  .menu > .menu-body.menu-actions {
+    display: grid;
+    min-width: 160px;
+    padding: 4px;
+  }
+  .menu-item {
+    height: 32px;
+    padding: 0 8px;
+    border: 0;
+    border-radius: var(--radius-control);
+    background: none;
+    color: var(--ink);
+    font: 400 13px / 20px var(--font-sans);
+    text-align: left;
+    cursor: pointer;
+  }
+  .menu-item:hover:not(:disabled) {
+    background: var(--surface-2);
+  }
+  .menu-item.danger {
+    color: var(--fail-text);
+  }
+  .menu-item:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  @media (max-width: 900px) {
+    .menu-item {
+      height: 40px;
+    }
   }
 }

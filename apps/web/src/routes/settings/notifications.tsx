@@ -10,7 +10,6 @@ import type { NotificationRule } from "../../lib/api";
 import { useDashboardClient } from "../../lib/dashboard-client";
 import { refreshAll, useAutomations } from "../../lib/queries";
 import { ageInWords, durationInWords } from "../../lib/words/time";
-import { Section } from "./section";
 
 const BOT_TOKEN_SECRET = "SWIZZLE_TELEGRAM_BOT_TOKEN";
 
@@ -31,10 +30,7 @@ export function Notifications({ operator }: { readonly operator: boolean }) {
     secrets.data !== undefined && !secrets.data.some((secret) => secret.name === BOT_TOKEN_SECRET);
 
   return (
-    <Section
-      intro="Swizzle messages you on Telegram when runs fail, so you need not watch this page."
-      title="Notifications"
-    >
+    <>
       {botTokenMissing ? (
         <p className="notice mb-3">
           Telegram needs a bot token first. Store it as the secret{" "}
@@ -85,7 +81,7 @@ export function Notifications({ operator }: { readonly operator: boolean }) {
           </details>
         </div>
       )}
-    </Section>
+    </>
   );
 }
 
@@ -224,7 +220,7 @@ function AdvancedRules({ rules }: { readonly rules: readonly NotificationRule[] 
         </div>
       ))}
       <form
-        className="grid gap-3 bg-surface-2 px-[18px] py-3.5"
+        className="grid gap-3 bg-surface-2 px-4 py-3"
         onSubmit={(event) => {
           event.preventDefault();
           if (chatId.trim() !== "" && !create.isPending) create.mutate();
@@ -329,7 +325,7 @@ function Deliveries() {
   }
   if (deliveries.data === undefined) return <Skeleton label="Loading deliveries" lines={3} />;
   if (deliveries.data.length === 0) {
-    return <p className="t-meta border-t border-line px-[18px] py-3.5">Nothing was sent yet.</p>;
+    return <p className="t-meta border-t border-line px-4 py-3">Nothing was sent yet.</p>;
   }
   return (
     <div className="rows border-t border-line">

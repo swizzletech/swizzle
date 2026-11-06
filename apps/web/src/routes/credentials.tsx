@@ -1,8 +1,9 @@
 // Credentials `/credentials`: what deployed automations need and do not have, the stored secrets
 // and the connected accounts. Values stay write-only: the page can set, rotate and delete a
-// secret but never shows one. A link the agent prints can prefill the secret or connect form.
-// `?project=` puts one project in view: the lists show only its credentials and a new secret or
-// account joins it unless the form picks another. Each row opens who may use and manage it.
+// secret but never shows one. The head adds a secret or connects an account, and a link the agent
+// prints opens either form prefilled. `?project=` puts one project in view: the lists show only its
+// credentials and a new secret or account joins it unless the form picks another. A row shows its
+// most likely action; the rest, with who may use and manage it, sit in its menu.
 
 import { AUTOMATION_CONNECTION_NAME_PATTERN } from "@swizzle/config/browser";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -11,7 +12,9 @@ import { useEffect, useRef, useState } from "react";
 import { ActionError, SecretField } from "../components/actions";
 import { useConfirm } from "../components/confirm";
 import { CredentialAccess } from "../components/credential-access";
+import { MenuItem, RowMenu } from "../components/menu";
 import { NeedsYou } from "../components/needs-you";
+import { Page } from "../components/page";
 import { SecretInput } from "../components/secret-input";
 import { Chip, CopyButton, ErrorNote, SectionHead, Skeleton, useNow } from "../components/ui";
 import type {
@@ -45,23 +48,33 @@ export function CredentialsPage() {
   const automationsQuery = useAutomations();
   const usage: Usage = automationsQuery.isError ? "unknown" : (automationsQuery.data ?? "loading");
   const view: ProjectView = { inView: inView ?? null, projects: projects.data ?? [] };
-  // A link on this page (Missing › Connect) changes only the search; the key remounts the form
-  // section so it opens with the link's values.
+  // A link on this page (Missing › Connect) changes only the search; the key remounts the form so
+  // it opens with the link's values.
   const connectLink = [search.connect, search.name, search.scopes, inView?.id].join("|");
+  const [addingSecret, setAddingSecret] = useState(false);
+  const [connectingAccount, setConnectingAccount] = useState(false);
+  const closeAddSecret = () => {
+    setAddingSecret(false);
+    if (search.secret !== undefined) {
+      void navigate({ search: ({ secret: _secret, ...previous }) => previous });
+    }
+  };
+  const prefilledConnect = search.connect !== undefined || search.name !== undefined;
+  const closeConnect = () => {
+    setConnectingAccount(false);
+    if (prefilledConnect) {
+      void navigate({
+        search: ({ connect: _connect, name: _name, scopes: _scopes, ...previous }) => previous,
+      });
+    }
+  };
   return (
-    <>
-      <div className="dhead">
-        <div className="min-w-0">
-          <h1 className="t-page">Credentials</h1>
-          <p className="t-meta mt-1.5">
-            Secrets and accounts your automations use. Values are stored encrypted and never shown
-            again.
-          </p>
-        </div>
-        {projects.data !== undefined && projects.data.length > 1 ? (
-          <label className="form-label">
-            Project
+    <Page
+      actions={
+        <>
+          {projects.data !== undefined && projects.data.length > 1 ? (
             <select
+              aria-label="Project"
               className="field"
               onChange={(event) =>
                 void navigate({
@@ -80,22 +93,28 @@ export function CredentialsPage() {
                 </option>
               ))}
             </select>
-          </label>
-        ) : null}
-      </div>
+          ) : null}
+          <button className="btn quiet" onClick={() => setConnectingAccount(true)} type="button">
+            Connect an account
+          </button>
+          <button className="btn" onClick={() => setAddingSecret(true)} type="button">
+            Add secret
+          </button>
+        </>
+      }
+      description="Secrets and accounts your automations use. Values are stored encrypted and never shown again."
+      title="Credentials"
+      type="administration"
+    >
       {projects.isError ? (
-        <div className="mt-4">
-          <ErrorNote error={projects.error} title="The projects could not be loaded." />
-        </div>
+        <ErrorNote error={projects.error} title="The projects could not be loaded." />
       ) : null}
       {overview.isError ? (
-        <div className="mt-4">
-          <ErrorNote
-            error={overview.error}
-            onRetry={() => void overview.refetch()}
-            title="What deployed automations miss could not be loaded."
-          />
-        </div>
+        <ErrorNote
+          error={overview.error}
+          onRetry={() => void overview.refetch()}
+          title="What deployed automations miss could not be loaded."
+        />
       ) : null}
       {missing.length > 0 ? (
         <>
@@ -108,13 +127,22 @@ export function CredentialsPage() {
         </>
       ) : null}
       <Secrets
+        adding={addingSecret || search.secret !== undefined}
         key={`${search.secret ?? ""}|${inView?.id ?? ""}`}
+        onCloseAdd={closeAddSecret}
         prefill={search.secret}
         usage={usage}
         view={view}
       />
-      <Accounts key={connectLink} search={search} usage={usage} view={view} />
-    </>
+      <Accounts
+        connectLink={connectLink}
+        connecting={connectingAccount || prefilledConnect}
+        onCloseConnect={closeConnect}
+        search={search}
+        usage={usage}
+        view={view}
+      />
+    </Page>
   );
 }
 
@@ -163,28 +191,21 @@ function ProjectPicker(props: {
   );
 }
 
-/** "Access" and the panel it opens: who may use and manage the credential. */
+/** Whether a row's Access panel is open: who may use and manage the credential. */
 function useAccessToggle() {
   const [open, setOpen] = useState<string | null>(null);
   const keyOf = (credential: CredentialRef) =>
     `${credential.kind}:${credential.projectId}:${credential.name}`;
   return {
-    button: (credential: CredentialRef) => (
-      <button
-        aria-expanded={open === keyOf(credential)}
-        className="btn quiet small"
-        onClick={() => setOpen(open === keyOf(credential) ? null : keyOf(credential))}
-        type="button"
-      >
-        Access
-      </button>
-    ),
+    expanded: (credential: CredentialRef) => open === keyOf(credential),
     panel: (credential: CredentialRef) =>
       open === keyOf(credential) ? (
-        <div className="bg-surface-2 px-[18px] py-3.5">
+        <div className="border-t border-line px-4 py-3">
           <CredentialAccess credential={credential} />
         </div>
       ) : null,
+    toggle: (credential: CredentialRef) =>
+      setOpen(open === keyOf(credential) ? null : keyOf(credential)),
   };
 }
 
@@ -200,6 +221,8 @@ function usedBy(usage: Usage, uses: (automation: AutomationSummary) => boolean):
 }
 
 function Secrets(props: {
+  readonly adding: boolean;
+  readonly onCloseAdd: () => void;
   readonly prefill: string | undefined;
   readonly usage: Usage;
   readonly view: ProjectView;
@@ -233,19 +256,27 @@ function Secrets(props: {
   return (
     <>
       <SectionHead title="Secrets" />
-      <div className="card rows overflow-hidden" data-testid="secrets">
+      {props.adding ? (
+        <AddSecret onClose={props.onCloseAdd} prefill={props.prefill} view={view} />
+      ) : null}
+      <div className="card rows" data-testid="secrets">
         {secrets.isError ? (
           <div className="p-4">
             <ErrorNote error={secrets.error} title="The secrets could not be loaded." />
           </div>
         ) : secrets.data === undefined ? (
           <Skeleton label="Loading secrets" lines={3} />
+        ) : shown.length === 0 ? (
+          <p className="t-meta m-0 px-4 py-3">
+            No secret is stored
+            {view.inView === null ? "" : ` in ${view.inView.name}`} in this environment.
+          </p>
         ) : (
           shown.map((secret) => (
             <div key={keyOf(secret)}>
               <div className="setting" data-testid="secret">
                 <div className="min-w-0">
-                  <span className="mono font-semibold">{secret.name}</span>
+                  <span className="mono font-medium">{secret.name}</span>
                   <div className="t-faint">
                     {projectOf(secret)} · Updated {ageInWords(secret.updatedAt, now)} ·{" "}
                     {usedBy(
@@ -276,8 +307,7 @@ function Secrets(props: {
                     </div>
                   ) : null}
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {secret.right === null ? null : access.button(refOf(secret))}
+                <div className="flex items-center gap-2">
                   {secret.right === "manage" ? (
                     <>
                       <button
@@ -287,18 +317,37 @@ function Secrets(props: {
                       >
                         Rotate
                       </button>
-                      <button
-                        className="btn danger small"
-                        disabled={remove.isPending}
-                        onClick={async () => {
-                          const question = `Delete ${secret.name} from ${projectOf(secret)}? Runs that need it stop starting until it is set again and its automations are deployed again.`;
-                          if (await confirm({ action: "Delete", question })) remove.mutate(secret);
-                        }}
-                        type="button"
-                      >
-                        Delete
-                      </button>
+                      <RowMenu>
+                        <MenuItem
+                          expanded={access.expanded(refOf(secret))}
+                          onClick={() => access.toggle(refOf(secret))}
+                        >
+                          Access
+                        </MenuItem>
+                        <MenuItem
+                          danger
+                          disabled={remove.isPending}
+                          onClick={async () => {
+                            const question = `Delete ${secret.name} from ${projectOf(secret)}? Runs that need it stop starting until it is set again and its automations are deployed again.`;
+                            if (await confirm({ action: "Delete", question })) {
+                              remove.mutate(secret);
+                            }
+                          }}
+                        >
+                          Delete
+                        </MenuItem>
+                      </RowMenu>
                     </>
+                  ) : null}
+                  {secret.right === "use" ? (
+                    <button
+                      aria-expanded={access.expanded(refOf(secret))}
+                      className="btn quiet small"
+                      onClick={() => access.toggle(refOf(secret))}
+                      type="button"
+                    >
+                      Access
+                    </button>
                   ) : null}
                 </div>
               </div>
@@ -307,17 +356,20 @@ function Secrets(props: {
           ))
         )}
         {remove.isError ? (
-          <div className="px-[18px] py-2">
+          <div className="px-4 py-2">
             <ActionError error={remove.error} />
           </div>
         ) : null}
-        <AddSecret prefill={props.prefill} view={view} />
       </div>
     </>
   );
 }
 
-function AddSecret(props: { readonly prefill: string | undefined; readonly view: ProjectView }) {
+function AddSecret(props: {
+  readonly onClose: () => void;
+  readonly prefill: string | undefined;
+  readonly view: ProjectView;
+}) {
   const { api } = useDashboardClient();
   const queryClient = useQueryClient();
   const [name, setName] = useState(props.prefill ?? "");
@@ -335,48 +387,50 @@ function AddSecret(props: { readonly prefill: string | undefined; readonly view:
     mutationFn: () =>
       api.upsertSecret(name.trim(), value, projectId === undefined ? {} : { project: projectId }),
     onSuccess: async () => {
-      setName("");
-      setValue("");
+      props.onClose();
       await refreshAll(queryClient);
     },
   });
   const ready = name.trim() !== "" && value !== "" && projectId !== undefined && !add.isPending;
   return (
     <form
-      className="setting bg-surface-2"
+      className="card setting-form"
       data-testid="add-secret"
       onSubmit={(event) => {
         event.preventDefault();
         if (ready) add.mutate();
       }}
     >
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          aria-label="Secret name"
-          className="field w-56"
-          onChange={(event) => setName(event.target.value.toUpperCase())}
-          placeholder="NAME"
-          value={name}
-        />
-        <SecretInput
-          aria-label="Secret value"
-          className="min-w-0 flex-1"
-          onValueChange={setValue}
-          placeholder="Value"
-          ref={valueField}
-          value={value}
-        />
-        <ProjectPicker
-          label="Project of the new secret"
-          onChange={setChosen}
-          options={options}
-          value={projectId ?? ""}
-        />
-        {add.isError ? <ActionError error={add.error} /> : null}
+      <input
+        aria-label="Secret name"
+        className="field w-56"
+        onChange={(event) => setName(event.target.value.toUpperCase())}
+        placeholder="NAME"
+        value={name}
+      />
+      <SecretInput
+        aria-label="Secret value"
+        className="min-w-0 flex-1"
+        onValueChange={setValue}
+        placeholder="Value"
+        ref={valueField}
+        value={value}
+      />
+      <ProjectPicker
+        label="Project of the new secret"
+        onChange={setChosen}
+        options={options}
+        value={projectId ?? ""}
+      />
+      {add.isError ? <ActionError error={add.error} /> : null}
+      <div className="flex gap-2">
+        <button className="btn quiet" onClick={props.onClose} type="button">
+          Cancel
+        </button>
+        <button className="btn" disabled={!ready} type="submit">
+          {add.isPending ? "Adding…" : "Add secret"}
+        </button>
       </div>
-      <button className="btn" disabled={!ready} type="submit">
-        {add.isPending ? "Adding…" : "Add secret"}
-      </button>
     </form>
   );
 }
@@ -444,6 +498,9 @@ function signingIn(connection: ConnectionMetadata): boolean {
 }
 
 function Accounts(props: {
+  readonly connectLink: string;
+  readonly connecting: boolean;
+  readonly onCloseConnect: () => void;
   readonly search: CredentialsSearch;
   readonly usage: Usage;
   readonly view: ProjectView;
@@ -453,8 +510,6 @@ function Accounts(props: {
   const confirm = useConfirm();
   const queryClient = useQueryClient();
   const now = useNow();
-  const prefilled = props.search.connect !== undefined || props.search.name !== undefined;
-  const [connecting, setConnecting] = useState(prefilled);
   const connections = useQuery({
     queryFn: () => api.listConnections(),
     queryKey: ["connections", ...queryScope],
@@ -495,17 +550,12 @@ function Accounts(props: {
 
   return (
     <>
-      <SectionHead title="Accounts">
-        {connecting ? null : (
-          <button className="btn small ml-auto" onClick={() => setConnecting(true)} type="button">
-            Connect an account
-          </button>
-        )}
-      </SectionHead>
-      {connecting ? (
+      <SectionHead title="Accounts" />
+      {props.connecting ? (
         <ConnectForm
           connections={all}
-          onClose={() => setConnecting(false)}
+          key={props.connectLink}
+          onClose={props.onCloseConnect}
           onConsent={setConsent}
           redirectBaseUrl={connections.data?.redirectBaseUrl ?? null}
           search={props.search}
@@ -513,7 +563,7 @@ function Accounts(props: {
         />
       ) : null}
       {consent !== null && signInOpen ? (
-        <p className="notice mb-3">
+        <p className="notice m-0">
           {consent.blocked
             ? "Your browser blocked the sign-in window."
             : "Finish the sign-in in the window that opened. Nothing opened?"}{" "}
@@ -523,7 +573,7 @@ function Accounts(props: {
           {consent.blocked ? " to finish connecting." : "."}
         </p>
       ) : null}
-      <div className="card rows overflow-hidden" data-testid="accounts">
+      <div className="card rows" data-testid="accounts">
         {connections.isError ? (
           <div className="p-4">
             <ErrorNote error={connections.error} title="The accounts could not be loaded." />
@@ -531,7 +581,7 @@ function Accounts(props: {
         ) : connections.data === undefined ? (
           <Skeleton label="Loading accounts" lines={2} />
         ) : list.length === 0 ? (
-          <p className="t-meta px-[18px] py-3.5">
+          <p className="t-meta m-0 px-4 py-3">
             No account is connected
             {view.inView === null ? "" : ` to ${view.inView.name}`} in this environment.
           </p>
@@ -547,12 +597,12 @@ function Accounts(props: {
               <div key={connection.id}>
                 <div className="setting" data-testid="account">
                   <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2.5">
+                    <div className="flex flex-wrap items-center gap-2">
                       <b>{connection.name}</b>
                       <span className="t-meta">{providerLabel(connection.provider)}</span>
                       <Chip tone={state.tone}>{state.label}</Chip>
                     </div>
-                    <div className="t-faint mt-0.5">
+                    <div className="t-faint">
                       {connection.project.name} · {connectionCheckInWords(connection, now)} ·{" "}
                       {usedBy(
                         props.usage,
@@ -565,8 +615,7 @@ function Accounts(props: {
                       {connection.right === null ? null : ` · you ${connection.right} it`}
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {connection.right === null ? null : access.button(ref)}
+                  <div className="flex items-center gap-2">
                     {connection.right !== null && connection.status === "active" ? (
                       <button
                         className="btn quiet small"
@@ -589,21 +638,30 @@ function Accounts(props: {
                         Reconnect
                       </button>
                     ) : null}
-                    {connection.right === "manage" ? (
-                      <button
-                        className="btn danger small"
-                        disabled={remove.isPending}
-                        onClick={async () => {
-                          const question = `Delete ${connection.name}? This revokes its tokens.`;
-                          if (await confirm({ action: "Delete", question })) {
-                            remove.mutate(connection);
-                          }
-                        }}
-                        type="button"
-                      >
-                        Delete
-                      </button>
-                    ) : null}
+                    {connection.right === null ? null : (
+                      <RowMenu>
+                        <MenuItem
+                          expanded={access.expanded(ref)}
+                          onClick={() => access.toggle(ref)}
+                        >
+                          Access
+                        </MenuItem>
+                        {connection.right === "manage" ? (
+                          <MenuItem
+                            danger
+                            disabled={remove.isPending}
+                            onClick={async () => {
+                              const question = `Delete ${connection.name}? This revokes its tokens.`;
+                              if (await confirm({ action: "Delete", question })) {
+                                remove.mutate(connection);
+                              }
+                            }}
+                          >
+                            Delete
+                          </MenuItem>
+                        ) : null}
+                      </RowMenu>
+                    )}
                   </div>
                 </div>
                 {access.panel(ref)}
@@ -612,7 +670,7 @@ function Accounts(props: {
           })
         )}
         {actionError ? (
-          <div className="px-[18px] py-2">
+          <div className="px-4 py-2">
             <ActionError error={actionError} />
           </div>
         ) : null}
@@ -717,7 +775,7 @@ function ConnectForm(props: {
 
   return (
     <form
-      className="card mb-3.5 grid gap-3 px-5 py-4"
+      className="card grid gap-3 p-4"
       data-testid="connect-form"
       onSubmit={(event) => {
         event.preventDefault();
@@ -749,7 +807,7 @@ function ConnectForm(props: {
             value={name}
           />
           {name.trim() !== "" && !nameValid ? (
-            <span className="text-[12px] font-normal text-fail">
+            <span className="t-faint font-normal text-fail">
               Lowercase letters, digits and hyphens, up to 60 characters, e.g. google-jan.
             </span>
           ) : null}
