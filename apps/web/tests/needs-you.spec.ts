@@ -22,7 +22,7 @@ test("signing in lands on Needs you, whose rows act inline", async ({ context, p
   await page.getByRole("button", { name: "Sign in" }).click();
 
   const needsYou = page.getByTestId("needs-you");
-  await expect(page.getByRole("heading", { name: "3 things need you." })).toBeVisible();
+  await expect(page.getByTestId("status-card").getByText("3 things need you.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Overview 3" })).toBeVisible();
 
   // Needs you lists the approvals the viewer decides; Approve sends the verdict and comment.
@@ -67,7 +67,7 @@ test("signing in lands on Needs you, whose rows act inline", async ({ context, p
       "which carries no signed delivery: if the automation checks the webhook signature, ask the sender to redeliver instead.",
   );
 
-  await expect(page.getByRole("heading", { name: "2 things need you." })).toBeVisible();
+  await expect(page.getByTestId("status-card").getByText("2 things need you.")).toBeVisible();
   expect(state.unhandled).toEqual([]);
 });
 

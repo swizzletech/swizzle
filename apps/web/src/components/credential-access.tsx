@@ -85,12 +85,12 @@ function LoadedAccess(props: {
           <div className="setting" data-testid="credential-share" key={share.shareId}>
             <div className="min-w-0">
               <b>{share.project.name}</b> <Chip tone="idle">Project</Chip>
-              <div className="t-meta mt-0.5">{credentialShareInWords(share, now)}</div>
+              <div className="t-meta mt-1">{credentialShareInWords(share, now)}</div>
             </div>
           </div>
         ))}
         {remove.isError ? (
-          <div className="px-[18px] py-2">
+          <div className="px-4 py-2">
             <ActionError error={remove.error} />
           </div>
         ) : null}
@@ -183,7 +183,7 @@ function GrantForm(props: {
   return (
     <form
       aria-label={`Grant a right on ${credential.name}`}
-      className="card grid gap-3 px-5 py-4"
+      className="card grid gap-3 px-4 py-4"
       data-testid="credential-grant-form"
       onSubmit={(event) => {
         event.preventDefault();
@@ -208,7 +208,7 @@ function GrantForm(props: {
         </select>
       </label>
       <fieldset className="grid gap-2 border-0 p-0">
-        <legend className="form-label mb-1.5">Right</legend>
+        <legend className="form-label mb-2">Right</legend>
         {RIGHTS.map((option) => (
           <label className="flex items-start gap-2" key={option}>
             <input

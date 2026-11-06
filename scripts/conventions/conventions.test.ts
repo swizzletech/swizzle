@@ -882,3 +882,128 @@ it("web-reads-the-contract resolves request and response bindings and ignores no
     "apps/web/src/lib/api/runs.ts:9",
   ]);
 });
+
+const DESIGN_SCALE = JSON.stringify({
+  fontSizes: [12, 13, 14, 16, 20, 24],
+  radii: [6, 8, 12],
+  spacing: [0, 4, 8, 12, 16, 24, 32, 48],
+});
+
+it("web-design-scale measures a token as what reads it, whatever its name", async () => {
+  const css = (tokens: readonly string[], rules: readonly string[]) =>
+    [":root {", ...tokens.map((one) => `  ${one}`), "}", ".a {", ...rules, "}"].join("\n");
+  const scanned = (file: string, tsx = "") =>
+    reported("web-design-scale", {
+      "apps/web/design-scale.json": DESIGN_SCALE,
+      "apps/web/src/page.css": file,
+      "apps/web/src/page.tsx": tsx,
+    });
+
+  // A length nothing on the scale reads stays free, as does a colour read by `text-[var()]`.
+  expect(
+    await scanned(
+      css(
+        ["--page-margin: 32px;", "--page-width: 1696px;", "--blur: 7px;", "--ink: #18181b;"],
+        ["  padding: 0 var(--page-margin);", "  max-width: var(--page-width);"],
+      ),
+      '<i className="text-[var(--ink)]" />',
+    ),
+  ).toEqual([]);
+
+  for (const [token, rule] of [
+    ["--page-margin: 7px;", "  padding: 0 var(--page-margin);"],
+    ["--section-gap: 7px;", "  margin-top: var(--section-gap);"],
+    ["--corner: 7px;", "  border-radius: var(--corner);"],
+    ["--body: 15px;", "  font-size: var(--body);"],
+    ["--body: 15px;", "  font: 500 var(--body) var(--font-sans);"],
+  ] as const) {
+    expect(await scanned(css([token], [rule]))).toEqual(["apps/web/src/page.css:2"]);
+  }
+
+  // One line however many read it, through a token that reads a token, in every scope it is set.
+  expect(
+    await scanned(
+      css(
+        ["--inner: 7px;", "--outer: var(--inner);"],
+        ["  padding: var(--outer);", "  margin: var(--outer);", "  --inner: 9px;"],
+      ),
+    ),
+  ).toEqual(["apps/web/src/page.css:2", "apps/web/src/page.css:8"]);
+
+  // A fallback is written where it stands, and tokens that read each other end.
+  expect(await scanned(css([], ["  gap: var(--missing, 7px);"]))).toEqual([
+    "apps/web/src/page.css:4",
+  ]);
+  expect(await scanned(css(["--a: var(--b);", "--b: var(--a);"], ["  gap: var(--a);"]))).toEqual(
+    [],
+  );
+
+  for (const name of [
+    "p-[var(--gutter)]",
+    "gap-(--gutter)",
+    "rounded-[var(--gutter)]",
+    "text-[length:var(--gutter)]",
+  ]) {
+    expect(await scanned(css(["--gutter: 7px;"], []), `<i className="${name}" />`)).toEqual([
+      "apps/web/src/page.css:2",
+    ]);
+  }
+
+  // Tailwind multiplies every spacing utility by this one.
+  expect(await scanned(css(["--spacing: 5px;"], []))).toEqual(["apps/web/src/page.css:2"]);
+});
+
+it("web-design-scale refuses a written font size, radius or spacing outside the scale", async () => {
+  const onScale = {
+    "apps/web/design-scale.json": DESIGN_SCALE,
+    "apps/web/src/page.css": [
+      ".a {",
+      "  font: 500 13px / 20px var(--font-sans);",
+      "  padding: 8px 16px;",
+      "  margin: 0 -16px;",
+      "  border-radius: 50%;",
+      "  gap: var(--anything);",
+      "  /* padding: 7px; a comment is not a value */",
+      "}",
+    ].join("\n"),
+    "apps/web/src/page.tsx":
+      '<div className="mt-4 -mx-2 gap-3 text-[13px] rounded-lg h-[30px] text-fail" />',
+  };
+  expect(await reported("web-design-scale", onScale)).toEqual([]);
+  expect(
+    await reported("web-design-scale", {
+      ...onScale,
+      "apps/web/src/page.css": [
+        ".a {",
+        "  font-size: 15px;",
+        "  font: 500 11px / 20px var(--font-sans);",
+        "  border-radius: 10px;",
+        "  padding: 8px 14px;",
+        "  gap: 1.5em;",
+        "  --radius-x: 3px;",
+        "}",
+      ].join("\n"),
+    }),
+  ).toEqual([
+    "apps/web/src/page.css:2",
+    "apps/web/src/page.css:3",
+    "apps/web/src/page.css:4",
+    "apps/web/src/page.css:5",
+    "apps/web/src/page.css:6",
+    "apps/web/src/page.css:7",
+  ]);
+  expect(
+    await reported("web-design-scale", {
+      ...onScale,
+      "apps/web/src/page.tsx": [
+        '<i className="text-[12.5px]" />',
+        '<i className="rounded-[10px]" />',
+        '<i className="px-[18px]" />',
+        '<i className="gap-1.5" />',
+        '<i className="p-5" />',
+        '<i className="text-lg" />',
+        '<i className="rounded" />',
+      ].join("\n"),
+    }),
+  ).toEqual([1, 2, 3, 4, 5, 6, 7].map((line) => `apps/web/src/page.tsx:${line}`));
+});

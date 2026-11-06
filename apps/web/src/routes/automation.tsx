@@ -15,9 +15,9 @@ import { FlowDiagram } from "../components/flow-diagram";
 import { FlowTrack, useTrackFolded } from "../components/flow-track";
 import { MarkdownDocument } from "../components/markdown-document";
 import { Menu } from "../components/menu";
-import { RunPanel, RunRow } from "../components/run-panel";
-import { RunSplit, useRunSplit } from "../components/run-split";
-import { Trail } from "../components/shell";
+import { Page, type PageType } from "../components/page";
+import { RunPanel } from "../components/run-panel";
+import { RunWorkbench, useRunSplit } from "../components/run-workbench";
 import { Track } from "../components/track";
 import { Chip, Dot, ErrorNote, Skeleton, useNow, WithCode } from "../components/ui";
 import { type AutomationDetail, isOpenRun, type TriggerSummary } from "../lib/api";
@@ -26,9 +26,11 @@ import { refreshAll, useFolders } from "../lib/queries";
 import { AUTOMATION_TABS, type AutomationSearch, type AutomationTab } from "../lib/search";
 import { staticTrack } from "../lib/track";
 import { useAutomationFlow } from "../lib/use-automation-flow";
+import { useRunPages } from "../lib/use-run-pages";
 import { refusedControlsInWords } from "../lib/words/access";
 import { CHECK_STATUS } from "../lib/words/api-checks";
 import { automationHealth, HEALTH_TONE, readinessInWords } from "../lib/words/health";
+import { versionInWords } from "../lib/words/runs";
 import { ageInWords, durationInWords } from "../lib/words/time";
 import { chainSourcesInWords, nextRunInWords, triggerInWords } from "../lib/words/triggers";
 
@@ -38,6 +40,15 @@ const TAB_LABEL: Record<AutomationTab, string> = {
   runs: "Runs",
   versions: "Versions",
 };
+
+const TAB_PAGE: Record<AutomationTab, PageType> = {
+  about: "reading",
+  play: "reading",
+  runs: "workbench",
+  versions: "administration",
+};
+
+const OVERVIEW = { label: "Overview", to: "/" } as const;
 
 export function AutomationPage() {
   const { automationSlug: slug } = useParams({ from: "/automations/$automationSlug" });
@@ -51,21 +62,22 @@ export function AutomationPage() {
 
   if (detailQuery.isError) {
     return (
-      <>
-        <Trail current={slug} parent={{ label: "Overview", to: "/" }} />
+      <Page path={{ current: slug, parent: OVERVIEW }} title={slug} type="reading">
         <ErrorNote
           error={detailQuery.error}
           onRetry={() => void detailQuery.refetch()}
           title="This automation could not be loaded."
         />
-      </>
+      </Page>
     );
   }
   if (detailQuery.data === undefined) {
     return (
-      <div className="card">
-        <Skeleton label="Loading the automation" lines={5} />
-      </div>
+      <Page path={{ current: slug, parent: OVERVIEW }} title={slug} type="reading">
+        <div className="card">
+          <Skeleton label="Loading the automation" lines={5} />
+        </div>
+      </Page>
     );
   }
   return <LoadedAutomation automation={detailQuery.data} search={search} />;
@@ -79,23 +91,34 @@ function LoadedAutomation(props: {
   const navigate = useNavigate({ from: "/automations/$automationSlug" });
   const tab = props.search.tab ?? "runs";
   return (
-    <>
-      <Trail current={automation.automationName} parent={{ label: "Overview", to: "/" }} />
-      <Header automation={automation} />
-      <div aria-label="Automation" className="dtabs" role="tablist">
-        {AUTOMATION_TABS.map((key) => (
-          <button
-            aria-selected={tab === key}
-            className="dtab"
-            key={key}
-            onClick={() => void navigate({ search: key === "runs" ? {} : { tab: key } })}
-            role="tab"
-            type="button"
-          >
-            {TAB_LABEL[key]}
-          </button>
-        ))}
-      </div>
+    <Page
+      actions={<HeadActions automation={automation} />}
+      description={<HeadFacts automation={automation} />}
+      path={{ current: automation.automationName, parent: OVERVIEW }}
+      tabs={
+        <div aria-label="Automation" className="dtabs" role="tablist">
+          {AUTOMATION_TABS.map((key) => (
+            <button
+              aria-selected={tab === key}
+              className="dtab"
+              key={key}
+              onClick={() => void navigate({ search: key === "runs" ? {} : { tab: key } })}
+              role="tab"
+              type="button"
+            >
+              {TAB_LABEL[key]}
+            </button>
+          ))}
+        </div>
+      }
+      title={
+        <span className="inline-flex items-center gap-2">
+          <Dot tone={HEALTH_TONE[automationHealth(automation)]} />
+          {automation.automationName}
+        </span>
+      }
+      type={TAB_PAGE[tab]}
+    >
       {tab === "runs" ? <RunsTab automation={automation} selected={props.search.run} /> : null}
       {tab === "about" ? <AboutTab automation={automation} /> : null}
       {tab === "play" ? (
@@ -106,17 +129,50 @@ function LoadedAutomation(props: {
         />
       ) : null}
       {tab === "versions" ? <VersionsTab automation={automation} /> : null}
-    </>
+    </Page>
   );
 }
 
-function Header({ automation }: { readonly automation: AutomationDetail }) {
+/** What the trigger does and where the deployment stands, in the page head under the title. */
+function HeadFacts({ automation }: { readonly automation: AutomationDetail }) {
   const now = useNow();
+  const trigger = automation.trigger;
+  const deployment = automation.activeDeployment;
+  const { readiness } = deployment;
+  return (
+    <div className="grid gap-1">
+      {automation.description ? <p className="m-0">{automation.description}</p> : null}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <span>
+          <WithCode text={triggerInWords(trigger)} />
+        </span>
+        <span>
+          {versionInWords(deployment.version)} deployed {ageInWords(deployment.deployedAt, now)}
+        </span>
+        {trigger?.status === "paused" ? (
+          <Chip tone="idle">Paused</Chip>
+        ) : (
+          <span>{nextRunInWords(trigger, now)}</span>
+        )}
+        {readiness.status === "not-ready" ? (
+          <span title={readiness.errors.map((issue) => issue.message).join("\n")}>
+            <Chip tone="warn">{readinessInWords(readiness)}</Chip>
+          </span>
+        ) : null}
+      </div>
+      {readiness.warnings.map((issue) => (
+        <p className="m-0" key={`${issue.code}:${issue.worker}:${issue.subject}`}>
+          {issue.message}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function HeadActions({ automation }: { readonly automation: AutomationDetail }) {
   const { api } = useDashboardClient();
   const queryClient = useQueryClient();
   const trigger = automation.trigger;
-  const deployment = automation.activeDeployment;
-  const readiness = deployment.readiness;
   const { refusals } = automation;
   const runs = trigger !== null && trigger.triggerType !== "chain";
   const toggles = trigger !== null && trigger.status !== "invalid";
@@ -137,62 +193,26 @@ function Header({ automation }: { readonly automation: AutomationDetail }) {
     onSuccess: () => refreshAll(queryClient),
   });
   return (
-    <div className="dhead">
-      <div className="min-w-0">
-        <div className="flex items-center gap-3">
-          <Dot className="h-3 w-3" tone={HEALTH_TONE[automationHealth(automation)]} />
-          <h1 className="t-page">{automation.automationName}</h1>
-        </div>
-        {automation.description ? (
-          <p className="t-meta mt-1.5 text-[14px]">{automation.description}</p>
-        ) : null}
-        <div className="line t-meta">
-          <span>
-            <WithCode text={triggerInWords(trigger)} />
-          </span>
-          <span>
-            v{deployment.version} deployed {ageInWords(deployment.deployedAt, now)}
-          </span>
-          {trigger?.status === "paused" ? (
-            <Chip tone="idle">Paused</Chip>
-          ) : (
-            <span>{nextRunInWords(trigger, now)}</span>
-          )}
-          {readiness.status === "not-ready" ? (
-            <span title={readiness.errors.map((issue) => issue.message).join("\n")}>
-              <Chip tone="warn">{readinessInWords(readiness)}</Chip>
-            </span>
-          ) : null}
-        </div>
-        {readiness.warnings.map((issue) => (
-          <p className="t-meta mt-1.5" key={`${issue.code}:${issue.worker}:${issue.subject}`}>
-            {issue.message}
-          </p>
-        ))}
-        {toggle.isError ? <ActionError error={toggle.error} /> : null}
-        {refused.length === 0 ? null : (
-          <p className="t-meta mt-1.5" data-testid="refused-controls">
-            {refusedControlsInWords(refused)}
-          </p>
-        )}
-      </div>
-      <div className="acts">
-        {runs && refusals.run === null ? (
-          <RunNow automation={automation} trigger={trigger} />
-        ) : null}
-        {toggles && refusals.edit === null ? (
-          <button
-            className="btn quiet"
-            disabled={toggle.isPending}
-            onClick={() => toggle.mutate()}
-            type="button"
-          >
-            {trigger.status === "paused" ? "Resume" : "Pause"}
-          </button>
-        ) : null}
-        {refusals.organize === null ? <MoreMenu automation={automation} /> : null}
-      </div>
-    </div>
+    <>
+      {toggle.isError ? <ActionError error={toggle.error} /> : null}
+      {refused.length === 0 ? null : (
+        <p className="t-faint m-0 max-w-80" data-testid="refused-controls">
+          {refusedControlsInWords(refused)}
+        </p>
+      )}
+      {runs && refusals.run === null ? <RunNow automation={automation} trigger={trigger} /> : null}
+      {toggles && refusals.edit === null ? (
+        <button
+          className="btn quiet"
+          disabled={toggle.isPending}
+          onClick={() => toggle.mutate()}
+          type="button"
+        >
+          {trigger.status === "paused" ? "Resume" : "Pause"}
+        </button>
+      ) : null}
+      {refusals.organize === null ? <MoreMenu automation={automation} /> : null}
+    </>
   );
 }
 
@@ -290,17 +310,13 @@ function RunsTab(props: {
   const { api, queryScope } = useDashboardClient();
   const navigate = useNavigate({ from: "/automations/$automationSlug" });
   const slug = props.automation.automationSlug;
-  const runsQuery = useQuery({
-    queryFn: () => api.listRuns({ automation: slug, limit: 25 }),
-    queryKey: ["runs", "automation", slug, ...queryScope],
-    refetchInterval: 5_000,
-  });
-  const runs = runsQuery.data?.runs ?? [];
+  const pages = useRunPages({ automation: slug });
   // As on Runs. On a phone the chosen run comes first and its track below it, since a phone draws
   // the track a screen tall.
-  const view = useRunSplit(props.selected, runs[0]?.runId);
+  const view = useRunSplit(props.selected, pages.runs?.[0]?.runId);
   const { selected } = view;
-  const select = (runId: string) => void navigate({ search: { run: runId } });
+  const select = (runId: string, options?: { readonly replace: boolean }) =>
+    void navigate({ replace: options?.replace ?? false, search: { run: runId } });
   const runQuery = useQuery({
     enabled: selected !== undefined,
     queryFn: () => api.getRunDetail(selected ?? ""),
@@ -324,73 +340,37 @@ function RunsTab(props: {
     !folded &&
     (flow.graph?.nodes.some((node) => node.id === stepFamily(stepKey)) ?? false);
 
-  if (runsQuery.isError) {
-    return (
-      <ErrorNote
-        error={runsQuery.error}
-        onRetry={() => void runsQuery.refetch()}
-        title="The runs could not be loaded."
-      />
-    );
-  }
-  if (runsQuery.data === undefined) {
-    return (
-      <div className="card">
-        <Skeleton label="Loading runs" lines={5} />
-      </div>
-    );
-  }
-  if (runs.length === 0 && selected === undefined) {
-    return (
-      <p className="card t-meta p-6">
-        No runs yet. Start one with Run now, or wait for its trigger.
-      </p>
-    );
-  }
-  const track = (
-    <FlowTrack
-      approvalOnTrack={approvalOnTrack}
-      flow={flow}
-      folded={folded}
-      onFold={setFolded}
-      run={run}
-    />
-  );
   return (
-    <>
-      {view.list ? track : null}
-      <RunSplit
-        list={
-          <div className="card rows overflow-hidden" data-testid="run-list">
-            {runs.map((run) => (
-              <RunRow
-                key={run.runId}
-                onSelect={select}
-                run={run}
-                selected={run.runId === selected}
-                showAutomation={false}
-              />
-            ))}
-            <div className="px-3.5 py-2.5 text-center">
-              <Link className="linkish text-[13px]" search={{ automation: slug }} to="/runs">
-                All runs of {props.automation.automationName} →
-              </Link>
-            </div>
-          </div>
-        }
-        onBack={() => void navigate({ search: ({ run: _run, ...previous }) => previous })}
-        run={(runId) => (
-          <RunPanel
-            approvalOnTrack={approvalOnTrack}
-            onSelectRun={select}
-            runId={runId}
-            showAutomationLink={false}
-          />
-        )}
-        view={view}
-      />
-      {view.list ? null : <div className="mt-[18px]">{track}</div>}
-    </>
+    <RunWorkbench
+      band={
+        <FlowTrack
+          approvalOnTrack={approvalOnTrack}
+          flow={flow}
+          folded={folded}
+          onFold={setFolded}
+          run={run}
+        />
+      }
+      empty="No runs yet. Start one with Run now, or wait for its trigger."
+      leads="state"
+      listEnd={
+        <Link className="linkish t-faint" search={{ automation: slug }} to="/runs">
+          All runs of {props.automation.automationName} →
+        </Link>
+      }
+      onBack={() => void navigate({ search: ({ run: _run, ...previous }) => previous })}
+      onSelect={select}
+      pages={pages}
+      run={(runId) => (
+        <RunPanel
+          approvalOnTrack={approvalOnTrack}
+          onSelectRun={select}
+          runId={runId}
+          showAutomationLink={false}
+        />
+      )}
+      view={view}
+    />
   );
 }
 
@@ -404,10 +384,10 @@ function AboutTab({ automation }: { readonly automation: AutomationDetail }) {
   const flow = useAutomationFlow(slug, automation.activeDeployment.deploymentId);
   const vars = Object.entries(automation.activeDeployment.vars);
   return (
-    <div className="grid items-start gap-[18px] lg:grid-cols-[minmax(0,1fr)_340px]">
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
       {/* A one-column track that may shrink, so a long README line scrolls instead of spilling. */}
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-[18px]">
-        <div className="card px-7 py-6">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-6">
+        <div className="card p-6">
           <MarkdownDocument
             available={readme.data?.available ?? false}
             content={readme.data?.content ?? null}
@@ -431,7 +411,7 @@ function AboutTab({ automation }: { readonly automation: AutomationDetail }) {
           </AboutCard>
         )}
       </div>
-      <div className="grid gap-[18px]">
+      <div className="grid gap-6">
         <AboutCard title="Trigger">
           <TriggerFacts trigger={automation.trigger} />
         </AboutCard>
@@ -443,10 +423,10 @@ function AboutTab({ automation }: { readonly automation: AutomationDetail }) {
         </AboutCard>
         {vars.length > 0 ? (
           <AboutCard title="Vars">
-            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5">
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
               {vars.map(([name, value]) => (
                 <Fact key={name} label={<span className="mono">{name}</span>}>
-                  <span className="mono break-all">{String(value)}</span>
+                  <span className="mono">{String(value)}</span>
                 </Fact>
               ))}
             </dl>
@@ -459,8 +439,8 @@ function AboutTab({ automation }: { readonly automation: AutomationDetail }) {
 
 function AboutCard(props: { readonly title: string; readonly children: ReactNode }) {
   return (
-    <section className="card px-5 py-4">
-      <h2 className="t-section mb-2.5">{props.title}</h2>
+    <section className="card p-4">
+      <h2 className="t-section mb-2">{props.title}</h2>
       {props.children}
     </section>
   );
@@ -480,13 +460,13 @@ function TriggerFacts({ trigger }: { readonly trigger: TriggerSummary | null }) 
   if (trigger === null) return <p className="t-meta">This automation has no trigger.</p>;
   return (
     <>
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5">
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
         <Fact label="Runs">
           <WithCode text={triggerInWords(trigger)} />
         </Fact>
         {trigger.webhookUrl === null ? null : (
           <Fact label="Webhook URL">
-            <span className="mono break-all">{trigger.webhookUrl}</span>
+            <span className="mono">{trigger.webhookUrl}</span>
           </Fact>
         )}
         {trigger.cronSchedule === null ? null : (
@@ -521,7 +501,7 @@ function ApiCheckFacts({ automation }: { readonly automation: AutomationDetail }
   const checked = record?.lastGreenReport?.checked ?? [];
   return (
     <div className="grid gap-3" data-testid="api-check">
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5">
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
         <Fact label="Level">
           {apiCheck === null
             ? "None: it reaches no outside API through a secret or an account."
@@ -557,7 +537,7 @@ function ApiCheckFacts({ automation }: { readonly automation: AutomationDetail }
             )}
             {checked.length > 0 ? (
               <Fact label="Checks">
-                <span className="mono break-all">{checked.join(", ")}</span>
+                <span className="mono">{checked.join(", ")}</span>
               </Fact>
             ) : null}
           </>
@@ -588,7 +568,7 @@ function ApiCheckFacts({ automation }: { readonly automation: AutomationDetail }
       {apiContacts.map((contact) => (
         <div className="flex items-center justify-between gap-2" key={contact.host}>
           <span className="min-w-0">
-            <span className="mono break-all">{contact.host}</span>
+            <span className="mono">{contact.host}</span>
             <span className="t-faint">
               {" "}
               · {contact.lastStatus} {ageInWords(contact.lastContactAt, now)}
@@ -616,7 +596,7 @@ function Needs({ automation }: { readonly automation: AutomationDetail }) {
   return (
     <div className="grid gap-3">
       {automation.requiredSecrets.map((secret) => (
-        <div className="grid gap-1.5" key={secret.name}>
+        <div className="grid gap-2" key={secret.name}>
           <div className="flex items-center justify-between gap-2">
             <span className="mono">{secret.name}</span>
             <Chip tone={secret.state === "bound" ? "ok" : "warn"}>{SECRET_CHIP[secret.state]}</Chip>
@@ -660,14 +640,17 @@ function ConnectionState(props: {
   );
 }
 
-/** "Rolled back to 1.2.0", "Deployed 1.1.0 → 1.2.0" or "Deployed 1.0.0". */
+/** "Rolled back to v1.2.0", "Deployed v1.1.0 → v1.2.0" or "Deployed v1.0.0". */
 function deploymentInWords(
   version: string,
   event: AutomationDetail["deploymentAudit"][number] | undefined,
 ): string {
-  if (event?.change.eventType === "rollback") return `Rolled back to ${version}`;
-  if (event?.change.previousVersion) return `Deployed ${event.change.previousVersion} → ${version}`;
-  return `Deployed ${version}`;
+  const shown = versionInWords(version);
+  if (event?.change.eventType === "rollback") return `Rolled back to ${shown}`;
+  if (event?.change.previousVersion) {
+    return `Deployed ${versionInWords(event.change.previousVersion)} → ${shown}`;
+  }
+  return `Deployed ${shown}`;
 }
 
 /**
@@ -704,12 +687,12 @@ function VersionsTab({ automation }: { readonly automation: AutomationDetail }) 
           return (
             <div className="setting" key={deployment.deploymentId}>
               <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2.5">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="mono t-faint">#{deployment.seq}</span>
                   <b>{verb}</b>
                   {deployment.deploymentId === activeId ? <Chip tone="ok">Live</Chip> : null}
                 </div>
-                <div className="t-faint mt-0.5">
+                <div className="t-faint mt-1">
                   {ageInWords(deployment.deployedAt, now)} ·{" "}
                   {new Date(deployment.deployedAt).toLocaleString("en-GB")} ·{" "}
                   <span className="mono">{deployment.sourceHash.slice(0, 12)}</span>
@@ -720,7 +703,7 @@ function VersionsTab({ automation }: { readonly automation: AutomationDetail }) 
                   className="btn quiet small"
                   disabled={rollback.isPending}
                   onClick={async () => {
-                    const question = `Roll ${automation.automationName} back to #${deployment.seq} (${deployment.version})?`;
+                    const question = `Roll ${automation.automationName} back to #${deployment.seq} (${versionInWords(deployment.version)})?`;
                     if (await confirm({ action: "Roll back", question })) {
                       rollback.mutate(deployment.deploymentId);
                     }
@@ -734,7 +717,7 @@ function VersionsTab({ automation }: { readonly automation: AutomationDetail }) 
           );
         })}
         {rollback.isError ? (
-          <div className="px-[18px] py-3">
+          <div className="px-4 py-3">
             <ActionError error={rollback.error} />
           </div>
         ) : null}

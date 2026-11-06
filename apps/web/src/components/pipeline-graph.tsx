@@ -10,7 +10,6 @@ import { invokeTargets } from "../lib/pipeline-grouping";
 import type { StationState, TrackEdge, TrackGraph, TrackNode } from "../lib/track";
 import { runStatusInWords } from "../lib/words/runs";
 import { Track } from "./track";
-import { usePhone } from "./ui";
 import "./pipeline-graph.css";
 
 const RUN_STATION: Record<RunListItem["status"], StationState> = {
@@ -62,7 +61,7 @@ function pipelineTrack(members: readonly AutomationSummary[]): TrackGraph {
       });
     }
   }
-  return { direction: "LR", edges, nodes };
+  return { edges, nodes };
 }
 
 function laneState(
@@ -75,12 +74,10 @@ function laneState(
 }
 
 export function PipelineGraph(props: { readonly members: readonly AutomationSummary[] }) {
-  const phone = usePhone();
   const navigate = useNavigate();
   return (
     <div className="pgraph" data-testid="pipeline-graph">
       <Track
-        direction={phone ? "TB" : "LR"}
         onSelect={(node) => {
           if (node.key !== null) {
             void navigate({

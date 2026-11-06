@@ -82,6 +82,8 @@ export function runsCalls(environment: string) {
       /** Only runs waiting for the owner's approval. */
       readonly approvalOnly?: boolean;
       readonly automation?: string;
+      /** The `nextCursor` of the page before; absent starts at the newest run. */
+      readonly cursor?: string;
       readonly environment?: string;
       readonly limit?: number;
       readonly parentRunId?: string;
@@ -105,6 +107,9 @@ export function runsCalls(environment: string) {
       }
       if (filters.limit !== undefined) {
         query.set("limit", String(filters.limit));
+      }
+      if (filters.cursor !== undefined) {
+        query.set("cursor", filters.cursor);
       }
       if (filters.parentRunId) {
         query.set("parentRunId", filters.parentRunId);

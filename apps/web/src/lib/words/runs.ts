@@ -15,7 +15,7 @@ type RunFacts = Pick<
   | "wait"
 >;
 
-export function runDurationMs(run: Pick<RunListItem, "finishedAt" | "startedAt">): number | null {
+function runDurationMs(run: Pick<RunListItem, "finishedAt" | "startedAt">): number | null {
   if (run.startedAt === null || run.finishedAt === null) return null;
   return Date.parse(run.finishedAt) - Date.parse(run.startedAt);
 }
@@ -50,6 +50,43 @@ export function runDetailStatusInWords(
   return run.status === "running" && run.executions.at(-1)?.phase === "preparing"
     ? "Preparing"
     : runStatusInWords(run);
+}
+
+/** The one form of a version number on every surface: "v1.3.1". */
+export function versionInWords(version: string): string {
+  return `v${version}`;
+}
+
+/** A run row's two lines: the name above the state in a list of all runs, the state above the facts in one automation's. */
+export function runRowInWords(
+  run: RunFacts & Pick<RunListItem, "automationName" | "triggerType" | "version">,
+  leads: "automation" | "state",
+): { readonly title: string; readonly line: string } {
+  const duration = runDurationMs(run);
+  const facts = [
+    ...(run.attemptsMade > 1 ? [`${run.attemptsMade} attempts`] : []),
+    ...(duration === null ? [] : [durationInWords(duration)]),
+  ];
+  const state = shortStateInWords(run);
+  return leads === "automation"
+    ? { line: [state, ...facts].join(" · "), title: run.automationName }
+    : { line: [...facts, run.triggerType, versionInWords(run.version)].join(" · "), title: state };
+}
+
+/** runStatusInWords without what a row's facts already say. */
+function shortStateInWords(run: RunFacts): string {
+  if (run.status === "succeeded") return "Succeeded";
+  if (run.status === "running") return "Running";
+  if (run.status === "failed" || run.status === "dead-lettered") {
+    return run.deadLetterReason === "user-cancelled" ? "Cancelled" : "Failed";
+  }
+  return runStatusInWords(run);
+}
+
+/** The Runs head, and the end of a run list: only a list that reached its end says all. */
+export function runCountInWords(count: number, complete: boolean): string {
+  if (!complete) return `${count} newest`;
+  return `${count} ${count === 1 ? "run" : "runs"}`;
 }
 
 /**

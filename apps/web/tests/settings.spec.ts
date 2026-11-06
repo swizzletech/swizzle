@@ -91,7 +91,7 @@ test("a member sees only their own sections, and an instance section's address o
     "Two-factor sign-in",
   ]);
   await expect(nav.locator(".snav-label")).toHaveText(["You"]);
-  await expect(nav).toContainText("Swizzle 0.9.0");
+  await expect(nav).toContainText("Swizzle v0.9.0");
   await expect(page.getByText("owners and admins")).toHaveCount(0);
 });
 

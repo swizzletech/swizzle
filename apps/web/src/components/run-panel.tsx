@@ -1,18 +1,18 @@
-// One run, as the Runs page and the automation's Runs tab show it beside their list: the status in
-// words, the facts with the worker each execution ran on, the cause in words for a failed run, why a
-// queued run waits for a worker, the approval card for an approval wait, the actions, and the run's
-// error, output, logs, payload and steps.
+// One run, as the Runs page and the automation's Runs tab show it in the run pane of their
+// workbench: the status in words, the facts with the worker each execution ran on, the cause in
+// words for a failed run, why a queued run waits for a worker, the approval card for an approval
+// wait, the actions, and the run's error, output, logs, payload and steps.
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
-import { type ExplainedPlacement, isOpenRun, type RunDetail, type RunListItem } from "../lib/api";
+import { type ExplainedPlacement, isOpenRun, type RunDetail } from "../lib/api";
 import { useDashboardClient } from "../lib/dashboard-client";
 import { refreshAll } from "../lib/queries";
 import { useRunLogStream } from "../lib/use-run-log-stream";
 import { refusedControlsInWords } from "../lib/words/access";
-import { RUN_TONE, type Tone } from "../lib/words/health";
+import { RUN_TONE } from "../lib/words/health";
 import { failedRunHandoff } from "../lib/words/overview";
 import {
   approvalDecisionInWords,
@@ -20,10 +20,10 @@ import {
   ranOnInWords,
   runDetailStatusInWords,
   runDurationInWords,
-  runDurationMs,
   runStatusInWords,
+  versionInWords,
 } from "../lib/words/runs";
-import { ageInWords, deadlineInWords, durationInWords } from "../lib/words/time";
+import { ageInWords, deadlineInWords } from "../lib/words/time";
 import { workerStateInWords } from "../lib/words/workers";
 import { ActionError, ApprovalActions, ApprovalDetails } from "./actions";
 import { CopyButton, Dot, ErrorNote, Skeleton, useNow, WithCode } from "./ui";
@@ -37,14 +37,6 @@ const TAB_LABEL: Record<InnerTab, string> = {
   output: "Output",
   payload: "Payload",
   steps: "Steps",
-};
-
-const LINE_CLASS: Record<Tone, string> = {
-  fail: "failline",
-  idle: "okline",
-  ok: "okline",
-  run: "okline",
-  warn: "warnline",
 };
 
 export function RunPanel(props: {
@@ -66,20 +58,16 @@ export function RunPanel(props: {
 
   if (runQuery.isError) {
     return (
-      <ErrorNote
-        error={runQuery.error}
-        onRetry={() => void runQuery.refetch()}
-        title="This run could not be loaded."
-      />
-    );
-  }
-  if (runQuery.data === undefined) {
-    return (
-      <div className="card runpanel">
-        <Skeleton label="Loading the run" lines={6} />
+      <div className="rp-body">
+        <ErrorNote
+          error={runQuery.error}
+          onRetry={() => void runQuery.refetch()}
+          title="This run could not be loaded."
+        />
       </div>
     );
   }
+  if (runQuery.data === undefined) return <Skeleton label="Loading the run" lines={6} />;
   // Keyed by run, so the inner tab starts over for each run.
   return <LoadedRun {...props} key={runQuery.data.runId} run={runQuery.data} />;
 }
@@ -148,12 +136,11 @@ function LoadedRun(props: {
   const children = childrenQuery.data?.runs ?? [];
 
   return (
-    <div className="card runpanel" data-testid="run-panel">
+    <div className="runpanel" data-testid="run-panel">
       <div className="rp-head">
         <div className="min-w-0">
-          <div className="t-label">
-            Run <span className="mono">{run.runId.slice(0, 8)}</span> · {run.triggerType} · v
-            {run.version}
+          <div className="t-faint">
+            Run {run.runId.slice(0, 8)}
             {props.showAutomationLink ? <> · {run.automationName}</> : null}
           </div>
           <h2 className="rp-title">
@@ -171,10 +158,22 @@ function LoadedRun(props: {
           )}
         </div>
         <div className="rp-acts">
+          {cancelRefusal === null ? (
+            <ReservedSlot active={open}>
+              <button
+                className="btn danger small"
+                disabled={cancel.isPending}
+                onClick={() => cancel.mutate()}
+                type="button"
+              >
+                {cancel.isPending ? "Cancelling…" : "Cancel run"}
+              </button>
+            </ReservedSlot>
+          ) : null}
           {runAgainRefusal === null ? (
             <ReservedSlot active={!open}>
               <button
-                className="btn quiet"
+                className="btn quiet small"
                 disabled={runAgain.isPending || run.triggerType === "chain"}
                 onClick={() => runAgain.mutate()}
                 title={
@@ -188,21 +187,9 @@ function LoadedRun(props: {
               </button>
             </ReservedSlot>
           ) : null}
-          {cancelRefusal === null ? (
-            <ReservedSlot active={open}>
-              <button
-                className="btn danger"
-                disabled={cancel.isPending}
-                onClick={() => cancel.mutate()}
-                type="button"
-              >
-                {cancel.isPending ? "Cancelling…" : "Cancel run"}
-              </button>
-            </ReservedSlot>
-          ) : null}
           {props.showAutomationLink ? (
             <Link
-              className="btn quiet"
+              className="btn quiet small"
               params={{ automationSlug: run.automationSlug }}
               to="/automations/$automationSlug"
             >
@@ -226,6 +213,14 @@ function LoadedRun(props: {
           <b>
             {run.attemptsMade} of {run.attemptsMax}
           </b>
+        </div>
+        <div>
+          <span className="t-label">Trigger</span>
+          <b>{run.triggerType}</b>
+        </div>
+        <div>
+          <span className="t-label">Version</span>
+          <b>{versionInWords(run.version)}</b>
         </div>
         {run.executions.length < 2 ? null : (
           <div data-testid="run-executions">
@@ -266,6 +261,7 @@ function LoadedRun(props: {
             ) : null}
             {handsOff ? (
               <CopyButton
+                className="btn mt-3"
                 label="Hand to agent"
                 text={failedRunHandoff({
                   attemptsMade: run.attemptsMade,
@@ -283,7 +279,7 @@ function LoadedRun(props: {
         {run.placement === null ? null : <Placement now={now} placement={run.placement} />}
 
         {approval === null || props.approvalOnTrack?.(approval.stepKey) === true ? null : (
-          <div className="notice grid gap-2.5" data-testid="approval-card">
+          <div className="notice grid gap-2" data-testid="approval-card">
             <div>
               <b>{run.automationName}</b> asks: <b>{approval.stepKey}</b>
               <ApprovalDetails details={approval.details} />
@@ -318,51 +314,52 @@ function LoadedRun(props: {
 
         {children.length > 0 ? (
           <div>
-            <p className="t-label mb-1.5">Child runs</p>
+            <p className="t-label mb-1">Child runs</p>
             <div className="card rows overflow-hidden">
               {children.map((child) => (
                 <button
-                  className="rrow"
+                  className="rp-child"
                   key={child.runId}
                   onClick={() => props.onSelectRun(child.runId)}
                   type="button"
                 >
                   <Dot tone={RUN_TONE[child.status]} />
-                  <span>
+                  <span className="truncate">
                     <b>{child.automationName}</b>{" "}
                     <span className="t-faint">{runStatusInWords(child)}</span>
                   </span>
-                  <span className="when mono">{child.runId.slice(0, 8)}</span>
+                  <span className="t-faint">{ageInWords(child.queuedAt, now)}</span>
                 </button>
               ))}
             </div>
           </div>
         ) : null}
+      </div>
 
-        <div aria-label="Run detail" className="itabs" role="tablist">
-          {tabs.map((key) => (
-            <button
-              aria-selected={tab === key}
-              className="tab"
-              key={key}
-              onClick={() => setTab(key)}
-              role="tab"
-              type="button"
-            >
-              {TAB_LABEL[key]}
-            </button>
-          ))}
-        </div>
-        <div role="tabpanel">
-          <InnerTabBody run={run} tab={tab} />
-        </div>
+      <div aria-label="Run detail" className="dtabs rp-tabs" role="tablist">
+        {tabs.map((key) => (
+          <button
+            aria-selected={tab === key}
+            className="dtab"
+            key={key}
+            onClick={() => setTab(key)}
+            role="tab"
+            type="button"
+          >
+            {TAB_LABEL[key]}
+          </button>
+        ))}
+      </div>
+      <div className="rp-view" role="tabpanel">
+        <InnerTabBody run={run} tab={tab} />
       </div>
     </div>
   );
 }
 
 /**
- * A header action that exists in only some run states. The other states keep its space, empty, so
+ * A header action that exists in only some run states. Most runs in view have ended, so Run again
+ * stands outermost and Cancel run's empty slot sits to its left. The other states keep its space, empty, so
  * the actions beside it stay put when the run changes state and a click aimed at one of them never
  * lands on another.
  */
@@ -528,48 +525,4 @@ function pretty(value: unknown): string {
   if (value === null || value === undefined) return "";
   if (typeof value === "string") return value;
   return JSON.stringify(value, null, 2);
-}
-
-/** A run in a list beside the panel: what it is, its state in words and its age. */
-export function RunRow(props: {
-  readonly onSelect: (runId: string) => void;
-  readonly run: RunListItem;
-  readonly selected: boolean;
-  readonly showAutomation: boolean;
-}) {
-  const { run } = props;
-  const now = useNow();
-  const tone = RUN_TONE[run.status];
-  const words = runStatusInWords(run);
-  const duration = runDurationMs(run);
-  return (
-    <button
-      aria-current={props.selected}
-      className="rrow"
-      data-testid="run-row"
-      onClick={() => props.onSelect(run.runId)}
-      type="button"
-    >
-      <Dot tone={tone} />
-      <div className="min-w-0">
-        <div className="truncate">
-          {props.showAutomation ? <b>{run.automationName} </b> : null}
-          <span className={`mono ${props.showAutomation ? "t-faint" : "font-semibold"}`}>
-            {run.runId.slice(0, 8)}
-          </span>
-        </div>
-        <div className={`${LINE_CLASS[tone]} truncate`}>
-          {words}
-          {run.status !== "succeeded" && duration !== null ? ` · ${durationInWords(duration)}` : ""}
-          {props.showAutomation ? ` · ${run.triggerType}` : ""}
-        </div>
-        {tone === "fail" &&
-        run.errorMessage !== null &&
-        run.deadLetterReason !== "user-cancelled" ? (
-          <div className="t-faint truncate">{run.errorMessage}</div>
-        ) : null}
-      </div>
-      <span className="when">{ageInWords(run.queuedAt, now)}</span>
-    </button>
-  );
 }

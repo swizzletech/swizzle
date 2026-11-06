@@ -47,7 +47,12 @@ function createDashboardStub(overrides: Partial<DashboardDataProvider>): Dashboa
     getOverview: unused,
     getOperationsSummary: unused,
     listAutomations: async () => [],
-    listRuns: async () => ({ environment: "local", filters: emptyRunFilters, runs: [] }),
+    listRuns: async () => ({
+      environment: "local",
+      filters: emptyRunFilters,
+      nextCursor: null,
+      runs: [],
+    }),
     listRunSteps: async () => [],
     ...overrides,
   };
@@ -355,7 +360,7 @@ describe("run routes", () => {
       dashboard: createDashboardStub({
         listRuns: async (query) => {
           runQueries.push(query);
-          return { environment: "local", filters: emptyRunFilters, runs: [] };
+          return { environment: "local", filters: emptyRunFilters, nextCursor: null, runs: [] };
         },
       }),
       platform: await testPlatform(),

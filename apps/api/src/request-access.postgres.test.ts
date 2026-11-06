@@ -148,6 +148,7 @@ function recordingDashboard(
         environment,
         last24h: {} as never,
         complete: true,
+        lastFailureAt: null,
         needsYou: [],
         recentChanges: [],
       };
@@ -160,7 +161,7 @@ function recordingDashboard(
     listRuns: async (query) => {
       record(query.scope);
       runQueries.push(query);
-      return { environment: query.environment, filters: {} as never, runs: [] };
+      return { environment: query.environment, filters: {} as never, nextCursor: null, runs: [] };
     },
     listRunSteps: async () => [],
   };

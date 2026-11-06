@@ -153,7 +153,7 @@ test("keeps live run indicators inside the animation budget", async ({ page }) =
   await mockDashboardApi(page, seededState());
 
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "3 things need you." })).toBeVisible();
+  await expect(page.getByTestId("status-card").getByText("3 things need you.")).toBeVisible();
 
   // The live treatment must actually be on screen, or the budget check below
   // would pass by animating nothing at all.
@@ -169,7 +169,7 @@ test("never pays for a backdrop blur that cannot be seen", async ({ page }) => {
   await mockDashboardApi(page, seededState());
 
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "3 things need you." })).toBeVisible();
+  await expect(page.getByTestId("status-card").getByText("3 things need you.")).toBeVisible();
   expect(await collectInvisibleBlurLayers(page)).toEqual([]);
 
   await page.goto("/automations/verify-probe");
@@ -221,7 +221,7 @@ test("stops every infinite animation on every page under prefers-reduced-motion"
   await mockDashboardApi(page, seededState());
   const data = await holdDashboardData(page);
   // Inside the page, so the shell's own "Connecting" skeleton does not count as the page's.
-  const loading = page.locator("main.page .skeleton").first();
+  const loading = page.locator("main .skeleton").first();
 
   // Without the preference the loading state animates, so the empty lists below come from the
   // preference and not from a page that animates nothing.

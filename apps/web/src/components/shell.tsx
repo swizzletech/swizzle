@@ -1,13 +1,13 @@
-// The frame around every page: sign-in, then the sidebar with the five places, the environment
-// switch and the signed-in person with Sign out, and the bar above each page with its trail. At
-// phone width the sidebar folds into a sticky header that still shows every place. AppShell signs
-// the person in, offers two-factor sign-in after setup, and learns the instance's environments
-// before it mounts DashboardClientProvider, so every page reads a known environment.
+// The frame around every page: sign-in, then the sidebar with the five places at the top and, at
+// its foot, the environment and the signed-in person with Sign out. The frame fills the window and
+// each page scrolls inside it. At phone width the sidebar folds into a header that still shows every
+// place. AppShell signs the person in, offers two-factor sign-in after setup, and learns the
+// instance's environments before it mounts DashboardClientProvider, so every page reads a known
+// environment.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "@tanstack/react-router";
-import { createContext, type ReactNode, useContext, useState } from "react";
-import { createPortal } from "react-dom";
+import { type ReactNode, useState } from "react";
 
 import { ApiError } from "../lib/api";
 import { sessionApi } from "../lib/api/account";
@@ -28,6 +28,7 @@ import {
   type TwoFactorStart,
 } from "./auth-screen";
 import { Logo } from "./logo";
+import { Page } from "./page";
 import { Skeleton } from "./ui";
 import "./shell.css";
 
@@ -95,53 +96,12 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
   );
 }
 
-const TrailSlot = createContext<HTMLElement | null>(null);
-
 function Frame({ children }: { readonly children: ReactNode }) {
-  const { pathname } = useLocation();
-  const [slot, setSlot] = useState<HTMLElement | null>(null);
-  const place = DESTINATIONS.find((destination) => isCurrent(pathname, destination.to));
   return (
     <div className="app">
       <Sidebar />
-      <div className="main">
-        <header className="topbar">
-          <nav aria-label="Trail" className="crumbs">
-            <span className="trail" ref={setSlot} />
-            <b className="place">{place?.label}</b>
-          </nav>
-        </header>
-        <TrailSlot.Provider value={slot}>
-          <main className="page">{children}</main>
-        </TrailSlot.Provider>
-      </div>
+      <main className="main">{children}</main>
     </div>
-  );
-}
-
-/**
- * Where a page sits below its place, drawn in the bar above the page: the place as a link, then
- * the page's own name. A page without a Trail shows its place's name there.
- */
-export function Trail(props: {
-  readonly parent: { readonly label: string; readonly to: "/" | "/projects" };
-  readonly current?: string;
-}) {
-  const slot = useContext(TrailSlot);
-  if (slot === null) return null;
-  return createPortal(
-    <>
-      <Link to={props.parent.to}>{props.parent.label}</Link>
-      {props.current === undefined ? null : (
-        <>
-          <span aria-hidden="true" className="sep">
-            /
-          </span>
-          <b>{props.current}</b>
-        </>
-      )}
-    </>,
-    slot,
   );
 }
 
@@ -245,9 +205,45 @@ function Sidebar() {
       <Link aria-label="Swizzle overview" className="brand side-brand" to="/">
         <Logo />
       </Link>
-      <div className="side-env">
-        <label className="env">
+      <nav aria-label="Dashboard" className="side-nav">
+        {DESTINATIONS.map((destination) => (
+          <Link
+            aria-current={isCurrent(pathname, destination.to) ? "page" : undefined}
+            className="navlink"
+            key={destination.to}
+            to={destination.to}
+          >
+            <Icon>{destination.icon}</Icon>
+            {destination.label}
+            {destination.to === "/" && needsYou > 0 ? (
+              <span className="count" title={`${needsYou} need you`}>
+                {needsYou}
+              </span>
+            ) : null}
+          </Link>
+        ))}
+      </nav>
+      <div className="side-foot">
+        <label className="envrow">
           <span aria-hidden="true" className="led" />
+          <span className="name">{environment}</span>
+          {protectedIn.length === 0 ? null : (
+            <span
+              aria-label="Protected"
+              className="lock"
+              data-testid="environment-protected"
+              role="img"
+              title={`Protected in ${protectedIn.map((project) => project.name).join(", ")}: a change needs an environment grant.`}
+            >
+              <Icon>
+                <rect height="10" rx="2" width="16" x="4" y="11" />
+                <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+              </Icon>
+            </span>
+          )}
+          <Icon>
+            <path d="m8 9 4-4 4 4M8 15l4 4 4-4" />
+          </Icon>
           <select
             aria-label="Environment"
             onChange={(event) => setEnvironment(event.target.value)}
@@ -260,73 +256,55 @@ function Sidebar() {
             ))}
           </select>
         </label>
-        {protectedIn.length === 0 ? null : (
-          <span
-            className="chip warn"
-            data-testid="environment-protected"
-            title={`Protected in ${protectedIn.map((project) => project.name).join(", ")}: a change needs an environment grant.`}
-          >
-            Protected
-          </span>
-        )}
-      </div>
-      <nav aria-label="Dashboard" className="side-nav">
-        {DESTINATIONS.map((destination) => (
-          <Link
-            aria-current={isCurrent(pathname, destination.to) ? "page" : undefined}
-            className="navlink"
-            key={destination.to}
-            to={destination.to}
-          >
-            <svg
-              aria-hidden="true"
-              className="icon"
-              fill="none"
-              stroke="currentColor"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="2"
-              viewBox="0 0 24 24"
-            >
-              {destination.icon}
-            </svg>
-            {destination.label}
-            {destination.to === "/" && needsYou > 0 ? (
-              <span className="count" title={`${needsYou} need you`}>
-                {needsYou}
-              </span>
-            ) : null}
-          </Link>
-        ))}
-      </nav>
-      <div className="side-foot">
-        {me === null ? null : (
-          <>
-            <span aria-hidden="true" className="avatar">
-              {initials(me.name)}
-            </span>
-            <span className="who">
-              <b>{me.name}</b>
-              <span>{me.role}</span>
-            </span>
-          </>
-        )}
         {signOut.isError ? (
           <span className="signout-error" role="alert">
             Not signed out
           </span>
         ) : null}
-        <button
-          className="signout"
-          disabled={signOut.isPending}
-          onClick={() => signOut.mutate()}
-          title={signOut.isError ? signOut.error.message : undefined}
-          type="button"
-        >
-          {signOutLabel}
-        </button>
+        <div className="who-row">
+          {me === null ? null : (
+            <>
+              <span aria-hidden="true" className="avatar">
+                {initials(me.name)}
+              </span>
+              <span className="who">
+                <b>{me.name}</b>
+                <span>{me.role}</span>
+              </span>
+            </>
+          )}
+          <button
+            aria-label={signOutLabel}
+            className="btn quiet small square"
+            disabled={signOut.isPending}
+            onClick={() => signOut.mutate()}
+            title={signOut.isError ? signOut.error.message : signOutLabel}
+            type="button"
+          >
+            <Icon>
+              <path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M15 8l4 4-4 4M19 12H9" />
+            </Icon>
+          </button>
+        </div>
       </div>
     </aside>
+  );
+}
+
+function Icon({ children }: { readonly children: ReactNode }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className="icon"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      {children}
+    </svg>
   );
 }
 
@@ -410,7 +388,7 @@ function SignIn(props: {
       title={props.setupRequired ? "Set up your instance" : "Sign in"}
     >
       <form
-        className="mt-5 grid max-w-[420px] gap-3"
+        className="mt-4 grid gap-3"
         onSubmit={(event) => {
           event.preventDefault();
           if (ready && !submit.isPending) submit.mutate();
@@ -423,7 +401,7 @@ function SignIn(props: {
               autoComplete="one-time-code"
               // biome-ignore lint/a11y/noAutofocus: the field appears because the person must fill it next.
               autoFocus
-              className="field h-10"
+              className="field"
               onChange={(event) => setCode(event.target.value)}
               spellCheck={false}
               value={code}
@@ -439,7 +417,7 @@ function SignIn(props: {
                 Name
                 <input
                   autoComplete="name"
-                  className="field h-10"
+                  className="field"
                   onChange={(event) => setName(event.target.value)}
                   value={name}
                 />
@@ -450,7 +428,7 @@ function SignIn(props: {
                 Setup token
                 <input
                   autoComplete="off"
-                  className="field h-10"
+                  className="field"
                   onChange={(event) => setSetupToken(event.target.value)}
                   placeholder="From the server configuration"
                   value={setupToken}
@@ -461,7 +439,7 @@ function SignIn(props: {
               Email
               <input
                 autoComplete="email"
-                className="field h-10"
+                className="field"
                 inputMode="email"
                 onChange={(event) => setEmail(event.target.value)}
                 type="email"
@@ -480,7 +458,7 @@ function SignIn(props: {
                 Password
                 <input
                   autoComplete="current-password"
-                  className="field h-10"
+                  className="field"
                   onChange={(event) => setPassword(event.target.value)}
                   type="password"
                   value={password}
@@ -493,11 +471,11 @@ function SignIn(props: {
           </>
         )}
         {problem ? (
-          <p className="errbox m-0 text-[13px]" role="alert">
+          <p className="errbox m-0" role="alert">
             {problem}
           </p>
         ) : null}
-        <button className="btn mt-1.5 h-10" disabled={!ready || submit.isPending} type="submit">
+        <button className="btn mt-1" disabled={!ready || submit.isPending} type="submit">
           {submit.isPending ? action.busy : action.idle}
         </button>
         {!props.setupRequired && !codeAsked && props.mailConfigured ? (
@@ -529,7 +507,7 @@ function ForgotPassword(props: { readonly initialEmail: string; readonly onBack:
       title="Reset your password"
     >
       <form
-        className="mt-5 grid max-w-[420px] gap-3"
+        className="mt-4 grid gap-3"
         onSubmit={(event) => {
           event.preventDefault();
           if (ready) send.mutate();
@@ -539,7 +517,7 @@ function ForgotPassword(props: { readonly initialEmail: string; readonly onBack:
           Email
           <input
             autoComplete="email"
-            className="field h-10"
+            className="field"
             inputMode="email"
             onChange={(event) => setEmail(event.target.value)}
             type="email"
@@ -547,16 +525,16 @@ function ForgotPassword(props: { readonly initialEmail: string; readonly onBack:
           />
         </label>
         {send.isSuccess ? (
-          <p className="m-0 text-[13px]" role="status">
+          <p className="t-meta m-0" role="status">
             If an account has this address, the link is on its way.
           </p>
         ) : null}
         {send.isError ? (
-          <p className="errbox m-0 text-[13px]" role="alert">
+          <p className="errbox m-0" role="alert">
             {problemInWords(send.error)}
           </p>
         ) : null}
-        <button className="btn mt-1.5 h-10" disabled={!ready} type="submit">
+        <button className="btn mt-1" disabled={!ready} type="submit">
           {send.isPending ? "Sending…" : "Send reset link"}
         </button>
         <button
@@ -574,17 +552,17 @@ function ForgotPassword(props: { readonly initialEmail: string; readonly onBack:
 /** What a removed or mistyped address shows. */
 export function NotFound() {
   return (
-    <div className="card mx-auto mt-10 max-w-lg p-6">
-      <p className="t-label">Not found</p>
-      <h1 className="t-page mt-1.5">
-        This page does not <em>exist.</em>
-      </h1>
-      <p className="t-meta mt-2">
-        The dashboard has five places: Overview, Runs, Projects, Credentials and Settings.
-      </p>
-      <Link className="btn mt-4" to="/">
-        Go to the Overview
-      </Link>
-    </div>
+    <Page
+      actions={
+        <Link className="btn" to="/">
+          Go to the Overview
+        </Link>
+      }
+      description="The dashboard has five places: Overview, Runs, Projects, Credentials and Settings."
+      title="This page does not exist."
+      type="reading"
+    >
+      {null}
+    </Page>
   );
 }

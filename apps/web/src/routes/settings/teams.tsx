@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ActionError } from "../../components/actions";
 import { useConfirm } from "../../components/confirm";
+import { MenuItem, RowMenu } from "../../components/menu";
 import { accessChanged } from "../../components/share-form";
 import { ErrorNote, Skeleton } from "../../components/ui";
 import type { Person, Team } from "../../lib/api";
@@ -35,7 +36,7 @@ export function Teams() {
   });
 
   return (
-    <div className="card rows overflow-hidden" data-testid="teams">
+    <div className="card rows" data-testid="teams">
       <form
         className="setting-form"
         onSubmit={(event) => {
@@ -99,15 +100,6 @@ function TeamRow(props: {
           {members.map((person) => (
             <span className="chip idle" key={person.id}>
               {person.name}
-              <button
-                aria-label={`Remove ${person.name} from ${team.name}`}
-                className="ml-1"
-                disabled={change.isPending}
-                onClick={() => change.mutate(() => api.setTeamMember(team.id, person.id, false))}
-                type="button"
-              >
-                ×
-              </button>
             </span>
           ))}
         </div>
@@ -132,19 +124,29 @@ function TeamRow(props: {
         )}
         {change.isError ? <ActionError error={change.error} /> : null}
       </div>
-      <button
-        className="btn danger small"
-        disabled={change.isPending}
-        onClick={async () => {
-          const question = `Delete the team ${team.name}? Its members lose every role the team gave them.`;
-          if (await confirm({ action: "Delete team", question })) {
-            change.mutate(() => api.deleteTeam(team.id));
-          }
-        }}
-        type="button"
-      >
-        Delete team
-      </button>
+      <RowMenu>
+        {members.map((person) => (
+          <MenuItem
+            disabled={change.isPending}
+            key={person.id}
+            onClick={() => change.mutate(() => api.setTeamMember(team.id, person.id, false))}
+          >
+            Remove {person.name}
+          </MenuItem>
+        ))}
+        <MenuItem
+          danger
+          disabled={change.isPending}
+          onClick={async () => {
+            const question = `Delete the team ${team.name}? Its members lose every role the team gave them.`;
+            if (await confirm({ action: "Delete team", question })) {
+              change.mutate(() => api.deleteTeam(team.id));
+            }
+          }}
+        >
+          Delete team
+        </MenuItem>
+      </RowMenu>
     </div>
   );
 }

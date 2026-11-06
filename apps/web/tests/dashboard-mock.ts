@@ -207,6 +207,28 @@ export const APPROVAL_RUN_ID = "7c1e02aa-aaaa-4bbb-8ccc-000000000002";
 const RUNNING_RUN_ID = "a1b2c3d4-aaaa-4bbb-8ccc-000000000003";
 export const OK_RUN_ID = "2c6c0c77-aaaa-4bbb-8ccc-000000000004";
 
+/**
+ * Adds `count` finished runs of verify-probe behind the seeded ones, one every hour going back, so
+ * a list spans several days and more than one page.
+ */
+export function addOlderRuns(state: MockState, count: number): void {
+  for (let index = 0; index < count; index += 1) {
+    const failed = index % 7 === 0;
+    const queuedAt = ago((index + 1) * 60 * MINUTE);
+    const older = run({
+      automationName: "verify-probe",
+      automationSlug: "verify-probe",
+      finishedAt: queuedAt,
+      queuedAt,
+      runId: `70000000-aaaa-4bbb-8ccc-${String(index).padStart(12, "0")}`,
+      startedAt: queuedAt,
+      status: failed ? "failed" : "succeeded",
+    });
+    state.runs.push(older);
+    state.runDetails.set(older.runId, detail(older));
+  }
+}
+
 export function seededState(): MockState {
   const failed = run({
     attemptsMade: 2,
@@ -448,6 +470,69 @@ const PROBE_STEPS = [
   { endLine: 9, key: "notify", kind: "step", startLine: 9, target: null },
 ] as const;
 
+// A branching flow of ten stations with long labels, the shape a real invoice intake has: the
+// widest word sits in a label, and lanes from three decisions meet at one task. `move` ran last, so
+// a run opens near the far end of the track.
+const WIDE_FLOW = `flowchart TD
+  cron([Hourly schedule]) --> read[Mail: read the label Rechnungseingang]
+  read --> pdf{PDF attached?}
+  pdf -->|yes| sort[Model: classify the PDF]
+  pdf -->|no| task["Tasks: ask for the invoice or check the document"]
+  sort --> kind{Invoice or credit note?}
+  kind -->|yes| upload[Ledger: upload the document]
+  kind -->|no| task
+  upload --> problem{Problem reported?}
+  problem -->|yes| task
+  problem -->|no| move[Mail: move to the archive label]
+  task --> move
+  move --> done([Report the result])
+`;
+
+const WIDE_STEPS = ["read", "sort", "upload", "task", "move"] as const;
+
+/** Gives verify-probe `WIDE_FLOW`: its flowchart, its code, and every run having walked its steps. */
+export async function serveWideFlow(page: Page) {
+  await page.route("**/dashboard/automations/verify-probe/mermaid?*", (route) =>
+    route.fulfill({ json: { available: true, content: WIDE_FLOW, error: null } }),
+  );
+  await page.route("**/dashboard/automations/verify-probe/source?*", (route) =>
+    route.fulfill({
+      json: {
+        automationSlug: "verify-probe",
+        content: WIDE_STEPS.map((key) => `await runStep("${key}", work);`).join("\n"),
+        deploymentId: "deployment-1",
+        entrypoint: "main.js",
+        error: null,
+        language: "node",
+        steps: WIDE_STEPS.map((key, index) => ({
+          endLine: index + 1,
+          key,
+          kind: "step",
+          startLine: index + 1,
+          target: null,
+        })),
+      },
+    }),
+  );
+  await page.route("**/dashboard/runs/*/steps*", (route) =>
+    route.fulfill({
+      json: WIDE_STEPS.map(
+        (stepKey, index): RunStep => ({
+          approval: null,
+          attempt: 1,
+          createdAt: ago(18 * MINUTE - index * 1_000),
+          executionNumber: 1,
+          finishedAt: ago(18 * MINUTE - index * 1_000 - 500),
+          startedAt: ago(18 * MINUTE - index * 1_000),
+          stepKey,
+          updatedAt: ago(18 * MINUTE - index * 1_000 - 500),
+          value: null,
+        }),
+      ),
+    }),
+  );
+}
+
 const PERSON = {
   createdAt: ago(30 * 24 * 60 * MINUTE),
   email: "ada@example.com",
@@ -549,10 +634,14 @@ export async function mockDashboardApi(
           waiting: 0,
         };
         for (const item of state.runs) counts[item.status] += 1;
+        const lastFailure = state.runs.find(
+          (item) => item.status === "failed" || item.status === "dead-lettered",
+        );
         return json(route, {
           deploy: state.deploy,
           environment: "staging",
           last24h: counts,
+          lastFailureAt: lastFailure?.finishedAt ?? lastFailure?.queuedAt ?? null,
           complete: true,
           needsYou: state.needsYou,
           recentChanges: state.recentChanges,
@@ -609,7 +698,15 @@ export async function mockDashboardApi(
             (!topLevelOnly || item.parentRunId === null) &&
             (!approvalOnly || item.approval !== null),
         );
-        return json(route, { environment: "staging", filters: {}, runs });
+        // A cursor here is just the offset of the next page; the client only hands it back.
+        const from = Number(url.searchParams.get("cursor") ?? 0);
+        const to = from + Number(url.searchParams.get("limit") ?? 100);
+        return json(route, {
+          environment: "staging",
+          filters: {},
+          nextCursor: to < runs.length ? String(to) : null,
+          runs: runs.slice(from, to),
+        });
       }
       if (is("GET", /^\/dashboard\/runs\/[^/]+$/u)) {
         const found = state.runDetails.get(param(/^\/dashboard\/runs\/([^/]+)$/u));

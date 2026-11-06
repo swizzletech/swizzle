@@ -207,7 +207,7 @@ Swizzle reassembles once after a lost lease and records the reassembly in the ru
 
 An owner or admin can change a person's role, suspend or reactivate them, turn off a lost second factor, or remove them in **Settings → People**. Suspension ends the person's sessions and stops their agent tokens: each answers `403 AUTH_ACCOUNT_SUSPENDED` until the suspension is lifted, so a replacement token would not help. The last active owner cannot be demoted, suspended, or removed, so add a second owner before the first one leaves.
 
-To help someone who forgot their password, select **Reset link** in their row. Copy the link and send it to them. The page shows the link once. It works once and expires after one hour. The `swizzle people reset-link <email>` command creates the same link. Both methods work without mail. To give people projects, teams, and production access, follow [Give people access to projects and production](give-people-access.md).
+To help someone who forgot their password, select **Reset link** in the **⋯** menu of their row. Copy the link and send it to them. The page shows the link once. It works once and expires after one hour. The `swizzle people reset-link <email>` command creates the same link. Both methods work without mail. To give people projects, teams, and production access, follow [Give people access to projects and production](give-people-access.md).
 
 ## Recover a locked-out owner
 

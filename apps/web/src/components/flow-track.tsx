@@ -1,6 +1,7 @@
-// The live track above an automation's runs: its flow with the selected run's position on it, or,
-// with no run selected, every station with how many recent runs reached it. It folds away, and the
-// browser remembers the fold. A run waiting at an approval station is decided on that station.
+// The live track above the selected run: an automation's flow with the run's position on it, or,
+// with no run selected, every station with how many recent runs reached it. It is a band at the top
+// of the run pane, folds away, and the browser remembers the fold. A run waiting at an approval
+// station is decided on that station.
 
 import {
   type ApprovalDetailsInWords,
@@ -15,7 +16,6 @@ import { useRunPosition } from "../lib/use-run-track";
 import { assigneeInWords, runStatusInWords } from "../lib/words/runs";
 import { ApprovalActions, ApprovalDetails } from "./actions";
 import { Track } from "./track";
-import { usePhone } from "./ui";
 import "./flow-track.css";
 
 const FOLD_KEY = "swizzle.dashboard.flow-track-folded";
@@ -42,7 +42,7 @@ export function FlowTrack(props: {
   const { graph } = flow;
   if (graph === null) return null;
   return (
-    <section className="card track-card" data-testid="flow-track">
+    <section className="flow-band" data-testid="flow-track">
       <div className="track-head">
         <button
           aria-expanded={!folded}
@@ -102,11 +102,9 @@ function RunTrack(props: {
   readonly run: RunDetail;
 }) {
   const { position } = useRunPosition(props.run);
-  const phone = usePhone();
   const track = trackForRun(props.graph, props.run, position, props.flow.families);
   return (
     <Track
-      direction={phone ? "TB" : props.graph.direction}
       extra={(node) => (props.approvalOnTrack(node.id) ? approvalOnStation(node, props.run) : null)}
       focused={activeStep(track)}
       testId="track"
@@ -145,15 +143,15 @@ export function approvalOnStation(node: TrackNode, run: RunDetail) {
       height:
         88 +
         detailsHeight(asks) +
-        (assignee === null ? 0 : 18) +
-        (run.approval.may.reassign ? 68 : 0),
+        (assignee === null ? 0 : 24) +
+        (run.approval.may.reassign ? 72 : 0),
       width: 220,
     },
   };
 }
 
 /**
- * The height of the details on a station, whose text column is 200 px of 11.5 px type. The track
+ * The height of the details on a station, whose text column is 200 px of 12 px type. The track
  * lays out before it renders, so lines are estimated from characters, generously, as for labels.
  */
 function detailsHeight(asks: ApprovalDetailsInWords): number {
@@ -164,9 +162,10 @@ function detailsHeight(asks: ApprovalDetailsInWords): number {
       width += (char.codePointAt(0) ?? 0) >= 0x1100 ? 2 * charWidth : charWidth;
     return Math.max(1, Math.ceil(width / 180));
   };
-  const heading = asks.heading === null ? 0 : lines(asks.heading, 6.2) * 15 + 4;
+  const heading = asks.heading === null ? 0 : lines(asks.heading, 6.2) * 16 + 4;
   const fields = asks.fields.reduce(
-    (sum, field) => sum + (lines(field.label, 6.2) + lines(field.value, field.json ? 7 : 6.2)) * 15,
+    (sum, field) =>
+      sum + (lines(field.label, 6.2) + lines(field.value, field.json ? 7.8 : 6.2)) * 16,
     0,
   );
   return heading + fields;

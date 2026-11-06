@@ -19,6 +19,7 @@ import type {
 } from "./control-plane-types.js";
 import type { ProjectRef } from "./project-ref.js";
 import type { ApprovalAssignee, ApprovalDecision, RunApproval } from "./run-approval.js";
+import type { RunCursor } from "./run-cursor.js";
 import type { ExplainedPlacement, PlacementTarget, WorkerWarning } from "./workers.js";
 
 /** A secret an automation declares; the stored fields describe the bound secret. */
@@ -407,6 +408,8 @@ export interface DashboardOverview {
   readonly environment: string;
   /** Top-level runs queued in the last 24 hours, by status. */
   readonly last24h: Readonly<Record<DashboardRunListItem["status"], number>>;
+  /** When the newest failed top-level run ended, or was queued if it never ran; null for none. */
+  readonly lastFailureAt: string | null;
   readonly needsYou: readonly DashboardAttentionItem[];
   /**
    * Whether Needs you lists everything: the viewer may edit every automation in view and acts on
@@ -424,6 +427,8 @@ export interface DashboardRunsQuery {
   /** Only approvals assigned to nobody or to one of these people and teams; absent for any. */
   readonly assignedTo?: readonly Subject[];
   readonly automationSlug?: string;
+  /** Starts after this place in the list; absent starts at the newest run. */
+  readonly cursor?: RunCursor;
   readonly environment: string;
   readonly limit?: number;
   readonly parentRunId?: string;
@@ -443,6 +448,8 @@ export interface DashboardRunsResult {
     readonly statuses: readonly DashboardRunListItem["status"][];
     readonly triggerType: DashboardRunListItem["triggerType"] | null;
   };
+  /** Pass it as `cursor` for the runs after this page; null on the last page. */
+  readonly nextCursor: string | null;
   readonly runs: readonly DashboardRunListItem[];
 }
 

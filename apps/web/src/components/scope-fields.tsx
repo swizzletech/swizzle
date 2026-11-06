@@ -59,7 +59,7 @@ export function ScopeFields(props: {
             Only in the projects (none checked: every one)
           </legend>
           {props.projects.map((project) => (
-            <label className="flex items-center gap-1.5" key={project.id}>
+            <label className="flex items-center gap-2" key={project.id}>
               <input
                 checked={value.projects.has(project.slug)}
                 onChange={(event) =>
@@ -78,7 +78,7 @@ export function ScopeFields(props: {
       <fieldset className="flex flex-wrap items-center gap-3 border-0 p-0">
         <legend className="form-label mb-1">Only in (none checked: every environment)</legend>
         {environments.map((environment) => (
-          <label className="flex items-center gap-1.5" key={environment}>
+          <label className="flex items-center gap-2" key={environment}>
             <input
               checked={value.environments.has(environment)}
               onChange={(event) =>

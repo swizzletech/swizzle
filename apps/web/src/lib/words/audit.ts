@@ -1,6 +1,7 @@
 // Audit events in words: what an event did and who did it.
 
 import type { AuditEvent, AuditedRoute } from "../api";
+import { versionInWords } from "./runs";
 
 // The contract lists every route the audit records, so a new one fails the type check here until
 // it has words.
@@ -118,7 +119,7 @@ function refusalInWords(status: number): string {
 function auditChangeInWords(change: NonNullable<AuditEvent["change"]>): string {
   switch (change.kind) {
     case "deployment":
-      return `${change.eventType === "rollback" ? "Rolled back to" : "Deployed"} ${change.version}`;
+      return `${change.eventType === "rollback" ? "Rolled back to" : "Deployed"} ${versionInWords(change.version)}`;
     case "worker":
       return {
         created: "Created worker",

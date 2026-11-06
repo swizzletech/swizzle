@@ -2,9 +2,10 @@
 // on a click outside the menu and on Escape, and only one is open at a time. Escape returns focus
 // to the button. A click outside on another control leaves focus there; one on the page itself
 // returns it to the button. An open menu stays on screen: a body that would run past the edge of
-// a narrow screen moves back inside and shrinks to the screen's width.
+// a narrow screen moves back inside and shrinks to the screen's width. A row's actions beyond its
+// one visible action live here as MenuItems.
 
-import { type ReactNode, useEffect, useRef } from "react";
+import { type MouseEvent, type ReactNode, useEffect, useRef } from "react";
 
 import "./menu.css";
 
@@ -76,5 +77,44 @@ export function Menu(props: {
         {props.children}
       </div>
     </details>
+  );
+}
+
+/** One action in a menu of actions; choosing it closes the menu. */
+export function MenuItem(props: {
+  readonly children: ReactNode;
+  readonly danger?: boolean;
+  readonly disabled?: boolean;
+  readonly expanded?: boolean;
+  readonly onClick: () => void;
+}) {
+  const choose = (event: MouseEvent<HTMLButtonElement>) => {
+    event.currentTarget.closest("details")?.removeAttribute("open");
+    props.onClick();
+  };
+  return (
+    <button
+      aria-expanded={props.expanded}
+      className={props.danger === true ? "menu-item danger" : "menu-item"}
+      disabled={props.disabled}
+      onClick={choose}
+      type="button"
+    >
+      {props.children}
+    </button>
+  );
+}
+
+/** The "⋯" of a row, holding the actions beyond its one visible action. */
+export function RowMenu({ children }: { readonly children: ReactNode }) {
+  return (
+    <Menu
+      bodyClassName="menu-actions"
+      button="⋯"
+      buttonClassName="btn quiet small square"
+      label="More"
+    >
+      {children}
+    </Menu>
   );
 }

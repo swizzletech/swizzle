@@ -19,6 +19,7 @@ import type {
   DashboardRunsResult,
 } from "./dashboard-types.js";
 import { getRunApproval } from "./run-approval.js";
+import { encodeRunCursor } from "./run-cursor.js";
 import { automations, automationVersions, deployments, runs } from "./schema.js";
 
 /**
@@ -110,6 +111,12 @@ export async function listRuns(
     );
   }
 
+  if (query.cursor !== undefined) {
+    filters.push(
+      sql`(${runs.queuedAt}, ${runs.id}) < (${query.cursor.queuedAt}::timestamptz, ${query.cursor.runId}::uuid)`,
+    );
+  }
+
   const limit = normalizeLimit(query.limit);
   const rows = await client.db
     .select({
@@ -121,6 +128,7 @@ export async function listRuns(
       childRunCount: childRunCountSubquery(runs.id),
       chainOriginRunId: runs.chainOriginRunId,
       chainSourceRunIds: runs.chainSourceRunIds,
+      cursorQueuedAt: sql<string>`to_char(${runs.queuedAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
       deadLetterReason: runs.deadLetterReason,
       deploymentId: runs.deploymentId,
       environment: deployments.environment,
@@ -145,8 +153,11 @@ export async function listRuns(
     .innerJoin(automationVersions, eq(runs.versionId, automationVersions.id))
     .innerJoin(deployments, eq(runs.deploymentId, deployments.id))
     .where(and(...filters))
-    .orderBy(desc(runs.queuedAt))
-    .limit(limit);
+    .orderBy(desc(runs.queuedAt), desc(runs.id))
+    // One row past the page says whether another page follows.
+    .limit(limit + 1);
+  const page = rows.slice(0, limit);
+  const last = page.at(-1);
 
   return {
     environment,
@@ -156,7 +167,11 @@ export async function listRuns(
       statuses: query.statuses ?? [],
       triggerType: query.triggerType ?? null,
     },
-    runs: rows.map(mapRunRow),
+    nextCursor:
+      rows.length > limit && last !== undefined
+        ? encodeRunCursor({ queuedAt: last.cursorQueuedAt, runId: last.runId })
+        : null,
+    runs: page.map(mapRunRow),
   };
 }
 

@@ -25,7 +25,7 @@ export function HolderRow(props: {
   const { holder } = props;
   return (
     <div className="setting items-start" data-testid={props.testId}>
-      <div className="grid min-w-0 gap-1.5">
+      <div className="grid min-w-0 gap-2">
         <div>
           <b>{holder.name}</b>{" "}
           {holder.email === null ? null : <span className="t-faint">{holder.email}</span>}{" "}

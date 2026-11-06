@@ -25,7 +25,7 @@ export function ApprovalDetails(props: {
   const { fields, heading } = approvalDetailsInWords(props.details);
   if (heading === null && fields.length === 0) return null;
   return (
-    <div className="t-meta grid gap-0.5">
+    <div className="t-meta grid gap-1">
       {heading === null ? null : <div className="break-words">{heading}</div>}
       {fields.length === 0 ? null : (
         <dl
@@ -275,7 +275,7 @@ export function ConnectLink(props: {
 
 export function ActionError(props: { readonly error: unknown }) {
   return (
-    <span className="basis-full text-right text-[12.5px] text-fail" role="alert">
+    <span className="basis-full text-right text-[13px] text-fail" role="alert">
       {errorText(props.error)}
     </span>
   );

@@ -2,24 +2,34 @@
 // what "Hand to agent" copies for a failing run or automation.
 
 import type { AttentionItem, DeploymentChange, Overview, PlatformProblem } from "../api";
+import { versionInWords } from "./runs";
+import { ageInWords } from "./time";
 
 /**
- * "All good." or "3 things need you.", split so the page can set the emphasis. Needs you leaves out
- * what the viewer cannot act on, so then an empty list says only that nothing needs them.
+ * What the Overview says first: "3 things need you.", or with nothing to act on "All good." only
+ * while no run failed. Failures without a next step read "Nothing needs you." with their count and
+ * age, so the sentence never contradicts the failed count beside it. Needs you leaves out what the
+ * viewer cannot act on, so an incomplete list says only that nothing needs them.
  */
-export function statusSentence(overview: Pick<Overview, "complete" | "needsYou">): {
-  readonly lead: string;
-  readonly emphasis: string;
-} {
+export function statusSentence(
+  overview: Pick<Overview, "complete" | "last24h" | "lastFailureAt" | "needsYou">,
+  now: Date,
+): { readonly title: string; readonly failures: string | null } {
   const count = overview.needsYou.length;
-  if (count === 0) {
-    return overview.complete
-      ? { emphasis: "good.", lead: "All" }
-      : { emphasis: "needs you.", lead: "Nothing" };
-  }
-  return count === 1
-    ? { emphasis: "needs you.", lead: "1 thing" }
-    : { emphasis: "need you.", lead: `${count} things` };
+  const failed = overview.last24h.failed + overview.last24h["dead-lettered"];
+  const failures = failed === 0 ? null : failuresInWords(failed, overview.lastFailureAt, now);
+  if (count > 1) return { failures, title: `${count} things need you.` };
+  if (count === 1) return { failures, title: "1 thing needs you." };
+  return {
+    failures,
+    title: overview.complete && failed === 0 ? "All good." : "Nothing needs you.",
+  };
+}
+
+function failuresInWords(failed: number, lastFailureAt: string | null, now: Date): string {
+  const runs = failed === 1 ? "1 run" : `${failed} runs`;
+  const age = lastFailureAt === null ? "" : `, the last one ${ageInWords(lastFailureAt, now)}`;
+  return `${runs} failed in the last 24 hours${age}.`;
 }
 
 /** The title and the next step of a platform problem. */
@@ -151,13 +161,14 @@ function again(runId: string, triggerType: string): string {
   }
 }
 
-/** "Deployed" with "1.0.0 → 1.1.0", "Rolled back" with "2.3.0 → 2.2.1", "First deploy" with "1.0.0". */
+/** "Deployed" with "v1.0.0 → v1.1.0", "Rolled back" with "v2.3.0 → v2.2.1", "First deploy" with "v1.0.0". */
 export function changeInWords(
   change: Pick<DeploymentChange["change"], "eventType" | "previousVersion" | "version">,
 ): { readonly verb: string; readonly versions: string } {
-  if (change.previousVersion === null) return { verb: "First deploy", versions: change.version };
+  const version = versionInWords(change.version);
+  if (change.previousVersion === null) return { verb: "First deploy", versions: version };
   return {
     verb: change.eventType === "rollback" ? "Rolled back" : "Deployed",
-    versions: `${change.previousVersion} → ${change.version}`,
+    versions: `${versionInWords(change.previousVersion)} → ${version}`,
   };
 }

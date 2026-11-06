@@ -24,6 +24,7 @@ export interface EnvironmentQuery {
 export interface DashboardRunsQuery extends EnvironmentQuery {
   readonly approvalOnly?: "false" | "true";
   readonly automation?: string;
+  readonly cursor?: string;
   readonly limit?: string;
   readonly parentRunId?: string;
   readonly status?: string;

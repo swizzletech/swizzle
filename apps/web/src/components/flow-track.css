@@ -1,31 +1,29 @@
-/* The track card above an automation's runs. */
+/* The flow band at the top of the run pane: a fold row, then the track in its window. */
 @layer components {
-  .track-card {
-    margin-bottom: 18px;
-    overflow: hidden;
+  .flow-band {
+    flex: none;
+    border-bottom: 1px solid var(--line);
   }
   .track-head {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 16px;
-  }
-  .track-head:not(:last-child) {
-    border-bottom: 1px solid var(--line);
+    gap: 8px;
+    min-height: 40px;
+    padding: 0 16px;
   }
   .track-fold {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     padding: 0;
     border: 0;
     background: none;
-    font: 700 13px var(--font-sans);
+    font: 500 13px / 20px var(--font-sans);
     color: var(--ink);
     cursor: pointer;
   }
   .track-fold .chev {
-    width: 10px;
+    width: 12px;
     color: var(--ink-3);
   }
 }

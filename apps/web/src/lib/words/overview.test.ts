@@ -8,29 +8,50 @@ import {
 } from "./overview";
 
 describe("statusSentence", () => {
+  const now = new Date("2026-11-06T12:00:00.000Z");
+  const quiet = {
+    complete: true,
+    last24h: {
+      "dead-lettered": 0,
+      failed: 0,
+      queued: 0,
+      running: 0,
+      succeeded: 12,
+      waiting: 0,
+    },
+    lastFailureAt: null,
+    needsYou: [],
+  };
+  const needs = {
+    kind: "platform",
+    problem: { code: "scheduler-down", environment: "local", served: [] },
+  } as const;
+
   it("counts what needs the owner, in the right number", () => {
-    expect(statusSentence({ complete: true, needsYou: [] })).toEqual({
-      emphasis: "good.",
-      lead: "All",
-    });
-    expect(
-      statusSentence({
-        complete: true,
-        needsYou: [
-          {
-            kind: "platform",
-            problem: { code: "scheduler-down", environment: "local", served: [] },
-          },
-        ],
-      }),
-    ).toEqual({ emphasis: "needs you.", lead: "1 thing" });
+    expect(statusSentence(quiet, now)).toEqual({ failures: null, title: "All good." });
+    expect(statusSentence({ ...quiet, needsYou: [needs] }, now).title).toBe("1 thing needs you.");
+    expect(statusSentence({ ...quiet, needsYou: [needs, needs] }, now).title).toBe(
+      "2 things need you.",
+    );
   });
 
   it("does not call all good what a reader's role keeps out of their Needs you", () => {
-    expect(statusSentence({ complete: false, needsYou: [] })).toEqual({
-      emphasis: "needs you.",
-      lead: "Nothing",
+    expect(statusSentence({ ...quiet, complete: false }, now).title).toBe("Nothing needs you.");
+  });
+
+  it("does not call all good a day with failed runs, and says how many and how long ago", () => {
+    const failed = {
+      ...quiet,
+      last24h: { ...quiet.last24h, "dead-lettered": 1, failed: 2 },
+      lastFailureAt: "2026-11-06T09:00:00.000Z",
+    };
+    expect(statusSentence(failed, now)).toEqual({
+      failures: "3 runs failed in the last 24 hours, the last one 3 h ago.",
+      title: "Nothing needs you.",
     });
+    expect(
+      statusSentence({ ...failed, last24h: { ...quiet.last24h, failed: 1 } }, now).failures,
+    ).toBe("1 run failed in the last 24 hours, the last one 3 h ago.");
   });
 });
 

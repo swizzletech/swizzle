@@ -17,7 +17,6 @@ import { useDashboardClient } from "../../lib/dashboard-client";
 import { refreshAll, useProjects } from "../../lib/queries";
 import { scopeInWords } from "../../lib/words/access";
 import { ageInWords, expiryInWords } from "../../lib/words/time";
-import { Section } from "./section";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -76,12 +75,9 @@ export function AgentAccess() {
   const active = (tokens.data ?? []).filter((token) => token.revokedAt === null);
 
   return (
-    <Section
-      intro="Connect a coding agent, a script or CI to this instance through the swizzle CLI. Choose who it acts as."
-      title="Agent access"
-    >
-      <div className="mb-6 grid gap-3.5 md:grid-cols-2" data-testid="agent-identities">
-        <div className="card px-5 py-4">
+    <>
+      <div className="mb-6 grid gap-3 md:grid-cols-2" data-testid="agent-identities">
+        <div className="card px-4 py-4">
           <h2 className="t-section">As you: agent token</h2>
           <p className="t-meta mt-1">
             Use an agent token when the agent works for you. It acts with your rights at most and
@@ -192,12 +188,12 @@ export function AgentAccess() {
           ))
         )}
         {revoke.isError ? (
-          <div className="px-[18px] py-2">
+          <div className="px-4 py-2">
             <ActionError error={revoke.error} />
           </div>
         ) : null}
       </div>
-    </Section>
+    </>
   );
 }
 
@@ -209,7 +205,7 @@ export function AgentAccess() {
 function ServiceAccountsDoor({ projects }: { readonly projects: ReturnType<typeof useProjects> }) {
   const administered = (projects.data ?? []).filter((project) => project.role === "admin");
   return (
-    <div className="card px-5 py-4">
+    <div className="card px-4 py-4">
       <h2 className="t-section">As a project: service account</h2>
       <p className="t-meta mt-1">
         Use a service account for CI or an agent that must keep working when you leave.{" "}
@@ -272,7 +268,7 @@ function GiveToAgent(props: { readonly token: CreatedApiToken; readonly onDismis
     "swizzle workspace init ./my-automations",
   ].join("\n");
   return (
-    <div className="card mb-3.5 grid gap-3 px-5 py-4" data-testid="give-to-agent">
+    <div className="card mb-3 grid gap-3 px-4 py-4" data-testid="give-to-agent">
       <div className="flex flex-wrap items-baseline gap-3">
         <h3 className="t-section">Give this to your agent</h3>
         <span className="t-faint">

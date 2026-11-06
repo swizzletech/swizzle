@@ -8,6 +8,7 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { ActionError } from "../components/actions";
+import { MenuItem, RowMenu } from "../components/menu";
 import { Chip, ErrorNote, Skeleton, useNow } from "../components/ui";
 import type { CredentialRef, CredentialShare, Project } from "../lib/api";
 import { useDashboardClient } from "../lib/dashboard-client";
@@ -29,7 +30,7 @@ export function ProjectCredentials(props: { readonly project: Project }) {
         {project.role === "admin" ? (
           <Offered project={project} />
         ) : (
-          <p className="card t-meta px-5 py-4">
+          <p className="card t-meta px-4 py-4">
             Only the project's admins accept or decline an offer. Ask one of them.
           </p>
         )}
@@ -77,11 +78,11 @@ function Offered({ project }: { readonly project: Project }) {
     );
   }
   if (shares.data.length === 0) {
-    return <p className="card t-meta px-5 py-4">No project offers {project.name} a credential.</p>;
+    return <p className="card t-meta px-4 py-4">No project offers {project.name} a credential.</p>;
   }
   const failed = accept.error ?? decline.error;
   return (
-    <div className="card rows overflow-hidden" data-testid="offered-shares">
+    <div className="card rows" data-testid="offered-shares">
       {shares.data.map((share) => (
         <div className="setting" data-testid="offered-share" key={share.shareId}>
           <div className="min-w-0">
@@ -92,13 +93,13 @@ function Offered({ project }: { readonly project: Project }) {
             ) : (
               <Chip tone="ok">Accepted</Chip>
             )}
-            <div className="t-meta mt-0.5">
+            <div className="t-meta mt-1">
               From {share.credentialProject.name}, in {share.credential.environment}
               {share.acceptedAt === null ? "" : ` · ${credentialShareInWords(share, now)}`}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {share.acceptedAt === null ? (
+          {share.acceptedAt === null ? (
+            <div className="flex items-center gap-2">
               <button
                 className="btn small"
                 disabled={accept.isPending}
@@ -107,20 +108,26 @@ function Offered({ project }: { readonly project: Project }) {
               >
                 Accept
               </button>
-            ) : null}
+              <RowMenu>
+                <MenuItem disabled={decline.isPending} onClick={() => decline.mutate(share)}>
+                  Decline
+                </MenuItem>
+              </RowMenu>
+            </div>
+          ) : (
             <button
               className="btn quiet small"
               disabled={decline.isPending}
               onClick={() => decline.mutate(share)}
               type="button"
             >
-              {share.acceptedAt === null ? "Decline" : "End share"}
+              End share
             </button>
-          </div>
+          )}
         </div>
       ))}
       {failed ? (
-        <div className="px-[18px] py-2">
+        <div className="px-4 py-2">
           <ActionError error={failed} />
         </div>
       ) : null}
@@ -149,7 +156,7 @@ function Shared({ project }: { readonly project: Project }) {
   }
   if (shared.data.length === 0) {
     return (
-      <p className="card t-meta px-5 py-4">
+      <p className="card t-meta px-4 py-4">
         You manage no credential of {project.name} in {environment}.{" "}
         <Link className="linkish" search={{ project: project.slug }} to="/credentials">
           Its credentials
@@ -200,7 +207,7 @@ function SharedCredentialRow(props: {
   const failed = offer.error ?? withdraw.error;
   return (
     <div className="setting items-start" data-testid="shared-credential">
-      <div className="grid min-w-0 gap-1.5">
+      <div className="grid min-w-0 gap-2">
         <div>
           <span className="mono font-semibold">{credential.name}</span>{" "}
           <Chip tone="idle">{KIND_LABEL[credential.kind]}</Chip>

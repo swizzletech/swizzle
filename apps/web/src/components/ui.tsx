@@ -13,12 +13,7 @@ export function Dot(props: { readonly tone: Tone; readonly className?: string })
 }
 
 export function Chip(props: { readonly tone: Tone; readonly children: ReactNode }) {
-  return (
-    <span className={`chip ${props.tone}`}>
-      <Dot tone={props.tone} />
-      {props.children}
-    </span>
-  );
+  return <span className={`chip ${props.tone}`}>{props.children}</span>;
 }
 
 const STRIP_LENGTH = 10;
@@ -133,8 +128,8 @@ export function CopyButton(props: {
         {state === "copied" ? "Copied" : props.label}
       </button>
       {state === "by-hand" ? (
-        <span className="order-last grid basis-full gap-1.5">
-          <span className="text-[12.5px]" role="alert">
+        <span className="order-last grid basis-full gap-2">
+          <span className="text-[13px]" role="alert">
             The browser did not copy it. The text below is selected: press Ctrl+C or ⌘C.
           </span>
           <textarea

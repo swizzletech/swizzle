@@ -337,6 +337,7 @@ export function createDashboardDataProvider(
       const dayAgo = new Date(observedAt.getTime() - DAY_MS);
       const [
         last24h,
+        lastFailed,
         automations,
         waitingApprovals,
         queueCounts,
@@ -346,6 +347,13 @@ export function createDashboardDataProvider(
         queued,
       ] = await Promise.all([
         dashboardStore.countRunsSince(environment, dayAgo, scope),
+        dashboardStore.listRuns({
+          environment,
+          limit: 1,
+          scope,
+          statuses: ["failed", "dead-lettered"],
+          topLevelOnly: true,
+        }),
         dashboardStore.listAutomationSummaries(environment, scope),
         // Only approvals the viewer might decide, before the limit cuts the list.
         dashboardStore.listRuns({
@@ -408,6 +416,7 @@ export function createDashboardDataProvider(
       return {
         environment,
         last24h,
+        lastFailureAt: lastFailureAt(lastFailed.runs[0]),
         needsYou: buildAttention({
           approvals,
           automations: editable,
@@ -509,6 +518,11 @@ interface ReadinessContext {
 }
 
 /** Whether a service's last heartbeat is recent enough that it still runs. */
+/** A run that failed before it started has no end time. */
+function lastFailureAt(run: DashboardRunListItem | undefined): string | null {
+  return run === undefined ? null : (run.finishedAt ?? run.queuedAt);
+}
+
 function isAlive(
   heartbeat: { readonly observedAt: string },
   now: Date,

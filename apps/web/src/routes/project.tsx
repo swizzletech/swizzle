@@ -14,8 +14,8 @@ import { useState } from "react";
 import { ActionError } from "../components/actions";
 import { useConfirm } from "../components/confirm";
 import { HolderList } from "../components/holder-list";
+import { Page } from "../components/page";
 import { accessChanged, ShareForm, subjectKey } from "../components/share-form";
-import { Trail } from "../components/shell";
 import { Chip, ErrorNote, Skeleton } from "../components/ui";
 import { DEFAULT_PROJECT_ID, type Project, type ProjectAccess, type Subject } from "../lib/api";
 import { useDashboardClient } from "../lib/dashboard-client";
@@ -32,17 +32,26 @@ const TAB_LABEL: Record<ProjectTab, string> = {
   credentials: "Credentials",
 };
 
+const PROJECTS = { label: "Projects", to: "/projects" } as const;
+
 export function ProjectPage() {
   const { project: reference } = useParams({ from: "/projects/$project" });
   const projects = useProjects();
+  const path = { current: reference, parent: PROJECTS };
   if (projects.isError) {
-    return <ErrorNote error={projects.error} title="The projects could not be loaded." />;
+    return (
+      <Page path={path} title={reference} type="administration">
+        <ErrorNote error={projects.error} title="The projects could not be loaded." />
+      </Page>
+    );
   }
   if (projects.data === undefined) {
     return (
-      <div className="card">
-        <Skeleton label="Loading the project" lines={4} />
-      </div>
+      <Page path={path} title={reference} type="administration">
+        <div className="card">
+          <Skeleton label="Loading the project" lines={4} />
+        </div>
+      </Page>
     );
   }
   const project = projects.data.find(
@@ -50,8 +59,7 @@ export function ProjectPage() {
   );
   if (project === undefined) {
     return (
-      <>
-        <Trail parent={{ label: "Projects", to: "/projects" }} />
+      <Page path={path} title={reference} type="administration">
         <div className="errbox" role="alert">
           <b>No project {reference} for you.</b>
           <p>
@@ -59,7 +67,7 @@ export function ProjectPage() {
             or an owner or admin of this instance, can add you.
           </p>
         </div>
-      </>
+      </Page>
     );
   }
   return <LoadedProject project={project} projects={projects.data} />;
@@ -73,47 +81,44 @@ function LoadedProject(props: {
   const navigate = useNavigate({ from: "/projects/$project" });
   const tab = useSearch({ from: "/projects/$project" }).tab ?? "access";
   return (
-    <>
-      <Trail current={project.name} parent={{ label: "Projects", to: "/projects" }} />
-      <div className="dhead">
-        <div className="min-w-0">
-          <h1 className="t-page">{project.name}</h1>
-          <div className="t-meta mt-1">
-            You are <b>{project.role}</b> here.{" "}
-            {project.protectedEnvironments.length === 0
-              ? "No environment is protected."
-              : `Protected: ${project.protectedEnvironments.join(", ")}. A change there needs an environment grant; project admins keep admin.`}
-          </div>
-        </div>
-        <div className="flex flex-wrap items-end gap-2">
+    <Page
+      actions={
+        <>
           {project.role === "admin" && project.id !== DEFAULT_PROJECT_ID ? (
             <DeleteProject project={project} projects={props.projects} />
           ) : null}
-          <label className="form-label">
-            Project
-            <select
-              className="field"
-              onChange={(event) =>
-                void navigate({
-                  params: { project: event.target.value },
-                  search: (previous) => previous,
-                  to: "/projects/$project",
-                })
-              }
-              value={project.slug}
-            >
-              {props.projects.map((option) => (
-                <option key={option.id} value={option.slug}>
-                  {option.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </div>
-      {project.role === "admin" ? (
+          <select
+            aria-label="Project"
+            className="field"
+            onChange={(event) =>
+              void navigate({
+                params: { project: event.target.value },
+                search: (previous) => previous,
+                to: "/projects/$project",
+              })
+            }
+            value={project.slug}
+          >
+            {props.projects.map((option) => (
+              <option key={option.id} value={option.slug}>
+                {option.name}
+              </option>
+            ))}
+          </select>
+        </>
+      }
+      description={
         <>
-          <div aria-label="Project" className="dtabs mt-4" role="tablist">
+          You are <b>{project.role}</b> here.{" "}
+          {project.protectedEnvironments.length === 0
+            ? "No environment is protected."
+            : `Protected: ${project.protectedEnvironments.join(", ")}. A change there needs an environment grant; project admins keep admin.`}
+        </>
+      }
+      path={{ current: project.name, parent: PROJECTS }}
+      tabs={
+        project.role === "admin" ? (
+          <div aria-label="Project" className="dtabs" role="tablist">
             {PROJECT_TABS.map((key) => (
               <button
                 aria-selected={tab === key}
@@ -127,16 +132,21 @@ function LoadedProject(props: {
               </button>
             ))}
           </div>
-          {/* Keyed, so an open form never carries one project's choices into another. */}
-          <AdministeredProject key={project.id} project={project} tab={tab} />
-        </>
+        ) : undefined
+      }
+      title={project.name}
+      type="administration"
+    >
+      {project.role === "admin" ? (
+        // Keyed, so an open form never carries one project's choices into another.
+        <AdministeredProject key={project.id} project={project} tab={tab} />
       ) : (
         <>
           <OwnAccess key={project.id} project={project} />
           <ProjectCredentials key={`credentials:${project.id}`} project={project} />
         </>
       )}
-    </>
+    </Page>
   );
 }
 
@@ -152,7 +162,7 @@ function ProjectAccessTabs(props: { readonly project: Project; readonly tab: Pro
   }
   if (access.data === undefined) {
     return (
-      <div className="card mt-4">
+      <div className="card">
         <Skeleton label="Loading who has access" lines={4} />
       </div>
     );
@@ -180,7 +190,7 @@ function OwnAccess({ project }: { readonly project: Project }) {
     queryKey: ["own-access", project.slug, environments, authRevision],
   });
   return (
-    <section className="mt-4">
+    <section>
       <div className="sec-head">
         <h2 className="t-section">Your access</h2>
         <p className="t-meta">
@@ -238,7 +248,7 @@ function Access({ access }: { readonly access: ProjectAccess }) {
         </button>
       </div>
       {sharing === null ? null : (
-        <div className="mb-3.5">
+        <div className="mb-3">
           <ShareForm
             access={access}
             key={sharing.subject === undefined ? "new" : subjectKey(sharing.subject)}
@@ -280,7 +290,7 @@ function Environments({ access }: { readonly access: ProjectAccess }) {
         </p>
       </div>
       {protect.isError ? <ActionError error={protect.error} /> : null}
-      <div className="grid gap-3.5">
+      <div className="grid gap-4">
         {access.environments.map((environment) => {
           const isProtected = access.protectedEnvironments.includes(environment);
           const changers = access.holders.filter((holder) => {

@@ -131,7 +131,7 @@ function RunPicker(props: {
       Run
       <select
         aria-label="Run"
-        className="field h-[32px]"
+        className="field"
         onChange={(event) => props.onSelect(event.target.value)}
         value={props.selected ?? ""}
       >

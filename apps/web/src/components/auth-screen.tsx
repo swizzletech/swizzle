@@ -24,10 +24,10 @@ export function AuthScreen(props: {
   return (
     <div className="grid min-h-screen place-items-center px-4 py-12" data-testid="auth-screen">
       <div className="w-full max-w-[460px]">
-        <Logo className="brand mb-5" />
-        <main className="card p-7 sm:p-8">
+        <Logo className="brand mb-4" />
+        <main className="card p-6 sm:p-8">
           <h1 className="t-page">{props.title}</h1>
-          {props.intro === undefined ? null : <div className="t-meta mt-1.5">{props.intro}</div>}
+          {props.intro === undefined ? null : <div className="t-meta mt-2">{props.intro}</div>}
           {props.children}
         </main>
         <p className="t-faint mt-4 text-center">Agents write it. Swizzle runs it.</p>
@@ -57,7 +57,7 @@ export function NewPasswordField(props: {
         aria-describedby={`${id}-rule`}
         aria-invalid={problem !== null}
         autoComplete="new-password"
-        className="field h-10"
+        className="field"
         id={`${id}-field`}
         onChange={(event) => props.onChange(event.target.value)}
         type="password"
@@ -79,10 +79,10 @@ export function TwoFactorChoice(props: {
   readonly onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex items-start gap-2.5 text-[13px]">
+    <label className="flex items-start gap-2 text-[13px]">
       <input
         checked={props.checked}
-        className="mt-0.5"
+        className="mt-1"
         onChange={(event) => props.onChange(event.target.checked)}
         type="checkbox"
       />
@@ -169,7 +169,7 @@ export function TwoFactorOnboarding(props: {
       intro="Your account is ready. Two-factor sign-in protects it if your password leaks."
       title="Two-factor sign-in"
     >
-      <div className="mt-5 max-w-[640px]">{body}</div>
+      <div className="mt-4 max-w-[640px]">{body}</div>
     </AuthScreen>
   );
 }

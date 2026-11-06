@@ -295,7 +295,7 @@ function AutomationLink(props: {
 }) {
   return (
     <Link
-      className="font-bold no-underline hover:underline"
+      className="font-semibold no-underline hover:underline"
       params={{ automationSlug: props.automation.automationSlug }}
       to="/automations/$automationSlug"
     >

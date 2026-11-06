@@ -17,6 +17,7 @@ import { skillNamesTheRunnerImage } from "./rules/skill-names-the-runner-image.j
 import { skillTeachesTheProduct } from "./rules/skill-teaches-the-product.js";
 import { testsWaitOnState } from "./rules/tests-wait-on-state.js";
 import { toolchainPins } from "./rules/toolchain-pins.js";
+import { webDesignScale } from "./rules/web-design-scale.js";
 import { webReadsTheContract } from "./rules/web-reads-the-contract.js";
 
 /** Public repository rules. conventions.test.ts exercises each registered rule. */
@@ -40,4 +41,5 @@ export const rules: readonly Rule[] = [
   noPrivatePaths,
   reviewConfigPaths,
   webReadsTheContract,
+  webDesignScale,
 ];

@@ -9,7 +9,6 @@ import { Chip, ErrorNote, Skeleton } from "../../components/ui";
 import type { TwoFactorEnrollment } from "../../lib/api";
 import { sessionApi } from "../../lib/api/account";
 import { useDashboardClient } from "../../lib/dashboard-client";
-import { Section } from "./section";
 
 export function TwoFactor() {
   const { api } = useDashboardClient();
@@ -149,14 +148,11 @@ export function TwoFactor() {
   }
 
   return (
-    <Section
-      intro="Sign-in asks for a code from an authenticator app, such as Google Authenticator, 1Password or Aegis, after the password. Turning it on or off signs out every other browser. Agent tokens keep working."
-      title="Two-factor sign-in"
-    >
+    <>
       {recoveryCodes === null ? null : (
         <RecoveryCodes codes={recoveryCodes} onDismiss={() => setRecoveryCodes(null)} />
       )}
       <div className="card rows overflow-hidden">{body}</div>
-    </Section>
+    </>
   );
 }
