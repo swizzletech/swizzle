@@ -1,6 +1,6 @@
 {
   "name": "@swizzle/api",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
@@ -11,8 +11,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@fastify/cors": "^11.3.1",
-    "@fastify/multipart": "^10.1.6",
+    "@fastify/cors": "^11.4.1",
+    "@fastify/multipart": "^10.1.8",
     "@prometheus-io/client": "^0.16.1",
     "@swizzle/config": "workspace:*",
     "@swizzle/core": "workspace:*",
