@@ -50,6 +50,7 @@ it.each([false, true])(
       listServiceHeartbeats: unused,
       getAutomationDetail: unused,
       getMermaidDiagram: unused,
+      getTimetable: unused,
       listAutomationSummaries: unused,
       listRuns: unused,
       listQueuedRuns: unused,

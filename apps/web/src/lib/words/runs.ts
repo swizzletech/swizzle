@@ -1,6 +1,6 @@
 // Runs in words: status, duration, where they ran, and their approvals.
 
-import type { Assignee, RunDetail, RunListItem, RunStep } from "../api";
+import type { Assignee, HourCounts, RunDetail, RunListItem, RunState, RunStep } from "../api";
 import { clockTime, durationInWords } from "./time";
 
 type RunFacts = Pick<
@@ -43,6 +43,25 @@ export function runDetailStatusInWords(
   return run.state === "running" && run.executions.at(-1)?.phase === "preparing"
     ? "Preparing"
     : runStatusInWords(run);
+}
+
+/** The states one hour of the timetable names, in this order, with the word for each. */
+const HOUR_WORDS: readonly (readonly [readonly RunState[], string])[] = [
+  [["succeeded"], "succeeded"],
+  [["failed", "dead-lettered"], "failed"],
+  [["cancelled"], "cancelled"],
+  [["queued"], "queued"],
+  [["running"], "running"],
+  [["waiting"], "waiting"],
+];
+
+/** One hour of the timetable: "14:00 · 58 succeeded, 2 failed", or "14:00 · No runs". */
+export function hourInWords(start: Date, counts: HourCounts): string {
+  const parts = HOUR_WORDS.flatMap(([states, word]) => {
+    const count = states.reduce((sum, state) => sum + (counts[state] ?? 0), 0);
+    return count === 0 ? [] : [`${count} ${word}`];
+  });
+  return `${clockTime(start)} · ${parts.length === 0 ? "No runs" : parts.join(", ")}`;
 }
 
 /** The one form of a version number on every surface: "v1.3.1". */

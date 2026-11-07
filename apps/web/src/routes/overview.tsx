@@ -1,5 +1,5 @@
-// The Overview `/`: the status sentence, Needs you, the automations and what changed recently, in
-// that fixed order. An instance without automations shows only the three steps to the first one,
+// The Overview `/`: the status sentence, Needs you, the automations as a timetable of their last 24
+// hours and what changed recently, in that fixed order. An instance without automations shows only the three steps to the first one,
 // or why the person may not deploy it.
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -7,6 +7,7 @@ import { Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { ActionError } from "../components/actions";
 import { useConfirm } from "../components/confirm";
+import { HourAxis, HourStrip } from "../components/hour-strip";
 import { Menu } from "../components/menu";
 import { NeedsYou } from "../components/needs-you";
 import { Page } from "../components/page";
@@ -17,21 +18,21 @@ import {
   Dot,
   ErrorNote,
   errorText,
-  HealthStrip,
   SectionHead,
   Skeleton,
   useNow,
   WithCode,
 } from "../components/ui";
-import type { AutomationFolder, AutomationSummary, Overview } from "../lib/api";
+import type { AutomationFolder, AutomationSummary, Overview, Timetable } from "../lib/api";
 import { useDashboardClient } from "../lib/dashboard-client";
 import { type AutomationListItem, groupAutomationsIntoPipelines } from "../lib/pipeline-grouping";
 import { refreshAll, useAutomations, useFolders, useOverview } from "../lib/queries";
+import { failingFirst, type TimetableLine } from "../lib/timetable";
 import { refusedControlsInWords } from "../lib/words/access";
-import { automationHealth, HEALTH_TONE, readinessLabel, type Tone } from "../lib/words/health";
+import { readinessLabel, type Tone } from "../lib/words/health";
 import { changeInWords, statusSentence } from "../lib/words/overview";
 import { ageInWords } from "../lib/words/time";
-import { nextRunInWords, triggerInWords } from "../lib/words/triggers";
+import { nextRunInWords, nextRunTimes, triggerInWords } from "../lib/words/triggers";
 import "./overview.css";
 
 export function OverviewPage() {
@@ -73,7 +74,7 @@ export function OverviewPage() {
             title="The automations could not be loaded"
           />
         </>
-      ) : automations.data === undefined ? (
+      ) : automations.data === undefined || (overview.data === undefined && !overview.isError) ? (
         <>
           <SectionHead title="Automations" />
           <div className="card">
@@ -81,7 +82,7 @@ export function OverviewPage() {
           </div>
         </>
       ) : (
-        <Automations automations={automations.data} />
+        <Automations automations={automations.data} timetable={overview.data?.timetable ?? null} />
       )}
 
       {/* After the list above it, so a list arriving later cannot push it down the page. */}
@@ -134,29 +135,39 @@ function StatusCard({ overview }: { readonly overview: Overview }) {
   );
 }
 
-function Automations({ automations }: { readonly automations: readonly AutomationSummary[] }) {
+/**
+ * The automations as a timetable: each one's last 24 hours hour by hour, those with a failure in
+ * them first, and its next run. Without the Overview's timetable the rows keep an empty lane.
+ */
+function Automations(props: {
+  readonly automations: readonly AutomationSummary[];
+  readonly timetable: Timetable | null;
+}) {
+  const { automations, timetable } = props;
   const [folderId, setFolderId] = useState<string | null>(null);
   const shown =
     folderId === null
       ? automations
       : automations.filter((automation) => automation.folderId === folderId);
+  const items = groupAutomationsIntoPipelines(shown);
+  const lines =
+    timetable === null
+      ? items.map((item) => ({ item, line: null }))
+      : failingFirst(items, timetable);
   return (
     <>
       <SectionHead title="Automations">
         <FolderTabs automations={automations} folderId={folderId} onSelect={setFolderId} />
       </SectionHead>
       <RefusedFolders folderId={folderId} />
-      <div className="card rows overflow-hidden" data-testid="automations">
+      <div className="card rows timetable" data-testid="automations">
         <div className="arow head t-label">
-          <span />
-          <span>Automation</span>
-          <span>Trigger</span>
-          <span>Last 10</span>
-          <span>Last run</span>
-          <span>Next</span>
+          <span className="who">Automation</span>
+          {timetable === null ? null : <HourAxis timetable={timetable} />}
+          <span className="next">Next</span>
         </div>
-        {groupAutomationsIntoPipelines(shown).map((item) => (
-          <AutomationRow item={item} key={rowKey(item)} />
+        {lines.map(({ item, line }) => (
+          <AutomationRow item={item} key={rowKey(item)} line={line} timetable={timetable} />
         ))}
         {shown.length === 0 ? (
           <p className="t-meta px-4 py-3">
@@ -172,25 +183,21 @@ function rowKey(item: AutomationListItem): string {
   return item.kind === "group" ? item.key : item.automation.automationSlug;
 }
 
-const TONE_RANK: Record<Tone, number> = { fail: 4, idle: 0, ok: 1, run: 2, warn: 3 };
-
-function AutomationRow({ item }: { readonly item: AutomationListItem }) {
-  const now = useNow();
+function AutomationRow(props: {
+  readonly item: AutomationListItem;
+  readonly line: TimetableLine | null;
+  readonly timetable: Timetable | null;
+}) {
+  const { item } = props;
   const [graphOpen, setGraphOpen] = useState(false);
   const automation = item.kind === "group" ? item.entry : item.automation;
-  const members = item.kind === "group" ? item.members : [automation];
-  // A pipeline shows its worst member, so a failing stage is never hidden behind a healthy entry.
-  const tone = members
-    .map((member) => HEALTH_TONE[automationHealth(member)])
-    .reduce((worst, next) => (TONE_RANK[next] > TONE_RANK[worst] ? next : worst));
-  const latest = automation.recentRuns[0];
-  // The name link stretches over the whole row; a pipeline's member links sit above it, so every
-  // stage opens on its own without nesting links.
+  const trigger = triggerInWords(automation.trigger);
+  // The name link stretches over the whole row; the strip and a pipeline's member links sit above
+  // it, so each opens on its own without nesting links.
   return (
     <>
       <div className="arow linked" data-testid="automation-row">
-        <Dot tone={tone} />
-        <div className="min-w-0">
+        <div className="who min-w-0">
           <div className="name">
             <Link
               className="stretch"
@@ -202,6 +209,9 @@ function AutomationRow({ item }: { readonly item: AutomationListItem }) {
             {item.kind === "group" ? (
               <span className="t-faint font-medium"> · pipeline</span>
             ) : null}
+          </div>
+          <div className="trigger" title={trigger.replaceAll("`", "")}>
+            <WithCode text={trigger} />
           </div>
           {item.kind === "group" ? (
             <div className="steps">
@@ -233,56 +243,55 @@ function AutomationRow({ item }: { readonly item: AutomationListItem }) {
                 {graphOpen ? "Hide graph" : "Graph"}
               </button>
             </div>
-          ) : automation.description ? (
-            <div className="t-meta">{automation.description}</div>
           ) : null}
         </div>
-        <span
-          className="t-meta truncate"
-          title={triggerInWords(automation.trigger).replaceAll("`", "")}
-        >
-          <WithCode text={triggerInWords(automation.trigger)} />
-        </span>
-        <HealthStrip runs={automation.recentRuns} />
-        <LastRunCell automation={automation} latestAt={latest?.queuedAt ?? null} now={now} />
-        {automation.trigger?.status === "paused" ? (
-          <span>
-            <Chip tone="idle">Paused</Chip>
-          </span>
-        ) : (
-          <span className="t-meta">{nextRunInWords(automation.trigger, now)}</span>
+        {props.line === null || props.timetable === null ? null : (
+          <HourStrip
+            automationSlug={automation.automationSlug}
+            line={props.line}
+            timetable={props.timetable}
+          />
         )}
+        <NextCell automation={automation} />
       </div>
       {graphOpen && item.kind === "group" ? <PipelineGraph members={item.members} /> : null}
     </>
   );
 }
 
-/** The last run's age, or what keeps the automation from running. */
-function LastRunCell(props: {
-  readonly automation: AutomationSummary;
-  readonly latestAt: string | null;
-  readonly now: Date;
-}) {
-  const { automation } = props;
-  if (automation.trigger?.status === "invalid") {
+/** The next run as a clock time over how far off it is, or what keeps the automation from it. */
+function NextCell(props: { readonly automation: AutomationSummary }) {
+  const now = useNow();
+  const { trigger } = props.automation;
+  const readiness = props.automation.activeDeployment.readiness;
+  if (trigger?.status === "invalid") {
     return (
-      <span>
+      <span className="next">
         <Chip tone="fail">Broken</Chip>
       </span>
     );
   }
-  const readiness = automation.activeDeployment.readiness;
   if (readiness.status === "not-ready") {
     return (
-      <span title={readiness.errors.map((issue) => issue.message).join("\n")}>
+      <span className="next" title={readiness.errors.map((issue) => issue.message).join("\n")}>
         <Chip tone="warn">{readinessLabel(readiness)}</Chip>
       </span>
     );
   }
-  return (
-    <span className="t-meta">
-      {props.latestAt === null ? "Never" : ageInWords(props.latestAt, props.now)}
+  if (trigger?.status === "paused") {
+    return (
+      <span className="next">
+        <Chip tone="idle">Paused</Chip>
+      </span>
+    );
+  }
+  const times = nextRunTimes(trigger, now);
+  return times === null ? (
+    <span className="next t-meta">{nextRunInWords(trigger, now)}</span>
+  ) : (
+    <span className="next t-meta">
+      {times.at}
+      <span className="relative">{times.relative}</span>
     </span>
   );
 }

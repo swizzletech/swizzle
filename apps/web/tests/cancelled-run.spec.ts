@@ -43,10 +43,12 @@ test("the Overview counts a cancelled run in Runs alone and draws it neutral", a
   await expect(stats.locator(".stats > div", { hasText: "Failed" })).toContainText("1");
   await expect(stats.locator(".stats > div", { hasText: "Runs" })).toContainText("5");
 
-  const strip = page.getByRole("img", { name: "Last 4 runs, 1 failed" });
-  await expect(strip).toBeVisible();
-  await expect(strip.locator("i.fail")).toHaveCount(1);
-  await expect(strip.locator("i.idle")).toHaveCount(1);
+  // Every hour that names the cancelled run names it apart from the one failure, which alone
+  // draws an hour full.
+  const strip = page.getByTestId("automation-row").first().locator(".hour-cells");
+  await expect(strip.locator("i.full")).toHaveCount(1);
+  await expect(strip.locator("i.full")).toHaveAttribute("data-tip", /1 failed/u);
+  await expect(strip.locator('i[data-tip*="1 cancelled"]')).toHaveCount(1);
 });
 
 test("Failed leaves a cancelled run out and All keeps it, labelled", async ({ page }) => {

@@ -19,11 +19,13 @@ import type {
   DashboardAutomationRef,
   DashboardAutomationSource,
   DashboardDeploymentChange,
+  DashboardHourCounts,
   DashboardPlatformProblem,
   DashboardRunDetail,
   DashboardRunListItem,
   DashboardRunStep,
   DashboardStepReach,
+  DashboardTimetable,
   DashboardTriggerSummary,
   DEFAULT_PROJECT_ID as DbDefaultProjectId,
   EnvironmentHold,
@@ -193,6 +195,8 @@ export type AttentionItem = DashboardAttentionItem;
 export type ApiCheck = DashboardApiCheck;
 export type PlatformProblem = DashboardPlatformProblem;
 export type DeploymentChange = DashboardDeploymentChange;
+export type Timetable = DashboardTimetable;
+export type HourCounts = DashboardHourCounts;
 export type AutomationRef = DashboardAutomationRef;
 
 export type AutomationSource = DashboardAutomationSource;

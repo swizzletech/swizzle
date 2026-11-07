@@ -12,6 +12,7 @@ import type {
   Project,
   RunDetail,
   RunListItem,
+  RunState,
   RunStep,
   ScopeInput,
   SecretMetadata,
@@ -561,6 +562,48 @@ export interface MockTwoFactor {
   readonly totp: string;
 }
 
+/**
+ * The timetable as the API counts it: the top-level runs and the deploys of the viewer's last 24
+ * hours, each in the hour it was queued or happened.
+ */
+function timetableOf(state: MockState, utcOffsetMinutes: number): Overview["timetable"] {
+  const hourMs = 60 * MINUTE;
+  const offsetMs = utcOffsetMinutes * MINUTE;
+  const from = Math.floor((Date.now() + offsetMs) / hourMs) * hourMs - offsetMs - 23 * hourMs;
+  const hourOf = (iso: string) => Math.floor((Date.parse(iso) - from) / hourMs);
+  interface Row {
+    readonly hours: Partial<Record<RunState, number>>[];
+    readonly deployments: { at: string; version: string }[];
+  }
+  const rows = new Map<string, Row>();
+  const rowOf = (slug: string): Row => {
+    const row = rows.get(slug) ?? {
+      deployments: [],
+      hours: Array.from({ length: 24 }, (): Partial<Record<RunState, number>> => ({})),
+    };
+    rows.set(slug, row);
+    return row;
+  };
+  for (const run of state.runs) {
+    const hours: Row["hours"] = run.parentRunId === null ? rowOf(run.automationSlug).hours : [];
+    const counts = hours[hourOf(run.queuedAt)];
+    if (counts !== undefined) counts[run.state] = (counts[run.state] ?? 0) + 1;
+  }
+  for (const change of state.recentChanges.toReversed()) {
+    const hour = hourOf(change.occurredAt);
+    if (hour >= 0 && hour < 24) {
+      rowOf(change.automationSlug).deployments.push({
+        at: change.occurredAt,
+        version: change.change.version,
+      });
+    }
+  }
+  return {
+    from: new Date(from).toISOString(),
+    rows: [...rows].map(([automationSlug, row]) => ({ automationSlug, ...row })),
+  };
+}
+
 export async function mockDashboardApi(
   page: Page,
   state: MockState,
@@ -650,6 +693,7 @@ export async function mockDashboardApi(
           complete: true,
           needsYou: state.needsYou,
           recentChanges: state.recentChanges,
+          timetable: timetableOf(state, Number(url.searchParams.get("utcOffset") ?? 0)),
         } satisfies Overview);
       }
       if (is("GET", /^\/dashboard\/automations$/u)) {

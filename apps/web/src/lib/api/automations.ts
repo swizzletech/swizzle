@@ -113,9 +113,11 @@ export function automationsCalls(environment: string) {
       );
     },
 
+    /** The timetable's hours start on the viewer's full hours, so it sends their clock's offset. */
     async getOverview() {
+      const utcOffset = -new Date().getTimezoneOffset();
       return await request<OverviewResponse>(
-        `/dashboard/overview?environment=${encodeURIComponent(environment)}`,
+        `/dashboard/overview?environment=${encodeURIComponent(environment)}&utcOffset=${utcOffset}`,
       );
     },
 

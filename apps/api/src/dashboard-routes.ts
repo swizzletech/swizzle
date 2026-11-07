@@ -45,6 +45,18 @@ function parseRunStatuses(raw: string): DashboardRunListItem["status"][] {
   });
 }
 
+/**
+ * `utcOffset=60` places the viewer's clock 60 minutes east of UTC, as clocks run from UTC−12 to
+ * UTC+14; absent reads as UTC.
+ */
+function parseUtcOffset(raw: string | undefined): number {
+  const minutes = raw === undefined ? 0 : Number(raw);
+  if (minutes < -720 || minutes > 840) {
+    return requestValidationError(`utcOffset ${raw} lies outside -720 to 840 minutes.`);
+  }
+  return minutes;
+}
+
 function parseRunCursor(raw: string): RunCursor {
   return decodeRunCursor(raw) ?? requestValidationError("Unknown run list cursor.");
 }
@@ -54,8 +66,14 @@ export function registerDashboardRoutes(
   dashboard: DashboardDataProvider,
   platform: Pick<PlatformServices, "findAutomation">,
 ): void {
-  app.get<{ Reply: OverviewResponse }>("/dashboard/overview", async (request) => {
+  const overviewQuery = {
+    schema: {
+      querystring: objectSchema({ utcOffset: { pattern: "^-?\\d{1,3}$", type: "string" } }),
+    },
+  };
+  app.get<{ Reply: OverviewResponse }>("/dashboard/overview", overviewQuery, async (request) => {
     const environment = getEnvironment(request);
+    const utcOffsetMinutes = parseUtcOffset((request.query as { utcOffset?: string }).utcOffset);
     const [overview, deploy] = await Promise.all([
       dashboard.getOverview(environment, await request.access.scope(environment), {
         mayDecide: async (run, approval) =>
@@ -64,6 +82,7 @@ export function registerDashboardRoutes(
           (await request.access.refusal(automation, { action: "edit", environment })) === null,
         operatesInstance: await request.access.operatesInstance(),
         subjects: await request.access.subjects(),
+        utcOffsetMinutes,
       }),
       request.access.placeRefusal(environment),
     ]);
