@@ -1,7 +1,7 @@
 // An automation's health in words: what its dot shows, the tone of each state, and why a deployment
 // cannot run. The pages say every state in words; these pure functions turn API records into them.
 
-import type { AutomationSummary, RunStatus, RuntimeReadiness } from "../api";
+import type { AutomationSummary, RunState, RuntimeReadiness } from "../api";
 
 /** What an automation's dot shows: why it cannot run, or its latest run's result. */
 export type AutomationHealth =
@@ -23,10 +23,11 @@ export function automationHealth(automation: AutomationSummary): AutomationHealt
   if (automation.trigger?.status === "paused") return "paused";
   const latest = automation.recentRuns[0];
   if (latest === undefined) return "idle";
-  return RUN_HEALTH[latest.status];
+  return RUN_HEALTH[latest.state];
 }
 
-const RUN_HEALTH: Record<RunStatus, AutomationHealth> = {
+const RUN_HEALTH: Record<RunState, AutomationHealth> = {
+  cancelled: "idle",
   "dead-lettered": "failing",
   failed: "failing",
   queued: "running",
@@ -48,7 +49,8 @@ export const HEALTH_TONE: Record<AutomationHealth, Tone> = {
   waiting: "warn",
 };
 
-export const RUN_TONE: Record<RunStatus, Tone> = {
+export const RUN_TONE: Record<RunState, Tone> = {
+  cancelled: "idle",
   "dead-lettered": "fail",
   failed: "fail",
   queued: "run",

@@ -42,7 +42,7 @@ export function HolderList(props: {
   });
 
   if (props.holders.length === 0) {
-    return <p className="card t-meta px-4 py-4">Nobody holds a role here yet.</p>;
+    return <p className="card t-meta px-4 py-4">Nobody holds a role here yet</p>;
   }
   return (
     <div className="card rows" data-testid="holders">

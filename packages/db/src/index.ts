@@ -349,6 +349,8 @@ export {
   OPEN_RUN_STATUSES,
   RUN_STATUS_PHASE,
   RUN_STATUSES,
+  type RunState,
+  runState,
 } from "./run-status.js";
 export {
   assertSecretEncryptionKeyIsConfigured,

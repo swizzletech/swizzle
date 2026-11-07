@@ -229,9 +229,9 @@ test("environment grants are offered only in protected environments, and unprote
   await page.getByRole("tab", { name: "Environments" }).click();
   const staging = page.getByTestId("environment").filter({ hasText: "staging" });
   const production = page.getByTestId("environment").filter({ hasText: "production" });
-  await expect(staging).toContainText("Protect staging to grant access in it.");
+  await expect(staging).toContainText("Protect staging to grant access in it");
   await expect(staging.getByRole("button", { name: "Grant access to staging" })).toHaveCount(0);
-  await expect(production).toContainText("Environment grants: Release as operator.");
+  await expect(production).toContainText("Environment grants: Release as operator");
 
   await production.getByRole("checkbox", { name: "Protect production" }).click();
   const confirm = page.getByRole("dialog");
@@ -240,7 +240,7 @@ test("environment grants are offered only in protected environments, and unprote
   );
   await confirm.getByRole("button", { name: "Unprotect" }).click();
 
-  await expect(production).toContainText("Protect production to grant access in it.");
+  await expect(production).toContainText("Protect production to grant access in it");
   expect(sent).toEqual(["DELETE /api/projects/default/environments/production/protection"]);
   await expect(production).not.toContainText("Environment grants");
 });

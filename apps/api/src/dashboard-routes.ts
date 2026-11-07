@@ -8,6 +8,7 @@ import {
   RUN_STATUSES,
   type RunCursor,
   type RunTriggerType,
+  runState,
 } from "@swizzle/db";
 import type {
   AutomationDetailResponse,
@@ -216,6 +217,7 @@ export function registerDashboardRoutes(
     schema: {
       querystring: objectSchema({
         approvalOnly: queryBoolean,
+        failedOnly: queryBoolean,
         automation: urlText,
         cursor: urlText,
         limit: queryInteger,
@@ -238,6 +240,7 @@ export function registerDashboardRoutes(
       ...(query?.automation !== undefined ? { automationSlug: query.automation } : {}),
       ...(query?.cursor !== undefined ? { cursor: parseRunCursor(query.cursor) } : {}),
       environment,
+      ...(query?.failedOnly !== undefined ? { failedOnly: query.failedOnly === "true" } : {}),
       ...(query?.limit !== undefined ? { limit: Number(query.limit) } : {}),
       ...(query?.parentRunId !== undefined ? { parentRunId: query.parentRunId } : {}),
       scope: await request.access.scope(environment),
@@ -271,6 +274,7 @@ export function registerDashboardRoutes(
     return {
       ...run,
       refusals: { cancel, edit, runAgain },
+      state: runState(run),
       approval:
         approval === null
           ? null

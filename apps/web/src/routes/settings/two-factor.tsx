@@ -84,7 +84,7 @@ export function TwoFactor() {
   if (status.isError) {
     body = (
       <div className="p-4">
-        <ErrorNote error={status.error} title="The two-factor state could not be loaded." />
+        <ErrorNote error={status.error} title="The two-factor state could not be loaded" />
       </div>
     );
   } else if (status.data === undefined) {

@@ -12,6 +12,7 @@ describe("statusSentence", () => {
   const quiet = {
     complete: true,
     last24h: {
+      cancelled: 0,
       "dead-lettered": 0,
       failed: 0,
       queued: 0,
@@ -28,15 +29,15 @@ describe("statusSentence", () => {
   } as const;
 
   it("counts what needs the owner, in the right number", () => {
-    expect(statusSentence(quiet, now)).toEqual({ failures: null, title: "All good." });
-    expect(statusSentence({ ...quiet, needsYou: [needs] }, now).title).toBe("1 thing needs you.");
+    expect(statusSentence(quiet, now)).toEqual({ failures: null, title: "All good" });
+    expect(statusSentence({ ...quiet, needsYou: [needs] }, now).title).toBe("1 thing needs you");
     expect(statusSentence({ ...quiet, needsYou: [needs, needs] }, now).title).toBe(
-      "2 things need you.",
+      "2 things need you",
     );
   });
 
   it("does not call all good what a reader's role keeps out of their Needs you", () => {
-    expect(statusSentence({ ...quiet, complete: false }, now).title).toBe("Nothing needs you.");
+    expect(statusSentence({ ...quiet, complete: false }, now).title).toBe("Nothing needs you");
   });
 
   it("does not call all good a day with failed runs, and says how many and how long ago", () => {
@@ -53,6 +54,11 @@ describe("statusSentence", () => {
       statusSentence({ ...failed, last24h: { ...quiet.last24h, failed: 1 } }, now).failures,
     ).toBe("1 run failed in the last 24 hours, the last one 3 h ago.");
   });
+
+  it("does not read a cancelled run as a failure", () => {
+    const cancelled = { ...quiet, last24h: { ...quiet.last24h, cancelled: 1 } };
+    expect(statusSentence(cancelled, now)).toEqual({ failures: null, title: "All good" });
+  });
 });
 
 describe("platformProblemInWords", () => {
@@ -61,7 +67,7 @@ describe("platformProblemInWords", () => {
       platformProblemInWords({ code: "scheduler-down", environment: "production", served: [] }),
     ).toEqual({
       title:
-        "No scheduler runs for production, so its cron runs do not start and its waits do not end.",
+        "No scheduler runs for production, so its cron runs do not start and its waits do not end",
       todo: "Run `just stack` in the checkout on the server: it rebuilds the images and starts the scheduler from the current code. One scheduler serves every environment.",
     });
     // An older scheduler may still report only one namespace during an upgrade.
@@ -73,7 +79,7 @@ describe("platformProblemInWords", () => {
       }),
     ).toEqual({
       title:
-        "No scheduler runs for production, so its cron runs do not start and its waits do not end.",
+        "No scheduler runs for production, so its cron runs do not start and its waits do not end",
       todo: "Run `just stack` in the checkout on the server: it rebuilds the images and starts the scheduler from the current code. One scheduler serves every environment.",
     });
   });

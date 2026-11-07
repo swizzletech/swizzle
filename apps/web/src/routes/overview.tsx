@@ -47,7 +47,7 @@ export function OverviewPage() {
         <ErrorNote
           error={overview.error}
           onRetry={() => void overview.refetch()}
-          title="The status could not be loaded."
+          title="The status could not be loaded"
         />
       ) : overview.data === undefined ? (
         <div className="card">
@@ -70,7 +70,7 @@ export function OverviewPage() {
           <ErrorNote
             error={automations.error}
             onRetry={() => void automations.refetch()}
-            title="The automations could not be loaded."
+            title="The automations could not be loaded"
           />
         </>
       ) : automations.data === undefined ? (
@@ -508,7 +508,7 @@ const EXAMPLE_PROMPT =
 function EmptyInstance() {
   const { environment } = useDashboardClient();
   return (
-    <Page description={environment} title="Nothing runs here yet." type="overview">
+    <Page description={environment} title="Nothing runs here yet" type="overview">
       <div data-testid="status-card">
         <FirstSteps />
       </div>
@@ -524,7 +524,7 @@ function FirstSteps() {
       <ErrorNote
         error={overview.error}
         onRetry={() => void overview.refetch()}
-        title="The status could not be loaded."
+        title="The status could not be loaded"
       />
     );
   }

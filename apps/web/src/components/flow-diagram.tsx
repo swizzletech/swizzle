@@ -66,7 +66,7 @@ export function FlowDiagram(props: { readonly code: string }) {
     <>
       {state === "drawing" ? <Skeleton label="Drawing the flow" lines={3} /> : null}
       {typeof state === "object" ? (
-        <ErrorNote error={state.error} title="The flow diagram could not be drawn." />
+        <ErrorNote error={state.error} title="The flow diagram could not be drawn" />
       ) : null}
       <div
         aria-label="Flow diagram"

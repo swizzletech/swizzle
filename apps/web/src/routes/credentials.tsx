@@ -107,13 +107,13 @@ export function CredentialsPage() {
       type="administration"
     >
       {projects.isError ? (
-        <ErrorNote error={projects.error} title="The projects could not be loaded." />
+        <ErrorNote error={projects.error} title="The projects could not be loaded" />
       ) : null}
       {overview.isError ? (
         <ErrorNote
           error={overview.error}
           onRetry={() => void overview.refetch()}
-          title="What deployed automations miss could not be loaded."
+          title="What deployed automations miss could not be loaded"
         />
       ) : null}
       {missing.length > 0 ? (
@@ -262,14 +262,14 @@ function Secrets(props: {
       <div className="card rows" data-testid="secrets">
         {secrets.isError ? (
           <div className="p-4">
-            <ErrorNote error={secrets.error} title="The secrets could not be loaded." />
+            <ErrorNote error={secrets.error} title="The secrets could not be loaded" />
           </div>
         ) : secrets.data === undefined ? (
           <Skeleton label="Loading secrets" lines={3} />
         ) : shown.length === 0 ? (
           <p className="t-meta m-0 px-4 py-3">
             No secret is stored
-            {view.inView === null ? "" : ` in ${view.inView.name}`} in this environment.
+            {view.inView === null ? "" : ` in ${view.inView.name}`} in this environment
           </p>
         ) : (
           shown.map((secret) => (
@@ -576,14 +576,14 @@ function Accounts(props: {
       <div className="card rows" data-testid="accounts">
         {connections.isError ? (
           <div className="p-4">
-            <ErrorNote error={connections.error} title="The accounts could not be loaded." />
+            <ErrorNote error={connections.error} title="The accounts could not be loaded" />
           </div>
         ) : connections.data === undefined ? (
           <Skeleton label="Loading accounts" lines={2} />
         ) : list.length === 0 ? (
           <p className="t-meta m-0 px-4 py-3">
             No account is connected
-            {view.inView === null ? "" : ` to ${view.inView.name}`} in this environment.
+            {view.inView === null ? "" : ` to ${view.inView.name}`} in this environment
           </p>
         ) : (
           list.map((connection) => {
@@ -842,7 +842,7 @@ function ConnectForm(props: {
         </div>
       ) : (
         <p className="t-meta m-0">
-          It joins {source.project.name}, where {source.name} is.
+          It joins {source.project.name}, where {source.name} is
         </p>
       )}
       {source !== undefined ? null : (

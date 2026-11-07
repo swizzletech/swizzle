@@ -499,6 +499,9 @@
   .strip i.run {
     background: var(--warn);
   }
+  .strip i.idle {
+    background: var(--idle);
+  }
 
   /* ---------- surfaces: a group is a card of hairline-ruled rows ---------- */
   .card {

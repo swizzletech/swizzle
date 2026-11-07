@@ -12,6 +12,7 @@ const PAGE_SIZE = 100;
 export interface RunPagesFilter {
   readonly approvalOnly?: boolean;
   readonly automation?: string;
+  readonly failedOnly?: boolean;
   readonly statuses?: readonly RunStatus[];
 }
 

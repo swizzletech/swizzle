@@ -20,6 +20,7 @@ import type {
 import type { ProjectRef } from "./project-ref.js";
 import type { ApprovalAssignee, ApprovalDecision, RunApproval } from "./run-approval.js";
 import type { RunCursor } from "./run-cursor.js";
+import type { RunState } from "./run-status.js";
 import type { ExplainedPlacement, PlacementTarget, WorkerWarning } from "./workers.js";
 
 /** A secret an automation declares; the stored fields describe the bound secret. */
@@ -84,6 +85,7 @@ export interface DashboardDeploymentSummary {
 
 /** A run as its panel shows it, with its open approval and what the viewer may do with it. */
 export type DashboardRunDetail = StoredRun & {
+  readonly state: RunState;
   /**
    * Why the viewer may not cancel the run, decided where the run belongs, or start its automation
    * again or hand it to an agent who changes and deploys it, decided where the automation is now;
@@ -127,6 +129,7 @@ export interface DashboardRunListItem {
   readonly queuedAt: string;
   readonly runId: string;
   readonly startedAt: string | null;
+  readonly state: RunState;
   readonly status: PlatformRunStatus;
   readonly triggerType: RunTriggerType;
   readonly version: string;
@@ -152,6 +155,7 @@ export interface DashboardRunGlance {
   readonly errorMessage: string | null;
   readonly queuedAt: string;
   readonly runId: string;
+  readonly state: RunState;
   readonly status: DashboardRunListItem["status"];
   readonly triggerType: RunTriggerType;
 }
@@ -336,7 +340,7 @@ export type DashboardAttentionItem =
         readonly entrypoint: string;
         readonly everyMs: number;
       };
-      /** The automation's latest finished run, to tell whether the change reached its runs yet. */
+      /** The latest run that finished and was not cancelled, to tell whether the change reached its runs yet. */
       readonly latestRun: {
         readonly queuedAt: string;
         readonly status: DashboardRunGlance["status"];
@@ -406,8 +410,8 @@ export type DashboardPlatformProblem =
 /** The Overview's read model: the status sentence, Needs you and Recently changed. */
 export interface DashboardOverview {
   readonly environment: string;
-  /** Top-level runs queued in the last 24 hours, by status. */
-  readonly last24h: Readonly<Record<DashboardRunListItem["status"], number>>;
+  /** Top-level runs queued in the last 24 hours, by state. */
+  readonly last24h: Readonly<Record<RunState, number>>;
   /** When the newest failed top-level run ended, or was queued if it never ran; null for none. */
   readonly lastFailureAt: string | null;
   readonly needsYou: readonly DashboardAttentionItem[];
@@ -430,6 +434,8 @@ export interface DashboardRunsQuery {
   /** Starts after this place in the list; absent starts at the newest run. */
   readonly cursor?: RunCursor;
   readonly environment: string;
+  /** Only runs that failed, which leaves out a run a person cancelled. */
+  readonly failedOnly?: boolean;
   readonly limit?: number;
   readonly parentRunId?: string;
   /** The automations whose runs the list may show. */
@@ -545,12 +551,12 @@ export interface DashboardStore {
     environment: string,
     scope: ReadScope,
   ): Promise<readonly DashboardAutomationSummary[]>;
-  /** Top-level runs queued since `since`, counted by status. */
+  /** Top-level runs queued since `since`, counted by state. */
   countRunsSince(
     environment: string,
     since: Date,
     scope: ReadScope,
-  ): Promise<Readonly<Record<DashboardRunListItem["status"], number>>>;
+  ): Promise<Readonly<Record<RunState, number>>>;
   listDeploymentChanges(
     environment: string,
     since: Date,

@@ -349,9 +349,9 @@ export function createDashboardDataProvider(
         dashboardStore.countRunsSince(environment, dayAgo, scope),
         dashboardStore.listRuns({
           environment,
+          failedOnly: true,
           limit: 1,
           scope,
-          statuses: ["failed", "dead-lettered"],
           topLevelOnly: true,
         }),
         dashboardStore.listAutomationSummaries(environment, scope),

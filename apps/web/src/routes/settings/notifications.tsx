@@ -42,7 +42,7 @@ export function Notifications({ operator }: { readonly operator: boolean }) {
         </p>
       ) : null}
       {rules.isError ? (
-        <ErrorNote error={rules.error} title="The notification rules could not be loaded." />
+        <ErrorNote error={rules.error} title="The notification rules could not be loaded" />
       ) : rules.data === undefined ? (
         <div className="card">
           {/* As tall as the loaded card, so Account and Instance stay put when it arrives. */}
@@ -102,7 +102,7 @@ function DefaultRule({ rule }: { readonly rule: NotificationRule | undefined }) 
     <div className="setting" data-testid="default-notification">
       <div className="min-w-0">
         <b>Message me on Telegram when a run finally fails</b>
-        <div className="t-meta">For every automation, after its last retry.</div>
+        <div className="t-meta">For every automation, after its last retry</div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <input
             aria-label="Telegram chat id"
@@ -130,7 +130,7 @@ function DefaultRule({ rule }: { readonly rule: NotificationRule | undefined }) 
         className="switch"
         disabled={save.isPending || chatId.trim() === ""}
         onChange={(event) => save.mutate(event.target.checked)}
-        title={chatId.trim() === "" ? "Enter the chat id first." : undefined}
+        title={chatId.trim() === "" ? "Enter the chat id first" : undefined}
         type="checkbox"
       />
     </div>
@@ -319,13 +319,13 @@ function Deliveries() {
   if (deliveries.isError) {
     return (
       <div className="p-4">
-        <ErrorNote error={deliveries.error} title="The delivery history could not be loaded." />
+        <ErrorNote error={deliveries.error} title="The delivery history could not be loaded" />
       </div>
     );
   }
   if (deliveries.data === undefined) return <Skeleton label="Loading deliveries" lines={3} />;
   if (deliveries.data.length === 0) {
-    return <p className="t-meta border-t border-line px-4 py-3">Nothing was sent yet.</p>;
+    return <p className="t-meta border-t border-line px-4 py-3">Nothing was sent yet</p>;
   }
   return (
     <div className="rows border-t border-line">

@@ -1,17 +1,14 @@
 import { checkNeedsAttention } from "./api-check-rules.js";
-import type {
-  PlatformRunStatus,
-  StoredMaintenanceRun,
-  StoredNotificationDelivery,
-} from "./control-plane-types.js";
+import type { StoredMaintenanceRun, StoredNotificationDelivery } from "./control-plane-types.js";
 import type {
   DashboardAttentionItem,
   DashboardAutomationRef,
   DashboardAutomationSummary,
   DashboardQueuedRuns,
   DashboardQueueSummary,
+  DashboardRunGlance,
 } from "./dashboard-types.js";
-import { isFinishedRun } from "./run-status.js";
+import { isFailedState, isFinishedRun } from "./run-status.js";
 import { placementInWords, runImageDiskWarning } from "./worker-words.js";
 import type { PlacementWait, RunPlacement, WorkerStatus } from "./workers.js";
 
@@ -50,9 +47,15 @@ export const INSTANCE_ATTENTION: ReadonlySet<DashboardAttentionItem["kind"]> = n
   "waiting-for-worker",
 ]);
 
-const FAILED_STATUSES: ReadonlySet<PlatformRunStatus> = new Set(["failed", "dead-lettered"]);
 /** The waits only the owner ends: no worker granted, none online, or its service unhealthy. */
 const UNPLACED: ReadonlySet<PlacementWait> = new Set(["no-worker", "offline", "service-unhealthy"]);
+
+/** The newest run that shows how the code fares: one in flight or cancelled shows nothing yet. */
+function latestResult(automation: DashboardAutomationSummary): DashboardRunGlance | undefined {
+  return automation.recentRuns.find(
+    (run) => isFinishedRun(run.status) && run.state !== "cancelled",
+  );
+}
 
 /**
  * The Overview's "Needs you": what waits for the owner, in the order the page lists it. Approvals
@@ -73,14 +76,13 @@ export function buildAttention(input: BuildAttentionInput): readonly DashboardAt
   });
 
   for (const automation of input.automations) {
-    // A run still in flight says nothing yet, so it must not hide the failure before it.
-    const latest = automation.recentRuns.find((run) => isFinishedRun(run.status));
-    if (latest !== undefined && FAILED_STATUSES.has(latest.status)) {
+    const latest = latestResult(automation);
+    if (latest !== undefined && isFailedState(latest.state)) {
       items.push({
         automation: refOf(automation),
         errorCode: latest.errorCode,
         errorMessage: latest.errorMessage,
-        failedRuns: automation.recentRuns.filter((run) => FAILED_STATUSES.has(run.status)).length,
+        failedRuns: automation.recentRuns.filter((run) => isFailedState(run.state)).length,
         kind: "failing",
         lastFailedAt: latest.queuedAt,
         lastFailedRunId: latest.runId,
@@ -257,7 +259,7 @@ function apiAttention(
     apiCheck.record !== null &&
     checkNeedsAttention(apiCheck.record)
   ) {
-    const latest = automation.recentRuns.find((run) => isFinishedRun(run.status));
+    const latest = latestResult(automation);
     items.push({
       automation: automationRef,
       change:

@@ -67,26 +67,33 @@ test("the automation's run list starts under its tabs, the flow above the run", 
   await expect(page.getByTestId("run-panel")).toBeVisible();
 });
 
-test("the list groups by day under sticky headers, in rows of one height with no run id", async ({
-  page,
-}) => {
-  await seeded(page, "/runs");
+test.describe("at midday", () => {
+  // The list groups by the browser's day and the mock's runs start from now, so just after midnight
+  // Today holds too few rows to scroll. A zone where it is midday keeps both days long enough.
+  const hour = new Date().getUTCHours();
+  test.use({ timezoneId: `Etc/GMT${hour >= 12 ? "+" : "-"}${Math.abs(12 - hour)}` });
 
-  const list = page.getByTestId("run-list");
-  await expect(list.getByRole("heading").first()).toContainText("Today");
-  await expect(list.getByRole("heading").nth(1)).toContainText("Yesterday");
+  test("the list groups by day under sticky headers, in rows of one height with no run id", async ({
+    page,
+  }) => {
+    await seeded(page, "/runs");
 
-  const heights = await page
-    .getByTestId("run-row")
-    .evaluateAll((rows) => [...new Set(rows.map((row) => row.getBoundingClientRect().height))]);
-  expect(heights).toEqual([56]);
-  await expect(list).not.toContainText("70000000");
+    const list = page.getByTestId("run-list");
+    await expect(list.getByRole("heading").first()).toContainText("Today");
+    await expect(list.getByRole("heading").nth(1)).toContainText("Yesterday");
 
-  const pane = page.getByTestId("run-list-pane");
-  const header = list.getByRole("heading").first();
-  const top = (await pane.boundingBox())?.y;
-  await pane.evaluate((element) => element.scrollTo({ top: 200 }));
-  await expect.poll(async () => (await header.boundingBox())?.y).toBe(top);
+    const heights = await page
+      .getByTestId("run-row")
+      .evaluateAll((rows) => [...new Set(rows.map((row) => row.getBoundingClientRect().height))]);
+    expect(heights).toEqual([56]);
+    await expect(list).not.toContainText("70000000");
+
+    const pane = page.getByTestId("run-list-pane");
+    const header = list.getByRole("heading").first();
+    const top = (await pane.boundingBox())?.y;
+    await pane.evaluate((element) => element.scrollTo({ top: 200 }));
+    await expect.poll(async () => (await header.boundingBox())?.y).toBe(top);
+  });
 });
 
 test("Load older runs reaches every run of the filter, and only then says all", async ({

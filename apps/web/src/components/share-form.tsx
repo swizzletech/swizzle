@@ -211,7 +211,7 @@ export function ShareForm(props: ShareFormProps) {
       {subject === undefined ? null : (
         <div className="t-meta" data-testid="share-holds">
           {held.length === 0
-            ? "Holds nothing in this project yet."
+            ? "Holds nothing in this project yet"
             : `Holds already: ${held
                 .map(({ grant, teamName }) => grantInWords(grant, automationName, teamName))
                 .join("; ")}. The highest role that applies counts.`}

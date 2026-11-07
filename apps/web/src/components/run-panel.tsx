@@ -62,7 +62,7 @@ export function RunPanel(props: {
         <ErrorNote
           error={runQuery.error}
           onRetry={() => void runQuery.refetch()}
-          title="This run could not be loaded."
+          title="This run could not be loaded"
         />
       </div>
     );
@@ -83,8 +83,7 @@ function LoadedRun(props: {
   const queryClient = useQueryClient();
   const now = useNow();
   const approval = run.approval;
-  const cancelled = run.deadLetterReason === "user-cancelled";
-  const failed = (run.status === "failed" || run.status === "dead-lettered") && !cancelled;
+  const failed = run.state === "failed" || run.state === "dead-lettered";
   const open = isOpenRun(run.status);
   const { cancel: cancelRefusal, edit: editRefusal, runAgain: runAgainRefusal } = run.refusals;
   // The agent a failed run is handed to changes and deploys the automation, which needs editor.
@@ -144,7 +143,7 @@ function LoadedRun(props: {
             {props.showAutomationLink ? <> · {run.automationName}</> : null}
           </div>
           <h2 className="rp-title">
-            <Dot tone={RUN_TONE[run.status]} />
+            <Dot tone={RUN_TONE[run.state]} />
             {runDetailStatusInWords(run)}
           </h2>
           {run.parentRunId === null ? null : (
@@ -178,8 +177,8 @@ function LoadedRun(props: {
                 onClick={() => runAgain.mutate()}
                 title={
                   run.triggerType === "chain"
-                    ? "A chained run starts when its source finishes."
-                    : "Starts a new run with the same payload."
+                    ? "A chained run starts when its source finishes"
+                    : "Starts a new run with the same payload"
                 }
                 type="button"
               >
@@ -239,7 +238,7 @@ function LoadedRun(props: {
       <div className="rp-body">
         {failed ? (
           <div className="errbox" data-testid="run-error">
-            <b>{run.errorMessage ?? "The run failed without an error message."}</b>
+            <b>{run.errorMessage ?? "The run failed without an error message"}</b>
             {diagnosisQuery.data ? (
               <>
                 {/* An uncatalogued cause repeats the error; the title already says it. */}
@@ -323,7 +322,7 @@ function LoadedRun(props: {
                   onClick={() => props.onSelectRun(child.runId)}
                   type="button"
                 >
-                  <Dot tone={RUN_TONE[child.status]} />
+                  <Dot tone={RUN_TONE[child.state]} />
                   <span className="truncate">
                     <b>{child.automationName}</b>{" "}
                     <span className="t-faint">{runStatusInWords(child)}</span>
@@ -409,20 +408,20 @@ function InnerTabBody(props: { readonly run: RunDetail; readonly tab: InnerTab }
   const { run } = props;
   switch (props.tab) {
     case "error":
-      return <Screen empty="Nothing was written to stderr.">{run.stderr}</Screen>;
+      return <Screen empty="Nothing was written to stderr">{run.stderr}</Screen>;
     case "output":
       if (run.status === "waiting") {
-        return <Screen empty="">{`${runStatusInWords(run)}.`}</Screen>;
+        return <Screen empty="">{runStatusInWords(run)}</Screen>;
       }
       return (
-        <Screen empty={isOpenRun(run.status) ? "No output yet." : "The run wrote no output."}>
+        <Screen empty={isOpenRun(run.status) ? "No output yet" : "The run wrote no output"}>
           {run.result === null || run.result === undefined ? run.stdout : pretty(run.result)}
         </Screen>
       );
     case "logs":
       return <LiveLogs runId={run.runId} />;
     case "payload":
-      return <Screen empty="The run started without a payload.">{pretty(run.payload)}</Screen>;
+      return <Screen empty="The run started without a payload">{pretty(run.payload)}</Screen>;
     case "steps":
       return <Steps open={isOpenRun(run.status)} runId={run.runId} />;
   }
@@ -451,7 +450,7 @@ function LiveLogs(props: { readonly runId: string }) {
       {error === null ? null : <p className="t-meta text-fail">{error}</p>}
       <pre className="screen max-h-[420px]" ref={screenRef}>
         {text === "" ? (
-          <span className="c">{streaming ? "Waiting for logs…" : "No logs."}</span>
+          <span className="c">{streaming ? "Waiting for logs…" : "No logs"}</span>
         ) : (
           text
         )}
@@ -503,10 +502,10 @@ function Decisions(props: { readonly now: Date; readonly open: boolean; readonly
 function Steps(props: { readonly open: boolean; readonly runId: string }) {
   const stepsQuery = useRunSteps(props.runId, props.open);
   if (stepsQuery.isError)
-    return <ErrorNote error={stepsQuery.error} title="Steps could not be loaded." />;
+    return <ErrorNote error={stepsQuery.error} title="Steps could not be loaded" />;
   if (stepsQuery.data === undefined) return <Skeleton label="Loading steps" lines={3} />;
   if (stepsQuery.data.length === 0) {
-    return <Screen empty="This run recorded no durable steps.">{""}</Screen>;
+    return <Screen empty="This run recorded no durable steps">{""}</Screen>;
   }
   return (
     <pre className="screen max-h-[420px]">

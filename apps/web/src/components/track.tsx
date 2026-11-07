@@ -304,7 +304,7 @@ export function Track(props: {
           setLoadError(null);
           loadDagre(setLib, setLoadError);
         }}
-        title="The track could not be drawn."
+        title="The track could not be drawn"
       />
     );
   }

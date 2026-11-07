@@ -37,7 +37,7 @@ export function ProjectsPage() {
       {operator && adding ? <NewProject onClose={() => setAdding(false)} /> : null}
       <div>
         {projects.isError ? (
-          <ErrorNote error={projects.error} title="The projects could not be loaded." />
+          <ErrorNote error={projects.error} title="The projects could not be loaded" />
         ) : projects.data === undefined ? (
           <div className="card">
             <Skeleton label="Loading projects" lines={3} />

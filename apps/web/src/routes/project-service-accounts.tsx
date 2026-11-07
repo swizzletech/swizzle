@@ -84,13 +84,13 @@ export function ServiceAccounts({ access }: { readonly access: ProjectAccess }) 
         </button>
       </form>
       {accounts.isError ? (
-        <ErrorNote error={accounts.error} title="The service accounts could not be loaded." />
+        <ErrorNote error={accounts.error} title="The service accounts could not be loaded" />
       ) : accounts.data === undefined ? (
         <div className="card">
           <Skeleton label="Loading service accounts" lines={3} />
         </div>
       ) : accounts.data.length === 0 ? (
-        <p className="card t-meta px-4 py-4">This project has no service account yet.</p>
+        <p className="card t-meta px-4 py-4">This project has no service account yet</p>
       ) : (
         <div className="grid gap-3">
           {accounts.data.map((account) => (
@@ -250,7 +250,7 @@ function Tokens(props: {
           </div>
         </div>
       )}
-      {live.length === 0 ? <span className="t-meta">No live token.</span> : null}
+      {live.length === 0 ? <span className="t-meta">No live token</span> : null}
       {live.map((token) => (
         <div className="setting px-0 py-1" data-testid="service-token-row" key={token.id}>
           <div className="min-w-0">
@@ -355,7 +355,7 @@ function AccountAudit({ account }: { readonly account: ServiceAccount }) {
     <div className="grid gap-2 px-4 py-3" data-testid="service-account-audit">
       <b>What it did</b>
       {events.isError ? (
-        <ErrorNote error={events.error} title="The audit could not be loaded." />
+        <ErrorNote error={events.error} title="The audit could not be loaded" />
       ) : events.data === undefined ? (
         <Skeleton label="Loading the audit" lines={2} />
       ) : events.data.events.length === 0 ? (

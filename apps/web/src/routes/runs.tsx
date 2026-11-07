@@ -20,10 +20,11 @@ const FILTER: Record<
     readonly label: string;
     readonly statuses: readonly RunStatus[];
     readonly approvalOnly?: boolean;
+    readonly failedOnly?: boolean;
   }
 > = {
   all: { label: "All", statuses: [] },
-  failed: { label: "Failed", statuses: ["failed", "dead-lettered"] },
+  failed: { failedOnly: true, label: "Failed", statuses: [] },
   "needs-you": { approvalOnly: true, label: "Needs you", statuses: [] },
   running: { label: "Running", statuses: ["queued", "running"] },
   succeeded: { label: "Succeeded", statuses: ["succeeded"] },
@@ -35,6 +36,7 @@ export function RunsPage() {
   const filter: RunFilter = search.status ?? "all";
   const pages = useRunPages({
     approvalOnly: FILTER[filter].approvalOnly === true,
+    failedOnly: FILTER[filter].failedOnly === true,
     statuses: FILTER[filter].statuses,
     ...(search.automation === undefined ? {} : { automation: search.automation }),
   });
@@ -90,7 +92,7 @@ export function RunsPage() {
     >
       {/* A selected run stays open when it leaves the list, e.g. the last approval just granted. */}
       <RunWorkbench
-        empty="No run matches these filters."
+        empty="No run matches these filters"
         leads="automation"
         onBack={() => void navigate({ search: ({ selected: _selected, ...previous }) => previous })}
         onSelect={(runId, options) =>

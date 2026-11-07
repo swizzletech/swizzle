@@ -564,7 +564,7 @@ test.describe("every page", () => {
     await asOwner(page, state);
     await page.goto("/");
     const status = page.getByTestId("status-card");
-    await expect(status).toContainText("Nothing needs you.");
+    await expect(status).toContainText("Nothing needs you");
     await expect(status).toContainText(
       "1 run failed in the last 24 hours, the last one 4 min ago.",
     );
@@ -618,12 +618,13 @@ const CHECKED_API: AutomationSummary["apiCheck"] = {
   secrets: null,
 };
 
-// One rule for every page type: the same right edge at 1440, filling 1920, and stopping there.
+// One rule for every page type: beside a 240 px sidebar, content fills a narrow window and stops at
+// 1600 px, so wider windows share one right edge.
 test.describe("one width", () => {
   for (const [width, edge] of [
     [1440, 1408],
-    [1920, 1888],
-    [2560, 1888],
+    [1920, 1808],
+    [2560, 1808],
   ] as const) {
     test(`at ${width} wide every page type ends at ${edge}`, async ({ page }) => {
       await page.setViewportSize({ height: 900, width });
@@ -637,13 +638,19 @@ test.describe("one width", () => {
 
       await page.goto("/runs");
       expect(await rightOf(".work")).toBe(edge);
+      expect((await page.locator(".side").boundingBox())?.width).toBe(240);
+      const actionsAt = new Set<number | undefined>();
       for (const tab of ["", "?tab=about", "?tab=play", "?tab=versions"]) {
         await page.goto(`/automations/verify-probe${tab}`);
         expect(await rightOf(".page-head .btn")).toBe(edge);
+        actionsAt.add((await page.locator(".page-actions").boundingBox())?.x);
       }
+      expect(actionsAt.size).toBe(1);
       for (const path of ["/", "/projects", "/credentials", "/settings/account"]) {
         await page.goto(path);
         expect(await rightOf(".page-content .card")).toBe(edge);
+        const content = await page.locator(".page-content").boundingBox();
+        expect(content?.width).toBeLessThanOrEqual(1600);
       }
     });
   }

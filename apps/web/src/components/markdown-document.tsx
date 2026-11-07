@@ -80,7 +80,7 @@ export function MarkdownDocument(props: {
 
   if (props.error || rendered.error) {
     return (
-      <ErrorNote error={props.error ?? rendered.error} title="The README could not be shown." />
+      <ErrorNote error={props.error ?? rendered.error} title="The README could not be shown" />
     );
   }
 

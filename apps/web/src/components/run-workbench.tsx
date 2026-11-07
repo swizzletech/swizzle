@@ -63,7 +63,7 @@ export function RunWorkbench(props: {
       ) : null}
       {view.run === undefined ? (
         <div className="pane pane-empty">
-          <p className="t-meta">No run to show.</p>
+          <p className="t-meta">No run to show</p>
         </div>
       ) : (
         <div className="pane" data-testid="run-pane">
@@ -107,11 +107,7 @@ function RunList(props: {
   if (pages.error !== null) {
     return (
       <div className="pane-note">
-        <ErrorNote
-          error={pages.error}
-          onRetry={pages.retry}
-          title="The runs could not be loaded."
-        />
+        <ErrorNote error={pages.error} onRetry={pages.retry} title="The runs could not be loaded" />
       </div>
     );
   }
@@ -207,7 +203,7 @@ function RunRow(props: {
   readonly tabStop: boolean;
 }) {
   const { run } = props;
-  const tone = RUN_TONE[run.status];
+  const tone = RUN_TONE[run.state];
   const words = runRowInWords(run, props.leads);
   return (
     <button

@@ -953,6 +953,35 @@ it("web-design-scale measures a token as what reads it, whatever its name", asyn
   expect(await scanned(css(["--spacing: 5px;"], []))).toEqual(["apps/web/src/page.css:2"]);
 });
 
+it("web-short-strings refuses a period on a short string and leaves running text alone", async () => {
+  const page = (body: string) => ({ "apps/web/src/page.tsx": body });
+  const short = [
+    '<ErrorNote error={e} title="The runs could not be loaded." />',
+    '<Screen empty={open ? "No output yet." : null} />',
+    '<b>{message ?? "The run has no message."}</b>',
+    "<p>No changes recorded.</p>",
+    "<span>Environment grants: Release as operator.</span>",
+  ];
+  for (const body of short) {
+    expect(await reported("web-short-strings", page(body))).toEqual(["apps/web/src/page.tsx:1"]);
+  }
+  const kept = [
+    '<ErrorNote error={e} title="The runs could not be loaded" />',
+    '<Page description="Saved. It runs at nine." title="Runs" />',
+    "<p>Open <Link to={to}>the runs</Link> to see what happened.</p>",
+    "<p><b>The trigger does not work.</b> {message}</p>",
+    "<p>An automation shows up here with its health once someone deploys it.</p>",
+  ];
+  for (const body of kept) {
+    expect(await reported("web-short-strings", page(body))).toEqual([]);
+  }
+  expect(
+    await reported("web-short-strings", {
+      "apps/web/src/lib/words/runs.ts": 'export const a = { title: "No worker is running." };',
+    }),
+  ).toEqual(["apps/web/src/lib/words/runs.ts:1"]);
+});
+
 it("web-design-scale refuses a written font size, radius or spacing outside the scale", async () => {
   const onScale = {
     "apps/web/design-scale.json": DESIGN_SCALE,

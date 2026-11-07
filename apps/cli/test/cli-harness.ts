@@ -158,6 +158,7 @@ export function createDashboardStub(
         errorMessage: null,
         queuedAt: at,
         runId: "run-1",
+        state: "succeeded",
         status: "succeeded",
         triggerType: "manual",
       },

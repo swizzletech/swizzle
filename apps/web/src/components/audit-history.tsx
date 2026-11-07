@@ -28,14 +28,13 @@ export function AuditHistory(
         limit: 50,
       }),
   });
-  if (audit.isError)
-    return <ErrorNote error={audit.error} title="The audit could not be loaded." />;
+  if (audit.isError) return <ErrorNote error={audit.error} title="The audit could not be loaded" />;
   if (audit.data === undefined) return <Skeleton label="Loading history" lines={2} />;
   return (
     <div className="card rows mt-4 overflow-hidden" data-testid="resource-audit">
       <h3 className="setting t-section">Change history</h3>
       {audit.data.events.length === 0 ? (
-        <p className="setting t-meta">No changes recorded.</p>
+        <p className="setting t-meta">No changes recorded</p>
       ) : (
         audit.data.events.map((event) => (
           <div className="setting" key={event.id}>

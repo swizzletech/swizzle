@@ -5,14 +5,7 @@ import { clockTime, durationInWords } from "./time";
 
 type RunFacts = Pick<
   RunListItem,
-  | "approval"
-  | "attemptsMade"
-  | "attemptsMax"
-  | "deadLetterReason"
-  | "finishedAt"
-  | "startedAt"
-  | "status"
-  | "wait"
+  "approval" | "attemptsMade" | "attemptsMax" | "finishedAt" | "startedAt" | "state" | "wait"
 >;
 
 function runDurationMs(run: Pick<RunListItem, "finishedAt" | "startedAt">): number | null {
@@ -47,7 +40,7 @@ export function runDetailStatusInWords(
     readonly executions: readonly Pick<RunDetail["executions"][number], "phase">[];
   },
 ): string {
-  return run.status === "running" && run.executions.at(-1)?.phase === "preparing"
+  return run.state === "running" && run.executions.at(-1)?.phase === "preparing"
     ? "Preparing"
     : runStatusInWords(run);
 }
@@ -75,12 +68,17 @@ export function runRowInWords(
 
 /** runStatusInWords without what a row's facts already say. */
 function shortStateInWords(run: RunFacts): string {
-  if (run.status === "succeeded") return "Succeeded";
-  if (run.status === "running") return "Running";
-  if (run.status === "failed" || run.status === "dead-lettered") {
-    return run.deadLetterReason === "user-cancelled" ? "Cancelled" : "Failed";
+  switch (run.state) {
+    case "succeeded":
+      return "Succeeded";
+    case "running":
+      return "Running";
+    case "failed":
+    case "dead-lettered":
+      return "Failed";
+    default:
+      return runStatusInWords(run);
   }
-  return runStatusInWords(run);
 }
 
 /** The Runs head, and the end of a run list: only a list that reached its end says all. */
@@ -93,14 +91,15 @@ export function runCountInWords(count: number, complete: boolean): string {
  * "Failed after 2 attempts", "Waiting for approval", "Waiting until 14:00", "Succeeded in 0.4 s".
  */
 export function runStatusInWords(run: RunFacts): string {
-  switch (run.status) {
+  switch (run.state) {
+    case "cancelled":
+      return "Cancelled";
     case "succeeded": {
       const duration = runDurationMs(run);
       return duration === null ? "Succeeded" : `Succeeded in ${durationInWords(duration)}`;
     }
     case "failed":
     case "dead-lettered":
-      if (run.deadLetterReason === "user-cancelled") return "Cancelled";
       return run.attemptsMade === 1
         ? "Failed after 1 attempt"
         : `Failed after ${run.attemptsMade} attempts`;
