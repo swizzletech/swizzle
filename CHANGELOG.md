@@ -3,6 +3,29 @@
 Each release lists changes for people who run Swizzle and write automations.
 Versions follow Semantic Versioning. Tags use `vX.Y.Z`; pre-releases use `X.Y.Z-rc.N`.
 
+## 1.3.0
+
+### Added
+
+- The Overview shows each automation's last 24 hours as a timetable: one row per automation with its runs per hour, colored by result, and the deploys inside that window. `GET /dashboard/overview` returns it as `timetable` and takes `utcOffset`, so the hours follow the viewer's clock.
+- `GET /dashboard/runs` returns `nextCursor` and takes `cursor`, so a client reaches every run of a filter past the 200 runs of one page. **Load older runs** in the dashboard uses it.
+- `GET /dashboard/overview` returns `lastFailureAt`, the end of the last failed run.
+
+### Changed
+
+- The dashboard is rebuilt on one design foundation. It bundles the Geist and Geist Mono fonts with their licence, every page has one shared head, and rows show one action with the others in a menu.
+- Runs and an automation's Runs tab show the run list and the run side by side, each scrolling on its own, with day headers and arrow keys.
+- The sidebar is 240 px wide, holds the five places together and shows the environment as a quiet row at its foot. Page content stops at 1600 px, and every page ends at the same right edge.
+- A flow wider than its space opens on the current step and shows arrows where more follows.
+- The Overview says Nothing needs you, or gives the failure count when runs failed in the last 24 hours.
+- Dashboard titles, labels, empty states and captions end without a period.
+- Dependencies are updated within their existing major versions, including Better Auth 1.7.18.
+
+### Fixed
+
+- A run a person cancelled no longer counts as failed. The Overview leaves it out of its failure count and dates the last failure from the last real one, the Failed run list leaves it out while All keeps it, and the dashboard draws it neutral instead of red.
+- Version numbers read the same everywhere, and numbers in run lists line up.
+
 ## 1.2.0
 
 ### Added
