@@ -4,9 +4,9 @@
 
 import { type ReactNode, useEffect, useState } from "react";
 
-import { ApiError, type RunState } from "../lib/api";
+import { ApiError } from "../lib/api";
 import { accessProblemInWords } from "../lib/words/access";
-import { RUN_TONE, type Tone } from "../lib/words/health";
+import type { Tone } from "../lib/words/health";
 
 export function Dot(props: { readonly tone: Tone; readonly className?: string }) {
   return <span aria-hidden="true" className={`dot ${props.tone} ${props.className ?? ""}`} />;
@@ -14,33 +14,6 @@ export function Dot(props: { readonly tone: Tone; readonly className?: string })
 
 export function Chip(props: { readonly tone: Tone; readonly children: ReactNode }) {
   return <span className={`chip ${props.tone}`}>{props.children}</span>;
-}
-
-const STRIP_LENGTH = 10;
-
-/** The last 10 runs as bars, oldest left; slots without a run stay empty on the left. */
-export function HealthStrip(props: { readonly runs: readonly { readonly state: RunState }[] }) {
-  const oldestFirst = props.runs.slice(0, STRIP_LENGTH).toReversed();
-  const empty = STRIP_LENGTH - oldestFirst.length;
-  const failed = oldestFirst.filter((run) => RUN_TONE[run.state] === "fail").length;
-  const label =
-    oldestFirst.length === 0
-      ? "No runs yet"
-      : oldestFirst.length === 1
-        ? `Last run ${failed === 0 ? "did not fail" : "failed"}`
-        : `Last ${oldestFirst.length} runs, ${failed === 0 ? "none" : failed} failed`;
-  return (
-    <span aria-label={label} className="strip" role="img" title={label}>
-      {Array.from({ length: empty }, (_, index) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: empty slots are positional
-        <i key={`empty-${index}`} />
-      ))}
-      {oldestFirst.map((run, index) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: bars are positional
-        <i className={RUN_TONE[run.state]} key={`run-${index}`} />
-      ))}
-    </span>
-  );
 }
 
 export function Skeleton(props: { readonly lines?: number; readonly label?: string }) {

@@ -148,20 +148,20 @@ function expectWithinBudget(animations: readonly RunawayAnimation[]) {
   ).toEqual([]);
 }
 
-// The seeded instance has a running run, so its live dot shows on the Overview and on Runs.
+// The seeded instance has a running run, so its live dot shows on Runs. The Overview draws its
+// hour in the timetable without one.
 test("keeps live run indicators inside the animation budget", async ({ page }) => {
   await mockDashboardApi(page, seededState());
 
   await page.goto("/");
   await expect(page.getByTestId("status-card").getByText("3 things need you")).toBeVisible();
-
-  // The live treatment must actually be on screen, or the budget check below
-  // would pass by animating nothing at all.
-  await expect(page.locator(".dot.run").first()).toBeVisible();
   expectWithinBudget(await collectInfiniteAnimations(page));
 
   await page.goto("/runs?status=running");
   await expect(page.getByTestId("run-row").first()).toBeVisible();
+  // The live treatment must actually be on screen, or the budget check below
+  // would pass by animating nothing at all.
+  await expect(page.locator(".dot.run").first()).toBeVisible();
   expectWithinBudget(await collectInfiniteAnimations(page));
 });
 
@@ -245,6 +245,6 @@ test("stops every infinite animation on every page under prefers-reduced-motion"
   }
 
   // The live run indicator rests at a visible opacity instead of disappearing.
-  await page.goto("/");
+  await page.goto("/runs?status=running");
   await expect(page.locator(".dot.run").first()).toBeVisible();
 });

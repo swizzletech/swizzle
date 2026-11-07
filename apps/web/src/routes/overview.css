@@ -1,5 +1,5 @@
-/* The Overview: the status row and its counts, the automation rows with their pipeline steps, the recent changes and
-   the first steps of an empty instance. */
+/* The Overview: the status row and its counts, the automation timetable with its pipeline steps, the recent changes
+   and the first steps of an empty instance. */
 @layer components {
   .state {
     display: flex;
@@ -23,7 +23,7 @@
   .stats > div {
     display: grid;
     gap: 4px;
-    padding: 16px;
+    padding: 24px;
   }
   .stats > div + div {
     border-left: 1px solid var(--line);
@@ -33,17 +33,45 @@
     align-items: center;
     gap: 8px;
   }
+  /* A row of the timetable: the automation, its 24 hours, its next run. At phone width the name
+     and the next run share a line and the hours take the full width below. */
   .arow {
     display: grid;
-    grid-template-columns: 8px minmax(0, 1fr) 240px 80px 96px 80px;
-    gap: 12px;
+    grid-template-columns: minmax(0, 240px) minmax(0, 1fr) 112px;
+    grid-template-areas: "who hours next";
+    gap: 8px 24px;
     align-items: center;
-    min-height: 56px;
-    padding: 8px 16px;
+    min-height: 72px;
+    padding: 12px 16px;
     font-size: 13px;
     line-height: 20px;
     color: inherit;
     text-decoration: none;
+  }
+  .arow > .who {
+    grid-area: who;
+  }
+  .arow > .hour-strip,
+  .arow > .hour-axis {
+    grid-area: hours;
+  }
+  .arow > .next {
+    grid-area: next;
+  }
+  .arow .trigger,
+  .arow .next .relative {
+    display: block;
+    overflow: hidden;
+    color: var(--ink-3);
+    font-size: 12px;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* The card does not clip, so an hour's hover can rise over the row above; the last row keeps
+     the card's corners. */
+  .timetable > .arow:last-child {
+    border-radius: 0 0 var(--radius-card) var(--radius-card);
   }
   .arow.linked {
     position: relative;
@@ -70,17 +98,10 @@
   }
   .arow.head {
     min-height: 32px;
-    padding-block: 0;
+    padding-block: 8px;
   }
   .arow .name {
     font-weight: 500;
-  }
-  .arow .name + .t-meta {
-    font-size: 12px;
-    line-height: 16px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
   .arow .steps {
     display: flex;
@@ -143,12 +164,24 @@
       border-top: 1px solid var(--line);
     }
     .arow {
-      grid-template-columns: 8px minmax(0, 1fr) 80px;
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-areas:
+        "who next"
+        "hours hours";
+      gap: 4px 12px;
+      align-items: start;
+      min-height: 0;
     }
-    .arow > :nth-child(3),
-    .arow > :nth-child(5),
-    .arow > :nth-child(6) {
+    .arow.head,
+    .arow .trigger,
+    .arow .next .relative {
       display: none;
+    }
+    .timetable > .arow.head + * {
+      border-top: 0;
+    }
+    .arow > .next {
+      text-align: right;
     }
     .crow {
       grid-template-columns: minmax(0, 1fr) auto;

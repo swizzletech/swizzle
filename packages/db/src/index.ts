@@ -275,6 +275,7 @@ export type {
   DashboardConnectionStatus,
   DashboardDeploymentChange,
   DashboardDeploymentSummary,
+  DashboardHourCounts,
   DashboardMermaidDiagram,
   DashboardOperabilitySummary,
   DashboardOperationsSummary,
@@ -292,8 +293,11 @@ export type {
   DashboardServiceHeartbeatView,
   DashboardStepReach,
   DashboardStore,
+  DashboardTimetable,
+  DashboardTimetableRow,
   DashboardTriggerSummary,
   ServiceHeartbeatRecord,
+  TimetableClock,
   UpsertServiceHeartbeatInput,
 } from "./dashboard-types.js";
 export {

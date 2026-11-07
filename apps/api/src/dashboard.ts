@@ -80,6 +80,8 @@ interface OverviewViewer {
   mayEdit(automation: AccessTarget): Promise<boolean>;
   /** Whether they operate the instance, so grant workers and act on its problems. */
   readonly operatesInstance: boolean;
+  /** How far their clock stands east of UTC, so the timetable's hours start on their full hours. */
+  readonly utcOffsetMinutes: number;
 }
 
 /** The automation's detail before its route adds what the viewer's role refuses. */
@@ -111,7 +113,7 @@ export interface DashboardDataProvider {
   getStepReach(automationSlug: string, environment: string): Promise<DashboardStepReach | null>;
   getOperationsSummary(environment: string): Promise<DashboardOperationsSummary>;
   /**
-   * The Overview's read model: 24 h counts, Needs you and Recently changed, over the automations
+   * The Overview's read model: 24 h counts, Needs you, the timetable and Recently changed, over the automations
    * in `scope`. Platform and notification problems and runs waiting for a worker need an instance
    * owner or admin, so only a viewer who operates the instance sees them. Needs you lists the
    * approvals the viewer may decide, and what an automation needs fixed only where the viewer may
@@ -345,6 +347,7 @@ export function createDashboardDataProvider(
         deliveries,
         recentChanges,
         queued,
+        timetable,
       ] = await Promise.all([
         dashboardStore.countRunsSince(environment, dayAgo, scope),
         dashboardStore.listRuns({
@@ -386,6 +389,11 @@ export function createDashboardDataProvider(
           scope,
         ),
         dashboardStore.listQueuedRuns(environment, scope),
+        dashboardStore.getTimetable(
+          environment,
+          { now: observedAt, utcOffsetMinutes: viewer.utcOffsetMinutes },
+          scope,
+        ),
       ]);
       // Every item an automation raises asks for a change to it, which only an editor can make.
       const editable = (
@@ -437,6 +445,7 @@ export function createDashboardDataProvider(
         }).filter((item) => viewer.operatesInstance || !INSTANCE_ATTENTION.has(item.kind)),
         complete: viewer.operatesInstance && editable.length === automations.length,
         recentChanges,
+        timetable,
       } satisfies DashboardOverview;
     },
 

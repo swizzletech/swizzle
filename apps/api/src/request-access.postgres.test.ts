@@ -151,6 +151,7 @@ function recordingDashboard(
         lastFailureAt: null,
         needsYou: [],
         recentChanges: [],
+        timetable: { from: new Date(0).toISOString(), rows: [] },
       };
     },
     getStepReach: async () => null,

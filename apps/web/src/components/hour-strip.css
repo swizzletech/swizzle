@@ -1,0 +1,117 @@
+/* The Overview's hour strips: 24 cells per automation, deploy marks above them, the hour axis in
+   the list's header and the hover that names an hour. */
+@layer components {
+  /* The gap between hour columns; hour-strip.tsx places deploy marks by it. */
+  .hour-strip,
+  .hour-axis {
+    --hour-gap: 4px;
+  }
+  /* The mark lane (16 px of text, a 4 px tick) above the 28 px cells. */
+  .hour-strip {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    height: 48px;
+    color: inherit;
+    text-decoration: none;
+  }
+  .hour-cells,
+  .hour-axis {
+    display: grid;
+    grid-template-columns: repeat(24, minmax(0, 1fr));
+    gap: var(--hour-gap);
+  }
+  .hour-cells {
+    align-items: end;
+    height: 28px;
+  }
+  .hour-cells i {
+    position: relative;
+    display: block;
+    height: 16px;
+    background: var(--line);
+  }
+  .hour-cells i.empty {
+    height: 4px;
+  }
+  .hour-cells i.ok {
+    background: var(--ok);
+  }
+  .hour-cells i.run,
+  .hour-cells i.warn {
+    background: var(--warn);
+  }
+  .hour-cells i.idle {
+    background: var(--idle);
+  }
+  .hour-cells i.full {
+    height: 28px;
+  }
+  .hour-cells i:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    z-index: 2;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 4px 8px;
+    border-radius: var(--radius-badge);
+    background: var(--primary);
+    color: var(--primary-ink);
+    /* A cell is an <i>; its label reads upright. */
+    font-style: normal;
+    font-size: 12px;
+    line-height: 16px;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .hour-cells i.tip-start:hover::after {
+    left: 0;
+    transform: none;
+  }
+  .hour-cells i.tip-end:hover::after {
+    right: 0;
+    left: auto;
+    transform: none;
+  }
+  /* A deploy: its version above the hour it happened in, a tick pointing down at its time. */
+  .hour-mark {
+    position: absolute;
+    bottom: 32px;
+    transform: translateX(-50%);
+    color: var(--ink-3);
+    font-size: 12px;
+    line-height: 16px;
+    white-space: nowrap;
+  }
+  .hour-mark::after {
+    content: "";
+    position: absolute;
+    top: 16px;
+    left: 50%;
+    width: 1px;
+    height: 4px;
+    background: var(--ink-3);
+  }
+  /* The axis takes the strip's columns: a label every six hours, "now" at the right edge. */
+  .hour-axis {
+    position: relative;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .hour-axis .now {
+    position: absolute;
+    right: 0;
+  }
+
+  /* Below the name at narrow widths the strip leaves out the marks and their lane. */
+  @media (max-width: 900px) {
+    .hour-strip {
+      height: 28px;
+    }
+    .hour-mark {
+      display: none;
+    }
+  }
+}

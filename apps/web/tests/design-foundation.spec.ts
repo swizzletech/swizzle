@@ -514,6 +514,34 @@ test.describe("every page", () => {
     });
   }
 
+  // The type and spacing that set a page's hierarchy: a 32/40 title, page sections 40 apart and,
+  // on the Overview, 32/40 stat figures at 500 in tiles with a 24 px inset.
+  for (const path of ["/", "/projects", "/credentials", "/settings/account", "/no-such-page"]) {
+    test(`${path} sets its title 32/40 and its sections 40 apart`, async ({ page }) => {
+      await asOwner(page, seededState());
+      await page.goto(path);
+      await settled(page);
+      const title = page.locator(".page-head h1");
+      await expect(title).toHaveCSS("font-size", "32px");
+      await expect(title).toHaveCSS("line-height", "40px");
+      const gaps = await page
+        .locator(".page-content.stack > * + *:not(.sec-head + *)")
+        .evaluateAll((all) => [...new Set(all.map((one) => getComputedStyle(one).marginTop))]);
+      // A page with one section has no gap; the Overview's sections prove the gap is drawn.
+      expect(gaps).toEqual(path === "/" ? ["40px"] : gaps.length === 0 ? [] : ["40px"]);
+    });
+  }
+
+  test("an Overview stat reads 32/40 at 500 in a tile with a 24 px inset", async ({ page }) => {
+    await asOwner(page, seededState());
+    await page.goto("/");
+    const figure = page.getByTestId("status-card").locator(".t-stat").first();
+    await expect(figure).toHaveCSS("font-size", "32px");
+    await expect(figure).toHaveCSS("line-height", "40px");
+    await expect(figure).toHaveCSS("font-weight", "500");
+    await expect(page.locator(".stats > div").first()).toHaveCSS("padding", "24px");
+  });
+
   test("a deep page names its parent above the title, and a place does not", async ({ page }) => {
     await asOwner(page, seededState());
     await page.goto("/automations/verify-probe");

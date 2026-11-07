@@ -9,6 +9,7 @@ import { listServiceHeartbeats, upsertServiceHeartbeat } from "./dashboard-heart
 import { getMermaidDiagram } from "./dashboard-mermaid.js";
 import { countRunsSince, listQueuedRuns, listRuns } from "./dashboard-runs.js";
 import { countStepReach, listRunSteps } from "./dashboard-steps.js";
+import { getTimetable } from "./dashboard-timetable.js";
 import type { DashboardStore } from "./dashboard-types.js";
 
 export function createDashboardStore(
@@ -42,6 +43,10 @@ export function createDashboardStore(
 
     async getMermaidDiagram(automationSlug, environment) {
       return await getMermaidDiagram(client, automationSlug, environment);
+    },
+
+    async getTimetable(environment, clock, scope) {
+      return await getTimetable(client, environment, clock, scope);
     },
 
     async listAutomationSummaries(environment, scope) {

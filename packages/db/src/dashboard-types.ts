@@ -407,7 +407,36 @@ export type DashboardPlatformProblem =
       readonly warning: WorkerWarning;
     };
 
-/** The Overview's read model: the status sentence, Needs you and Recently changed. */
+/** Top-level runs of one automation queued in one hour, by state; a state not named had none. */
+export type DashboardHourCounts = Readonly<Partial<Record<RunState, number>>>;
+
+/** The moment a timetable ends at and the viewer's offset from UTC, which aligns its hours. */
+export interface TimetableClock {
+  readonly now: Date;
+  readonly utcOffsetMinutes: number;
+}
+
+/** One automation's last 24 hours on the Overview. */
+export interface DashboardTimetableRow {
+  readonly automationSlug: string;
+  /** 24 hours, oldest first: hour `i` starts `i` hours after the timetable's `from`. */
+  readonly hours: readonly DashboardHourCounts[];
+  /** Deploys and rollbacks inside the window, oldest first, with the version each made active. */
+  readonly deployments: readonly { readonly at: string; readonly version: string }[];
+}
+
+/**
+ * The last 24 hours of the environment, hour by hour, with one row for each automation that ran
+ * or was deployed in them. The hours follow the viewer's clock: the last one is the viewer's
+ * current hour, which holds now.
+ */
+export interface DashboardTimetable {
+  /** When the first hour starts. */
+  readonly from: string;
+  readonly rows: readonly DashboardTimetableRow[];
+}
+
+/** The Overview's read model: the status sentence, Needs you, the timetable and Recently changed. */
 export interface DashboardOverview {
   readonly environment: string;
   /** Top-level runs queued in the last 24 hours, by state. */
@@ -423,6 +452,7 @@ export interface DashboardOverview {
   readonly complete: boolean;
   /** Deploys and rollbacks of the last 7 days, newest first. */
   readonly recentChanges: readonly DashboardDeploymentChange[];
+  readonly timetable: DashboardTimetable;
 }
 
 export interface DashboardRunsQuery {
@@ -563,6 +593,15 @@ export interface DashboardStore {
     limit: number,
     scope: ReadScope,
   ): Promise<readonly DashboardDeploymentChange[]>;
+  /**
+   * The timetable of the 24 hours up to `clock.now`, its hours aligned to a viewer whose clock
+   * stands `clock.utcOffsetMinutes` east of UTC.
+   */
+  getTimetable(
+    environment: string,
+    clock: TimetableClock,
+    scope: ReadScope,
+  ): Promise<DashboardTimetable>;
   listRuns(query: DashboardRunsQuery): Promise<DashboardRunsResult>;
   listQueuedRuns(environment: string, scope: ReadScope): Promise<readonly DashboardQueuedRuns[]>;
   listRunSteps(runId: string): Promise<readonly DashboardRunStep[]>;

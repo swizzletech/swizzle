@@ -8,10 +8,10 @@
    imports this file first.
 
    Every value comes from a fixed scale, listed in apps/web/design-scale.json:
-     type     24/32 600 stat, 20/28 600 page title, 16/24 600 section, 14/20 400 body,
-              13/20 400 and 500 controls and lists, 12/16 400 and 500 captions;
+     type     32/40 600 page title, 32/40 500 stat, 20/28 600 document heading, 16/24 600 section,
+              14/20 400 body, 13/20 400 and 500 controls and lists, 12/16 400 and 500 captions;
               Geist Mono 13/20 for code, logs and secret names.
-     spacing  4 8 12 16 24 32 48; page margin 32, card inset 16, section gap 24.
+     spacing  4 8 12 16 24 32 40 48; page margin 32, card inset 16, stat tile 24, section gap 40.
      radii    6 badge, 8 control, 12 card, full.
      lines    1 px; 2 px only for the active marker.
      controls 32 default, 28 dense, 40 at phone width.
@@ -144,7 +144,7 @@
   --radius-card: 12px;
   --radius-full: 999px;
   --page-margin: 32px;
-  --section-gap: 24px;
+  --section-gap: 40px;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -212,14 +212,14 @@
 @layer components {
   /* ---------- type: the six sizes of the scale ---------- */
   .t-stat {
-    font-weight: 600;
-    font-size: 24px;
-    line-height: 32px;
+    font-weight: 500;
+    font-size: 32px;
+    line-height: 40px;
   }
   .t-page {
     font-weight: 600;
-    font-size: 20px;
-    line-height: 28px;
+    font-size: 32px;
+    line-height: 40px;
     letter-spacing: -0.01em;
     margin: 0;
   }
@@ -476,31 +476,6 @@
   .chip.idle {
     background: var(--surface-2);
     color: var(--ink-2);
-  }
-
-  .strip {
-    display: inline-flex;
-    gap: 4px;
-    align-items: flex-end;
-    height: 16px;
-  }
-  .strip i {
-    width: 4px;
-    height: 16px;
-    background: var(--line);
-  }
-  .strip i.ok {
-    background: var(--ok);
-  }
-  .strip i.fail {
-    background: var(--fail);
-  }
-  .strip i.warn,
-  .strip i.run {
-    background: var(--warn);
-  }
-  .strip i.idle {
-    background: var(--idle);
   }
 
   /* ---------- surfaces: a group is a card of hairline-ruled rows ---------- */

@@ -152,7 +152,8 @@ export type JudgedAutomationDetail = Omit<
 /**
  * GET /dashboard/overview, with why the caller may not deploy a new automation that names no
  * project, which lands in the default project; null where they may. The empty Overview offers the
- * steps to a first one only then.
+ * steps to a first one only then. `timetable` counts each automation's runs per hour of the
+ * caller's last 24, on the clock its `utcOffset` query parameter names.
  */
 export type OverviewResponse = DashboardOverview & {
   readonly deploy: AccessRefusal | null;

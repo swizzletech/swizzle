@@ -97,6 +97,24 @@ export function chainSourcesInWords(trigger: TriggerSummary): readonly string[] 
  * "in 18 s", "14:00", "Mon 09:00", "on call" for webhooks, "after nightly-fetch" for chains, "–" when
  * broken, and "No scheduler for production" for a cron trigger no scheduler fires.
  */
+/**
+ * The next scheduled run as a clock time and how far off it is: "14:00" and "in 23 min", with the
+ * weekday when it is not today. Null for a trigger that names no time, which `nextRunInWords` words.
+ */
+export function nextRunTimes(
+  trigger: TriggerSummary | null,
+  now: Date,
+): { readonly at: string; readonly relative: string } | null {
+  if (trigger?.triggerType !== "cron" || trigger.status !== "active") return null;
+  if (trigger.nextRun?.kind !== "at") return null;
+  const next = new Date(trigger.nextRun.at);
+  const at =
+    next.toDateString() === now.toDateString()
+      ? clockTime(next)
+      : `${next.toLocaleDateString("en-GB", { weekday: "short" })} ${clockTime(next)}`;
+  return { at, relative: `in ${durationInWords(Math.max(0, next.getTime() - now.getTime()))}` };
+}
+
 export function nextRunInWords(trigger: TriggerSummary | null, now: Date): string {
   if (trigger === null || trigger.status === "invalid") return "–";
   if (trigger.status === "paused") return "Paused";

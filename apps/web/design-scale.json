@@ -1,8 +1,8 @@
 {
-  "fontSizes": [12, 13, 14, 16, 20, 24],
+  "fontSizes": [12, 13, 14, 16, 20, 32],
   "fontWeights": [400, 500, 600],
   "radii": [6, 8, 12],
-  "spacing": [0, 4, 8, 12, 16, 24, 32, 48],
+  "spacing": [0, 4, 8, 12, 16, 24, 32, 40, 48],
   "borderWidths": [1, 2],
   "controlHeights": [28, 32],
   "phoneControlHeight": 40
