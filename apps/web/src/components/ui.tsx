@@ -4,7 +4,7 @@
 
 import { type ReactNode, useEffect, useState } from "react";
 
-import { ApiError, type RunStatus } from "../lib/api";
+import { ApiError, type RunState } from "../lib/api";
 import { accessProblemInWords } from "../lib/words/access";
 import { RUN_TONE, type Tone } from "../lib/words/health";
 
@@ -19,10 +19,10 @@ export function Chip(props: { readonly tone: Tone; readonly children: ReactNode 
 const STRIP_LENGTH = 10;
 
 /** The last 10 runs as bars, oldest left; slots without a run stay empty on the left. */
-export function HealthStrip(props: { readonly runs: readonly { readonly status: RunStatus }[] }) {
+export function HealthStrip(props: { readonly runs: readonly { readonly state: RunState }[] }) {
   const oldestFirst = props.runs.slice(0, STRIP_LENGTH).toReversed();
   const empty = STRIP_LENGTH - oldestFirst.length;
-  const failed = oldestFirst.filter((run) => RUN_TONE[run.status] === "fail").length;
+  const failed = oldestFirst.filter((run) => RUN_TONE[run.state] === "fail").length;
   const label =
     oldestFirst.length === 0
       ? "No runs yet"
@@ -37,7 +37,7 @@ export function HealthStrip(props: { readonly runs: readonly { readonly status: 
       ))}
       {oldestFirst.map((run, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: bars are positional
-        <i className={RUN_TONE[run.status]} key={`run-${index}`} />
+        <i className={RUN_TONE[run.state]} key={`run-${index}`} />
       ))}
     </span>
   );

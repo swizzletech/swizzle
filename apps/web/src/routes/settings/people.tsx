@@ -54,7 +54,7 @@ export function People(props: {
       <Invite mailConfigured={props.mailConfigured} me={props.me.role} onSent={changed} />
       {invitations.isError ? (
         <div className="p-4">
-          <ErrorNote error={invitations.error} title="The invitations could not be loaded." />
+          <ErrorNote error={invitations.error} title="The invitations could not be loaded" />
         </div>
       ) : (
         (invitations.data ?? []).map((invitation) => (
@@ -98,7 +98,7 @@ function PersonRows(props: {
   if (people.isError) {
     return (
       <div className="p-4">
-        <ErrorNote error={people.error} title="The people could not be loaded." />
+        <ErrorNote error={people.error} title="The people could not be loaded" />
       </div>
     );
   }
@@ -197,7 +197,7 @@ function Invite(props: {
           <fieldset className="grid gap-2 border-0 p-0">
             <legend className="form-label mb-2">Projects</legend>
             {projects.isError ? (
-              <ErrorNote error={projects.error} title="The projects could not be loaded." />
+              <ErrorNote error={projects.error} title="The projects could not be loaded" />
             ) : (
               (projects.data ?? []).map((project) => {
                 const granted = grants.get(project.id);
@@ -233,7 +233,7 @@ function Invite(props: {
                 );
               })
             )}
-            <span className="t-faint">A member sees only these projects.</span>
+            <span className="t-faint">A member sees only these projects</span>
           </fieldset>
         ) : (
           <span className="t-faint">

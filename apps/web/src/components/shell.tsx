@@ -233,7 +233,7 @@ function Sidebar() {
               className="lock"
               data-testid="environment-protected"
               role="img"
-              title={`Protected in ${protectedIn.map((project) => project.name).join(", ")}: a change needs an environment grant.`}
+              title={`Protected in ${protectedIn.map((project) => project.name).join(", ")}: a change needs an environment grant`}
             >
               <Icon>
                 <rect height="10" rx="2" width="16" x="4" y="11" />
@@ -558,8 +558,8 @@ export function NotFound() {
           Go to the Overview
         </Link>
       }
-      description="The dashboard has five places: Overview, Runs, Projects, Credentials and Settings."
-      title="This page does not exist."
+      description="The dashboard has five places: Overview, Runs, Projects, Credentials and Settings"
+      title="This page does not exist"
       type="reading"
     >
       {null}

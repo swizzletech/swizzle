@@ -12,7 +12,8 @@ import { runStatusInWords } from "../lib/words/runs";
 import { Track } from "./track";
 import "./pipeline-graph.css";
 
-const RUN_STATION: Record<RunListItem["status"], StationState> = {
+const RUN_STATION: Record<RunListItem["state"], StationState> = {
+  cancelled: "idle",
   "dead-lettered": "failed",
   failed: "failed",
   queued: "running",
@@ -31,7 +32,7 @@ function pipelineTrack(members: readonly AutomationSummary[]): TrackGraph {
     label: member.automationName,
     meta: member.lastRun === null ? "no runs yet" : runStatusInWords(member.lastRun),
     shape: "box",
-    state: member.lastRun === null ? "idle" : RUN_STATION[member.lastRun.status],
+    state: member.lastRun === null ? "idle" : RUN_STATION[member.lastRun.state],
   }));
   const edges: TrackEdge[] = [];
   for (const member of members) {

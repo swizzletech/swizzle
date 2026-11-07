@@ -45,7 +45,7 @@ export function CredentialAccess(props: { readonly credential: CredentialRef }) 
     ],
   });
   if (access.isError) {
-    return <ErrorNote error={access.error} title="Who may use it could not be loaded." />;
+    return <ErrorNote error={access.error} title="Who may use it could not be loaded" />;
   }
   if (access.data === undefined) return <Skeleton label="Loading who may use it" lines={3} />;
   return <LoadedAccess access={access.data} credential={credential} />;

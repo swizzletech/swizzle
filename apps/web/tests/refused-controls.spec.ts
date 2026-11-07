@@ -62,7 +62,7 @@ test("a viewer's empty Overview says who deploys instead of the steps to a first
 
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Nothing runs here yet." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Nothing runs here yet" })).toBeVisible();
   await expect(page.getByTestId("refused-controls")).toHaveText(
     "Deploy needs editor. Your role here is viewer, from viewer on the project. Ask an admin of this project.",
   );

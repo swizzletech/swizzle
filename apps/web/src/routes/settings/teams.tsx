@@ -63,7 +63,7 @@ export function Teams() {
         <div className="p-4">
           <ErrorNote
             error={teams.error ?? people.error}
-            title="The teams and their members could not be loaded."
+            title="The teams and their members could not be loaded"
           />
         </div>
       ) : teams.data === undefined || people.data === undefined ? (
@@ -96,7 +96,7 @@ function TeamRow(props: {
       <div className="grid min-w-0 gap-2">
         <b>{team.name}</b>
         <div className="flex flex-wrap gap-2">
-          {members.length === 0 ? <span className="t-faint">No members yet.</span> : null}
+          {members.length === 0 ? <span className="t-faint">No members yet</span> : null}
           {members.map((person) => (
             <span className="chip idle" key={person.id}>
               {person.name}

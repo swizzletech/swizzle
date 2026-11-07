@@ -153,7 +153,7 @@ test("keeps live run indicators inside the animation budget", async ({ page }) =
   await mockDashboardApi(page, seededState());
 
   await page.goto("/");
-  await expect(page.getByTestId("status-card").getByText("3 things need you.")).toBeVisible();
+  await expect(page.getByTestId("status-card").getByText("3 things need you")).toBeVisible();
 
   // The live treatment must actually be on screen, or the budget check below
   // would pass by animating nothing at all.
@@ -169,7 +169,7 @@ test("never pays for a backdrop blur that cannot be seen", async ({ page }) => {
   await mockDashboardApi(page, seededState());
 
   await page.goto("/");
-  await expect(page.getByTestId("status-card").getByText("3 things need you.")).toBeVisible();
+  await expect(page.getByTestId("status-card").getByText("3 things need you")).toBeVisible();
   expect(await collectInvisibleBlurLayers(page)).toEqual([]);
 
   await page.goto("/automations/verify-probe");

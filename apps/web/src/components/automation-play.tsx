@@ -64,14 +64,14 @@ export function AutomationPlay(props: {
   );
 
   if (runQuery.isError) {
-    return <ErrorNote error={runQuery.error} title="This run could not be loaded." />;
+    return <ErrorNote error={runQuery.error} title="This run could not be loaded" />;
   }
   if (flow.sourceError !== null) {
     return (
       <ErrorNote
         error={flow.sourceError}
         onRetry={flow.refetchSource}
-        title="The deployed code could not be loaded."
+        title="The deployed code could not be loaded"
       />
     );
   }
@@ -86,7 +86,7 @@ export function AutomationPlay(props: {
     return (
       <ErrorNote
         error={flow.source.error ?? "The entrypoint could not be read."}
-        title="The deployed code could not be read."
+        title="The deployed code could not be read"
       />
     );
   }
@@ -110,7 +110,7 @@ export function AutomationPlay(props: {
 
 /** Whether the code reads as deployed, follows a live run, or replays a finished one. */
 function PlayState({ run }: { readonly run: RunDetail | null }) {
-  if (run === null) return <span className="t-meta">No run selected: the code as deployed.</span>;
+  if (run === null) return <span className="t-meta">No run selected: the code as deployed</span>;
   if (!isOpenRun(run.status)) return null;
   return (
     <span className="t-meta inline-flex items-center gap-2">
@@ -125,7 +125,7 @@ function RunPicker(props: {
   readonly selected: string | undefined;
 }) {
   const now = useNow();
-  if (props.runs.length === 0) return <span className="t-meta">No runs yet.</span>;
+  if (props.runs.length === 0) return <span className="t-meta">No runs yet</span>;
   return (
     <label className="play-pick t-meta">
       Run
@@ -337,7 +337,7 @@ function Transport(props: {
       <ItemCounter items={replay.items.length} pass={props.pass} />
       {replay.didNoStep ? (
         <span className="t-meta" data-testid="play-no-steps">
-          This run did no step.
+          This run did no step
         </span>
       ) : null}
     </div>

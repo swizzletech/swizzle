@@ -68,7 +68,7 @@ function Offered({ project }: { readonly project: Project }) {
     onSettled: () => refreshAll(queryClient),
   });
   if (shares.isError) {
-    return <ErrorNote error={shares.error} title="The offers could not be loaded." />;
+    return <ErrorNote error={shares.error} title="The offers could not be loaded" />;
   }
   if (shares.data === undefined) {
     return (
@@ -78,7 +78,7 @@ function Offered({ project }: { readonly project: Project }) {
     );
   }
   if (shares.data.length === 0) {
-    return <p className="card t-meta px-4 py-4">No project offers {project.name} a credential.</p>;
+    return <p className="card t-meta px-4 py-4">No project offers {project.name} a credential</p>;
   }
   const failed = accept.error ?? decline.error;
   return (
@@ -143,9 +143,7 @@ function Shared({ project }: { readonly project: Project }) {
     queryKey: ["shared-credentials", project.slug, ...queryScope],
   });
   if (shared.isError) {
-    return (
-      <ErrorNote error={shared.error} title="The project's credentials could not be loaded." />
-    );
+    return <ErrorNote error={shared.error} title="The project's credentials could not be loaded" />;
   }
   if (shared.data === undefined) {
     return (
@@ -213,7 +211,7 @@ function SharedCredentialRow(props: {
           <Chip tone="idle">{KIND_LABEL[credential.kind]}</Chip>
         </div>
         {shares.length === 0 ? (
-          <span className="t-meta">Shared with no other project.</span>
+          <span className="t-meta">Shared with no other project</span>
         ) : (
           shares.map((share) => (
             <span className="flex flex-wrap items-center gap-2" key={share.shareId}>

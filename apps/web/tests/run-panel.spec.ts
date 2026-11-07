@@ -15,6 +15,7 @@ test("a queued run that no worker has started says it has not started", async ({
     finishedAt: null,
     runId: QUEUED_RUN_ID,
     startedAt: null,
+    state: "queued" as const,
     status: "queued" as const,
   };
   state.runs.unshift({ ...listed, ...notStarted });

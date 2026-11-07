@@ -13,7 +13,6 @@ const run = {
   approval: null,
   attemptsMade: 2,
   attemptsMax: 2,
-  deadLetterReason: null,
   finishedAt: "2026-10-23T11:58:02.000Z",
   startedAt: "2026-10-23T11:58:00.000Z",
   wait: null,
@@ -47,14 +46,14 @@ describe("runDurationInWords", () => {
 
 describe("runStatusInWords", () => {
   it.each([
-    [{ ...run, status: "dead-lettered" as const }, "Failed after 2 attempts"],
-    [{ ...run, deadLetterReason: "user-cancelled", status: "dead-lettered" as const }, "Cancelled"],
-    [{ ...run, status: "succeeded" as const }, "Succeeded in 2.0 s"],
+    [{ ...run, state: "dead-lettered" as const }, "Failed after 2 attempts"],
+    [{ ...run, state: "cancelled" as const }, "Cancelled"],
+    [{ ...run, state: "succeeded" as const }, "Succeeded in 2.0 s"],
     [
       {
         ...run,
         approval: { assignee: null, details: null, stepKey: "gate" },
-        status: "waiting" as const,
+        state: "waiting" as const,
         wait: {
           reason: "event" as const,
           stepKey: "gate",
@@ -68,7 +67,7 @@ describe("runStatusInWords", () => {
     [
       {
         ...run,
-        status: "waiting" as const,
+        state: "waiting" as const,
         wait: {
           reason: "event" as const,
           stepKey: "signal",
@@ -87,13 +86,13 @@ describe("runStatusInWords", () => {
 describe("runDetailStatusInWords", () => {
   it("shows preparation until the active execution is ready", () => {
     expect(
-      runDetailStatusInWords({ ...run, status: "running", executions: [{ phase: "preparing" }] }),
+      runDetailStatusInWords({ ...run, state: "running", executions: [{ phase: "preparing" }] }),
     ).toBe("Preparing");
     expect(
-      runDetailStatusInWords({ ...run, status: "running", executions: [{ phase: "executing" }] }),
+      runDetailStatusInWords({ ...run, state: "running", executions: [{ phase: "executing" }] }),
     ).toBe("Running, attempt 2");
     expect(
-      runDetailStatusInWords({ ...run, status: "succeeded", executions: [{ phase: "preparing" }] }),
+      runDetailStatusInWords({ ...run, state: "succeeded", executions: [{ phase: "preparing" }] }),
     ).toBe("Succeeded in 2.0 s");
   });
 });
@@ -103,7 +102,7 @@ describe("runRowInWords", () => {
     ...run,
     attemptsMade: 3,
     automationName: "Invoices",
-    status: "failed",
+    state: "failed",
     triggerType: "cron",
     version: "1.3.1",
   } as const;
@@ -126,8 +125,7 @@ describe("runRowInWords", () => {
     const cancelled = {
       ...failed,
       attemptsMade: 1,
-      deadLetterReason: "user-cancelled",
-      status: "dead-lettered",
+      state: "cancelled",
     } as const;
     expect(runRowInWords(cancelled, "automation").line).toBe("Cancelled · 2.0 s");
   });

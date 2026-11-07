@@ -6,7 +6,7 @@ import { versionInWords } from "./runs";
 import { ageInWords } from "./time";
 
 /**
- * What the Overview says first: "3 things need you.", or with nothing to act on "All good." only
+ * What the Overview says first: "3 things need you", or with nothing to act on "All good" only
  * while no run failed. Failures without a next step read "Nothing needs you." with their count and
  * age, so the sentence never contradicts the failed count beside it. Needs you leaves out what the
  * viewer cannot act on, so an incomplete list says only that nothing needs them.
@@ -18,12 +18,15 @@ export function statusSentence(
   const count = overview.needsYou.length;
   const failed = overview.last24h.failed + overview.last24h["dead-lettered"];
   const failures = failed === 0 ? null : failuresInWords(failed, overview.lastFailureAt, now);
-  if (count > 1) return { failures, title: `${count} things need you.` };
-  if (count === 1) return { failures, title: "1 thing needs you." };
-  return {
-    failures,
-    title: overview.complete && failed === 0 ? "All good." : "Nothing needs you.",
-  };
+  const title = statusTitle(count, overview.complete && failed === 0);
+  // A title alone is a short string; the sentence after it makes it one too.
+  return { failures, title: failures === null ? title : sentence(title) };
+}
+
+function statusTitle(count: number, allGood: boolean): string {
+  if (count > 1) return `${count} things need you`;
+  if (count === 1) return "1 thing needs you";
+  return allGood ? "All good" : "Nothing needs you";
 }
 
 function failuresInWords(failed: number, lastFailureAt: string | null, now: Date): string {
@@ -42,28 +45,28 @@ export function platformProblemInWords(problem: PlatformProblem): {
       return {
         title:
           problem.queuedRuns > 0
-            ? `No worker is running, ${problem.queuedRuns} ${problem.queuedRuns === 1 ? "run is" : "runs are"} queued.`
-            : "No worker is running, so no run can start.",
+            ? `No worker is running, ${problem.queuedRuns} ${problem.queuedRuns === 1 ? "run is" : "runs are"} queued`
+            : "No worker is running, so no run can start",
         todo: "Start one with `docker compose up -d worker` on the server.",
       };
     case "queue-unreachable":
       return {
-        title: "The run queue does not answer, so new runs cannot start.",
+        title: "The run queue does not answer, so new runs cannot start",
         todo: "Check Valkey with `docker compose ps valkey` on the server.",
       };
     case "scheduler-down":
       return {
-        title: `No scheduler runs for ${problem.environment}, so its cron runs do not start and its waits do not end.`,
+        title: `No scheduler runs for ${problem.environment}, so its cron runs do not start and its waits do not end`,
         todo: "Run `just stack` in the checkout on the server: it rebuilds the images and starts the scheduler from the current code. One scheduler serves every environment.",
       };
     case "queue-backlog":
       return {
-        title: `${problem.waitingJobs} runs are waiting for a free worker.`,
+        title: `${problem.waitingJobs} runs are waiting for a free worker`,
         todo: "Add a worker or raise its concurrency if this does not clear.",
       };
     case "maintenance-failing":
       return {
-        title: "Cleanup of old runs and logs is not running.",
+        title: "Cleanup of old runs and logs is not running",
         todo: "Read the scheduler log with `docker compose logs scheduler` on the server.",
       };
     case "run-image-disk":

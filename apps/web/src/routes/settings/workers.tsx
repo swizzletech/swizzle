@@ -60,10 +60,10 @@ export function Workers() {
   });
   function workerList() {
     if (workers.isError)
-      return <ErrorNote title="Workers could not be loaded." error={workers.error} />;
+      return <ErrorNote title="Workers could not be loaded" error={workers.error} />;
     if (workers.data === undefined) return <Skeleton label="Loading workers" lines={2} />;
     if (workers.data.workers.length === 0)
-      return <p className="setting t-meta">No workers enrolled.</p>;
+      return <p className="setting t-meta">No workers enrolled</p>;
     return workers.data.workers.map((worker) => (
       <div className="setting" data-testid="worker" key={worker.id}>
         <div className="grid min-w-0 gap-1 wrap-anywhere">
@@ -201,7 +201,7 @@ export function Workers() {
           </div>
         </form>
         {projects.isError ? (
-          <ErrorNote title="Projects could not be loaded." error={projects.error} />
+          <ErrorNote title="Projects could not be loaded" error={projects.error} />
         ) : null}
         {create.isError ? <ActionError error={create.error} /> : null}
         {enrollment === null ? null : (

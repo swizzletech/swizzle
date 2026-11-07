@@ -42,7 +42,7 @@ function PlatformState() {
   if (operations.isError) {
     return (
       <div className="p-4">
-        <ErrorNote error={operations.error} title="The platform state could not be loaded." />
+        <ErrorNote error={operations.error} title="The platform state could not be loaded" />
       </div>
     );
   }

@@ -5,7 +5,7 @@
 @layer components {
   .app {
     display: grid;
-    grid-template-columns: 224px minmax(0, 1fr);
+    grid-template-columns: 240px minmax(0, 1fr);
     height: 100dvh;
   }
   .side {

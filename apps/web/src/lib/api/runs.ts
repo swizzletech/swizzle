@@ -85,6 +85,8 @@ export function runsCalls(environment: string) {
       /** The `nextCursor` of the page before; absent starts at the newest run. */
       readonly cursor?: string;
       readonly environment?: string;
+      /** Only runs that failed; a cancelled run did not. */
+      readonly failedOnly?: boolean;
       readonly limit?: number;
       readonly parentRunId?: string;
       readonly statuses?: readonly RunStatus[];
@@ -98,6 +100,9 @@ export function runsCalls(environment: string) {
       }
       if (filters.approvalOnly === true) {
         query.set("approvalOnly", "true");
+      }
+      if (filters.failedOnly === true) {
+        query.set("failedOnly", "true");
       }
       if (filters.statuses !== undefined && filters.statuses.length > 0) {
         query.set("status", filters.statuses.join(","));

@@ -66,7 +66,7 @@ export function AutomationPage() {
         <ErrorNote
           error={detailQuery.error}
           onRetry={() => void detailQuery.refetch()}
-          title="This automation could not be loaded."
+          title="This automation could not be loaded"
         />
       </Page>
     );
@@ -407,7 +407,7 @@ function AboutTab({ automation }: { readonly automation: AutomationDetail }) {
         ) : null}
         {flow.mermaidError === null ? null : (
           <AboutCard title="Flow">
-            <ErrorNote error={flow.mermaidError} title="The flow diagram could not be read." />
+            <ErrorNote error={flow.mermaidError} title="The flow diagram could not be read" />
           </AboutCard>
         )}
       </div>
@@ -457,7 +457,7 @@ function Fact(props: { readonly label: ReactNode; readonly children: ReactNode }
 
 function TriggerFacts({ trigger }: { readonly trigger: TriggerSummary | null }) {
   const now = useNow();
-  if (trigger === null) return <p className="t-meta">This automation has no trigger.</p>;
+  if (trigger === null) return <p className="t-meta">This automation has no trigger</p>;
   return (
     <>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
@@ -548,7 +548,7 @@ function ApiCheckFacts({ automation }: { readonly automation: AutomationDetail }
         <>
           {record.lastOutput !== null || record.lastStderrTail === null ? (
             <pre className="screen max-h-[220px] whitespace-pre-wrap break-all">
-              {record.lastOutput ?? "The check printed nothing."}
+              {record.lastOutput ?? "The check printed nothing"}
             </pre>
           ) : null}
           {record.lastStderrTail === null ? null : (
@@ -591,7 +591,7 @@ const SECRET_CHIP = { bound: "Set", missing: "Missing", unbound: "Deploy again" 
 /** The secrets and accounts config.yaml declares, each with its state and the field to fix it. */
 function Needs({ automation }: { readonly automation: AutomationDetail }) {
   if (automation.requiredSecrets.length === 0 && automation.requiredConnections.length === 0) {
-    return <p className="t-meta">It needs no secrets or accounts.</p>;
+    return <p className="t-meta">It needs no secrets or accounts</p>;
   }
   return (
     <div className="grid gap-3">

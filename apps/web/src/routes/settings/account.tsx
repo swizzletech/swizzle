@@ -145,7 +145,7 @@ export function Account() {
       </form>
       {sessions.isError ? (
         <div className="p-4">
-          <ErrorNote error={sessions.error} title="The signed-in browsers could not be loaded." />
+          <ErrorNote error={sessions.error} title="The signed-in browsers could not be loaded" />
         </div>
       ) : sessions.data === undefined ? (
         <Skeleton label="Loading signed-in browsers" lines={1} />
@@ -161,7 +161,7 @@ export function Account() {
                 </span>
                 <span className="t-meta">
                   Signed in {ageInWords(session.createdAt, now)}, last seen{" "}
-                  {ageInWords(session.lastSeenAt, now)}.
+                  {ageInWords(session.lastSeenAt, now)}
                 </span>
               </span>
               {session.current ? null : (

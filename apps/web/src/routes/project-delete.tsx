@@ -101,7 +101,7 @@ function DeleteProjectForm(props: {
         Delete {project.name}
       </h2>
       {contents.isError ? (
-        <ErrorNote error={contents.error} title="What the project holds could not be loaded." />
+        <ErrorNote error={contents.error} title="What the project holds could not be loaded" />
       ) : contents.data === undefined ? (
         <Skeleton label="Loading what the project holds" lines={3} />
       ) : (

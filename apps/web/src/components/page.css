@@ -73,10 +73,10 @@
   .page > .dtabs + .page-body > .page-content {
     padding-top: 16px;
   }
-  /* Every page type's width: what a 1920 px window leaves beside the sidebar. A wider window keeps
-     this one right edge, and a narrower one fills up. */
+  /* Every page type's width, its margins included. A wider window keeps this one right edge, and a
+     narrower one fills up. */
   .page {
-    --page-width: 1696px;
+    --page-width: 1600px;
   }
 
   @media (max-width: 900px) {

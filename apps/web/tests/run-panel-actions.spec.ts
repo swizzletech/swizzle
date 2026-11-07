@@ -18,12 +18,19 @@ for (const width of [390, 800, 1280]) {
     const finished = state.runDetails.get(OK_RUN_ID);
     if (finished === undefined) throw new Error("Missing run fixture");
     const phases = [
-      { ...finished, finishedAt: null, startedAt: null, status: "queued" as const },
-      { ...finished, finishedAt: null, status: "running" as const },
+      {
+        ...finished,
+        finishedAt: null,
+        startedAt: null,
+        state: "queued" as const,
+        status: "queued" as const,
+      },
+      { ...finished, finishedAt: null, state: "running" as const, status: "running" as const },
       {
         ...finished,
         deadLetterReason: "retries-exhausted" as const,
         errorMessage: "Automation exited with code 1.",
+        state: "dead-lettered" as const,
         status: "dead-lettered" as const,
       },
     ];

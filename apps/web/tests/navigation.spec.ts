@@ -18,7 +18,7 @@ for (const path of ["/secrets", "/connections", "/alerting", "/settings/cli-acce
   test(`${path} no longer exists`, async ({ page }) => {
     await mockDashboardApi(page, seededState());
     await page.goto(path);
-    await expect(page.getByRole("heading", { name: "This page does not exist." })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "This page does not exist" })).toBeVisible();
   });
 }
 
@@ -38,7 +38,7 @@ test("an empty instance shows only the three steps to the first automation", asy
   await mockDashboardApi(page, emptyState());
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Nothing runs here yet." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Nothing runs here yet" })).toBeVisible();
   await expect(page.getByTestId("empty-steps").getByRole("heading")).toHaveText([
     "Connect your agent",
     "Ask your agent",

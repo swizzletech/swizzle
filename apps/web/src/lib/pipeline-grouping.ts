@@ -26,7 +26,7 @@ interface PipelineListItem {
   readonly stageCount: number;
   /** Any member's latest run is queued or running. */
   readonly live: boolean;
-  /** Any member's latest run failed or dead-lettered. */
+  /** Any member's latest run failed; a cancelled one did not. */
   readonly failing: boolean;
   /** Most recent run activity (queuedAt) across all members, or null if none ran. */
   readonly lastActivityAt: string | null;
@@ -41,8 +41,8 @@ export function isAutomationLive(automation: AutomationSummary): boolean {
 }
 
 function isAutomationFailing(automation: AutomationSummary): boolean {
-  const status = automation.lastRun?.status;
-  return status === "failed" || status === "dead-lettered";
+  const state = automation.lastRun?.state;
+  return state === "failed" || state === "dead-lettered";
 }
 
 function chainSourceSlugs(automation: AutomationSummary): readonly string[] {

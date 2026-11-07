@@ -60,6 +60,7 @@ describe("buildAttention", () => {
     errorMessage: status === "failed" ? "Automation exited with code 1." : null,
     queuedAt: NOW,
     runId,
+    state: status,
     status,
     triggerType: "manual",
   });

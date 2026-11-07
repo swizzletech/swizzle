@@ -41,7 +41,7 @@ export function ProjectPage() {
   if (projects.isError) {
     return (
       <Page path={path} title={reference} type="administration">
-        <ErrorNote error={projects.error} title="The projects could not be loaded." />
+        <ErrorNote error={projects.error} title="The projects could not be loaded" />
       </Page>
     );
   }
@@ -61,7 +61,7 @@ export function ProjectPage() {
     return (
       <Page path={path} title={reference} type="administration">
         <div className="errbox" role="alert">
-          <b>No project {reference} for you.</b>
+          <b>No project {reference} for you</b>
           <p>
             Either it does not exist, or no grant gives you access to it. An admin of the project,
             or an owner or admin of this instance, can add you.
@@ -158,7 +158,7 @@ function AdministeredProject(props: { readonly project: Project; readonly tab: P
 function ProjectAccessTabs(props: { readonly project: Project; readonly tab: ProjectTab }) {
   const access = useProjectAccess(props.project.slug);
   if (access.isError) {
-    return <ErrorNote error={access.error} title="Who has access could not be loaded." />;
+    return <ErrorNote error={access.error} title="Who has access could not be loaded" />;
   }
   if (access.data === undefined) {
     return (
@@ -198,7 +198,7 @@ function OwnAccess({ project }: { readonly project: Project }) {
         </p>
       </div>
       {roles.isError ? (
-        <ErrorNote error={roles.error} title="Your access could not be loaded." />
+        <ErrorNote error={roles.error} title="Your access could not be loaded" />
       ) : roles.data === undefined ? (
         <div className="card">
           <Skeleton label="Loading your access" lines={2} />
@@ -349,7 +349,7 @@ function Environments({ access }: { readonly access: ProjectAccess }) {
                   </button>
                 </div>
               ) : (
-                <div className="setting t-meta">Protect {environment} to grant access in it.</div>
+                <div className="setting t-meta">Protect {environment} to grant access in it</div>
               )}
               {isProtected && sharing === environment ? (
                 <div className="p-3">
@@ -378,8 +378,8 @@ function HolderGrantsIn(props: { readonly access: ProjectAccess; readonly enviro
   return (
     <span className="t-meta">
       {grants.length === 0
-        ? "No environment grant."
-        : `Environment grants: ${grants.map((grant) => `${nameOf(grant.subject)} as ${grant.role}`).join(", ")}.`}
+        ? "No environment grant"
+        : `Environment grants: ${grants.map((grant) => `${nameOf(grant.subject)} as ${grant.role}`).join(", ")}`}
     </span>
   );
 }

@@ -135,7 +135,7 @@ export function AgentAccess() {
               {projects.isError ? (
                 <ErrorNote
                   error={projects.error}
-                  title="The projects could not be loaded, so this token cannot be limited to some of them yet."
+                  title="The projects could not be loaded, so this token cannot be limited to some of them yet"
                 />
               ) : null}
               <ScopeFields
@@ -154,7 +154,7 @@ export function AgentAccess() {
         </form>
         {tokens.isError ? (
           <div className="p-4">
-            <ErrorNote error={tokens.error} title="The tokens could not be loaded." />
+            <ErrorNote error={tokens.error} title="The tokens could not be loaded" />
           </div>
         ) : tokens.data === undefined ? (
           <Skeleton label="Loading tokens" lines={2} />
@@ -228,7 +228,7 @@ function ServiceAccountLinks(props: {
       <div className="mt-2">
         <ErrorNote
           error={props.projects.error}
-          title="The projects could not be loaded, so their service accounts cannot be listed."
+          title="The projects could not be loaded, so their service accounts cannot be listed"
         />
       </div>
     );

@@ -13,12 +13,13 @@ describe("automationHealth", () => {
     requiredSecrets: [],
     trigger: { status: "active" },
   } as unknown as AutomationSummary;
-  const glance = (status: "failed" | "waiting") => ({
+  const glance = (state: "cancelled" | "failed" | "waiting") => ({
     errorCode: null,
     errorMessage: null,
     queuedAt: NOW.toISOString(),
-    runId: status,
-    status,
+    runId: state,
+    state,
+    status: state === "cancelled" ? ("dead-lettered" as const) : state,
     triggerType: "manual" as const,
   });
 
@@ -38,6 +39,11 @@ describe("automationHealth", () => {
     ).toBe("blocked");
     expect(automationHealth({ ...base, recentRuns: [glance("waiting")] })).toBe("waiting");
     expect(automationHealth(base)).toBe("idle");
+  });
+
+  it("draws a cancelled latest run neutral, not as failing", () => {
+    expect(automationHealth({ ...base, recentRuns: [glance("cancelled")] })).toBe("idle");
+    expect(automationHealth({ ...base, recentRuns: [glance("failed")] })).toBe("failing");
   });
 });
 

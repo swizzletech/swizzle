@@ -23,7 +23,11 @@ function automation(
     automationSlug: slug,
     invokesAutomationSlugs: opts.invokes ?? [],
     lastRun: opts.lastRunStatus
-      ? { queuedAt: opts.queuedAt ?? "2026-07-09T10:00:00.000Z", status: opts.lastRunStatus }
+      ? {
+          queuedAt: opts.queuedAt ?? "2026-07-09T10:00:00.000Z",
+          state: opts.lastRunStatus,
+          status: opts.lastRunStatus,
+        }
       : null,
     trigger: {
       chainSourceAutomationSlugs: opts.sources ?? [],

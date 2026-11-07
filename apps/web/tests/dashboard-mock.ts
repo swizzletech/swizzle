@@ -129,6 +129,7 @@ function run(
     projectId: PROJECT_ID,
     queuedAt: ago(5 * MINUTE),
     startedAt: ago(5 * MINUTE),
+    state: overrides.deadLetterReason === "user-cancelled" ? "cancelled" : overrides.status,
     triggerType: "webhook",
     version: "1.1.0",
     versionId: "version-1",
@@ -136,6 +137,10 @@ function run(
 
     ...overrides,
   };
+}
+
+function failed(item: RunListItem): boolean {
+  return item.state === "failed" || item.state === "dead-lettered";
 }
 
 function automation(
@@ -178,6 +183,7 @@ function glance(item: RunListItem): AutomationSummary["recentRuns"][number] {
     errorMessage: item.errorMessage,
     queuedAt: item.queuedAt,
     runId: item.runId,
+    state: item.state,
     status: item.status,
     triggerType: item.triggerType,
   };
@@ -626,6 +632,7 @@ export async function mockDashboardApi(
       }
       if (is("GET", /^\/dashboard\/overview$/u)) {
         const counts = {
+          cancelled: 0,
           "dead-lettered": 0,
           failed: 0,
           queued: 0,
@@ -633,10 +640,8 @@ export async function mockDashboardApi(
           succeeded: 0,
           waiting: 0,
         };
-        for (const item of state.runs) counts[item.status] += 1;
-        const lastFailure = state.runs.find(
-          (item) => item.status === "failed" || item.status === "dead-lettered",
-        );
+        for (const item of state.runs) counts[item.state] += 1;
+        const lastFailure = state.runs.find(failed);
         return json(route, {
           deploy: state.deploy,
           environment: "staging",
@@ -690,13 +695,15 @@ export async function mockDashboardApi(
         const parent = url.searchParams.get("parentRunId");
         const topLevelOnly = url.searchParams.get("topLevelOnly") === "true";
         const approvalOnly = url.searchParams.get("approvalOnly") === "true";
+        const failedOnly = url.searchParams.get("failedOnly") === "true";
         const runs = state.runs.filter(
           (item) =>
             (statuses.length === 0 || statuses.includes(item.status)) &&
             (slug === null || item.automationSlug === slug) &&
             (parent === null || item.parentRunId === parent) &&
             (!topLevelOnly || item.parentRunId === null) &&
-            (!approvalOnly || item.approval !== null),
+            (!approvalOnly || item.approval !== null) &&
+            (!failedOnly || failed(item)),
         );
         // A cursor here is just the offset of the next page; the client only hands it back.
         const from = Number(url.searchParams.get("cursor") ?? 0);
@@ -803,6 +810,7 @@ export async function mockDashboardApi(
         );
         const resumed = {
           approval: null,
+          state: "queued" as const,
           status: "queued" as const,
           wait: null,
         };

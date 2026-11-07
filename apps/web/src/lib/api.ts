@@ -63,6 +63,7 @@ import type {
 } from "@swizzle/runtime/http-contract";
 
 export type RunStatus = DashboardRunListItem["status"];
+export type RunState = DashboardRunListItem["state"];
 
 // The run phases of @swizzle/db, which this seam may import as types only. Typed as the package's
 // table, so a status that changes phase or a new status fails the build until this copy agrees.
