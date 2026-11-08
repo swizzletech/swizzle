@@ -7,9 +7,9 @@ Versions follow Semantic Versioning. Tags use `vX.Y.Z`; pre-releases use `X.Y.Z-
 
 ### Added
 
-- The Overview shows each automation's last 24 hours as a timetable: one row per automation with its runs per hour, colored by result, and the deploys inside that window. `GET /dashboard/overview` returns it as `timetable` and takes `utcOffset`, so the hours follow the viewer's clock.
+- The Overview shows each automation's last 24 hours as a timetable: one row per automation with its runs per hour, colored by result, and the deploys inside that window. A run another run started does not count. `GET /dashboard/overview` returns it as `timetable` and takes `utcOffset`, so the hours follow the viewer's clock.
 - `GET /dashboard/runs` returns `nextCursor` and takes `cursor`, so a client reaches every run of a filter past the 200 runs of one page. **Load older runs** in the dashboard uses it.
-- `GET /dashboard/overview` returns `lastFailureAt`, the end of the last failed run.
+- `GET /dashboard/overview` returns `lastFailureAt`, the end of the failed run queued last, or its queue time when it never started. A run another run started does not count.
 
 ### Changed
 
