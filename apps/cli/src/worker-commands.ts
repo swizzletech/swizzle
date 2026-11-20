@@ -15,12 +15,11 @@ import type {
   WorkersResponse,
 } from "@swizzle/runtime/http-contract";
 import type { Command } from "commander";
-import { apiRequest } from "./api.js";
+import { apiRequest, DEFAULT_API_URL } from "./api.js";
 import {
   type ApiCommandOptions,
   addFieldsOption,
   buildApiUrl,
-  DEFAULT_API_URL,
   type FieldsCommandOptions,
   localCommand,
   type RunHandler,
@@ -285,6 +284,7 @@ export function registerWorkerCommands(program: Command, io: CliIO, runHandler: 
       let saved = false;
       try {
         const data = await apiRequest<WorkerCredential>(url, {
+          apiUrl,
           token: null,
           method: "POST",
           headers: { "content-type": "application/json" },

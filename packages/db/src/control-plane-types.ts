@@ -139,7 +139,7 @@ export interface ControlPlaneStore {
     environment: string,
     excludeRunId?: string,
   ): Promise<number>;
-  countDeadLetteredRunsSince(
+  countDeadLetteredFailuresSince(
     automationId: string,
     environment: string,
     since: string,

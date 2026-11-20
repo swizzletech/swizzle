@@ -9,11 +9,11 @@ catalog:
   # Held on 26: the types follow the Node that mise.toml and the images run.
   "@types/node": ^26.6.6
   "@types/pg": ^8.23.1
-  bullmq: ^6.7.1
+  bullmq: ^6.7.8
   fastify: ^5.12.8
   pg: ^8.23.1
   pino: ^10.4.0
-  tar: ^7.5.22
+  tar: ^7.5.23
   tsx: ^4.23.15
   # Held on 6: dependency-cruiser 18.7 parses TypeScript through its compiler API (>=2 <7),
   # which TypeScript 7 no longer ships.
@@ -25,6 +25,9 @@ catalog:
 verifyDepsBeforeRun: error
 
 overrides:
+  # Held on 3.5 for every dependent, so tracing loads one copy: the 3.6.0 declarations of
+  # register-hooks.mjs fail typecheck in packages/core/src/tracing.ts (TS2339, no `register`).
+  import-in-the-middle: ~3.5.3
   # drizzle-kit bundles tsx and does not use this obsolete loader, which pulls vulnerable esbuild.
   "drizzle-kit>@esbuild-kit/esm-loader": "-"
   # gaxios 7 declares rimraf but never loads it; the unused rimraf 5 pulls vulnerable glob 10.

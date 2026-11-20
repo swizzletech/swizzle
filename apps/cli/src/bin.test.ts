@@ -101,3 +101,114 @@ describe("swizzle logs --full", () => {
     }
   });
 });
+
+describe("a profile aimed at the dashboard", () => {
+  it("reports an actionable API URL error for read commands", async ({ signal }) => {
+    const server = createServer((_request, response) => {
+      response.setHeader("content-type", "text/html");
+      response.end("<!doctype html><html><body>Swizzle</body></html>");
+    });
+    try {
+      server.listen(0, "127.0.0.1");
+      await once(server, "listening", { signal });
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("No dashboard port");
+      const url = `http://127.0.0.1:${address.port}`;
+      const configHome = await temporaryDirectory("swizzle-cli-dashboard-url-");
+      await writeFile(
+        path.join(configHome, "config.toml"),
+        [
+          'default_profile = "dashboard"',
+          "[profile.dashboard]",
+          `url = "${url}"`,
+          'env = "staging"',
+          'token = "fixture-token"',
+        ].join("\n"),
+      );
+      for (const command of [
+        ["notify", "list"],
+        ["secret", "list"],
+        ["projects", "list"],
+      ]) {
+        const result = await run(
+          process.execPath,
+          ["--conditions=swizzle-source", "--import", "tsx", bin, ...command, "--json"],
+          { env: { ...process.env, SWIZZLE_CONFIG_HOME: configHome, SWIZZLE_PROFILE: "" }, signal },
+        ).then(
+          (output) => ({ ...output, code: 0 }),
+          (error) => ({
+            stdout: String(error.stdout),
+            stderr: String(error.stderr),
+            code: error.code,
+          }),
+        );
+        expect(result.code).not.toBe(0);
+        expect(result.stderr).toBe("");
+        expect(result.stdout).not.toContain("UNEXPECTED_CLI_ERROR");
+        const output = JSON.parse(result.stdout);
+        expect(output).toMatchObject({ code: "INVALID_API_RESPONSE" });
+        expect(result.stdout).toContain(url);
+        expect(result.stdout).toContain("does not answer as a Swizzle API");
+        expect(result.stdout).toContain(`${url}/api`);
+      }
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+});
+
+describe("swizzle worker enroll", () => {
+  it("suggests the API base URL when given the dashboard root", async ({ signal }) => {
+    const server = createServer((_request, response) => {
+      response.setHeader("content-type", "text/html");
+      response.end("<!doctype html><html><body>Swizzle</body></html>");
+    });
+    try {
+      server.listen(0, "127.0.0.1");
+      await once(server, "listening", { signal });
+      const address = server.address();
+      if (address === null || typeof address === "string") throw new Error("No dashboard port");
+      const url = `http://127.0.0.1:${address.port}`;
+      const configHome = await temporaryDirectory("swizzle-cli-worker-enroll-");
+      const enrollment = run(
+        process.execPath,
+        [
+          "--conditions=swizzle-source",
+          "--import",
+          "tsx",
+          bin,
+          "worker",
+          "enroll",
+          "--api-url",
+          url,
+          "--credential-file",
+          path.join(configHome, "worker.env"),
+          "--json",
+        ],
+        { env: { ...process.env, SWIZZLE_CONFIG_HOME: configHome, SWIZZLE_PROFILE: "" }, signal },
+      );
+      enrollment.child.stdin?.end("fixture-code");
+      const result = await enrollment.then(
+        (output) => ({ ...output, code: 0 }),
+        (error) => ({
+          stdout: String(error.stdout),
+          stderr: String(error.stderr),
+          code: error.code,
+        }),
+      );
+      expect(result.code).toBe(5);
+      expect(result.stderr).toBe("");
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        code: "INVALID_API_RESPONSE",
+        error: `${url} does not answer as a Swizzle API. Expected a JSON response.`,
+        help: [expect.stringContaining(`The dashboard serves the API at ${url}/api.`)],
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+  });
+});

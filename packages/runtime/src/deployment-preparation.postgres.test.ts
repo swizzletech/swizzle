@@ -7,8 +7,6 @@ import { AUTOMATION_RUNTIME_PROFILE_DEFAULT } from "@swizzle/config";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { temporaryDirectory, waitFor } from "../../../test/support.js";
 import { createAutomationFixture } from "../test/platform-harness.js";
-import { readExecutionSource } from "./execution-wire.js";
-import { createArtifactStorageForReference } from "./storage.js";
 import { loadAutomationDefinition } from "./validation.js";
 
 const execFileAsync = promisify(execFile);
@@ -307,6 +305,7 @@ async function freshRuntime() {
   vi.resetModules();
   return {
     ...(await import("./deployment-preparation.js")),
+    ...(await import("./deployed-execution.js")),
     ...(await import("../../../test/platform.js")),
     ...(await import("./run-image.js")),
     ...(await import("./run-image-prune.js")),
@@ -319,7 +318,8 @@ async function freshRuntime() {
  * with `environment` as the worker's environment and its log messages in `logged`.
  */
 async function platformWithPreparation(environment: NodeJS.ProcessEnv = { ...process.env }) {
-  const { testPlatform, pruneRunImages, startDeploymentPreparation } = await freshRuntime();
+  const { testPlatform, pruneRunImages, startDeploymentPreparation, readDeployedSource } =
+    await freshRuntime();
   const artifactsDirectory = path.join(await temporaryDirectory("swizzle-platform-"), "artifacts");
   environment.SWIZZLE_ARTIFACTS_DIR = artifactsDirectory;
   const platform = await testPlatform({ artifactsDirectory });
@@ -355,16 +355,12 @@ async function platformWithPreparation(environment: NodeJS.ProcessEnv = { ...pro
         for (const deployment of active
           .filter((deployment) => !knownIds.includes(deployment.deploymentId))
           .slice(0, 1)) {
-          deployments.push(
-            await createArtifactStorageForReference(deployment, {
-              environment,
-            }).withSourceDirectory(deployment, async (directory) => ({
-              deploymentId: deployment.deploymentId,
-              automationName: deployment.automationName,
-              deployedAt: deployment.deployedAt,
-              files: await readExecutionSource(directory),
-            })),
-          );
+          deployments.push({
+            deploymentId: deployment.deploymentId,
+            automationName: deployment.automationName,
+            deployedAt: deployment.deployedAt,
+            files: await readDeployedSource(deployment, environment),
+          });
         }
         return { activeIds: active.map((deployment) => deployment.deploymentId), deployments };
       },

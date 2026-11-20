@@ -5,6 +5,7 @@ import {
   createAutomationConfigJsonSchema,
   inferAutomationLanguage,
   parseAutomationConfig,
+  stringifyAutomationConfig,
 } from "./schema.js";
 
 describe("parseAutomationConfig", () => {
@@ -26,6 +27,18 @@ runtime:
       ).toThrow(/version.*Invalid.*>=.*<=.*>.*<.*=/);
     },
   );
+
+  it("accepts normalized source saved by earlier releases", () => {
+    const stored = stringifyAutomationConfig(
+      parseAutomationConfig(`name: restored-source
+version: 1.0.0
+entrypoint: main.py
+trigger:
+  type: webhook
+`),
+    );
+    expect(parseAutomationConfig(stored).runtime.binary_version_matching).toBe("numeric-prefix");
+  });
 
   it("rejects unknown keys and names every offending path", () => {
     const parse = () =>

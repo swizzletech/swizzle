@@ -448,6 +448,76 @@ describe("platform notifications", () => {
     expect(telegramFetch).toHaveBeenCalledTimes(1);
   });
 
+  it.each(["user-cancelled", "parent-cancelled"] as const)(
+    "excludes %s runs from repeated failures while preserving real failure alerts",
+    async (cancelReason) => {
+      const platform = await testPlatform();
+      await platform.deployAutomationToPlatform({
+        environment: "local",
+        automationDirectory: path.join(packageRoot, "test-fixtures/invalid-json-output"),
+      });
+      const target = await ruleTarget(platform, "invalid-json-output");
+      for (const eventType of ["repeated-failures", "dead-lettered"] as const) {
+        await platform.createNotificationRule({
+          ...target,
+          environment: "local",
+          chatId: "cancellation-alerts",
+          eventType,
+          threshold: 2,
+          windowSeconds: 3600,
+          cooldownSeconds: 1,
+        });
+      }
+      const start = () =>
+        platform.startManualRun({
+          environment: "local",
+          automationName: "invalid-json-output",
+          payload: {},
+        });
+      const cancelled = await start();
+      if (cancelReason === "user-cancelled") {
+        await platform.cancelPlatformRun(cancelled.runId);
+      } else {
+        await platform.store.updateRunState({
+          runId: cancelled.runId,
+          status: "dead-lettered",
+          deadLetterReason: cancelReason,
+          finishedAt: new Date().toISOString(),
+        });
+      }
+      expect((await platform.getPlatformRun(cancelled.runId)).deadLetterReason).toBe(cancelReason);
+      expect(await platform.listNotificationDeliveries({ environment: "local" })).toEqual([]);
+      for (const [index, reason] of ["retries-exhausted", "terminal-failure"].entries()) {
+        const { runId } = await start();
+        await platform.store.updateRunState({
+          runId,
+          status: "dead-lettered",
+          deadLetterReason: reason,
+          finishedAt: new Date().toISOString(),
+        });
+        await processRunNotifications({
+          now: new Date(Date.now() + index * 2000),
+          run: await platform.getPlatformRun(runId),
+          store: platform.store,
+        });
+        const deliveries = await platform.listNotificationDeliveries({ environment: "local" });
+        expect(
+          deliveries.filter((delivery) => delivery.eventType === "repeated-failures"),
+        ).toHaveLength(index);
+        expect(
+          deliveries.filter((delivery) => delivery.eventType === "dead-lettered"),
+        ).toHaveLength(index + 1);
+        expect(deliveries.every((delivery) => delivery.status === "pending")).toBe(true);
+      }
+      const deliveries = await platform.listNotificationDeliveries({ environment: "local" });
+      expect(
+        deliveries.find((delivery) => delivery.eventType === "repeated-failures")?.metadata
+          .failureCount,
+      ).toBe(2);
+      await platform.close();
+    },
+  );
+
   it("waits for the repeated-failure threshold before sending alerts", async () => {
     vi.stubEnv("SWIZZLE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
     const stateDirectory = await temporaryDirectory("swizzle-platform-");

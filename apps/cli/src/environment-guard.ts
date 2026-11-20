@@ -1,6 +1,6 @@
 import type { EnvironmentsResponse } from "@swizzle/runtime/http-contract";
-import { apiRequest, resolveApiUrl } from "./api.js";
-import { type ApiCommandOptions, DEFAULT_API_URL } from "./command-support.js";
+import { apiRequest, DEFAULT_API_URL, resolveApiUrl } from "./api.js";
+import type { ApiCommandOptions } from "./command-support.js";
 import { AgentError, EXIT_CODES } from "./output.js";
 import { loadProfileConfig, resolveEnvironment, resolveProfile } from "./profile.js";
 

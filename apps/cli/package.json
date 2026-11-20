@@ -1,6 +1,6 @@
 {
   "name": "@swizzle/cli",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "license": "Apache-2.0",
   "private": true,
   "type": "module",
@@ -24,7 +24,7 @@
     "@swizzle/runtime": "workspace:*",
     "@toon-format/toon": "^4.4.0",
     "axi-sdk-js": "^0.1.14",
-    "commander": "^15.0.0",
+    "commander": "^15.1.0",
     "esbuild": "^0.28.2"
   },
   "repository": {

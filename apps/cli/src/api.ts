@@ -2,6 +2,8 @@ import { type ApiErrorBody, mapApiErrorToAgentError } from "./errors.js";
 import { AgentError, EXIT_CODES } from "./output.js";
 import type { BearerToken } from "./profile.js";
 
+export const DEFAULT_API_URL = process.env.SWIZZLE_API_URL ?? "http://api.localhost:19826";
+
 /**
  * Resolve an API endpoint path against a base URL that may itself contain a
  * path prefix (e.g. `http://localhost:19826/api`). The whatwg `URL` constructor
@@ -23,6 +25,7 @@ export function resolveApiUrl(base: string, pathname: string): URL {
 }
 
 export interface ApiRequestOptions extends RequestInit {
+  readonly apiUrl?: string;
   readonly timeoutMs?: number;
   readonly token?: BearerToken | null;
   readonly debug?: boolean;
@@ -36,18 +39,20 @@ export interface ApiRequestOptions extends RequestInit {
 
 export interface ApiAmbientContext {
   readonly token: BearerToken | null;
+  readonly apiUrl: string;
   readonly debug: boolean;
   readonly debugLogger?: (message: string) => void;
 }
 
-let ambientContext: ApiAmbientContext = { token: null, debug: false };
+const defaultContext: ApiAmbientContext = { apiUrl: DEFAULT_API_URL, token: null, debug: false };
+let ambientContext = defaultContext;
 
 export function setApiAmbientContext(context: ApiAmbientContext): void {
   ambientContext = context;
 }
 
 export function resetApiAmbientContext(): void {
-  ambientContext = { token: null, debug: false };
+  ambientContext = defaultContext;
 }
 
 export async function apiRequest<T = unknown>(
@@ -55,6 +60,7 @@ export async function apiRequest<T = unknown>(
   init: ApiRequestOptions = {},
 ): Promise<T> {
   const {
+    apiUrl = ambientContext.apiUrl,
     timeoutMs = 30_000,
     token: tokenOverride,
     debug: debugOverride,
@@ -134,28 +140,43 @@ export async function apiRequest<T = unknown>(
   }
   clearTimeout(timer);
 
-  if (response.status === 204) {
-    return undefined as T;
-  }
-
-  if (response.status === 404 && acceptNotFound) {
+  if (response.status === 204 || (response.status === 404 && acceptNotFound)) {
     return undefined as T;
   }
 
   const bodyText = await response.text();
-  const body = bodyText.length > 0 ? tryParseJson(bodyText) : undefined;
+  let body: unknown;
+  if (bodyText.length > 0) {
+    try {
+      body = JSON.parse(bodyText);
+    } catch {
+      if (!response.ok) body = { error: "INVALID_API_RESPONSE", message: bodyText };
+    }
+  }
 
   if (!response.ok) {
     throw mapApiErrorToAgentError(response.status, body as ApiErrorBody | undefined, url);
   }
+  if (bodyText.length === 0) {
+    return undefined as T;
+  }
+  if (typeof body !== "object" || body === null) {
+    throw invalidApiResponse(apiUrl, response.status);
+  }
 
-  return (body as T | undefined) ?? (undefined as T);
+  return body as T;
 }
 
-function tryParseJson(value: string): unknown {
-  try {
-    return JSON.parse(value);
-  } catch {
-    return { error: "INVALID_API_RESPONSE", message: value };
-  }
+function invalidApiResponse(apiUrl: string, httpStatus: number): AgentError {
+  const suggestedUrl = new URL(apiUrl);
+  const basePath = suggestedUrl.pathname.replace(/\/$/u, "");
+  if (!basePath.endsWith("/api")) suggestedUrl.pathname = `${basePath}/api`;
+  return new AgentError({
+    code: "INVALID_API_RESPONSE",
+    message: `${apiUrl} does not answer as a Swizzle API. Expected a JSON response.`,
+    exitCode: EXIT_CODES.backend,
+    retryable: false,
+    hint: `Check the profile URL with \`swizzle profile list\`. The dashboard serves the API at ${suggestedUrl.toString()}. Set --api-url to the API URL.`,
+    details: { url: apiUrl, httpStatus },
+  });
 }

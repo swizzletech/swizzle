@@ -21,6 +21,9 @@ export function isFinishedRun(status: PlatformRunStatus): boolean {
 
 /** The dead-letter reason of a run a person cancelled. */
 export const USER_CANCELLED = "user-cancelled";
+export const PARENT_CANCELLED = "parent-cancelled";
+
+export const CANCELLED_RUN_REASONS = [USER_CANCELLED, PARENT_CANCELLED] as const;
 
 /** A run as its owner reads it: its status, or `cancelled`, because a cancelled run did not fail. */
 export type RunState = PlatformRunStatus | "cancelled";

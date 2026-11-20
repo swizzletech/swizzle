@@ -71,6 +71,7 @@ Every automation folder holds one `config.yaml`. The parser rejects any field th
 | `runtime.rate_limits` | map of string | no | `{}` | Named limits such as `60/min`. A worker takes one token per group before a run starts; SDK `pace(name)` spaces calls inside a run. |
 | `runtime.requirements` | object | no | - | Binaries and dependency manifests the run needs. |
 | `runtime.container` | object | no | - | Container sandbox settings. |
+| `runtime.binary_version_matching` | `numeric-prefix` | no | - | Accepted for source recovered from earlier deployments. New source can omit it; deployments use numeric-prefix binary version matching. |
 
 ## `runtime.permissions`
 

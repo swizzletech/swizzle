@@ -93,7 +93,7 @@ async function resolveTarget(options: ApiCommandOptions): Promise<HomeTarget> {
   if (resolved.source === "unpinned") {
     const instance = await apiRequest<EnvironmentsResponse>(
       resolveApiUrl(profile.url, "/environments").toString(),
-      { timeoutMs: HOME_TIMEOUT_MS, token: profile.token },
+      { apiUrl: profile.url, timeoutMs: HOME_TIMEOUT_MS, token: profile.token },
     );
     throw await buildEnvironmentNotPinnedError({
       profileName: profile.name,
@@ -203,7 +203,7 @@ async function liveState(
         url.searchParams.set("environment", target.environment);
         return url.toString();
       })(),
-      { timeoutMs: HOME_TIMEOUT_MS, token: target.token },
+      { apiUrl: target.url, timeoutMs: HOME_TIMEOUT_MS, token: target.token },
     );
   const [{ automations }, overview] = await Promise.all([
     get<AutomationsResponse>("/dashboard/automations"),

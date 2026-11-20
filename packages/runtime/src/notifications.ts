@@ -303,7 +303,7 @@ async function evaluateRule(input: {
 }): Promise<NotificationSignal | null> {
   const failureCount =
     input.rule.eventType === "repeated-failures"
-      ? await input.store.countDeadLetteredRunsSince(
+      ? await input.store.countDeadLetteredFailuresSince(
           input.run.automationId,
           input.run.environment,
           new Date(input.now.getTime() - input.rule.windowSeconds * 1000).toISOString(),

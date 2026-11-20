@@ -217,9 +217,16 @@ const runtimeInputSchema = z.strictObject({
   container: containerSchema.optional().describe("Container sandbox settings."),
 });
 
-export const runtimeConfigSchema = runtimeInputSchema.default(
-  runtimeInputSchema.parse({ on_overlap: "queue" }),
-);
+export const runtimeConfigSchema = runtimeInputSchema
+  .extend({
+    binary_version_matching: z
+      .literal("numeric-prefix")
+      .exactOptional()
+      .describe(
+        "Accepted for source recovered from earlier deployments. New source can omit it; deployments use numeric-prefix binary version matching.",
+      ),
+  })
+  .default(runtimeInputSchema.parse({ on_overlap: "queue" }));
 
 // Installed artifacts retain the binary-rule grammar accepted by earlier 1.x releases.
 const deployedRequirementsSchema = runtimeRequirementsSchema.extend({
@@ -229,7 +236,7 @@ const deployedRequirementsSchema = runtimeRequirementsSchema.extend({
 });
 export const deployedRuntimeConfigSchema = runtimeInputSchema
   .extend({
-    binary_version_matching: z.literal("numeric-prefix").optional(),
+    binary_version_matching: z.literal("numeric-prefix").exactOptional(),
     requirements: deployedRequirementsSchema.default(deployedRequirementsSchema.parse({})),
   })
   .default(runtimeConfigSchema.parse(undefined));
