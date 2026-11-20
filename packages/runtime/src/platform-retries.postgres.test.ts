@@ -2,7 +2,8 @@ import { copyFile, writeFile } from "node:fs/promises";
 
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { DEFAULT_PROJECT_ID } from "@swizzle/db";
+import { describe, expect, it, vi } from "vitest";
 
 import { testPlatform } from "../../../test/platform.js";
 
@@ -76,6 +77,106 @@ describe("platform retries", () => {
       status: "dead-lettered",
     });
   });
+
+  it.each([
+    { providerStatus: 503, errorCode: "PLATFORM_CONNECTION_REFRESH_FAILED", transient: true },
+    { providerStatus: 400, errorCode: "PLATFORM_CONNECTION_UNAUTHORIZED", transient: false },
+  ])(
+    "handles $errorCode before the process starts",
+    async ({ providerStatus, errorCode, transient }) => {
+      const platform = await testPlatform();
+      const authorization = await platform.beginConnectionAuthorization({
+        place: { environment: "local", projectId: DEFAULT_PROJECT_ID },
+        clientId: "client-id",
+        clientSecret: "client-secret",
+        name: "test-google",
+        provider: "google",
+        publicUrl: "https://api.example.com",
+        reauthorizes: null,
+        scopes: ["https://www.googleapis.com/auth/drive.readonly"],
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({
+                access_token: "access-token",
+                refresh_token: "refresh-token",
+                expires_in: 1,
+                token_type: "Bearer",
+              }),
+              { status: 200 },
+            ),
+        ),
+      );
+      expect(
+        await platform.completeConnectionCallback({
+          code: "auth-code",
+          providerFromPath: "google",
+          state: new URL(authorization.authorizationUrl).searchParams.get("state") ?? "",
+        }),
+      ).toMatchObject({ ok: true });
+      const automationDirectory = await createAutomationFixture({
+        name: "refresh-failure",
+        triggerLines: ["  type: webhook", "  path: /refresh-failure"],
+        configLines: [
+          "connections: [test-google]",
+          "api_check: { mode: passive }",
+          "runtime: { retry: { max_attempts: 3 } }",
+        ],
+      });
+      await platform.deployAutomationToPlatform({ environment: "local", automationDirectory });
+      const queued = await platform.startManualRun({
+        environment: "local",
+        automationName: "refresh-failure",
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(
+          async () =>
+            new Response(JSON.stringify({ error: "invalid_grant" }), { status: providerStatus }),
+        ),
+      );
+
+      if (transient) {
+        for (const attempt of [1, 2]) {
+          expect(await platform.processNextPlatformRun()).toMatchObject({
+            runId: queued.runId,
+            status: "queued",
+            attemptsMade: attempt,
+            attemptsMax: 3,
+            errorCode,
+            deadLetterReason: null,
+          });
+          expect((await platform.getPlatformRun(queued.runId)).executions).toHaveLength(attempt);
+          expect(
+            (await platform.getPlatformRun(queued.runId)).executions[attempt - 1],
+          ).toMatchObject({
+            executionNumber: attempt,
+            status: "retrying",
+            errorClassification: "retryable",
+            errorCode,
+          });
+        }
+      }
+      expect(await platform.processNextPlatformRun()).toMatchObject({
+        runId: queued.runId,
+        status: "dead-lettered",
+        attemptsMade: transient ? 3 : 1,
+        deadLetterReason: transient ? "retries-exhausted" : "terminal-failure",
+        errorCode,
+      });
+      const persisted = await platform.getPlatformRun(queued.runId);
+      expect(persisted.executions).toHaveLength(transient ? 3 : 1);
+      expect(persisted.executions.at(-1)).toMatchObject({
+        status: "dead-lettered",
+        errorClassification: transient ? "retryable" : "terminal",
+        errorCode,
+      });
+      expect(await platform.processNextPlatformRun()).toBeNull();
+    },
+  );
 
   it("memoizes completed run steps across retry attempts", async () => {
     const stateDirectory = await temporaryDirectory("swizzle-platform-");

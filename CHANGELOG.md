@@ -3,6 +3,12 @@
 Each release lists changes for people who run Swizzle and write automations.
 Versions follow Semantic Versioning. Tags use `vX.Y.Z`; pre-releases use `X.Y.Z-rc.N`.
 
+## Unreleased
+
+### Fixed
+
+- Runs retry transient connection token refresh failures while attempts remain, instead of failing permanently on the first attempt.
+
 ## 1.3.0
 
 ### Added
