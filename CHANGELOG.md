@@ -3,11 +3,18 @@
 Each release lists changes for people who run Swizzle and write automations.
 Versions follow Semantic Versioning. Tags use `vX.Y.Z`; pre-releases use `X.Y.Z-rc.N`.
 
-## Unreleased
+## 1.3.1
+
+### Changed
+
+- Dependencies are updated within their existing major versions, including Better Auth 1.7.26.
 
 ### Fixed
 
 - Runs retry transient connection token refresh failures while attempts remain, instead of failing permanently on the first attempt.
+- Source recovered from a deployment validates and deploys again. The artifact store keeps `config.yaml` as deployed, and validation accepts the `runtime.binary_version_matching: numeric-prefix` that earlier releases stored.
+- Runs a person or a parent run cancelled no longer count toward the repeated-failures alert.
+- CLI commands pointed at the dashboard instead of the API report `INVALID_API_RESPONSE` with the configured URL and its `/api` path instead of crashing. HTTP failures keep their status-based retry hints.
 
 ## 1.3.0
 

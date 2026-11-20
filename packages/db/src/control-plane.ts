@@ -77,7 +77,7 @@ import {
   cancelRun as cancelStoredRun,
   completeRunExecution as completeStoredRunExecution,
   countActiveRunsForAutomation as countStoredActiveRunsForAutomation,
-  countDeadLetteredRunsSince as countStoredDeadLetteredRunsSince,
+  countDeadLetteredFailuresSince as countStoredDeadLetteredFailuresSince,
   createChainJoinRun as createStoredChainJoinRun,
   createRun as createStoredRun,
   createRunExecution as createStoredRunExecution,
@@ -203,8 +203,8 @@ export function createPostgresControlPlaneStore(
       );
     },
 
-    async countDeadLetteredRunsSince(automationId, environment, since) {
-      return await countStoredDeadLetteredRunsSince(client, automationId, environment, since);
+    async countDeadLetteredFailuresSince(automationId, environment, since) {
+      return await countStoredDeadLetteredFailuresSince(client, automationId, environment, since);
     },
 
     async createMaintenanceRun(input) {

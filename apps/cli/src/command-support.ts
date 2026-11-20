@@ -1,9 +1,7 @@
 import { type Command, InvalidArgumentError } from "commander";
 
-import { resolveApiUrl } from "./api.js";
+import { DEFAULT_API_URL, resolveApiUrl } from "./api.js";
 import { AgentError, EXIT_CODES } from "./output.js";
-
-export const DEFAULT_API_URL = process.env.SWIZZLE_API_URL ?? "http://api.localhost:19826";
 
 /**
  * The target every command reads. `--api-url`, `--profile`, `-e` and `--debug` are global flags;

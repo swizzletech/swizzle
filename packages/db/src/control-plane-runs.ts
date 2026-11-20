@@ -38,7 +38,13 @@ import type {
   UpdateRunStateInput,
 } from "./control-plane-types.js";
 import type { ApprovalAssignee } from "./run-approval.js";
-import { FINISHED_RUN_STATUSES, isFinishedRun, OPEN_RUN_STATUSES } from "./run-status.js";
+import {
+  CANCELLED_RUN_REASONS,
+  FINISHED_RUN_STATUSES,
+  isFinishedRun,
+  OPEN_RUN_STATUSES,
+  USER_CANCELLED,
+} from "./run-status.js";
 import {
   automations,
   automationVersions,
@@ -97,7 +103,7 @@ export async function countActiveRunsForAutomation(
   return rows.length;
 }
 
-export async function countDeadLetteredRunsSince(
+export async function countDeadLetteredFailuresSince(
   client: DatabaseClient,
   automationId: string,
   environment: string,
@@ -112,6 +118,10 @@ export async function countDeadLetteredRunsSince(
         eq(runs.automationId, automationId),
         eq(deployments.environment, environment),
         eq(runs.status, "dead-lettered"),
+        or(
+          isNull(runs.deadLetterReason),
+          notInArray(runs.deadLetterReason, [...CANCELLED_RUN_REASONS]),
+        ),
         gte(runs.finishedAt, new Date(since)),
       ),
     );
@@ -713,7 +723,7 @@ export async function cancelRun(
       errorCode: "RUN_CANCELLED",
       errorClassification: "terminal",
       errorMessage: "Run cancelled by user.",
-      deadLetterReason: "user-cancelled",
+      deadLetterReason: USER_CANCELLED,
       wait: null,
     });
     const run = await getRunById(scoped, row.id);

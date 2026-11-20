@@ -13,7 +13,7 @@ import { RUN_STATUSES } from "@swizzle/db";
 import { Command, CommanderError } from "commander";
 import { registerAccessCommands } from "./access-commands.js";
 import { registerAdminCommands } from "./admin-commands.js";
-import { resetApiAmbientContext, setApiAmbientContext } from "./api.js";
+import { DEFAULT_API_URL, resetApiAmbientContext, setApiAmbientContext } from "./api.js";
 import { registerAutomationCommands } from "./automation-commands.js";
 import { registerBackup } from "./backup.js";
 import {
@@ -95,7 +95,12 @@ export function createProgram(io: CliIO = createNodeIO()): Command {
       actionCommand === program ||
       actionCommand.getOptionValue("localOnly") === true
     ) {
-      setApiAmbientContext({ debug: globals.debug === true, debugLogger, token: null });
+      setApiAmbientContext({
+        apiUrl: globals.apiUrl ?? DEFAULT_API_URL,
+        debug: globals.debug === true,
+        debugLogger,
+        token: null,
+      });
       return;
     }
 
@@ -118,7 +123,12 @@ export function createProgram(io: CliIO = createNodeIO()): Command {
       actionCommand.setOptionValueWithSource("project", resolved.project, "config");
     }
     // Command actions use this token for environment discovery and their API calls.
-    setApiAmbientContext({ debug: globals.debug === true, debugLogger, token: resolved.token });
+    setApiAmbientContext({
+      apiUrl: resolved.url,
+      debug: globals.debug === true,
+      debugLogger,
+      token: resolved.token,
+    });
   });
 
   program.commandsGroup("Build and run locally:");

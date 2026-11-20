@@ -3,6 +3,9 @@
 // of which ones it used, and the values to redact. prepareRunExecution and prepareCheckExecution call
 // prepareDeployedExecution when a worker claims the execution, hand the options to the worker, and
 // build the delivery within the source copy scope.
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
+import { stringifyAutomationConfig } from "@swizzle/config";
 import type {
   ControlPlaneStore,
   ResolvedSecret,
@@ -87,9 +90,7 @@ export async function prepareDeployedExecution<T>(
   use: (prepared: PreparedDeployment) => Promise<T>,
 ): Promise<T> {
   const { deployment, store } = input;
-  return await createArtifactStorageForReference(deployment, {
-    environment: input.environment,
-  }).withSourceDirectory(deployment, async (directory) => {
+  return await withDeployedSource(deployment, input.environment, async (directory) => {
     const timeoutGrant = await store.getAutomationTimeoutGrant({
       automationId: deployment.automationId,
       environment: deployment.environment,
@@ -140,10 +141,25 @@ export async function prepareDeployedExecution<T>(
 
 /** The deployed bundle as a worker receives it, read from a fresh copy of the source. */
 export async function readDeployedSource(
-  deployment: ArtifactStorageReference,
+  deployment: ArtifactStorageReference & Pick<StoredDeployment, "config">,
   environment: NodeJS.ProcessEnv,
 ): Promise<ExecutionSource> {
-  return await createArtifactStorageForReference(deployment, {
-    environment,
-  }).withSourceDirectory(deployment, readExecutionSource);
+  return await withDeployedSource(deployment, environment, readExecutionSource);
+}
+
+async function withDeployedSource<T>(
+  deployment: ArtifactStorageReference & Pick<StoredDeployment, "config">,
+  environment: NodeJS.ProcessEnv,
+  use: (directory: string) => Promise<T>,
+): Promise<T> {
+  return await createArtifactStorageForReference(deployment, { environment }).withSourceDirectory(
+    deployment,
+    async (directory) => {
+      await writeFile(
+        path.join(directory, "config.yaml"),
+        stringifyAutomationConfig(deployment.config),
+      );
+      return await use(directory);
+    },
+  );
 }

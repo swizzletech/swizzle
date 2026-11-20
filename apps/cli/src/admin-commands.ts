@@ -22,12 +22,11 @@ import type {
 } from "@swizzle/runtime/http-contract";
 import { type Command, Option } from "commander";
 
-import { apiRequest } from "./api.js";
+import { apiRequest, DEFAULT_API_URL } from "./api.js";
 import { resolveAutomationNameOrDie } from "./automation-api.js";
 import {
   type ApiCommandOptions,
   buildApiUrl,
-  DEFAULT_API_URL,
   type ExactCommandOptions,
   type PaginationCommandOptions,
   parseCount,

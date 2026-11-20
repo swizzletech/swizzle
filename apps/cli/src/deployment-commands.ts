@@ -14,7 +14,7 @@ import type {
 
 import type { Command } from "commander";
 
-import { apiRequest } from "./api.js";
+import { apiRequest, DEFAULT_API_URL } from "./api.js";
 import {
   packAutomationOrThrow,
   postDeployment,
@@ -26,7 +26,6 @@ import { formatList, formatTriggerSummary, readinessFields } from "./automation-
 import {
   type ApiCommandOptions,
   buildApiUrl,
-  DEFAULT_API_URL,
   type ExactCommandOptions,
   type RunHandler,
   requireYes,

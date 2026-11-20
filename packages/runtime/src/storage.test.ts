@@ -14,6 +14,7 @@ import { parseAutomationConfig } from "@swizzle/config";
 import { describe, expect, it, vi } from "vitest";
 import { recordingProxy, temporaryDirectory } from "../../../test/support.js";
 import { deployAutomation } from "./deploy.js";
+import { readDeployedSource } from "./deployed-execution.js";
 import {
   checkConfiguredArtifactStorageReadiness,
   createArtifactStorageForReference,
@@ -30,6 +31,30 @@ const packageRoot = path.resolve(sourceRoot, "..");
 const repoRoot = path.resolve(packageRoot, "../..");
 
 describe("artifact storage", () => {
+  it("keeps downloaded local source valid and byte-identical to the deployed config", async () => {
+    const artifactsDirectory = await temporaryDirectory("swizzle-source-roundtrip-");
+    const automationDirectory = path.join(repoRoot, "infra/examples/hello-webhook");
+    const original = await readFile(path.join(automationDirectory, "config.yaml"), "utf8");
+    const deployment = await deployAutomation({ artifactsDirectory, automationDirectory });
+    const transferred = await readDeployedSource(
+      { ...deployment, config: deployment.definition.config },
+      {},
+    );
+    const workerConfig = transferred.find((file) => file.path === "config.yaml");
+    expect(
+      parseAutomationConfig(
+        Buffer.from(workerConfig?.data ?? "", "base64").toString(),
+        "deployment",
+      ).runtime.binary_version_matching,
+    ).toBe("numeric-prefix");
+    const storage = createArtifactStorageForReference(deployment);
+    await storage.withSourceDirectory(deployment, async (directory) => {
+      const downloaded = await readFile(path.join(directory, "config.yaml"), "utf8");
+      expect(parseAutomationConfig(downloaded).name).toBe("hello-webhook");
+      expect(downloaded).toBe(original);
+    });
+  });
+
   it.each(["local", "s3"])(
     "refuses an existing %s store export target without modifying it",
     async (backend) => {
@@ -300,7 +325,8 @@ describe("artifact storage", () => {
         copiedDirectory = directory;
         const config = await readFile(path.join(directory, "config.yaml"), "utf8");
         expect(config).toContain("name: hello-webhook");
-        expect(parseAutomationConfig(config, "deployment").runtime.binary_version_matching).toBe(
+        expect(config).toBe(await readFile(configPath, "utf8"));
+        expect(parseAutomationConfig(config).runtime.binary_version_matching).toBe(
           "numeric-prefix",
         );
       });
