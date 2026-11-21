@@ -71,7 +71,7 @@ Every automation folder holds one `config.yaml`. The parser rejects any field th
 | `runtime.rate_limits` | map of string | no | `{}` | Named limits such as `60/min`. A worker takes one token per group before a run starts; SDK `pace(name)` spaces calls inside a run. |
 | `runtime.requirements` | object | no | - | Binaries and dependency manifests the run needs. |
 | `runtime.container` | object | no | - | Container sandbox settings. |
-| `runtime.binary_version_matching` | `numeric-prefix` | no | - | Accepted for source recovered from earlier deployments. New source can omit it; deployments use numeric-prefix binary version matching. |
+| `runtime.binary_version_matching` | `numeric-prefix` | no | - | Accepted for source recovered from earlier deployments. New deployments use numeric-prefix matching for bare numeric rules. |
 
 ## `runtime.permissions`
 
@@ -101,7 +101,7 @@ Every automation folder holds one `config.yaml`. The parser rejects any field th
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `runtime.requirements.binaries[].name` | non-empty string | yes | - | Executable name on the run's `PATH`: the runner image's for a deployed run, this machine's for `swizzle run`. |
-| `runtime.requirements.binaries[].version` | string matching `^(?:>=\|<=\|>\|<\|=)?\s*\d+(?:\.\d+)*$` | no | - | A bare numeric version matches a dotted prefix: `25` matches `25.03.0`, and `25.3` matches `25.03.0`. Comparisons `>=`, `<=`, `>`, `<` and `=` compare numeric components, treating omitted components as zero; `=25` means exactly `25.0.0`. Forms such as `^25` are invalid. A binary whose version the worker cannot tell fails every rule. |
+| `runtime.requirements.binaries[].version` | string matching `^(?:latest\|(?:>=\|<=\|>\|<\|=)?\s*\d+(?:\.\d+)*)$` | no | - | A bare numeric version matches a dotted prefix. `25` matches `25.03.0`, and `25.3` matches both `25.03.0` and `25.3.1`. Comparisons `>=`, `<=`, `>`, `<` and `=` treat omitted components as zero. `=25` means exactly `25.0.0`. `latest` matches any reported version. A binary with an unknown version fails every rule. Replace any other rule before validating or applying recovered source. |
 
 ## `runtime.requirements.node`
 

@@ -23,7 +23,7 @@ useCliTestEnvironment();
 beforeEach(withoutProfile);
 
 describe("swizzle validate", () => {
-  it("refuses unknown binary version rules before checking the machine", async () => {
+  it("refuses an unsupported binary version rule before checking the machine", async () => {
     const directory = await temporaryDirectory("swizzle-cli-version-rule-");
     await writeFile(
       path.join(directory, "config.yaml"),
@@ -43,7 +43,7 @@ describe("swizzle validate", () => {
     expect(await runCli(["validate", directory, "--json"], io)).toBe(3);
     expect(JSON.parse(io.stdoutText)).toMatchObject({
       code: "AUTOMATION_CONFIG_INVALID",
-      error: expect.stringMatching(/Invalid.*>=.*<=.*>.*<.*=/),
+      error: expect.stringMatching(/Invalid.*>=.*<=.*>.*<.*=.*latest/),
     });
   });
 

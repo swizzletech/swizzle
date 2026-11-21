@@ -16,8 +16,8 @@ import {
   AUTOMATION_RUNTIME_EXECUTION_MODES,
   AUTOMATION_RUNTIME_LANGUAGES,
   type AutomationRuntimeConfig,
-  deployedRuntimeConfigSchema,
   inferAutomationLanguage,
+  installedLegacyRuntimeConfigSchema,
   runtimeConfigSchema,
 } from "./schema/runtime.js";
 import {
@@ -312,18 +312,22 @@ export function normalizeAutomationConfig(
   };
 }
 
-const deployedConfigSchema = automationConfigRawSchema.safeExtend({
-  runtime: deployedRuntimeConfigSchema,
+const installedLegacyConfigSchema = automationConfigRawSchema.safeExtend({
+  runtime: installedLegacyRuntimeConfigSchema,
 });
 
 export function parseAutomationConfig(
   input: string,
   source: "source" | "deployment" = "source",
 ): AutomationConfig {
-  const schema = source === "deployment" ? deployedConfigSchema : automationConfigRawSchema;
-  const parsed = schema.safeParse(parseYaml(input));
+  const raw = parseYaml(input);
+  const current = automationConfigRawSchema.safeParse(raw);
+  const parsed =
+    !current.success && source === "deployment"
+      ? installedLegacyConfigSchema.safeParse(raw)
+      : current;
   if (!parsed.success) {
-    throw new Error(formatConfigIssues(parsed.error.issues));
+    throw new Error(formatConfigIssues((current.success ? parsed : current).error.issues));
   }
   const config = normalizeAutomationConfig(parsed.data, source);
   assertAutomationPayloadSchemasAreValid(config);
@@ -371,6 +375,7 @@ export {
   type WebhookPayloadValidationResult,
 } from "./schema/payload-validation.js";
 export {
+  AUTOMATION_BINARY_VERSION_RULE_PATTERN,
   AUTOMATION_RETRY_DEFAULTS,
   AUTOMATION_RUNTIME_EXECUTION_MODES,
   AUTOMATION_RUNTIME_LANGUAGES,

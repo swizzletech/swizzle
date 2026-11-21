@@ -6,7 +6,7 @@ import { testDatabase } from "../../../test/postgres.js";
 import { temporaryDirectory } from "../../../test/support.js";
 import { createAutomationFixture } from "../test/platform-harness.js";
 
-it.each(["v25.03.0", "latest", "25"])(
+it.each(["v25.03.0", "latest", "banana", "25"])(
   "runs and checks saved binary rule %s with its deployed matcher",
   async (rule) => {
     const bin = await temporaryDirectory("swizzle-legacy-binary-");

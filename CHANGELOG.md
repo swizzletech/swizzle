@@ -12,7 +12,7 @@ Versions follow Semantic Versioning. Tags use `vX.Y.Z`; pre-releases use `X.Y.Z-
 ### Fixed
 
 - Runs retry transient connection token refresh failures while attempts remain, instead of failing permanently on the first attempt.
-- Source recovered from a deployment validates and deploys again. The artifact store keeps `config.yaml` as deployed, and validation accepts the `runtime.binary_version_matching: numeric-prefix` that earlier releases stored.
+- Recovered `config.yaml` files can use the `latest` binary rule and the stored `runtime.binary_version_matching: numeric-prefix` marker without edits. Validation accepts numeric prefixes, comparisons, and `latest`. Replace other rules in recovered 1.0.4 source before deploying it.
 - Runs a person or a parent run cancelled no longer count toward the repeated-failures alert.
 - CLI commands pointed at the dashboard instead of the API report `INVALID_API_RESPONSE` with the configured URL and its `/api` path instead of crashing. HTTP failures keep their status-based retry hints.
 

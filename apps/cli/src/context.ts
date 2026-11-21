@@ -32,7 +32,7 @@ export async function detectCwdAutomation(
     if (await fileExists(candidate)) {
       try {
         const raw = await readFile(candidate, "utf8");
-        const config = parseAutomationConfig(raw);
+        const config = parseAutomationConfig(raw, "deployment");
         return {
           directory: current,
           name: config.name,

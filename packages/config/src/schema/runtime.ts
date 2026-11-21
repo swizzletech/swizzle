@@ -9,6 +9,9 @@ export const AUTOMATION_RUNTIME_LANGUAGES = ["python", "node", "typescript"] as 
 
 export const AUTOMATION_RUNTIME_PROFILE_DEFAULT = "host-default" as const;
 
+export const AUTOMATION_BINARY_VERSION_RULE_PATTERN =
+  /^(?:latest|(?:>=|<=|>|<|=)?\s*\d+(?:\.\d+)*)$/u;
+
 const AUTOMATION_RUNTIME_ON_OVERLAP_MODES = ["skip", "queue"] as const;
 
 const retrySchema = z.strictObject({
@@ -86,12 +89,12 @@ const binaryRequirementSchema = z.strictObject({
     .string()
     .trim()
     .regex(
-      /^(?:>=|<=|>|<|=)?\s*\d+(?:\.\d+)*$/u,
-      "Invalid version rule. Use a numeric version prefix such as 25 or 25.3, or a comparison: >=25, <=25, >25, <25, =25.3.0.",
+      AUTOMATION_BINARY_VERSION_RULE_PATTERN,
+      "Invalid version rule. Use a numeric version prefix such as 25 or 25.3, a comparison (>=25, <=25, >25, <25, =25.3.0), or latest.",
     )
     .optional()
     .describe(
-      "A bare numeric version matches a dotted prefix: `25` matches `25.03.0`, and `25.3` matches `25.03.0`. Comparisons `>=`, `<=`, `>`, `<` and `=` compare numeric components, treating omitted components as zero; `=25` means exactly `25.0.0`. Forms such as `^25` are invalid. A binary whose version the worker cannot tell fails every rule.",
+      "A bare numeric version matches a dotted prefix. `25` matches `25.03.0`, and `25.3` matches both `25.03.0` and `25.3.1`. Comparisons `>=`, `<=`, `>`, `<` and `=` treat omitted components as zero. `=25` means exactly `25.0.0`. `latest` matches any reported version. A binary with an unknown version fails every rule. Replace any other rule before validating or applying recovered source.",
     ),
 });
 
@@ -223,22 +226,23 @@ export const runtimeConfigSchema = runtimeInputSchema
       .literal("numeric-prefix")
       .exactOptional()
       .describe(
-        "Accepted for source recovered from earlier deployments. New source can omit it; deployments use numeric-prefix binary version matching.",
+        "Accepted for source recovered from earlier deployments. New deployments use numeric-prefix matching for bare numeric rules.",
       ),
   })
   .default(runtimeInputSchema.parse({ on_overlap: "queue" }));
 
-const deployedRequirementsSchema = runtimeRequirementsSchema.extend({
-  binaries: z
-    .array(binaryRequirementSchema.extend({ version: z.string().min(1).optional() }))
-    .default([]),
-});
-export const deployedRuntimeConfigSchema = runtimeInputSchema
+export const installedLegacyRuntimeConfigSchema = runtimeConfigSchema
+  .unwrap()
+  .omit({ binary_version_matching: true })
   .extend({
-    binary_version_matching: z.literal("numeric-prefix").exactOptional(),
-    requirements: deployedRequirementsSchema.default(deployedRequirementsSchema.parse({})),
-  })
-  .default(runtimeConfigSchema.parse(undefined));
+    requirements: runtimeRequirementsSchema
+      .extend({
+        binaries: z
+          .array(binaryRequirementSchema.extend({ version: z.string().min(1).optional() }))
+          .default([]),
+      })
+      .default(runtimeRequirementsSchema.parse({})),
+  });
 
 const runtimeSchema = runtimeInputSchema.extend({
   language: runtimeInputSchema.shape.language.nonoptional(),
