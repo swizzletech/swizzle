@@ -32,7 +32,6 @@ it.each(["v25.03.0", "latest", "25"])(
       environment: "local",
     });
     const configPath = path.join(deployed.sourceDirectory, "config.yaml");
-    // A freshly validated prefix must keep its matcher after artifact reload.
     await platform.triggerWebhookByPath({
       environment: "local",
       path: "/legacy-binary",
@@ -42,7 +41,6 @@ it.each(["v25.03.0", "latest", "25"])(
       status: "succeeded",
       result: { ok: true },
     });
-    // Earlier releases saved the rule without a matcher revision in both config copies.
     await writeFile(
       configPath,
       (await readFile(configPath, "utf8"))
@@ -55,7 +53,6 @@ it.each(["v25.03.0", "latest", "25"])(
       '{runtime,requirements,binaries,0,version}', $2::jsonb) WHERE id = $1`,
       [deployed.versionId, JSON.stringify(rule)],
     );
-    // The worker reports the binary that this fixture put on its PATH.
     await pool.query(`UPDATE workers SET capabilities = jsonb_set(capabilities, '{binaries}',
     (capabilities->'binaries') || '[{"name":"pdftoppm","version":"25.03.0"}]')`);
 

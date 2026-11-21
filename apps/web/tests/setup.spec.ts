@@ -2,9 +2,6 @@ import { expect, test } from "@playwright/test";
 
 import { mockDashboardApi, seededState } from "./dashboard-mock";
 
-// The first visit to a new instance creates its owner. A password the API would refuse keeps
-// Create account disabled, and the password field says why.
-
 test("the setup form says at the password field that 15 to 128 characters are needed", async ({
   page,
 }) => {

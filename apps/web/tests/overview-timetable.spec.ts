@@ -9,14 +9,9 @@ import {
   seededState,
 } from "./dashboard-mock";
 
-// The Overview's automation list is a timetable: per automation 24 hourly cells, a deploy mark at
-// its time, and the next run. Each hour is found by the clock time its hover names, so a test
-// that crosses a full hour still finds the hour it seeded.
-
 const HOUR = 60 * 60_000;
 const hoursAgo = (hours: number) => new Date(Date.now() - hours * HOUR).toISOString();
 
-/** A top-level run of `slug`, queued at `queuedAt`, in the state its owner reads. */
 function runOf(
   state: MockState,
   slug: string,
@@ -42,7 +37,6 @@ function runOf(
 const row = (page: Page, name: string) =>
   page.getByTestId("automation-row").filter({ has: page.getByRole("link", { name, exact: true }) });
 
-/** The cell of the hour that holds `iso`, named by the clock time the viewer's browser shows. */
 async function cellAt(page: Page, strip: Locator, iso: string): Promise<Locator> {
   const label = await page.evaluate((at) => {
     const start = new Date(at);
@@ -74,7 +68,6 @@ test("an hour draws its runs, and its hover names the hour and the counts", asyn
   const failing = await cellAt(page, strip, mixed as string);
   await expect(failing).toHaveClass(/\bfull\b/u);
   await expect(failing).toHaveAttribute("data-tip", /· 1 succeeded, 1 failed$/u);
-  // The failed half in red at the foot, the succeeded half above it.
   expect(await failing.getAttribute("style")).toContain("var(--fail) max(4px, 50%)");
   expect(await failing.getAttribute("style")).toContain("var(--ok) calc(max(4px, 50%) + 2px)");
 
@@ -112,7 +105,6 @@ test("a deploy inside the window marks its version at its time, one before it no
     automationName: "verify-vault",
     automationSlug: "verify-vault",
   });
-  // A quarter into one hour and three quarters into another, on the clock browser and test share.
   const into = (hours: number, minutes: number) => {
     const at = new Date(Date.now() - hours * HOUR);
     at.setMinutes(minutes, 0, 0);
@@ -138,7 +130,6 @@ test("a deploy inside the window marks its version at its time, one before it no
     const mark = await strip.locator(".hour-mark").nth(index).boundingBox();
     const hour = await (await cellAt(page, strip, at)).boundingBox();
     if (mark === null || hour === null) throw new Error("Not drawn.");
-    // The mark's centre stands as far into its hour's cell as the deploy came into the hour.
     expect(mark.x + mark.width / 2).toBeCloseTo(hour.x + within * hour.width, 0);
   }
 });
@@ -201,7 +192,6 @@ test.describe("at phone width", () => {
       }
       expect(next.y).toBe(name.y);
       expect(strip.y).toBeGreaterThanOrEqual(name.y + name.height);
-      // The row's 16 px inset on both sides.
       expect(strip.width).toBe(box.width - 32);
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);

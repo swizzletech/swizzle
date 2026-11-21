@@ -1,9 +1,3 @@
-// Writes .env from .env.example with fresh local credentials and a compose project of its own.
-// `just init-env` runs it, and `just setup` and `just stack` run that recipe first; an existing .env
-// keeps its settings except the obsolete image tag, and must have every required credential.
-// It also sizes the CPU limits to the Docker engine and fails when an explicit one exceeds it, so
-// `just stack` stops before it builds an image Compose could not start.
-
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import {
@@ -14,7 +8,6 @@ import {
   sizeCpuLimits,
 } from "./env-file.ts";
 
-// Every failure is an operator's fix to .env or Docker, so it prints its message without a stack.
 try {
   const project = `swizzle-${randomBytes(4).toString("hex")}`;
   const result = await ensureEnvFile(

@@ -1,4 +1,3 @@
-// Generate the registry build plan from the packaged stack, so no service list can drift.
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { capture, RELEASE_TAG, readCompose, registryImage, run } from "./stack-images.ts";
@@ -51,7 +50,6 @@ try {
       JSON.stringify({ group: { default: { targets: Object.keys(target) } }, target }, null, 2),
     );
   } else if (command === "publish") {
-    // The workflow only calls this on the public tag. Local dry runs use image-plan and bake --print.
     run("docker", [
       "buildx",
       "bake",

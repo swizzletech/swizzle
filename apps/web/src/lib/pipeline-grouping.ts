@@ -1,40 +1,24 @@
 import type { AutomationSummary } from "./api";
 
-/**
- * A standalone automation that is not part of any multi-stage pipeline. Rendered
- * as a normal row, exactly as before pipeline grouping existed.
- */
 interface StandaloneListItem {
   readonly kind: "single";
   readonly automation: AutomationSummary;
 }
 
-/**
- * A connected pipeline of chained automations (≥2 members). Rendered as one
- * collapsible group row whose expansion reveals the members in stage order.
- */
 interface PipelineListItem {
   readonly kind: "group";
-  /** Stable id for client-side expand state; derived from the entry automation. */
   readonly key: string;
-  /** The pipeline's entry point: the non-chain (webhook/cron) member, or the topological root. */
   readonly entry: AutomationSummary;
-  /** Members grouped into topological layers — stages in one layer run in parallel. */
   readonly layers: readonly (readonly AutomationSummary[])[];
-  /** Members in topological order — entry first, join last. */
   readonly members: readonly AutomationSummary[];
   readonly stageCount: number;
-  /** Any member's latest run is queued or running. */
   readonly live: boolean;
-  /** Any member's latest run failed; a cancelled one did not. */
   readonly failing: boolean;
-  /** Most recent run activity (queuedAt) across all members, or null if none ran. */
   readonly lastActivityAt: string | null;
 }
 
 export type AutomationListItem = StandaloneListItem | PipelineListItem;
 
-/** An automation is "live" when its latest run is still queued or running. */
 export function isAutomationLive(automation: AutomationSummary): boolean {
   const status = automation.lastRun?.status;
   return status === "queued" || status === "running";
@@ -49,19 +33,12 @@ function chainSourceSlugs(automation: AutomationSummary): readonly string[] {
   return automation.trigger?.chainSourceAutomationSlugs ?? [];
 }
 
-/** The automations this one starts with `invokeAutomation`, as the API names them. */
 export function invokeTargets(automation: AutomationSummary): readonly string[] {
   return automation.invokesAutomationSlugs;
 }
 
-/** The slugs that lead into each automation: chain sources and inviters. */
 type SourceIndex = ReadonlyMap<string, readonly string[]>;
 
-/**
- * Every automation whose run leads to each one: its chain sources, and the automations that
- * invoke it. Both are edges of the pipeline, so both group and order it. Built once per list, so
- * grouping, layering and entry selection walk the edges and not the list squared.
- */
 function indexSources(all: readonly AutomationSummary[]): SourceIndex {
   const sources = new Map<string, string[]>();
   for (const automation of all) {
@@ -79,14 +56,6 @@ function isChainTriggered(automation: AutomationSummary): boolean {
   return automation.trigger?.triggerType === "chain";
 }
 
-/**
- * Group a flat automation list into pipelines by connected components over the
- * chain-trigger and invoke edges. Each automation is a node; each resolved chain
- * source and each invoke target is an undirected edge to its consumer. Components
- * with ≥2 members become one pipeline group (members topologically sorted, entry
- * first); everything else stays a standalone row. Groups are emitted at the
- * position of their first-encountered member, so the overall list order stays stable.
- */
 export function groupAutomationsIntoPipelines(
   automations: readonly AutomationSummary[],
 ): readonly AutomationListItem[] {
@@ -95,8 +64,6 @@ export function groupAutomationsIntoPipelines(
     bySlug.set(automation.automationSlug, automation);
   }
 
-  // Union-find over slugs, joining each consumer with every source present in
-  // the current list (a source in another environment is simply absent here).
   const parent = new Map<string, string>();
   const find = (slug: string): string => {
     let root = slug;
@@ -183,13 +150,6 @@ function buildPipeline(
   };
 }
 
-/**
- * Kahn topological layering over source→consumer edges: each layer holds the
- * stages whose sources are all satisfied by previous layers, so members of one
- * layer run in parallel. Alphabetical tie-break within a layer keeps the result
- * deterministic across refetches; flattening the layers yields the display order
- * (entry first, join last).
- */
 function topologicalLayers(
   members: readonly AutomationSummary[],
   memberSlugs: ReadonlySet<string>,
@@ -232,16 +192,11 @@ function topologicalLayers(
     frontier = next;
   }
 
-  // A cycle would leave members unseen; append them as a final layer so nothing is dropped.
   const unseen = byName.filter((member) => !seen.has(member.automationSlug));
   if (unseen.length > 0) layers.push(unseen);
   return layers;
 }
 
-/**
- * The pipeline's entry point: prefer a non-chain member (webhook/cron) that has
- * no in-component source, then any topological root, then the first by name.
- */
 function pickEntry(
   ordered: readonly AutomationSummary[],
   memberSlugs: ReadonlySet<string>,

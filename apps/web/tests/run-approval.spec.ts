@@ -52,7 +52,6 @@ test("Reassign hands an approval to a team, with the reason", async ({ page }) =
   const card = page.getByTestId("run-panel").getByTestId("approval-card");
   await expect(card).toContainText("Assigned to anna@example.com");
   await card.getByRole("button", { name: "Reassign" }).click();
-  // A team name may hold an "@"; the choice of Person or Team decides, not the name.
   await card.getByLabel("Person or team").selectOption("team");
   await card.getByLabel("Assign to").fill("Finance@EU");
   await card.getByLabel("Reason").fill("Anna is on leave");

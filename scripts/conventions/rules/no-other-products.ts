@@ -1,10 +1,6 @@
 import path from "node:path";
 import type { Rule } from "../lint.js";
 
-// Automation, workflow, job and container platforms a page could compare Swizzle to. Tools the
-// stack runs on or connects to (Docker, Caddy, Postgres, Valkey, BullMQ, Tailscale, S3) are not
-// comparisons and stay out. The names in the second group are ordinary words in lower case, so
-// they match only when capitalized.
 const ALWAYS =
   // conventions-allow no-other-products: the rule's own pattern
   /\b(?:n8n|supabase|zapier|windmill|kubernetes|k8s|airflow|dagster|inngest|pipedream|activepieces|kestra|ifttt|sidekiq|celery|trigger\.dev|make\.com)\b/iu;
@@ -12,7 +8,6 @@ const CAPITALIZED =
   // conventions-allow no-other-products: the rule's own pattern
   /\b(?:Temporal|Prefect|Hatchet|Nomad|Power Automate|Step Functions|AWS Lambda|Cloud Run)\b/u;
 
-/** Lockfiles pin what dependencies are called; nobody writes them. */
 const LOCKFILES = new Set(["pnpm-lock.yaml", "package-lock.json", "uv.lock", "Cargo.lock"]);
 
 export const noOtherProducts: Rule = {

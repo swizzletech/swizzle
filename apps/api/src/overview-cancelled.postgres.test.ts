@@ -11,9 +11,7 @@ import { testPeople } from "../test/people.js";
 import { buildTestServer } from "../test/server-harness.js";
 import { createDashboardDataProvider } from "./dashboard.js";
 
-/** An owner's API over an automation whose every run fails, with its runs started one at a time. */
 async function failingAutomation() {
-  // Tests run without Valkey; the queue counts are not under test.
   vi.spyOn(Queue.prototype, "getJobCounts").mockRejectedValue(new Error("no Valkey"));
   const people = testPeople();
   const apiTokenStore = testApiTokenStore();
@@ -71,8 +69,6 @@ async function failingAutomation() {
   };
 }
 
-// A person who cancels a run decided something; the automation did not fail. The Overview's count,
-// its age and Needs you all read that from the same place.
 it("counts a failed run beside a cancelled one as the only failure", async () => {
   const { cancelled, failed, overview, send } = await failingAutomation();
   const failedRun = await failed();

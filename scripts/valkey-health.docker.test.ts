@@ -59,7 +59,6 @@ for (const authentication of ["correct", "wrong", "empty"] as const) {
         ]).catch(() => ({ stdout: "" }));
         return response.stdout.trim() === "PONG";
       });
-      // Two completed probes ensure the last started after readiness, even if one was in flight.
       const state = async () => {
         const health: { Status: string; Log: { Start: string }[] } = JSON.parse(
           (await execute("docker", ["inspect", "--format", "{{json .State.Health}}", container]))

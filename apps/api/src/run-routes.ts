@@ -23,10 +23,7 @@ import { type ApiServer, dashboardOrigin, requestValidationError } from "./http-
 import type { Actor } from "./request-access.js";
 import { objectSchema, text } from "./request-validation.js";
 
-/** How often an open log stream sends a keepalive and checks its reader may still read the run. */
 const STREAM_RECHECK_MS = 15_000;
-
-/** A run in any of these states will never produce further log output. */
 
 export function registerRunRoutes(app: ApiServer, platform: PlatformServices): void {
   const logsQuery = {
@@ -47,8 +44,6 @@ export function registerRunRoutes(app: ApiServer, platform: PlatformServices): v
       ]),
     },
   };
-  // `dashboardUrl` is the run's panel, where a person decides its approval; null without
-  // SWIZZLE_DASHBOARD_ORIGIN.
   app.get<{ Reply: RunResponse }>("/runs/:runId", async (request) => {
     const params = request.params as { runId: string };
     const run = await request.access.run(params.runId, "read");
@@ -56,12 +51,9 @@ export function registerRunRoutes(app: ApiServer, platform: PlatformServices): v
     return runResponse(run, origin === null ? null : `${origin}/runs?selected=${run.runId}`);
   });
 
-  // The same diagnosis `swizzle diagnose` prints, for the dashboard's run panel.
   app.get<{ Reply: RunDiagnosisResponse }>("/runs/:runId/diagnosis", async (request) => {
     const params = request.params as { runId: string };
     const run = await request.access.run(params.runId, "read");
-    // Current deployments are evidence only while the name still belongs to this run's automation
-    // in this run's project; after a move or a delete they describe what the reader may not see.
     const owner = await platform.findAutomation(run.automationSlug);
     if (owner?.automationId !== run.automationId || owner.projectId !== run.projectId) {
       return buildDiagnosis(run, undefined, undefined);
@@ -108,7 +100,6 @@ export function registerRunRoutes(app: ApiServer, platform: PlatformServices): v
     return await platform.cancelPlatformRun(params.runId);
   });
 
-  // The `waitForEvent` of a step; an approval is decided on its own route.
   app.post<{ Reply: ResumeRunResponse }>("/runs/:runId/events/:stepKey", async (request) => {
     const params = request.params as { runId: string; stepKey: string };
     const body = normalizeJsonObject(request.body);
@@ -124,8 +115,6 @@ export function registerRunRoutes(app: ApiServer, platform: PlatformServices): v
     throw new CodedError("RUN_EVENT_NOT_WAITING", "Run is not waiting for this event.");
   });
 
-  // A person decides an approval signed in, as its assignee or, when nobody is assigned, as
-  // someone who may run the run (packages/db/src/access.ts approvalRights).
   app.post<{ Reply: ResumeRunResponse }>(
     "/runs/:runId/approvals/:stepKey",
     approvalBody,
@@ -153,8 +142,6 @@ export function registerRunRoutes(app: ApiServer, platform: PlatformServices): v
     },
   );
 
-  // An owner, an admin or an admin of the run's project hands an open approval to someone else,
-  // with a reason the audit keeps.
   app.put<{ Reply: ApprovalAssigneeResponse }>(
     "/runs/:runId/approvals/:stepKey/assignee",
     assigneeBody,
@@ -240,8 +227,6 @@ export function registerRunRoutes(app: ApiServer, platform: PlatformServices): v
     };
   });
 
-  // The events go out as a stream through reply.send, so Fastify writes the head with every header
-  // its hooks and plugins set, CORS among them, as it does for any other route.
   app.get<{ Reply: RunLogStreamResponse }>("/runs/:runId/logs/stream", async (request, reply) => {
     const params = request.params as { runId: string };
     const run = await request.access.run(params.runId, "read");
@@ -277,11 +262,7 @@ export function registerRunRoutes(app: ApiServer, platform: PlatformServices): v
       return reply.send(events);
     }
 
-    // The stream closes when the run ends and when Fastify destroys it after the client leaves;
-    // either ends the subscription, also one still waiting for Valkey. Each keepalive asks the
-    // policy again with fresh grants, so a revoked reader loses the stream within one interval.
     const left = new AbortController();
-    // The run can end while a check is pending, so each callback looks at the stream again.
     const open = () => !events.writableEnded && !events.destroyed;
     const keepAlive = setInterval(() => {
       if (!open()) return;
@@ -299,7 +280,6 @@ export function registerRunRoutes(app: ApiServer, platform: PlatformServices): v
       left.abort();
     });
 
-    // Sent before subscribing, so the stored events reach the client while Valkey is down.
     reply.send(events);
     try {
       await subscribeRunLogEvents({
@@ -336,8 +316,6 @@ export function registerRunRoutes(app: ApiServer, platform: PlatformServices): v
         signal: left.signal,
         valkeyUrl: process.env.VALKEY_URL ?? "redis://localhost:6379",
       });
-      // A run that ended after the read above published its last status before the subscription
-      // stood, so no event will come. The row says whether it ended.
       const latest = await platform.getPlatformRun(params.runId);
       if (isFinishedRun(latest.status)) {
         writeEvent("status", { status: latest.status, terminal: true });
@@ -364,7 +342,6 @@ function normalizeJsonObject(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-/** Why a person who may see an approval may not decide it. */
 function approvalRefusal(
   actor: Actor | undefined,
   assignee: ApprovalAssignee | null,
@@ -390,7 +367,6 @@ function approvalRefusal(
   );
 }
 
-/** `<stdout length>:<stderr length>`, which the logs query schema guarantees when present. */
 function parseLogCursor(value: string | undefined): {
   readonly stderrOffset: number;
   readonly stdoutOffset: number;

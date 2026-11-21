@@ -1,7 +1,3 @@
-// One automation's last 24 hours on the Overview: a cell per hour, oldest left, and above it a
-// mark with the version of each deploy at its time. `HourAxis` is the header above the strips.
-// lib/timetable.ts decides how an hour draws; the hover names the hour and its counts.
-
 import { Link } from "@tanstack/react-router";
 import type { CSSProperties } from "react";
 import type { Timetable } from "../lib/api";
@@ -10,7 +6,6 @@ import { hourInWords, versionInWords } from "../lib/words/runs";
 import { clockTime } from "../lib/words/time";
 import "./hour-strip.css";
 
-/** The hours the axis names; "now" closes it at the right edge. */
 const AXIS_HOURS = [0, 6, 12, 18];
 
 export function HourAxis(props: { readonly timetable: Timetable }) {
@@ -24,7 +19,6 @@ export function HourAxis(props: { readonly timetable: Timetable }) {
   );
 }
 
-/** The strip opens the automation's runs, so a click on an hour leads to the runs it counts. */
 export function HourStrip(props: {
   readonly automationSlug: string;
   readonly line: TimetableLine;
@@ -70,26 +64,17 @@ export function HourStrip(props: {
   );
 }
 
-/**
- * A mark's left edge inside the hour cell that holds its moment. The cells sit in a grid with a
- * gap between them, so a column and its gap take (100% + gap) / 24 and a cell that less the gap.
- */
 function markLeft(hours: number): string {
   const hour = Math.floor(hours);
   const within = hours - hour;
   return `calc((100% + var(--hour-gap)) * ${hour / HOURS} + ((100% + var(--hour-gap)) / ${HOURS} - var(--hour-gap)) * ${within})`;
 }
 
-/** The hover sits over its hour, and inside the strip at its two ends. */
 function tipSide(index: number): string {
   if (index < 4) return "tip-start";
   return index >= HOURS - 4 ? "tip-end" : "";
 }
 
-/**
- * The failed share in red at the foot, at least 4 px so one failure among many shows, then a 2 px
- * gap and the rest in the tone of the other runs.
- */
 function fullCell(failed: number, rest: string | null): CSSProperties {
   const edge = `max(4px, ${failed * 100}%)`;
   const top = rest === null ? "var(--fail)" : `var(--${rest === "run" ? "warn" : rest})`;

@@ -2,9 +2,6 @@ import { expect, type Page, test } from "@playwright/test";
 
 import { mockDashboardApi, seededState } from "./dashboard-mock";
 
-// Without a mail server the link Settings › People shows is the only copy of an invitation, so
-// neither the next invitation nor a failed request may take it off the page.
-
 const OWNER = {
   createdAt: "2026-10-01T00:00:00.000Z",
   email: "ada@example.com",
@@ -16,7 +13,6 @@ const OWNER = {
 } as const;
 const LINK = "http://localhost/invitation#swzi_first-one-time-link";
 
-/** An owner on an instance without mail; the first invitation succeeds, every later one fails. */
 async function ownerWithoutMail(page: Page) {
   await mockDashboardApi(page, seededState());
   await page.route(
@@ -83,7 +79,6 @@ test("an invitation's link stays until Done, and a failed invitation shows no li
   await expect(page.getByTestId("invitation-link")).toHaveCount(0);
 });
 
-// The one-use token sits in the fragment; the page reads it once and takes it off the address bar.
 test("an opened invitation link leaves no token in the address or the history", async ({
   page,
 }) => {
@@ -106,7 +101,6 @@ test("an opened invitation link leaves no token in the address or the history", 
   await expect(page.getByRole("heading", { name: "Join Swizzle" })).toBeVisible();
   await expect(page).toHaveURL(/\/invitation$/u);
   expect(await page.evaluate(() => window.location.href)).not.toContain("swzi_");
-  // The history holds the blank tab and the invitation without its token, nothing else.
   expect(await page.evaluate(() => window.history.length)).toBe(2);
   await page.goBack();
   expect(page.url()).toBe("about:blank");

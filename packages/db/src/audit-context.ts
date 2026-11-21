@@ -1,4 +1,3 @@
-/** One request scope links resource changes to the event begun at the HTTP boundary. */
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import type { AuditActor, AuditEvent, RecordAuditChange } from "./audit.js";
@@ -50,7 +49,6 @@ export function changeEvent(input: RecordAuditChange): Omit<AuditEvent, "id"> {
   };
 }
 
-/** Reserve synchronously; a failed insert releases only the reservation it owns. */
 export async function insertAuditEvent<T>(insert: (id: string) => T | Promise<T>): Promise<T> {
   const scope = auditScope.getStore();
   if (scope !== undefined && scope.eventId !== null)

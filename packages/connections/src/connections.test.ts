@@ -12,7 +12,6 @@ const BASE_AUTH_INPUT = {
   clientSecret: "client-secret",
   redirectUri: "https://api.example.com/oauth/callback/google",
   state: "state-value",
-  // RFC 7636 Appendix B test vector.
   codeVerifier: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk",
   scopes: ["scope:first", "scope:second"],
   forceConsent: false,
@@ -210,8 +209,6 @@ describe.each(PROVIDERS)("$id against a local token endpoint", (provider) => {
           }
         : { tenant: "contoso.onmicrosoft.com" },
     );
-    // Only reroute built-in hosts. The actual fetch, HTTP exchange and response
-    // parsing run unchanged; custom OAuth uses its configured local URL directly.
     const nativeFetch = globalThis.fetch;
     vi.stubGlobal("fetch", (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const request = new Request(input, init);
@@ -467,8 +464,6 @@ describe.each(["custom-oauth2", "clickup"] as const)("%s request timeout", (prov
   let server: Server;
   let origin: string;
   let stallBody: boolean;
-  // The provider's deadline ends once the stall is in place: at the request for the headers, and
-  // once the headers arrived for the body.
   let deadlines: ReturnType<typeof heldDeadlines>;
 
   beforeEach(async () => {

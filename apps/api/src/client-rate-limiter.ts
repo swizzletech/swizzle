@@ -3,14 +3,6 @@ import type { FastifyRequest } from "fastify";
 
 import { normalizeClientIp } from "./http-shared.js";
 
-/**
- * Sliding-window request budgets per client address for the API's public doors: webhook ingress
- * and approval links. The client address is the only key, so nothing a caller writes into a
- * request can mint a new budget. Memory is bounded by construction: at most `maxClients` clients,
- * each holding at most `maxRequests` timestamps. A new client past that bound first drops the
- * clients whose window has passed, then the least recently seen one; dropping a client only hands
- * it a fresh budget.
- */
 export interface ClientRateLimiter {
   check(clientKey: string): RateLimitDecision;
 }
@@ -26,7 +18,6 @@ interface RateLimitDecision {
 const MAX_TRACKED_CLIENTS = 10_000;
 const OFF_SPELLINGS = new Set(["false", "off", "disabled", "0"]);
 
-/** The limiter `variable` configures, `defaultSpec` when it is unset, none when it is off. */
 export function createClientRateLimiterFromEnvironment(
   variable: string,
   defaultSpec: string,
@@ -66,8 +57,6 @@ export function createClientRateLimiter(
     };
   }
 
-  // Insertion order is the order of each client's latest counted request: only an allowed check
-  // moves its client to the end, so the expired clients sit at the front.
   const buckets = new Map<string, number[]>();
   const decide = (allowed: boolean, bucket: readonly number[], retryAfterMs: number) => ({
     allowed,
@@ -83,7 +72,6 @@ export function createClientRateLimiter(
       const cutoff = now - config.windowMs;
       const bucket = (buckets.get(clientKey) ?? []).filter((timestamp) => timestamp > cutoff);
       if (bucket.length >= config.maxRequests) {
-        // A denied client already has a bucket; setting it keeps its place in the order.
         buckets.set(clientKey, bucket);
         const oldest = bucket[0] ?? now;
         return decide(false, bucket, Math.max(1_000, oldest + config.windowMs - now));
@@ -97,8 +85,6 @@ export function createClientRateLimiter(
   };
 }
 
-// Walks from the client whose latest request is oldest: it drops expired clients, and while the
-// map is still full, the least recently counted ones. Each call visits a client at most once.
 function evict(buckets: Map<string, number[]>, cutoff: number, maxClients: number): void {
   for (const [key, timestamps] of buckets) {
     if (buckets.size < maxClients && (timestamps.at(-1) ?? 0) > cutoff) break;
@@ -106,11 +92,6 @@ function evict(buckets: Map<string, number[]>, cutoff: number, maxClients: numbe
   }
 }
 
-/**
- * Fastify's resolved `request.ip`, which follows SWIZZLE_TRUSTED_PROXY: the socket address on
- * direct exposure, the real client from X-Forwarded-For behind a configured proxy. Reading
- * X-Forwarded-For directly would let a caller rotate it to mint budgets.
- */
 export function clientKey(request: FastifyRequest): string {
   return normalizeClientIp(request.ip ?? request.socket.remoteAddress ?? "unknown");
 }

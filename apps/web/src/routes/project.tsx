@@ -1,13 +1,3 @@
-// One project `/projects/:slug`: who may do what in it (Access), its environments and their
-// protection (Environments), its service accounts (Service accounts) and the credentials it shares
-// and is offered (Credentials). A project select at the top switches between the projects the
-// person sees; beside it, the project's admins delete it (project-delete.tsx). Only the project's
-// admins, and instance owners and admins, manage it; anyone else sees their own role in each
-// environment and shares the credentials they manage.
-//
-// The roles per environment come from the API's policy (`holders` of GET /projects/:slug/access);
-// this page shows them and never derives what protection allows.
-
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
@@ -138,7 +128,6 @@ function LoadedProject(props: {
       type="administration"
     >
       {project.role === "admin" ? (
-        // Keyed, so an open form never carries one project's choices into another.
         <AdministeredProject key={project.id} project={project} tab={tab} />
       ) : (
         <>
@@ -172,10 +161,6 @@ function ProjectAccessTabs(props: { readonly project: Project; readonly tab: Pro
   return <Access access={access.data} />;
 }
 
-/**
- * A member's own view: their role in each environment, from the API, since only admins read the
- * project's grants.
- */
 function OwnAccess({ project }: { readonly project: Project }) {
   const { api, authRevision, environments: listed } = useDashboardClient();
   const environments = [...new Set([...listed, ...project.protectedEnvironments])];
@@ -229,7 +214,6 @@ function OwnAccess({ project }: { readonly project: Project }) {
 
 const KIND_ORDER: Record<Subject["kind"], number> = { "service-account": 2, team: 1, user: 0 };
 
-/** Who may do what: every holder with their role per environment and where it comes from. */
 function Access({ access }: { readonly access: ProjectAccess }) {
   const [sharing, setSharing] = useState<{ readonly subject?: Subject } | null>(null);
   const holders = access.holders
@@ -266,10 +250,6 @@ function Access({ access }: { readonly access: ProjectAccess }) {
   );
 }
 
-/**
- * Each environment with its protection switch, who may change it, and its environment grants.
- * Only a protected environment holds grants; unprotecting one removes them.
- */
 function Environments({ access }: { readonly access: ProjectAccess }) {
   const confirm = useConfirm();
   const { api } = useDashboardClient();

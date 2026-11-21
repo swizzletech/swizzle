@@ -1,12 +1,3 @@
-// The field for a secret value. Browsers offer to save what a password field holds, whatever its
-// autocomplete says, and sync it to the owner's browser account. A text field puts its value in
-// the accessibility tree, where a screen reader reads it aloud and an agent driving the browser
-// sees it. So this text field holds only mask characters and is marked for password managers to
-// skip. It cancels each edit, applies it to `value` through applyEdit (lib/secret-edit.ts) and
-// reports the result through `onValueChange`. An edit it cannot cancel, such as autofill, is read
-// back from the field and masked. An IME composition cannot be cancelled either; it is applied
-// when it ends, and until then the CSS masks the composed text on screen.
-
 import {
   type ComponentProps,
   useEffect,
@@ -18,8 +9,6 @@ import {
 import { applyEdit, characters, MASK, type SecretEdit, type Selection } from "../lib/secret-edit";
 import "./secret-input.css";
 
-// Enter in a single-line field changes nothing and submits the form, so it passes, as does the
-// composition, which ends in compositionend.
 const PASSING = new Set(["insertCompositionText", "insertLineBreak", "insertParagraph"]);
 
 export function SecretInput({
@@ -48,7 +37,6 @@ export function SecretInput({
       input.setSelectionRange(result.caret, result.caret);
       latest.current.onValueChange(result.value);
     };
-    // Positions count mask characters, so they count characters of the value.
     const selection = (): Selection => {
       const start = input.selectionStart ?? 0;
       return { end: input.selectionEnd ?? start, start };
@@ -86,7 +74,6 @@ export function SecretInput({
     };
   }, []);
 
-  // The owner clears the value after Save.
   useLayoutEffect(() => {
     const input = field.current;
     const count = characters(value).length;

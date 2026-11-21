@@ -1,7 +1,6 @@
 import type { Rule } from "../lint.js";
 
 const FROZEN = ["--frozen-lockfile", "--frozen-lockfile=true"];
-/** pnpm's global options that take their value as the next word, as in `pnpm --dir db install`. */
 const VALUE_OPTIONS = [
   "-C",
   "--dir",
@@ -12,7 +11,6 @@ const VALUE_OPTIONS = [
   "--reporter",
 ];
 
-/** The index of the pnpm subcommand after `pnpm` at `index`, past its global options. */
 function subcommandAt(words: readonly string[], index: number): number {
   let at = index + 1;
   while (words[at]?.startsWith("-")) at += VALUE_OPTIONS.includes(words[at] ?? "") ? 2 : 1;
@@ -31,7 +29,6 @@ export const lockfileFrozen: Rule = {
             word === "pnpm" && ["install", "i"].includes(words[subcommandAt(words, index)] ?? ""),
         );
         if (pnpm === -1) return false;
-        // The last frozen-lockfile flag wins, as in pnpm's own argument parsing.
         const flag = words
           .slice(pnpm + 1)
           .filter((word) => /^--(no-)?frozen-lockfile(=|$)/u.test(word))

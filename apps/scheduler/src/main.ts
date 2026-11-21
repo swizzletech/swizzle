@@ -37,7 +37,6 @@ async function listEnvironments(): Promise<readonly string[]> {
     const heartbeat = createServiceHeartbeatReporter({
       environment,
       host: os.hostname(),
-      // Heartbeat rows are keyed by service and instance, so each namespace needs its own key.
       instanceId: createHash("sha256").update(`${instanceId}:${environment}`).digest("hex"),
       logger,
       metadata: { schedulerInstanceId: instanceId },

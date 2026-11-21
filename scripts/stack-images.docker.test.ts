@@ -10,6 +10,27 @@ import { prepareImages, readCompose, writeCompose } from "./stack-images.ts";
 
 const execute = promisify(execFile);
 
+async function removeComposeProjectImages(project: string): Promise<void> {
+  const { stdout } = await execute("docker", [
+    "image",
+    "ls",
+    "--all",
+    "--quiet",
+    "--no-trunc",
+    "--filter",
+    `label=com.docker.compose.project=${project}`,
+  ]);
+  const images = new Set(stdout.split("\n").filter(Boolean));
+  const removals = await Promise.allSettled(
+    Array.from(images, (id) => execute("docker", ["image", "rm", "--force", "--no-prune", id])),
+  );
+  const errors = removals.flatMap((result) =>
+    result.status === "rejected" ? [result.reason] : [],
+  );
+  if (errors.length > 0)
+    throw new AggregateError(errors, `Removing Docker images for ${project} failed`);
+}
+
 it.each([
   { target: "runner", tags: "local", outcome: "prepared" },
   { target: "worker", tags: "local", outcome: "prepared" },
@@ -33,31 +54,20 @@ it.each([
       const identity = index === 0 ? "a" : "b";
       await mkdir(path.join(root, "infra/docker"), { recursive: true });
       await mkdir(path.join(root, "scripts"));
-      for (const file of [
-        "scripts/stack-images.ts",
-        "infra/docker/Dockerfile.runner",
-        "infra/docker/runner-tools.mjs",
-      ]) {
-        await copyFile(new URL(`../${file}`, import.meta.url), path.join(root, file));
-      }
+      await copyFile(
+        new URL("stack-images.ts", import.meta.url),
+        path.join(root, "scripts/stack-images.ts"),
+      );
+      await copyFile(new URL("interleaved/Dockerfile", fixture), path.join(root, "Dockerfile"));
+      const extension = path.join(root, "infra/docker/Dockerfile.runner");
+      await copyFile(new URL("interleaved/Dockerfile.runner", fixture), extension);
       if (identity === "a" && outcome === "build-error") {
-        const file = path.join(root, "infra/docker/Dockerfile.runner");
         await writeFile(
-          file,
-          `${await readFile(file, "utf8")}\nRUN echo runner-package-build-failure >&2; exit 23\n`,
+          extension,
+          `${await readFile(extension, "utf8")}\nRUN echo runner-package-build-failure >&2; exit 23\n`,
         );
       }
       await writeFile(path.join(root, ".env"), "");
-      const stock = await readFile(new URL("Dockerfile", fixture), "utf8");
-      await writeFile(
-        path.join(root, "Dockerfile"),
-        stock
-          .replace(
-            "ARG VERSION",
-            `RUN touch /usr/local/bin/runner-${identity} && chmod +x /usr/local/bin/runner-${identity}\nARG VERSION`,
-          )
-          .replace("AS worker\n", "AS worker\nARG VERSION\nLABEL fixture.release=$VERSION\n"),
-      );
       await writeFile(
         path.join(root, "infra/docker/compose.yml"),
         JSON.stringify({
@@ -156,19 +166,7 @@ it.each([
         ]);
       }
     } finally {
-      const ids = (
-        await command(
-          "image",
-          "ls",
-          "--all",
-          "--quiet",
-          "--filter",
-          `label=com.docker.compose.project=${project}`,
-        )
-      )
-        .split("\n")
-        .filter(Boolean);
-      if (ids.length > 0) await command("image", "rm", "--force", ...ids);
+      await removeComposeProjectImages(project);
     }
   },
 );
@@ -192,7 +190,11 @@ it("keeps local runner tags stable and tools available through just upgrade", as
   ]) {
     await copyFile(new URL(`../${file}`, import.meta.url), path.join(root, file));
   }
-  const environment = { ...process.env, MISE_TRUSTED_CONFIG_PATHS: root };
+  const environment = {
+    ...process.env,
+    COMPOSE_PROJECT_NAME: project,
+    MISE_TRUSTED_CONFIG_PATHS: root,
+  };
   const command = async (program: string, ...args: string[]) =>
     (await execute(program, args, { cwd: root, env: environment })).stdout.trim();
   const git = (...args: string[]) => command("git", ...args);
@@ -228,7 +230,7 @@ it("keeps local runner tags stable and tools available through just upgrade", as
     await writeFile(path.join(root, "package.json"), JSON.stringify({ version, type: "module" }));
     await writeFile(
       path.join(root, "infra/docker/compose.yml"),
-      composeTemplate.replace("VERSION: 1.0.3", `VERSION: ${version}`),
+      composeTemplate.replace("VERSION: &version 1.0.3", `VERSION: &version ${version}`),
     );
     await git("add", ".");
     await git("commit", "-m", `Fixture release ${version}`);
@@ -345,7 +347,7 @@ it("keeps local runner tags stable and tools available through just upgrade", as
     );
     expect(await git("status", "--porcelain")).toBe("");
 
-    await command("just", "upgrade", "v1.0.4");
+    expect(await command("just", "upgrade", "v1.0.4")).toContain("\n/health reports 1.0.4\n");
 
     expect(await git("rev-parse", "HEAD")).toBe(await git("rev-parse", "v1.0.4"));
     expect(await observe("1.0.4")).not.toBe(before);
@@ -365,8 +367,7 @@ it("keeps local runner tags stable and tools available through just upgrade", as
     const owned = ["--all", "--quiet", "--filter", `label=com.docker.compose.project=${project}`];
     const containers = (await command("docker", "ps", ...owned)).split("\n").filter(Boolean);
     if (containers.length > 0) await command("docker", "rm", "--force", "--volumes", ...containers);
-    const ids = (await command("docker", "image", "ls", ...owned)).split("\n").filter(Boolean);
-    if (ids.length > 0) await command("docker", "image", "rm", "--force", ...ids);
+    await removeComposeProjectImages(project);
   }
 });
 
@@ -631,10 +632,7 @@ CMD ["cat", "/turbo-args"]
         .filter(Boolean);
       if (containers.length > 0) await execute("docker", ["rm", "--force", ...containers]);
     } finally {
-      const ids = (await execute("docker", ["image", "ls", ...owned])).stdout
-        .split("\n")
-        .filter(Boolean);
-      if (ids.length > 0) await execute("docker", ["image", "rm", "--force", ...ids]);
+      await removeComposeProjectImages(project);
     }
   }
 });

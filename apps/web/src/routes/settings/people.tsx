@@ -1,10 +1,3 @@
-// Settings › People, for owners and admins: invite someone with a role and projects, see and
-// revoke pending invitations, and change, suspend or remove the people who have an account, or hand
-// one of them a password reset link. The page shows an invitation's or a reset's link once, to copy
-// and pass on; with a mail server the invitation also goes out by mail. The API decides who may
-// change whom (mayManagePeople in packages/db/src/access.ts); the controls here only hide what it
-// would refuse.
-
 import { type UseQueryResult, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ActionError } from "../../components/actions";
@@ -19,7 +12,6 @@ import { expiryInWords } from "../../lib/words/time";
 const INSTANCE_ROLES: readonly InstanceRole[] = ["member", "admin", "owner"];
 const PROJECT_ROLES: readonly ProjectRole[] = ["viewer", "operator", "editor", "admin"];
 
-/** Whether `me` may change someone who holds `roles` (their current one, and the one given). */
 function mayManage(me: InstanceRole, ...roles: readonly InstanceRole[]): boolean {
   return me === "owner" || (me === "admin" && !roles.includes("owner"));
 }
@@ -31,7 +23,6 @@ export function People(props: {
   const { api, authRevision } = useDashboardClient();
   const queryClient = useQueryClient();
   const now = useNow();
-  // Keyed by the sign-in, so a person who signs in after another never sees the other's answers.
   const people = useQuery({
     queryFn: () => api.listPeople(),
     queryKey: ["people", authRevision],
@@ -116,17 +107,13 @@ function Invite(props: {
   const { api } = useDashboardClient();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<InstanceRole>("member");
-  // The projects the invitation grants, by project id, each with its role.
   const [grants, setGrants] = useState<ReadonlyMap<string, ProjectRole>>(new Map());
   const projects = useProjects();
-  // The last invitation's link, kept apart from the request so a later request cannot hide it.
-  // Without mail it is the only copy, so the next invitation waits until the inviter is done.
   const [shown, setShown] = useState<SentInvitationResponse | null>(null);
   const invite = useMutation({
     mutationFn: () =>
       api.invite({
         email: email.trim(),
-        // Only a member's access comes from grants; the picker is hidden for the other roles.
         projects:
           role === "member"
             ? [...grants].map(([project, projectRole]) => ({ project, role: projectRole }))
@@ -257,10 +244,6 @@ function inviteLabel(pending: boolean, mailConfigured: boolean): string {
   return "Create link";
 }
 
-/**
- * A new invitation's link, shown once: the person's way in, by mail or from the inviter. "Done"
- * dismisses it and lets the form invite the next person.
- */
 function InvitationLink(props: {
   readonly invitation: SentInvitationResponse;
   readonly onDone: () => void;

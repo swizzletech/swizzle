@@ -7,9 +7,7 @@ import { RUN_IMAGE_DISK_DETAILS_LIMIT } from "@swizzle/db";
 import { expect, it } from "vitest";
 import { WORKER_ROUTES } from "./worker-wire.js";
 
-// A heartbeat the schema accepts but the body limit refuses keeps a worker from ever pulling work.
 it("takes a heartbeat at every bound of its schema within the route's body limit", () => {
-  // A control character escapes to six bytes in JSON, the most any character takes.
   const field = "\u0001".repeat(80);
   const image = { id: `sha256:${"f".repeat(64)}`, tag: `swizzle-run:${"f".repeat(24)}` };
   const heartbeat = {

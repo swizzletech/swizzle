@@ -57,15 +57,9 @@ import {
   projects,
 } from "./schema.js";
 
-/** How many runs an automation's health strip shows. */
 const HEALTH_STRIP_RUNS = 10;
-/** How far back child runs count as evidence that one automation invokes another. */
 const OBSERVED_INVOCATION_DAYS = 7;
 
-/**
- * The automation as `scope` lets the viewer read it: null outside it, and among what it invokes
- * only the automations the viewer may read too.
- */
 export async function getAutomationDetail(
   client: DatabaseClient,
   automationSlug: string,
@@ -147,7 +141,6 @@ export async function listAutomationSummaries(
       automationId: automationTriggers.automationId,
       chainOnStatus: automationTriggers.chainOnStatus,
       chainPayloadMode: automationTriggers.chainPayloadMode,
-      // Null unless the trigger has a single source; a join's are in the chain sources table.
       chainSource: {
         automationId: chainSourceAutomations.id,
         name: chainSourceAutomations.name,
@@ -278,7 +271,6 @@ export async function listAutomationSummaries(
           scope,
         )
       : { hidden: 0, names: [], slugs: [] };
-    // A run receives what its deployment bound and its automation's project still holds.
     const holds = (bound: BoundCredentialRow) =>
       bound.projectId === row.projectId || bound.shareProjectId === row.projectId;
     const deployableHere = (kind: "connection" | "secret") => (name: string) =>
@@ -508,7 +500,6 @@ async function listDeploymentAudit(
   return listDeploymentAuditEventsByAutomationSlug(client, automationSlug, environment, limit);
 }
 
-/** Deploys and rollbacks of every automation in the environment since `since`, newest first. */
 export async function listDeploymentChanges(
   client: DatabaseClient,
   environment: string,
@@ -546,9 +537,7 @@ export async function listDeploymentChanges(
 interface BoundCredentialRow {
   readonly deploymentId: string;
   readonly name: string;
-  /** The project that owns the credential. */
   readonly projectId: string;
-  /** The project a share bound it into, or null for the owner's own. */
   readonly shareProjectId: string | null;
 }
 
@@ -567,10 +556,6 @@ function byDeployment<Row extends { readonly deploymentId: string }>(
   return grouped;
 }
 
-/**
- * What a deploy in these projects would find, as `[kind, projectId, name]` keys: each project's
- * own credentials in the environment and those shared into it.
- */
 async function listDeployableCredentials(
   client: DatabaseClient,
   environment: string,
@@ -629,7 +614,6 @@ async function listDeployableCredentials(
   ]);
 }
 
-/** The secrets these deployments bound, with the projects that may still use them. */
 async function listBoundSecrets(client: DatabaseClient, deploymentIds: readonly string[]) {
   if (deploymentIds.length === 0) return [];
   return await client.db
@@ -651,7 +635,6 @@ async function listBoundSecrets(client: DatabaseClient, deploymentIds: readonly 
     .where(inArray(deploymentCredentials.deploymentId, [...deploymentIds]));
 }
 
-/** The connections these deployments bound, with the projects that may still use them. */
 async function listBoundConnections(client: DatabaseClient, deploymentIds: readonly string[]) {
   if (deploymentIds.length === 0) return [];
   return await client.db

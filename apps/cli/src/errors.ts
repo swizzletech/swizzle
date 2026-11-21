@@ -7,7 +7,6 @@ import {
 
 import { AgentError, EXIT_CODES, exitCodeForError } from "./output.js";
 
-/** Executable fixes for errors where one concrete command is the next step. */
 const FIX_COMMANDS: Partial<Record<ApiErrorCode, string>> = {
   ACTIVE_DEPLOYMENT_NOT_FOUND: "swizzle apply <dir>",
   FORBIDDEN: "swizzle doctor",
@@ -114,7 +113,6 @@ const RUNTIME_RETRYABLE = new Set<AutomationRuntimeErrorCode>([
   "DEPENDENCY_PACKAGING_FAILED",
 ]);
 
-/** The copyable choices for a config that reaches an outside API without an `api_check` decision. */
 const API_CHECK_DECISION_HINT = [
   "Add one of these to config.yaml:",
   "  api_check: { mode: active }",
@@ -150,7 +148,6 @@ export function mapRuntimeErrorToAgentError(error: AutomationRuntimeError): Agen
   });
 }
 
-/** An external error may be partial or come from a proxy outside the API catalogue. */
 export type ApiErrorBody = Partial<Omit<ApiErrorResponse, "code" | "error">> & {
   readonly error?: string;
 };
@@ -188,10 +185,6 @@ export function mapApiErrorToAgentError(
   });
 }
 
-/**
- * An instance-wide action names the instance role it needs and no project grants, so the project
- * hint for ACCESS_DENIED would point the wrong way.
- */
 function instanceRoleHint(
   code: string,
   details: Record<string, unknown> | undefined,
@@ -202,7 +195,6 @@ function instanceRoleHint(
   return `This needs the instance role ${details.required}${yours}. An instance owner or admin does it, or changes your role in Settings > People.`;
 }
 
-/** The fixing command with the names the error carries filled in, where it carries them. */
 function concreteFixCommand(
   code: ApiErrorCode,
   details: Record<string, unknown> | undefined,
@@ -246,10 +238,6 @@ function concreteFixCommand(
   return undefined;
 }
 
-/**
- * A deploy's readiness report names every worker and queue it checked; the agent needs what was
- * unmet and where, so only that part travels in `details`.
- */
 function compactDetails(details: Record<string, unknown> | undefined): Record<string, unknown> {
   const readiness = details?.readiness;
   if (typeof readiness !== "object" || readiness === null) return details ?? {};
@@ -272,7 +260,6 @@ function compactDetails(details: Record<string, unknown> | undefined): Record<st
   };
 }
 
-/** API refusals whose next step the generic status hint would not name. */
 const API_HINTS: Partial<Record<ApiErrorCode, string>> = {
   REQUEST_INVALID: "Inspect details. The API rejected the body shape.",
   ENVIRONMENT_NOT_PROTECTED:
@@ -307,7 +294,6 @@ function apiHint(code: ApiErrorCode | undefined, status: number): string | undef
   return undefined;
 }
 
-/** The next step for an error class when its code has no hint of its own. */
 function fallbackHint(exitCode: number): string {
   switch (exitCode) {
     case EXIT_CODES.auth:

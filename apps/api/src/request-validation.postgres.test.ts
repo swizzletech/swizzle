@@ -14,7 +14,6 @@ beforeEach(async () => {
 
 const UNKNOWN_RUN = "00000000-0000-4000-8000-000000000000";
 
-// Requests whose shape PostgreSQL or a handler cannot take answer a fixed 400 before any lookup.
 describe("request validation", () => {
   it("names an invalid notification request independently of automation configuration", async () => {
     const app = await buildTestServer();
@@ -47,7 +46,6 @@ describe("request validation", () => {
     ["POST", "/automation-folders", { name: "a\u0000b" }],
     ["POST", "/automations/hello/rollback", { targetDeploymentId: "nonexistent" }],
     ["POST", "/automations/hello/rollback", { targetDeploymentId: true }],
-    // JSON bodies keep their types: no scalar becomes a string, no value becomes an array.
     ["PUT", "/secrets/OK_NAME", { value: 123 }],
     ["PUT", "/secrets/OK_NAME", { value: true }],
     [
@@ -74,8 +72,6 @@ describe("request validation", () => {
   });
 });
 
-// An unchecked id reaches PostgreSQL and fails the request, so UUID validation must happen at
-// the route boundary. The auth fixture uses the production adapter.
 describe("an id no route checked", () => {
   it("fails the route as PostgreSQL fails it", async () => {
     const auth = testAuth();

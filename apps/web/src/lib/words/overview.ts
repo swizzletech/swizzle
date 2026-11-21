@@ -1,16 +1,7 @@
-// The Overview in words: the status sentence, platform problems, Needs you keys, recent changes and
-// what "Hand to agent" copies for a failing run or automation.
-
 import type { AttentionItem, DeploymentChange, Overview, PlatformProblem } from "../api";
 import { versionInWords } from "./runs";
 import { ageInWords } from "./time";
 
-/**
- * What the Overview says first: "3 things need you", or with nothing to act on "All good" only
- * while no run failed. Failures without a next step read "Nothing needs you." with their count and
- * age, so the sentence never contradicts the failed count beside it. Needs you leaves out what the
- * viewer cannot act on, so an incomplete list says only that nothing needs them.
- */
 export function statusSentence(
   overview: Pick<Overview, "complete" | "last24h" | "lastFailureAt" | "needsYou">,
   now: Date,
@@ -19,7 +10,6 @@ export function statusSentence(
   const failed = overview.last24h.failed + overview.last24h["dead-lettered"];
   const failures = failed === 0 ? null : failuresInWords(failed, overview.lastFailureAt, now);
   const title = statusTitle(count, overview.complete && failed === 0);
-  // A title alone is a short string; the sentence after it makes it one too.
   return { failures, title: failures === null ? title : sentence(title) };
 }
 
@@ -35,7 +25,6 @@ function failuresInWords(failed: number, lastFailureAt: string | null, now: Date
   return `${runs} failed in the last 24 hours${age}.`;
 }
 
-/** The title and the next step of a platform problem. */
 export function platformProblemInWords(problem: PlatformProblem): {
   readonly title: string;
   readonly todo: string;
@@ -74,7 +63,6 @@ export function platformProblemInWords(problem: PlatformProblem): {
   }
 }
 
-/** Stable key of a Needs you row, for React lists and e2e selectors. */
 export function attentionKey(item: AttentionItem): string {
   switch (item.kind) {
     case "approval":
@@ -101,11 +89,6 @@ export function attentionKey(item: AttentionItem): string {
   }
 }
 
-/**
- * What "Hand to agent" copies for a failed run: the situation and the commands the agent
- * investigates with, so the agent starts from the same facts the owner sees. The stored error
- * stays; the diagnosis summary follows it when it says something else.
- */
 export function failedRunHandoff(run: {
   readonly attemptsMade: number;
   readonly automationName: string;
@@ -125,7 +108,6 @@ export function failedRunHandoff(run: {
   );
 }
 
-/** What "Hand to agent" copies for an automation that keeps failing, from its Needs you row. */
 export function failingAutomationHandoff(
   item: Extract<AttentionItem, { readonly kind: "failing" }>,
 ): string {
@@ -140,11 +122,6 @@ function sentence(errorMessage: string | null): string {
   return (errorMessage ?? "it ended without a result").replace(/\.?$/u, ".");
 }
 
-/**
- * How to run a failed run again. A chain run cannot be replayed (TRIGGER_NOT_FIRABLE); it starts
- * again through its source. A replay of a webhook run starts a manual run without the signed
- * delivery, so an automation that checks the signature needs the sender to redeliver.
- */
 function investigate(runId: string, triggerType: string): string {
   return (
     `Investigate with \`swizzle diagnose ${runId}\` and \`swizzle logs --run ${runId}\`, ` +
@@ -164,7 +141,6 @@ function again(runId: string, triggerType: string): string {
   }
 }
 
-/** "Deployed" with "v1.0.0 → v1.1.0", "Rolled back" with "v2.3.0 → v2.2.1", "First deploy" with "v1.0.0". */
 export function changeInWords(
   change: Pick<DeploymentChange["change"], "eventType" | "previousVersion" | "version">,
 ): { readonly verb: string; readonly versions: string } {

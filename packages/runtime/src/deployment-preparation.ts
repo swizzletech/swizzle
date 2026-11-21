@@ -1,4 +1,3 @@
-// Assigned source bundles let a worker prepare run images without database or artifact credentials.
 import type { RunImageDisk } from "@swizzle/db";
 import { prepareContainerAutomation } from "./container-runner.js";
 import { closeDockerScopes, removeAbandonedContainers } from "./docker-cli.js";
@@ -17,21 +16,13 @@ import { loadAutomationDefinition } from "./validation.js";
 import type { PreparationBundle, PreparationSnapshot } from "./worker-wire.js";
 
 const POLL_MS = 2_000;
-/** A deployment younger than this gets a standby sandbox for its first run. */
 const STANDBY_DEPLOYMENT_AGE_MS = 10 * 60 * 1_000;
 
 export interface DeploymentPreparation {
-  /** What the last prune pass measured, for the next heartbeat; null before the first pass. */
   runImageDisk(): RunImageDisk | null;
-  /** Stops polling, waits for the preparation in progress and removes the standby sandboxes. */
   close(): Promise<void>;
 }
 
-/**
- * Prepares assigned deployments once per process and prunes using durable image ownership.
- * Preparation and pruning take turns in one loop, so no tag this process records lands during a
- * pass. `keptImages` returns the tags the server keeps for this worker, read just before each pass.
- */
 export function startDeploymentPreparation(input: {
   readonly poll: (knownIds: readonly string[]) => Promise<PreparationSnapshot>;
   readonly recordImage: (deploymentId: string, tag: string) => Promise<void>;
@@ -39,8 +30,6 @@ export function startDeploymentPreparation(input: {
   readonly logger?: PlatformLogger;
   readonly pruneDeadlines?: PruneDeadlines;
 }): DeploymentPreparation {
-  // A prepared deployment learned its tag (or needs no sandbox). Only failures before tag
-  // acknowledgement retry, at the stored time. Image ownership itself lives in Postgres.
   const nextPreparation = new Map<string, number | "prepared">();
   let prunedAt = 0;
   let disk: RunImageDisk | null = null;
@@ -131,11 +120,6 @@ export function startDeploymentPreparation(input: {
   };
 }
 
-/**
- * Prepares one deployment, and hands `onRunImage` its run image tag before the image is assembled,
- * so a failed preparation still keeps the image the first run assembles. Resolves false when its
- * runs do not use a sandbox.
- */
 async function prepare(
   deployment: PreparationBundle,
   onRunImage: (tag: string) => Promise<void>,

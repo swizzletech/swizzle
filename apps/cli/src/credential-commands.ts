@@ -1,10 +1,3 @@
-/**
- * `swizzle credential`: who may use and manage a secret or a connection, and which other projects
- * it is shared with. `access` lists every holder and the source of their right; `grant` and
- * `revoke` change a person's, team's or service account's right; `share`, `unshare`, `shares`,
- * `accept` and `decline` offer a credential to another project and take an offer in. The API
- * decides every step (apps/api/src/credential-routes.ts).
- */
 import type { CredentialKind, CredentialRight } from "@swizzle/db";
 import type {
   CredentialAccessResponse as CredentialAccessView,
@@ -28,12 +21,10 @@ import { AgentError, type CliIO, EXIT_CODES, respond } from "./output.js";
 type CredentialHolder = CredentialAccessView["holders"][number];
 type CredentialRightSource = CredentialHolder["sources"][number];
 
-/** `--project`: the project that owns the credential, by slug or id. */
 interface ProjectOption {
   readonly project?: string;
 }
 
-/** Who a grant names: exactly one of them. */
 interface SubjectOptions {
   readonly serviceAccount?: string;
   readonly team?: string;
@@ -62,7 +53,6 @@ export function registerCredentialCommands(
     "swizzle credential grant secret STRIPE_KEY --team finance --right use --project billing",
   ]);
 
-  /** One subcommand on a credential: `<kind> <name>` and --project, in the command's environment. */
   const onCredential = (name: string, description: string, examples: readonly [string, string]) => {
     const command = credential
       .command(name)
@@ -77,7 +67,6 @@ export function registerCredentialCommands(
     return command;
   };
 
-  /** The URL of a route under /credentials/:kind/:name, in the command's environment and project. */
   const credentialUrl = async (
     kind: CredentialKind,
     name: string,
@@ -160,8 +149,6 @@ export function registerCredentialCommands(
         const subject = subjectOf(options);
         const shown = { credential: `${kind} ${name}`, subject: subjectLabel(subject) };
         const held = grantedRight(await readAccess(kind, name, options), subject);
-        // Reading the access needs only use; the PUT is what the API holds to manage, so it runs
-        // even for a grant that is already held.
         await apiRequest(await credentialUrl(kind, name, options, "/grants"), {
           body: JSON.stringify({ ...subject, right: options.right }),
           headers: { "content-type": "application/json" },
@@ -272,7 +259,6 @@ export function registerCredentialCommands(
       },
     );
 
-  /** The URL of a project's share route; a share holds in its credential's own environment. */
   const sharesUrl = (project: string, options: ApiCommandOptions, shareId?: string) =>
     buildApiUrl(
       `/projects/${encodeURIComponent(project)}/credential-shares${shareId === undefined ? "" : `/${encodeURIComponent(shareId)}`}`,
@@ -378,7 +364,6 @@ export function registerCredentialCommands(
   });
 }
 
-/** The right a grant naming this subject itself gives, if one does. */
 function grantedRight(
   access: CredentialAccessView,
   subject: Record<string, string>,
@@ -417,7 +402,6 @@ function withSubject(command: Command): Command {
     );
 }
 
-/** The grant subject the options name, as the API takes it; a usage error unless exactly one. */
 function subjectOf(options: SubjectOptions): Record<string, string> {
   const named = Object.entries({
     serviceAccount: options.serviceAccount,

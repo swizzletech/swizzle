@@ -1,24 +1,10 @@
-// What the broker lets through to the Docker daemon: exactly the calls the worker's Docker CLI
-// makes (packages/runtime/src/sandbox.ts, run-image.ts, container-runner.ts, docker-cli.ts), with
-// the create and exec bodies and the container list filters held to the shapes those calls send. Anything else is refused, so a new Docker
-// operation in the worker fails closed until this file allows it.
-
-/** The stack the broker serves. */
 export interface BrokerScope {
-  /** Every container and image the broker touches carries the label swizzle.stack=<stack>. */
   readonly stack: string;
-  /** The run network a container may join; the only other network mode is none. */
   readonly runnerNetwork: string;
-  /** The most memory a container may get: SWIZZLE_MAX_RUN_MEMORY_MB, as the worker reads it. */
   readonly maxMemoryBytes: number;
-  /** The most CPUs a container may get, in billionths: SWIZZLE_MAX_RUN_CPUS, as the worker reads it. */
   readonly maxNanoCpus: number;
 }
 
-/**
- * The scope from the variables the worker reads too, or why they do not make one. A maximum must
- * be finite and positive in its unit, so a typo cannot lift the broker's limit to infinity.
- */
 export function readBrokerScope(environment: NodeJS.ProcessEnv): BrokerScope | string {
   const stack = environment.SWIZZLE_STACK?.trim() ?? "";
   const runnerNetwork = environment.SWIZZLE_RUNNER_NETWORK?.trim() ?? "";
@@ -37,10 +23,6 @@ export function readBrokerScope(environment: NodeJS.ProcessEnv): BrokerScope | s
   return { maxMemoryBytes, maxNanoCpus, runnerNetwork, stack };
 }
 
-/**
- * What one request needs before it reaches the daemon. `container`, `exec` and `image` name an
- * object that must carry the stack label; `create` and a container's `exec` carry a body to check.
- */
 export type Route =
   | { readonly kind: "forward" }
   | { readonly kind: "create" }
@@ -62,15 +44,9 @@ type ContainerAction =
   | "stop"
   | "wait";
 
-/** The user every sandbox and assembly container runs as (SANDBOX_USER in packages/runtime). */
 const SANDBOX_USER = "65532:65532";
-/**
- * The PID and open-files limits of every sandbox and assembly container (containerLimitArguments
- * in packages/runtime; broker.test.ts holds the two to the same values).
- */
 const PIDS_LIMIT = 128;
 const OPEN_FILES_LIMIT = 1024;
-/** The repository the worker tags run images into (runImageTag in packages/runtime). */
 const RUN_IMAGE_REPOSITORY = "docker.io/library/swizzle-run";
 
 const CONTAINER_ACTIONS: Readonly<Record<string, ContainerAction>> = {
@@ -89,8 +65,6 @@ const CONTAINER_ACTIONS: Readonly<Record<string, ContainerAction>> = {
 export function route(method: string, rawUrl: string): Route {
   const url = new URL(rawUrl, "http://broker");
   const path = url.pathname.replace(/^\/v\d+\.\d+(?=\/)/u, "");
-  // Names, ids and image references never need these, and they could make the daemon's router
-  // read a different path than this one.
   if (/%|\.\.|\/\//u.test(path)) return deny("the path is not in canonical form");
   const query = url.searchParams;
   const call = `${method} ${path}`;
@@ -163,7 +137,6 @@ export function route(method: string, rawUrl: string): Route {
   return deny(`${call} is not an operation the worker performs`);
 }
 
-/** Whether a route may switch the connection to a raw stream (Docker's hijacked attach and exec). */
 export function mayHijack(routed: Route): boolean {
   return (
     (routed.kind === "container" && routed.action === "attach") ||
@@ -171,11 +144,6 @@ export function mayHijack(routed: Route): boolean {
   );
 }
 
-/**
- * Why a container list's filters do not keep it to this stack, or null when they do: one label
- * filter, for the stack's sandboxes and assemblies or for its worker containers. The worker lists
- * both at start to remove what a stopped worker left (removeLeftoverContainers in packages/runtime).
- */
 export function checkList(filters: string, scope: BrokerScope): string | null {
   const allowed = [`swizzle.stack=${scope.stack}`, `swizzle.worker-of=${scope.stack}`];
   let parsed: unknown;
@@ -189,21 +157,12 @@ export function checkList(filters: string, scope: BrokerScope): string | null {
     : `a container list must filter by exactly one label, ${allowed.join(" or ")}`;
 }
 
-/** Whether labels mark an object of this stack. */
 export function ownedBy(labels: unknown, scope: BrokerScope): boolean {
   return isRecord(labels) && labels["swizzle.stack"] === scope.stack;
 }
 
-/**
- * Why a container create body is refused, or null when it is one of the two shapes the worker
- * sends: a sandbox (sandboxSpec) or an image assembly (assembleOnce). Every key must be known, so
- * a field a later Docker CLI adds is refused until it is reviewed here.
- */
 export function checkCreate(body: unknown, scope: BrokerScope): string | null {
   if (!isRecord(body)) return "the create body is not a JSON object";
-  // Docker fills an omitted field with its default: the image's user, the default capabilities,
-  // the bridge network, no resource limits. So the fields that confine a container must be
-  // present, not merely valid.
   const missing =
     missingField("", body, ["HostConfig", "Image", "Labels", "User"]) ??
     (isRecord(body.HostConfig)
@@ -242,17 +201,14 @@ export function checkCreate(body: unknown, scope: BrokerScope): string | null {
   if (top !== null) return top;
   const host = body.HostConfig as Record<string, unknown>;
   return checkFields("HostConfig.", host, {
-    ...Object.fromEntries(HOST_CONFIG_EMPTY.map((key) => [key, isEmpty])),
+    ...Object.fromEntries(HOST_CONFIG_FIELDS_THAT_MUST_BE_EMPTY.map((key) => [key, isEmpty])),
     AutoRemove: isBoolean,
     CapDrop: (value) => Array.isArray(value) && value.includes("ALL"),
     ConsoleSize: (value) => equals(value, [0, 0]),
     Init: isBoolean,
     LogConfig: (value) => equals(value, { Config: {}, Type: "" }),
-    // null keeps Docker's masked and read-only /proc paths; an empty list removes them.
     MaskedPaths: (value) => value === null,
-    // Docker reads 0 as unlimited, so each limit must be set and within the platform maximum.
     Memory: (value) => isPositiveIntegerUpTo(value, scope.maxMemoryBytes),
-    // Equal to Memory: the container gets no swap.
     MemorySwap: (value) => value === host.Memory,
     MemorySwappiness: (value) => value === -1,
     NanoCpus: (value) => isPositiveIntegerUpTo(value, scope.maxNanoCpus),
@@ -268,7 +224,6 @@ export function checkCreate(body: unknown, scope: BrokerScope): string | null {
   });
 }
 
-/** Why an exec body is refused, or null when it runs as the container's user without privileges. */
 export function checkExec(body: unknown): string | null {
   if (!isRecord(body)) return "the exec body is not a JSON object";
   return checkFields("", body, {
@@ -285,11 +240,7 @@ export function checkExec(body: unknown): string | null {
   });
 }
 
-// What the Docker CLI sends empty for every create the worker makes. Each of these, set, gives a
-// container host access or host resources: Binds, Mounts, VolumesFrom and Devices reach host
-// files; Privileged, CapAdd and the *Mode namespaces leave the sandbox; the rest tune host
-// scheduling, cgroups and DNS the worker never sets.
-const HOST_CONFIG_EMPTY = [
+const HOST_CONFIG_FIELDS_THAT_MUST_BE_EMPTY = [
   "Binds",
   "BlkioDeviceReadBps",
   "BlkioDeviceReadIOps",
@@ -396,7 +347,6 @@ function isStringArrayOrNull(value: unknown): value is readonly string[] | null 
   );
 }
 
-/** The Docker CLI's zero values: null, false, 0, "", an empty list or an empty object. */
 function isEmpty(value: unknown): boolean {
   if (value === null || value === false || value === 0 || value === "") return true;
   if (Array.isArray(value)) return value.length === 0;

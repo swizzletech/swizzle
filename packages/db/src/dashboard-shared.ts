@@ -11,21 +11,12 @@ import type {
 import type { DashboardSecretStatus } from "./dashboard-types.js";
 import { automations, runs } from "./schema.js";
 
-/**
- * An automation's card and step counts show the runs it had in its current project; the runs from
- * before a move stay with the project they happened in.
- */
 export const inCurrentProject = sql`${runs.projectId} = ${automations.projectId}`;
 
-/** The condition on `automations` a list in this scope adds; none when it shows everything. */
 export function automationsInScope(scope: ReadScope): SQL | undefined {
   return ownedInScope(scope, { automationId: automations.id, projectId: automations.projectId });
 }
 
-/**
- * The same condition on a run or an audit event, by the project it belongs to, which outlives a
- * move of its automation.
- */
 export function ownedInScope(
   scope: ReadScope,
   owner: { readonly automationId: AnyPgColumn; readonly projectId: AnyPgColumn },
@@ -85,7 +76,6 @@ export function normalizeStoredArtifactLocator(
   throw new Error(`Stored local artifact locator is invalid for ${artifactRootPath}`);
 }
 
-/** Each declared secret with the bound one's fields; `deployable` says a deploy would find it. */
 export function mapSecretHealth(
   secretNames: readonly string[],
   environment: string,
@@ -147,7 +137,6 @@ export function asArtifactStorageBackend(input: string): StoredArtifactStorageBa
   return input as StoredArtifactStorageBackend;
 }
 
-/** A chain trigger's source automation, as the read model loads it. */
 export interface ChainSource {
   readonly automationId: string;
   readonly name: string;
@@ -155,13 +144,6 @@ export interface ChainSource {
   readonly slug: string;
 }
 
-/**
- * A chain trigger's sources as the reader may see them, in chain order. A trigger stores a single
- * source in the scalar `chain_source_automation_id` column and a join's sources in
- * `automation_trigger_chain_sources`, leaving the scalar null; this takes both. Sources belong to
- * the consumer's project, but an automation-only grant may not reach its sources. A source the
- * reader cannot read is counted in `hidden`, never named.
- */
 export function chainSourcesInScope(
   scalar: ChainSource | null,
   joined: readonly ChainSource[],

@@ -38,7 +38,6 @@ describe("sandbox hardening", () => {
     );
   });
 
-  // A standby is created before its run, so nothing run-specific may be in its create arguments.
   it("passes secrets and run metadata with the exec, never with the sandbox's creation", () => {
     const spec = sandboxSpec(makeDefinition(NODE_CONFIG), "swizzle-run:test");
     const exec = sandboxExecArguments("swizzle-run-x", { AGENT_API_KEY: "secret" }, ["node", "m"]);
@@ -88,8 +87,6 @@ describe("sandbox execution", () => {
     }).finally(() => {
       returned = true;
     });
-    // The exec has exited with its stdout write still pending, so only that write holds the
-    // execution open.
     await waitFor(signal, async () => {
       const pid = await docker.execPid().catch(() => 0);
       return pid > 0 && !isRunning(pid);
@@ -99,7 +96,6 @@ describe("sandbox execution", () => {
     const result = await running;
     expect(result.success).toBe(true);
     expect(chunks.join("")).toContain("ok");
-    // A rejected write fails the execution only when the runner awaits it.
     const failed = await runContainerAutomation({
       ...options,
       onStdoutChunk: async () => {
@@ -109,8 +105,6 @@ describe("sandbox execution", () => {
     expect(failed).toMatchObject({ success: false, message: "output persistence failed" });
   });
 
-  // The API reads steps, state and suspends from what the worker reports, and redacts link tokens
-  // itself where it stores and shows output; a worker that redacted them would store dead links.
   it("reports approval and event link tokens as the automation printed them", async () => {
     const link = `https://links.example.com/events/${"0b1e7c2a-5f3d-4c6b-9a8e-1d2f3a4b5c6d"}.aG9vaw.${"s".repeat(43)}`;
     await fakeDocker({ execStdout: JSON.stringify({ link }), missingImage: false });
@@ -159,8 +153,6 @@ describe("sandbox execution", () => {
     );
     const deadlines = heldDeadlines(60_000);
     const preparation = prewarmSandbox(spec, options.timeoutMs).catch(() => undefined);
-    // A run's claim takes the pending standby at once, so its create is still stalled when the
-    // test expires its deadline.
     const claim = claimSandbox(spec, { lifetimeMs: options.timeoutMs, replace: false });
     await docker.reached(signal, "create");
     deadlines.expireNewest();
@@ -170,8 +162,6 @@ describe("sandbox execution", () => {
     expect((await docker.calls()).filter((call) => call.startsWith("create"))).toHaveLength(1);
   });
 
-  // The run's deadline asks Docker to stop the sandbox. When the daemon no longer answers the exec,
-  // that stop does not end it, and the worker kills the exec CLI itself (f-247).
   it("ends a run whose docker exec stops answering after its deadline, and kills the exec", async ({
     signal,
   }) => {
@@ -188,7 +178,6 @@ describe("sandbox execution", () => {
     await waitFor(signal, () => !isRunning(exec));
   });
 
-  // Runs last in this file: closing makes the process keep no standby afterwards.
   it("prepares a standby before the first run, and each platform run replaces the one it used", async () => {
     const docker = await fakeDocker({ missingImage: false });
     const options = await makeRunOptions(true);

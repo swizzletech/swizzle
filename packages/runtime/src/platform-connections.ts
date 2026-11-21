@@ -9,7 +9,6 @@ import {
   isConnectionProviderId,
 } from "@swizzle/connections";
 import {
-  type BeginConnectionAuthorizationInput,
   CodedError,
   type ConnectionCredentials,
   type ConnectionRefreshOutcome,
@@ -68,11 +67,6 @@ function assertConnectionNameIsValid(name: string): void {
   }
 }
 
-/**
- * Load a connection's decrypted OAuth client credentials from the store. The
- * client id/secret and provider config live on the connection itself; they are
- * used to build the authorization URL and to exchange/refresh/revoke tokens.
- */
 async function loadConnectionCredentials(options: {
   readonly name: string;
   readonly place: CredentialPlace;
@@ -125,8 +119,6 @@ function tokenSetToPayload(
     accessToken: tokens.accessToken,
     accessTokenExpiresAt: tokens.accessTokenExpiresAt?.toISOString() ?? null,
     obtainedAt: new Date().toISOString(),
-    // Some providers (Google on re-consent) omit the refresh token; keep the
-    // previous one so the connection stays refreshable.
     refreshToken: tokens.refreshToken ?? previousRefreshToken,
     tokenType: tokens.tokenType,
   };
@@ -168,15 +160,12 @@ function assertScopesArePresentIfRequired(options: {
 export async function beginPlatformConnectionAuthorization(options: {
   readonly clientId?: string | undefined;
   readonly clientSecret?: string | undefined;
-  /** Whoever creates the connection, a person or a service account, gets a manage grant on it. */
   readonly creator?: Subject | undefined;
   readonly name: string;
   readonly place: CredentialPlace;
   readonly provider?: string | undefined;
   readonly providerConfig?: Record<string, unknown> | null | undefined;
-  /** See {@link BeginConnectionAuthorizationInput.reauthorizes}. */
   readonly reauthorizes: string | null;
-  /** Copy client credentials from an existing connection instead of re-entering them. */
   readonly reuseFrom?: string | undefined;
   readonly publicUrl: string;
   readonly scopes: readonly string[];
@@ -218,8 +207,6 @@ export async function beginPlatformConnectionAuthorization(options: {
     clientId: credentials.clientId,
     clientSecret: credentials.clientSecret,
     codeVerifier,
-    // Force consent whenever we do not hold a refresh token yet, so the
-    // provider issues one (Google only does this on the consent screen).
     forceConsent: existing?.status !== "active",
     redirectUri,
     scopes: effectiveScopes,
@@ -261,11 +248,6 @@ export async function beginPlatformConnectionAuthorization(options: {
   };
 }
 
-/**
- * Resolve which client credentials to use for an authorization: freshly entered
- * client id/secret, copied from another connection (`reuseFrom`), or the ones
- * already stored on the connection when re-authorizing (reconnect).
- */
 async function resolveEffectiveCredentials(
   options: {
     readonly clientId?: string | undefined;
@@ -321,7 +303,6 @@ async function resolveEffectiveCredentials(
     );
   }
 
-  // No new credentials supplied: reconnect using the ones already stored.
   return loadConnectionCredentials({
     name: options.name,
     place: options.place,
@@ -391,8 +372,6 @@ export async function completePlatformConnectionCallback(options: {
       redirectUri: consumed.redirectUri,
     });
 
-    // The tokens belong to the connection the authorization began on. If that one was deleted
-    // meanwhile, a connection of the same name is another credential and gets nothing.
     const connection = await options.store.storeConnectionTokens({
       connectionId: consumed.connectionId,
       payload: tokenSetToPayload(tokens, consumed.existingRefreshToken),
@@ -435,12 +414,13 @@ export async function deletePlatformConnection(options: {
   if (!result.deleted) {
     return false;
   }
-  await revokeDeletedConnection(result);
+  await revokeDeletedConnectionBestEffort(result);
   return true;
 }
 
-/** Best-effort provider-side revocation of a connection whose platform record is already gone. */
-export async function revokeDeletedConnection(result: DeleteConnectionResult): Promise<void> {
+export async function revokeDeletedConnectionBestEffort(
+  result: DeleteConnectionResult,
+): Promise<void> {
   const { credentials } = result;
   if (!result.payload || !credentials) return;
   try {
@@ -453,7 +433,7 @@ export async function revokeDeletedConnection(result: DeleteConnectionResult): P
       });
     }
   } catch {
-    // Revocation failures must not resurrect the connection or fail the delete.
+    return;
   }
 }
 
@@ -502,7 +482,6 @@ function buildRefreshCallback(
   };
 }
 
-/** The access token of a connection, refreshed when it expires within `refreshSkewMs`. */
 export async function resolvePlatformConnectionToken(options: {
   readonly automationName?: string;
   readonly connection: Pick<StoredCredential, "environment" | "id" | "name">;
@@ -577,7 +556,6 @@ export async function resolvePlatformConnectionToken(options: {
   }
 }
 
-/** The access token of each connection a deployment bound, as a run receives it. */
 export async function resolveRequiredConnections(options: {
   readonly automationName: string;
   readonly connectionNames: readonly string[];
@@ -697,7 +675,6 @@ async function ensureBoundConnectionsUsable(options: {
   }
 }
 
-/** The records of these bound connections, by name. */
 async function connectionRecords(
   store: ControlPlaneStore,
   environment: string,

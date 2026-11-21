@@ -1,5 +1,3 @@
-// Runs: the list, one run's detail, steps and diagnosis, cancel, and approval decisions.
-
 import type {
   ApprovalAssigneeResponse,
   CancelRunResponse,
@@ -46,7 +44,6 @@ export function runsCalls(environment: string) {
       return await request<RunDiagnosisResponse>(`/runs/${encodeURIComponent(runId)}/diagnosis`);
     },
 
-    /** Approves or rejects a run waiting at an approval step, as the signed-in person. */
     async decideApproval(
       runId: string,
       stepKey: string,
@@ -62,7 +59,6 @@ export function runsCalls(environment: string) {
       );
     },
 
-    /** Hands an open approval to a person (by email) or a team (by name), with the reason. */
     async reassignApproval(
       runId: string,
       stepKey: string,
@@ -79,13 +75,10 @@ export function runsCalls(environment: string) {
     },
 
     async listRuns(filters: {
-      /** Only runs waiting for the owner's approval. */
       readonly approvalOnly?: boolean;
       readonly automation?: string;
-      /** The `nextCursor` of the page before; absent starts at the newest run. */
       readonly cursor?: string;
       readonly environment?: string;
-      /** Only runs that failed; a cancelled run did not. */
       readonly failedOnly?: boolean;
       readonly limit?: number;
       readonly parentRunId?: string;

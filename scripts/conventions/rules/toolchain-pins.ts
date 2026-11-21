@@ -1,6 +1,5 @@
 import type { Rule, Violation } from "../lint.js";
 
-// mise runs the recipes; Docker, pnpm and the run image fallback read their own copies of these pins.
 export const toolchainPins: Rule = {
   id: "toolchain-pins",
   check(repo) {

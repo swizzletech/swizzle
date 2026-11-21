@@ -60,7 +60,6 @@ async function targeted<T extends ApiCommandOptions>(options: T): Promise<Target
   return { ...options, environment: await resolveCommandEnvironment(options) };
 }
 
-/** Max rows the API returns per request; the CLI asks for one more to know whether more exist. */
 const API_RUN_LIMIT = 200;
 
 async function fetchRuns(
@@ -79,8 +78,6 @@ async function fetchRuns(
     runs: response.runs.slice(0, limit),
   };
 }
-
-// ---------- logs ----------
 
 function logWindowOptions(): Option[] {
   return [
@@ -165,7 +162,6 @@ function registerLogs(program: Command, io: CliIO, runHandler: RunHandler): void
   );
 }
 
-/** The run `logs` shows without `--run`: the automation's active run, else its newest. */
 async function latestRunId(
   automationName: string | undefined,
   options: Targeted<ApiCommandOptions & ExactCommandOptions>,
@@ -193,8 +189,6 @@ async function latestRunId(
   }
   return latest.runId;
 }
-
-// ---------- runs ----------
 
 const RUN_FIELDS = ["id", "automation", "status", "queuedAt"] as const;
 
@@ -483,8 +477,6 @@ function parseEventPayloadJson(raw: string, source: string): unknown {
   }
 }
 
-// ---------- approvals ----------
-
 const APPROVAL_FIELDS = ["run", "automation", "step", "assignee"] as const;
 
 function registerApprovals(program: Command, io: CliIO, runHandler: RunHandler): void {
@@ -562,8 +554,6 @@ function registerApprovals(program: Command, io: CliIO, runHandler: RunHandler):
   );
 }
 
-// ---------- diagnose ----------
-
 function registerDiagnose(program: Command, io: CliIO, runHandler: RunHandler): void {
   const command = program
     .command("diagnose")
@@ -609,8 +599,6 @@ function registerDiagnose(program: Command, io: CliIO, runHandler: RunHandler): 
   });
 }
 
-// ---------- stats ----------
-
 function registerStats(program: Command, io: CliIO, runHandler: RunHandler): void {
   const command = program
     .command("stats")
@@ -635,7 +623,6 @@ function registerStats(program: Command, io: CliIO, runHandler: RunHandler): voi
         const range = parseTimeRange(options.since ?? "24h", options.until);
         const page = await fetchRuns(options, { automation: resolved.slug }, options.limit ?? 200);
         const counted = filterRunsByTimeRange(page.runs, range);
-        // Error codes live on the run detail; the 20 newest failures are enough to rank them.
         const failures = await Promise.all(
           counted
             .filter((run) => run.status === "failed" || run.status === "dead-lettered")

@@ -2,7 +2,6 @@ import { Redis } from "ioredis";
 
 interface RunLogChunkEvent {
   readonly chunk: string;
-  /** The execution that printed the chunk. */
   readonly executionNumber: number;
   readonly runId: string;
   readonly stream: "stderr" | "stdout";
@@ -11,7 +10,6 @@ interface RunLogChunkEvent {
 }
 
 interface RunLogStatusEvent {
-  /** The execution whose end moved the run; null when no execution did. */
   readonly executionNumber: number | null;
   readonly runId: string;
   readonly status: string;
@@ -20,9 +18,7 @@ interface RunLogStatusEvent {
   readonly type: "status";
 }
 
-/** A step of the run started or finished, so the dashboard's track moves without polling. */
 interface RunLogStepEvent {
-  /** The retry attempt the reporting execution spends. */
   readonly attempt: number;
   readonly executionNumber: number;
   readonly key: string;
@@ -57,11 +53,6 @@ export function createRunLogPublisher(valkeyUrl: string): RunLogPublisher {
   };
 }
 
-/**
- * Delivers the run's log events to `onEvent` until `signal` aborts. Resolves once the subscription
- * stands; an abort before that rejects it, so a caller never waits on a Valkey that is down after
- * its client left.
- */
 export async function subscribeRunLogEvents(input: {
   readonly valkeyUrl: string;
   readonly runId: string;
@@ -72,7 +63,6 @@ export async function subscribeRunLogEvents(input: {
   input.signal.throwIfAborted();
   const redis = new Redis(input.valkeyUrl, { maxRetriesPerRequest: null });
   const channel = channelFor(input.runId);
-  // ioredis leaves a command queued for a connection that never comes pending after disconnect().
   const left = new Promise<never>((_, reject) => {
     input.signal.addEventListener(
       "abort",

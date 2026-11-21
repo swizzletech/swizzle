@@ -160,8 +160,6 @@ async function verifyRunStepMemoization(
   assert.equal(afterUpsert[0]?.executionNumber, 1);
   assert.deepEqual(afterUpsert[0]?.value, { attempt: 1, ok: true });
 
-  // The run's totals count each row and each stored result once: a start adds a row, its result
-  // adds bytes, and an ignored duplicate adds nothing.
   await store.startRunStep({
     executionNumber: 2,
     runId,
@@ -174,7 +172,6 @@ async function verifyRunStepMemoization(
   assert.equal(totals.resultBytes, '{"attempt":1,"ok":true}'.length + '"ok"'.length);
   assert.equal(totals.step?.value, "ok");
 
-  // Concurrent results for one new key: exactly one lands, the rest see it under the run's lock.
   const raced = await Promise.allSettled(
     Array.from({ length: 8 }, (_, attempt) =>
       store.setRunStepResult({ executionNumber: 3, runId, stepKey: "raced", value: { attempt } }),
@@ -192,19 +189,19 @@ async function verifyRunStepMemoization(
   );
 }
 
-it("terminal run state guard", async () => {
+it("keeps a dead-lettered run terminal when its execution completes", async () => {
   const store = testControlPlaneStore();
   const deployment = await commitDeploymentFixture(store, "state-machine");
   await verifyTerminalRunStateGuard(store, deployment);
 });
 
-it("waiting run resume guard", async () => {
+it("queues a waiting run and refuses to resume a dead-lettered run", async () => {
   const store = testControlPlaneStore();
   const deployment = await commitDeploymentFixture(store, "state-machine");
   await verifyWaitingRunResumeGuard(store, deployment);
 });
 
-it("run step memoization", async () => {
+it("keeps the first step result and counts concurrent writes once", async () => {
   const store = testControlPlaneStore();
   const deployment = await commitDeploymentFixture(store, "state-machine");
   await verifyRunStepMemoization(store, deployment);

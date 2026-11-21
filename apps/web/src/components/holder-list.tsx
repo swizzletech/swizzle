@@ -1,8 +1,3 @@
-// A project's holders of access as rows: each person, team or service account with the role the
-// API's policy gives them per environment, every grant of theirs with Remove, and the grants that
-// reach a person through a team. The Access tab lists people and teams; each service account
-// shows its own row.
-
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import type {
@@ -20,7 +15,6 @@ import { HolderRow } from "./holder-row";
 import { MenuItem, RowMenu } from "./menu";
 import { accessChanged, placeOf, subjectKey, subjectRef } from "./share-form";
 
-/** Holder rows: what each may do per environment, and each grant with its remove button. */
 export function HolderList(props: {
   readonly access: ProjectAccess;
   readonly holders: readonly ProjectHolder[];
@@ -31,7 +25,6 @@ export function HolderList(props: {
   const queryClient = useQueryClient();
   const automations = useAutomations().data ?? [];
   const slugOf = (automationId: string) => access.automationSlugs[automationId] ?? automationId;
-  // An automation not deployed in the shown environment has no name here; its slug stands in.
   const nameOf = (automationId: string) =>
     automations.find((automation) => automation.automationId === automationId)?.automationName ??
     slugOf(automationId);
@@ -106,11 +99,6 @@ export function HolderList(props: {
   );
 }
 
-/**
- * "staging: editor · production (protected): no access": what the policy gives the holder in each
- * environment. A team's grant in a protected environment gives nothing by itself; it caps what
- * its members' project role does there, so it reads as that cap.
- */
 function EnvironmentRoles(props: {
   readonly access: ProjectAccess;
   readonly holder: ProjectHolder;

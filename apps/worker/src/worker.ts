@@ -21,7 +21,6 @@ export async function startWorkerService(
 ): Promise<PlatformWorkerController> {
   const logger = options.logger ?? createLogger();
 
-  // The registry owns this worker's groups and grants; the API applies them to every request.
   logger.info(
     { concurrency: options.concurrency ?? DEFAULT_WORKER_CONCURRENCY },
     "Worker service booting.",

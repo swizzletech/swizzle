@@ -1,10 +1,7 @@
-// Triggers in words: the webhook path, the schedule, the chain sources and when one runs next.
-
 import { formatIntervalMs } from "@swizzle/config/browser";
 import type { TriggerSummary } from "../api";
 import { clockTime, durationInWords } from "./time";
 
-/** "Webhook `/hello`" (the path marked as code), "Every 30 seconds", "Mondays 09:00 UTC", "After nightly-fetch succeeds". */
 export function triggerInWords(trigger: TriggerSummary | null): string {
   if (trigger === null) return "No trigger";
   switch (trigger.triggerType) {
@@ -20,7 +17,6 @@ export function triggerInWords(trigger: TriggerSummary | null): string {
 
 const UNIT_WORDS: Record<string, string> = { d: "day", h: "hour", m: "minute", s: "second" };
 
-/** One unit reads as words ("Every 5 minutes"); a mixed interval keeps the config shorthand. */
 function intervalInWords(ms: number): string {
   const shorthand = formatIntervalMs(ms);
   const single = /^(\d+)([dhms])$/u.exec(shorthand);
@@ -40,12 +36,10 @@ const WEEKDAYS = [
   "Saturdays",
 ];
 
-/** The common five-field shapes in words; the scheduler evaluates cron in UTC, so the words say so. */
 function cronInWords(schedule: string): string {
   const fields = schedule.trim().split(/\s+/u);
   if (fields.length !== 5) return `Cron ${schedule}`;
   const [minute = "", hour = "", dayOfMonth = "", month = "", dayOfWeek = ""] = fields;
-  // */45 fires at :00 and :45, so only a step that divides the hour is a steady interval.
   const everyMinutes = /^\*\/(\d+)$/u.exec(minute);
   const step = Number(everyMinutes?.[1]);
   if (
@@ -85,7 +79,6 @@ function chainInWords(trigger: TriggerSummary): string {
   return `After ${sources.length} automations ${all}`;
 }
 
-/** "nightly-fetch", "an automation you cannot see": each chain source, as the reader may know it. */
 export function chainSourcesInWords(trigger: TriggerSummary): readonly string[] {
   return [
     ...trigger.chainSourceAutomationNames,
@@ -93,14 +86,6 @@ export function chainSourcesInWords(trigger: TriggerSummary): readonly string[] 
   ];
 }
 
-/**
- * "in 18 s", "14:00", "Mon 09:00", "on call" for webhooks, "after nightly-fetch" for chains, "–" when
- * broken, and "No scheduler for production" for a cron trigger no scheduler fires.
- */
-/**
- * The next scheduled run as a clock time and how far off it is: "14:00" and "in 23 min", with the
- * weekday when it is not today. Null for a trigger that names no time, which `nextRunInWords` words.
- */
 export function nextRunTimes(
   trigger: TriggerSummary | null,
   now: Date,

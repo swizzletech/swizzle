@@ -1,11 +1,3 @@
-// `just db-migration-rebase`: renumbers a replayed commit's migrations after the ones main landed.
-// Two branches that each add a migration both take the next number, so `git rebase main` stops in
-// meta/_journal.json and the snapshot. Run at that stop, this keeps HEAD's migrations (main's plus
-// the commits already replayed) and regenerates the migrations the stopped commit (REBASE_HEAD)
-// adds after them, each under its old name. The stopped commit is the source: its SQL and
-// snapshots are what the branch wrote, whatever the conflicted working tree holds. It writes into
-// a copy first and changes packages/db/drizzle only when every migration regenerated cleanly.
-
 import { execFileSync } from "node:child_process";
 import {
   cpSync,
@@ -25,16 +17,13 @@ import config from "./drizzle.config.ts";
 import { journal, statements } from "./migration-files.ts";
 import * as schema from "./src/schema.ts";
 
-/** A migration the stopped commit adds, as the branch wrote it. */
 interface Added {
   readonly tag: string;
   readonly name: string;
   readonly sql: string;
-  /** Written with `--custom`: its snapshot equals the one before it, so all its SQL is by hand. */
   readonly custom: boolean;
 }
 
-/** One line of the report: the old tag, the new one or none when it was dropped, and why. */
 interface Renumbered {
   readonly from: string;
   readonly to: string | undefined;
@@ -56,27 +45,23 @@ const withoutIds = (snapshot: { id: string; prevId: string }) => {
   return rest;
 };
 
-/** Why the recipe left packages/db/drizzle as it was, one indented line per reason. */
 class Refusal extends Error {}
 const refuse = (lines: readonly string[]): never => {
   throw new Refusal(lines.join("\n"));
 };
 
-/** A rebase is in progress; REBASE_HEAD alone outlives it, so ask for the rebase's own state. */
 function rebaseStopped(): boolean {
   return ["rebase-merge", "rebase-apply"].some((state) =>
     existsSync(path.resolve(repository, git("rev-parse", "--git-path", state))),
   );
 }
 
-/** Conflicted paths outside packages/db/drizzle, which the schema may still depend on. */
 function unmergedElsewhere(): string[] {
   return git("diff", "--name-only", "--diff-filter=U")
     .split("\n")
     .filter((file) => file !== "" && !file.startsWith(`${tracked}/`));
 }
 
-/** packages/db/drizzle as `ref` holds it, extracted under `into`. */
 function extract(ref: string, into: string): string {
   const target = path.join(into, ref.replace(/\W/g, "_"));
   const archive = `${target}.tar`;
@@ -85,7 +70,6 @@ function extract(ref: string, into: string): string {
   return path.join(target, tracked);
 }
 
-/** The migrations `commit` lists that `parent` does not, in journal order. */
 function added(commit: string, parent: string): Added[] {
   const before = new Set(journal(parent).map(({ tag }) => tag));
   const listed = journal(commit);
@@ -108,11 +92,6 @@ function added(commit: string, parent: string): Added[] {
   });
 }
 
-/**
- * Runs `drizzle-kit generate` from the working schema.ts into `out` and returns the tag it wrote,
- * or undefined when the current schema equals the last snapshot. The generator inherits the
- * terminal for rename choices. Its exit code alone is not proof that it wrote a migration.
- */
 function generate(name: string, out: string, custom: true): string;
 function generate(name: string, out: string, custom: false): string | undefined;
 function generate(name: string, out: string, custom: boolean): string | undefined {
@@ -127,7 +106,6 @@ function generate(name: string, out: string, custom: boolean): string | undefine
   )
     return undefined;
   const before = new Set(readdirSync(out));
-  // drizzle-kit reads `--out` relative to its working directory, even when it is absolute.
   execFileSync(
     "pnpm",
     ["exec", "drizzle-kit", "generate", "--dialect", config.dialect]
@@ -142,14 +120,6 @@ function generate(name: string, out: string, custom: boolean): string | undefine
 
 const listing = (lines: readonly string[]) => lines.map((line) => `    ${line}`);
 
-/**
- * Generates `migration` into `out` from the working schema.ts. A custom migration keeps its SQL.
- * A generated one keeps its old text, minus statements drizzle-kit no longer renders because a
- * migration in HEAD already runs them; the rest it does not render are by hand and stay. When
- * HEAD already makes its whole schema change, it is dropped, or becomes a custom migration of its
- * hand-written statements. Returns a problem instead when an earlier migration of this commit
- * absorbed its change, or when hand-written statements meet SQL drizzle-kit now renders anew.
- */
 function regenerate(
   migration: Added,
   out: string,
@@ -216,14 +186,12 @@ function regenerate(
   return { from, to: tag, note: notes.length > 0 ? notes.join("; ") : "SQL unchanged" };
 }
 
-/** Replaces packages/db/drizzle with `out` and stages it, which resolves its conflicts. */
 function replace(out: string): void {
   rmSync(migrations, { recursive: true, force: true });
   cpSync(out, migrations, { recursive: true });
   git("add", "--all", "--", tracked);
 }
 
-/** Renumbers the stopped commit's migrations and returns the report; throws a Refusal instead of a half-done job. */
 function rebase(): string[] {
   if (!rebaseStopped()) {
     refuse([

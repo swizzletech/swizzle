@@ -8,7 +8,6 @@ it("kills and names a process whose parent exited, by the test directory it runs
   signal,
 }) => {
   const directory = await temporaryDirectory("swizzle-orphan-");
-  // The shell exits at once; Linux hands its background sleep to another parent.
   const parent = spawn("sh", ["-c", "sleep 300 > /dev/null 2>&1 & echo $!"], {
     cwd: directory,
     stdio: ["ignore", "pipe", "ignore"],

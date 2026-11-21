@@ -18,7 +18,6 @@ const DIRECT_TOOLS = new Set([
   "yarn",
 ]);
 
-/** Authors install the published CLI without a checkout, so published CLI installation and invocation run outside just. */
 const CLI_INSTALL =
   /^(?:npm (?:install --global|i -g) @swizzletech\/cli(?:@[^ ]+)?|npx @swizzletech\/cli@[^ ]+(?: .*)?)$/u;
 
@@ -32,7 +31,6 @@ export const docsRunJustRecipes: Rule = {
       .flatMap(({ file, line, words, source }) => {
         const [command = "", next] = words;
         const code = words.join(" ");
-        // A lone `tsx` in prose names the tool; a span with arguments or a block line runs it.
         if (
           DIRECT_TOOLS.has(command) &&
           !CLI_INSTALL.test(code) &&

@@ -1,10 +1,16 @@
 import { DEFAULT_PROJECT_ID, type RegisteredWorker } from "@swizzle/db";
-import { createPostgresWorkerRegistry } from "@swizzle/db/postgres";
+import { createDashboardStore, createPostgresWorkerRegistry } from "@swizzle/db/postgres";
+import { createWaitLinkToken } from "@swizzle/runtime";
 import { expect, it, onTestFinished, vi } from "vitest";
+import { testPlatform } from "../../../test/platform.js";
 import { testDatabase } from "../../../test/postgres.js";
 import { testApiTokenStore } from "../../../test/stores.js";
-import { testPeople } from "../test/people.js";
+import { TEST_ENCRYPTION_KEY } from "../../../test/support.js";
+import { createAutomationFixture, deployFixture } from "../test/automations.js";
+import { ownerHeaders, testPeople } from "../test/people.js";
 import { buildTestServer } from "../test/server-harness.js";
+import { dispatch } from "../test/worker-dispatch.js";
+import { createDashboardDataProvider } from "./dashboard.js";
 
 const identity: RegisteredWorker = {
   kind: "remote",
@@ -40,9 +46,82 @@ async function workerTokens() {
   return tokens;
 }
 
+it("returns stored link tokens to workers for replay and redacts them from dashboard reads", async () => {
+  vi.stubEnv("SWIZZLE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
+  const database = testDatabase();
+  const registry = createPostgresWorkerRegistry({ client: database });
+  vi.spyOn(registry, "authenticate").mockResolvedValue(identity);
+  const platform = await testPlatform();
+  const owner = await ownerHeaders();
+  const pull = vi.fn<typeof dispatch.pull>();
+  const app = await buildTestServer({
+    apiTokenStore: await workerTokens(),
+    dashboard: createDashboardDataProvider({
+      dashboardStore: createDashboardStore({ client: database }),
+      platform,
+      workerRegistry: registry,
+    }),
+    dispatch: { ...dispatch, pull },
+    platform,
+    workerRegistry: registry,
+  });
+  onTestFinished(() => app.close());
+
+  const fixture = await createAutomationFixture({
+    mainJs:
+      "console.log(JSON.stringify({ $swizzle: { suspend: { reason: 'event', stepKey: 'gate' } } }));",
+    name: "replays-links",
+    path: "/replays-links",
+  });
+  expect((await deployFixture(app, fixture, {}, { headers: owner })).statusCode).toBe(200);
+  const queued = await app.inject({ method: "POST", payload: {}, url: "/replays-links" });
+  expect(queued.statusCode).toBe(200);
+  const { runId } = queued.json<{ runId: string }>();
+  expect(await platform.processNextPlatformRun()).toMatchObject({ runId, status: "waiting" });
+  const token = createWaitLinkToken({ kind: "event", runId, stepKey: "gate" });
+  const url = `https://links.example.test/events/${token}`;
+  await platform.store.setRunStepResult({ executionNumber: 1, runId, stepKey: "link", value: url });
+
+  pull.mockImplementationOnce(async () => ({
+    lease: {
+      checkId: null,
+      dueAt: null,
+      executionNumber: 2,
+      expiresAt: new Date().toISOString(),
+      generation: 1,
+      remainingMs: 1_000,
+      runId,
+      taskId: runId,
+      workerId: identity.id,
+    },
+    options: {
+      environmentName: "local",
+      runId,
+      stepsSnapshot: Object.fromEntries(
+        (await platform.store.listRunSteps({ runId })).map((step) => [step.stepKey, step.value]),
+      ),
+    },
+    script: "run",
+    sourceSha256: "a".repeat(64),
+    traceContext: {},
+  }));
+
+  const assignment = await app.inject({
+    headers: { authorization: `Bearer swz_${"a".repeat(43)}` },
+    method: "POST",
+    payload: {},
+    url: "/worker/pull",
+  });
+  expect(assignment.statusCode).toBe(200);
+  expect(assignment.json().assignment.options.stepsSnapshot).toEqual({ link: url });
+  const steps = await app.inject({ headers: owner, url: `/dashboard/runs/${runId}/steps` });
+  expect(steps.statusCode).toBe(200);
+  expect(steps.json()).toMatchObject([
+    { stepKey: "link", value: "https://links.example.test/events/[REDACTED]" },
+  ]);
+});
+
 it("confines worker credentials to the worker protocol", async () => {
-  // PostgreSQL transaction behavior is exercised by verify-workers.ts. Here the auth boundary
-  // returns one live identity so the real HTTP policy must refuse control-plane access.
   const registry = createPostgresWorkerRegistry({ client: testDatabase() });
   vi.spyOn(registry, "authenticate").mockResolvedValue(identity);
   vi.spyOn(registry, "heartbeat").mockResolvedValue({
@@ -184,9 +263,7 @@ it("accepts a configured local identity only on the private worker listener, wit
   const registry = createPostgresWorkerRegistry({ client: testDatabase() });
   const local: RegisteredWorker = { ...identity, kind: "local", name: "Local worker" };
   const authenticate = vi.spyOn(registry, "authenticate").mockResolvedValue(local);
-  const { dispatch } = await import("../test/worker-dispatch.js");
   const tokens = await workerTokens();
-  const { testPlatform } = await import("../../../test/platform.js");
   const platform = await testPlatform();
   onTestFinished(() => platform.close());
   const privateApp = buildLocalWorkerServer(
@@ -223,7 +300,6 @@ it("accepts a configured local identity only on the private worker listener, wit
       code: "WORKER_FORBIDDEN",
     });
   }
-  // Enrollment is public and uses its single-use code, so a bearer grants no authority there.
   const missingCode = await publicApp.inject({
     method: "POST",
     url: "/worker/enroll",

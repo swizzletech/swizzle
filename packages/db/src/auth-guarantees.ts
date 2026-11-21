@@ -1,56 +1,26 @@
-/**
- * The Better Auth plugin that adds what the library does not do by default (ADR 0014). Its hooks
- * run for HTTP requests and for server `auth.api` calls alike, before the endpoint validates its
- * body, so a malformed attempt costs the same as a wrong one.
- *
- * | Route                          | Before                                            | After           |
- * |--------------------------------|---------------------------------------------------|-----------------|
- * | /sign-up/email                 | sign-up budget (admission: auth-membership.ts)    | remember device |
- * | /request-password-reset        | address budget, then the mail budget of the email |                 |
- * | /reset-password                | address budget                                    |                 |
- * | /sign-in/email                 | address or device budget, then password budget    | remember device |
- * | /two-factor/verify-totp        | code budget, no trusted device | remember device; sign out others when it turned 2FA on |
- * | /two-factor/verify-backup-code | code budget, no trusted device                    | remember device |
- * | /change-password               | password budget; while 2FA is on, a code after Better Auth accepts the password; sign out others | |
- * | /two-factor/enable             | password budget                                   |                 |
- * | /two-factor/disable            | password and code budgets; a code after Better Auth accepts the password | sign out others |
- * | every route                    |                                                   | no token in body |
- *
- * A known device is a browser that signed in to this account before. It spends budgets of its
- * own; any other browser, a device of another account included, spends the address and account
- * budgets, so a stranger exhausting those cannot lock a person out of a browser they already use.
- * Budgets live in the database, so a restart does not reset them.
- */
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { BetterAuthPlugin, GenericEndpointContext } from "better-auth";
 import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import type { AuthFactors } from "./auth-two-factor.js";
 import type { SpendBudget } from "./budgets.js";
 
-/** Attempts per window, per scope. */
 const SIGN_IN_BUDGETS = {
   address: { limit: 30, windowMs: 60_000 },
-  // Five codes per 15 minutes keep a brute force of the 10^6 TOTP code space well under 1% a day.
   code: { limit: 5, windowMs: 15 * 60_000 },
   password: { limit: 5, windowMs: 60_000 },
-  // Three reset mails per address and quarter hour are plenty for a person.
   mail: { limit: 3, windowMs: 15 * 60_000 },
   signUp: { limit: 10, windowMs: 5 * 60_000 },
 } as const;
 
 type BudgetName = keyof typeof SIGN_IN_BUDGETS;
 
-/** Whose budget an attempt spends: a device that signed in to this account, or the account. */
 type BudgetScope = { readonly deviceId: string } | { readonly email: string };
 
-/** The header the API sets to the client address it resolved, so budgets see the real client. */
 export const CLIENT_ADDRESS_HEADER = "x-swizzle-client-address";
 
 const DEVICE_COOKIE = "device";
-// Browsers cap cookie lifetimes at 400 days.
 const DEVICE_COOKIE_MAX_AGE_SECONDS = 400 * 24 * 60 * 60;
 
-/** Set by a before hook on a request whose success signs out the person's other browsers. */
 const SIGN_OUT_OTHERS = "swizzleSignOutOthers";
 
 const SIGNS_IN = new Set([
@@ -108,7 +78,6 @@ export function swizzleGuarantees(
           userId: { references: { field: "id", model: "user" }, required: true, type: "string" },
         },
       },
-      // auth-session-store.ts sets both on every session it creates.
       session: {
         fields: {
           lastSeenAt: { input: false, required: false, type: "date" },
@@ -118,12 +87,10 @@ export function swizzleGuarantees(
     },
     hooks: {
       before: [
-        // Who may sign up at all is auth-membership.ts's to decide, after this.
         before("/sign-up/email", async (ctx) => {
           await spend(ctx, "signUp", { address: clientAddress(ctx) });
         }),
 
-        // Each request may send a mail, so a stranger cannot flood a mailbox.
         before("/request-password-reset", async (ctx) => {
           await spend(ctx, "address", { address: clientAddress(ctx) });
           await spend(ctx, "mail", { email: normalizeEmail(bodyField(ctx, "email")) });
@@ -149,7 +116,6 @@ export function swizzleGuarantees(
           const user = session?.user ?? (await factors.user(ctx));
           if (user === null) return;
           await spend(ctx, "code", await scopeOf(ctx, user));
-          // With a session and 2FA still off, this code finishes turning it on.
           const turnsOn = session !== null && session.user.twoFactorEnabled !== true;
           return {
             context: {
@@ -215,7 +181,6 @@ export function swizzleGuarantees(
           matcher: (ctx) => SIGNS_IN.has(ctx.path ?? ""),
         },
         {
-          // A session opened before 2FA changed was opened under the old rules.
           handler: createAuthMiddleware(async (ctx) => {
             const kept = ctx.context.newSession;
             const marked = (ctx.context as { [SIGN_OUT_OTHERS]?: boolean })[SIGN_OUT_OTHERS];
@@ -232,7 +197,6 @@ export function swizzleGuarantees(
             ctx.path === "/two-factor/verify-totp" || ctx.path === "/two-factor/disable",
         },
         {
-          // The cookie is the only carrier of a session token; page script never sees one.
           handler: createAuthMiddleware(async (ctx) => {
             const returned = ctx.context.returned;
             if (returned === null || typeof returned !== "object" || !("token" in returned)) return;
@@ -261,7 +225,6 @@ interface ScopedUser {
   readonly id: string;
 }
 
-/** The device scope when this browser signed in to the user before, else the account scope. */
 async function scopeOf(ctx: Context, user: ScopedUser): Promise<BudgetScope> {
   return (await knownDevice(ctx, (owner) => owner.id === user.id)) ?? { email: user.email };
 }
@@ -281,7 +244,6 @@ async function knownDevice(
   return user !== null && belongsTo(user) ? { deviceId: device.id } : null;
 }
 
-/** Keeps the browser's device when it belongs to this user, else makes it a new one. */
 async function rememberDevice(ctx: Context, userId: string): Promise<void> {
   const cookie = deviceCookie(ctx);
   const presented = ctx.getCookie(cookie.name);
@@ -309,12 +271,10 @@ function deviceCookie(ctx: Context) {
   return ctx.context.createAuthCookie(DEVICE_COOKIE, { maxAge: DEVICE_COOKIE_MAX_AGE_SECONDS });
 }
 
-/** Better Auth's trusted device would skip the code at the next sign-in; Swizzle never does. */
 function untrusted(ctx: Context) {
   return { context: { body: { ...bodyObject(ctx), trustDevice: false } } };
 }
 
-/** Run the additional factor only after Better Auth accepts the password, before its write. */
 function stepUpAfterPassword(
   ctx: Context,
   factors: AuthFactors,

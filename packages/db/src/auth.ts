@@ -1,17 +1,3 @@
-/**
- * Sign-in for people: Better Auth with the guarantees Swizzle adds (ADR 0014). The API forwards
- * the routes in AuthResults to `handle` and asks `verifySession` who sent a request. Everything
- * else Better Auth offers stays unreachable over HTTP. `handle` turns success answers into the
- * records in auth-types.ts. Actions whose result is carried by cookies or account state answer
- * only a Swizzle acknowledgment.
- *
- * - auth-session-store.ts keeps only token hashes and owns the idle and absolute session limits.
- * - auth-guarantees.ts spends the device and account budgets and requires codes for sensitive writes.
- * - auth-two-factor.ts delegates code checks to Better Auth and prevents TOTP replay.
- *
- * The Postgres variant derives Better Auth's secrets from SWIZZLE_ENCRYPTION_KEY and its previous
- * keys, so the TOTP secrets and recovery codes it encrypts follow key rotation.
- */
 import {
   createHash,
   createHmac,
@@ -80,9 +66,6 @@ export {
   type SentInvitation,
 } from "./auth-membership.js";
 
-/**
- * What each Better Auth route the API forwards answers on success, as `handle` parses it.
- */
 export interface AuthResults {
   "/sign-up/email": AuthActionResult;
   "/sign-in/email": SignInResult;
@@ -97,10 +80,6 @@ export interface AuthResults {
 }
 export type AuthRoute = keyof AuthResults;
 
-/**
- * A forwarded route's answer. `headers` carries what the browser needs, such as cookies and
- * Retry-After; a failure carries Swizzle's code and recovery step in place of the library's.
- */
 export type AuthAnswer<Route extends AuthRoute> = {
   readonly headers: Headers;
   readonly status: number;
@@ -110,118 +89,58 @@ export type AuthAnswer<Route extends AuthRoute> = {
 );
 
 const AUTH_BASE_PATH = "/auth";
-/** The origin of the requests `handle` makes; `.invalid` never resolves, so no page has it. */
 const AUTH_BASE_URL = "http://swizzle.invalid";
 
-/** A live session: not expired, not idle, not signed out. */
 export interface SignedInPerson {
   readonly sessionId: string;
   readonly user: AuthUser;
 }
 
 export interface SwizzleAuth {
-  /**
-   * Runs one forwarded route with the browser's JSON body and the request headers Better Auth
-   * reads. AUTH_REQUEST_FAILED when successful JSON cannot be decoded or a required sign-in
-   * or enrollment field cannot be read.
-   */
   handle<Route extends AuthRoute>(
     route: Route,
     request: { readonly body: unknown; readonly headers: Headers },
   ): Promise<AuthAnswer<Route>>;
-  /** Null for no session cookie, a forged one, or an expired, idle or ended session. */
   verifySession(headers: Headers): Promise<SignedInPerson | null>;
-  /** True until the first account exists; setup then closes for good. */
   setupRequired(): Promise<boolean>;
-  /** Whether setup asks for SWIZZLE_SETUP_TOKEN in SETUP_TOKEN_HEADER. */
   readonly setupTokenRequired: boolean;
-  /** How many accounts sign in with a password alone. */
   accountsWithoutTwoFactor(): Promise<number>;
-  /** The person an agent token acts as; null once the account is gone. */
   findPerson(userId: string): Promise<AuthUser | null>;
   listPeople(): Promise<readonly AuthUser[]>;
   listSessions(person: SignedInPerson): Promise<readonly AuthSessionMetadata[]>;
-  /** False when the id names no live session of this user. */
   revokeSession(userId: string, sessionId: string): Promise<boolean>;
   revokeAllSessions(userId: string): Promise<void>;
   twoFactorStatus(userId: string): Promise<TwoFactorStatus>;
-  /** Whether invitations and password resets go out by mail (SwizzleAuthOptions.links). */
   readonly mailConfigured: boolean;
-  /**
-   * Invites `email` to join as `role`, with the project grants it promises, and returns the link
-   * for the inviter to pass on; with mail configured the link also goes out by mail. A pending
-   * invitation to the same address is replaced. ACCESS_DENIED when `invitedBy` may not give that
-   * role (mayManagePeople) or is suspended; AUTH_ACCOUNT_EXISTS when the address has an account;
-   * AUTH_MAIL_FAILED, with nothing stored, when the mail server refused.
-   */
   invite(input: {
     readonly email: string;
     readonly role: InstanceRole;
     readonly grants: readonly PendingGrant[];
     readonly invitedBy: string;
   }): Promise<SentInvitation>;
-  /** The pending invitation the token opens; null when unknown, used, revoked or expired. */
   findInvitation(token: string): Promise<Invitation | null>;
-  /** Pending invitations, newest first. */
   listInvitations(): Promise<readonly Invitation[]>;
-  /** False when no pending invitation has this id; ACCESS_DENIED as for setRole. */
   revokeInvitation(actorId: string, invitationId: string): Promise<boolean>;
-  /**
-   * Null when no account has this id. ACCESS_DENIED when the actor, as stored when the change
-   * runs, may not change this person or give this role (mayManagePeople); AUTH_LAST_OWNER when it
-   * would leave no active owner.
-   */
   setRole(actorId: string, userId: string, role: InstanceRole): Promise<AuthUser | null>;
-  /** Suspending signs the person out at once; errors as for setRole. */
   setSuspended(actorId: string, userId: string, suspended: boolean): Promise<AuthUser | null>;
-  /**
-   * Offboarding: deletes the account with its sessions, factors, agent tokens, team memberships and
-   * grants. False when no account has this id; errors as for setRole.
-   */
   removePerson(actorId: string, userId: string): Promise<boolean>;
-  /**
-   * For a person who lost both the authenticator and the recovery codes: turns their two-factor
-   * sign-in off and signs them out everywhere. False when they had none; ACCESS_DENIED as for
-   * setRole.
-   */
   resetTwoFactor(actorId: string, userId: string): Promise<boolean>;
-  /**
-   * For a person who forgot the password, with or without mail: a reset link for the actor to
-   * hand over, shown once. Null when no account has this id; ACCESS_DENIED as for setRole, and
-   * for the actor's own account, whose password changes under Settings › Account.
-   */
   createResetLink(actorId: string, userId: string): Promise<ResetLink | null>;
   close(): Promise<void>;
 }
 
-/**
- * What only a shell on the host may do, through apps/api/src/recover-owner.ts. The API server
- * builds SwizzleAuth alone, so no request reaches this.
- */
 export interface HostAuth {
-  /**
-   * For an owner locked out of the dashboard, who lost the password while mail is off, or the
-   * authenticator and the recovery codes: turns their two-factor sign-in off, signs them out
-   * everywhere and mints a reset link that sets a new password once, within the hour. Using it
-   * revokes their agent tokens, as a mailed one does. Changes nothing when `email` names no
-   * active owner.
-   */
   recoverOwner(email: string): Promise<OwnerRecovery>;
   close(): Promise<void>;
 }
 
 export interface SwizzleAuthOptions {
-  /** SWIZZLE_SETUP_TOKEN: the first account must present it. Null leaves setup open. */
   readonly setupToken: string | null;
-  /** Whether cookies carry `Secure` and the `__Secure-` prefix. */
   readonly secureCookies: boolean;
-  /** Pages allowed to send credentialed writes, from SWIZZLE_CORS_ORIGINS. */
   readonly trustedOrigins: readonly string[];
   readonly sessionDurationMs?: number;
   readonly sessionIdleTimeoutMs?: number;
-  /** What the access and token stores do when an account changes. */
   readonly effects: AccountEffects;
-  /** Dashboard links, with an optional mailer. Null disables invitations and reset links. */
   readonly links: AccountLinks | null;
 }
 
@@ -241,7 +160,6 @@ export function createPostgresSwizzleAuth(
     );
   const database = drizzleAdapter(client.db, {
     provider: "pg",
-    // Sign-up claims setup inside the transaction that inserts the user (auth-membership.ts).
     transaction: true,
     schema: AUTH_SCHEMA,
   });
@@ -257,10 +175,6 @@ export function createPostgresSwizzleAuth(
   );
 }
 
-/**
- * The tables by Better Auth model name. Swizzle's additional models are declared by the
- * guarantees, factor and membership plugins.
- */
 const AUTH_SCHEMA = {
   account: authAccounts,
   authBudget: authBudgets,
@@ -288,7 +202,6 @@ function buildAuth(
   const absoluteMs = options.sessionDurationMs ?? DEFAULT_SESSION_DURATION_MS;
   const idleMs = options.sessionIdleTimeoutMs ?? resolveSessionIdleTimeoutMs(process.env);
   const logger = createLogger("swizzle-auth");
-  // Typed as the general options, so plugin modules can take the context Better Auth gives them.
   const auth = betterAuth<BetterAuthOptions>({
     advanced: {
       cookiePrefix: "swizzle",
@@ -326,7 +239,6 @@ function buildAuth(
       swizzleGuarantees(factors, spend),
       swizzleMembership({ effects: options.effects, setupToken: options.setupToken }),
     ],
-    // Swizzle's budgets in auth-guarantees.ts survive a restart; the library's limiter would not.
     rateLimit: { enabled: false },
     secrets: [...secrets],
     session: {
@@ -336,7 +248,6 @@ function buildAuth(
     },
     telemetry: { enabled: false },
     trustedOrigins: [...options.trustedOrigins],
-    // A database reader must not be able to use a reset link or a sign-in challenge.
     verification: { storeIdentifier: "hashed" },
   });
 
@@ -465,10 +376,6 @@ function authUser(
   };
 }
 
-/**
- * How `handle` reads each route's success body. Typed by route, so a route without a reader, or
- * a reader that returns another shape, fails the build.
- */
 export function authResults(findPerson: (userId: string) => Promise<AuthUser | null>): {
   readonly [Route in AuthRoute]: (body: unknown) => Promise<AuthResults[Route]>;
 } {
@@ -506,7 +413,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-// The body is not logged: an enrollment answer holds the person's TOTP secret and recovery codes.
 function unexpectedAnswer(route: AuthRoute): CodedError {
   return new CodedError(
     "AUTH_REQUEST_FAILED",
@@ -530,7 +436,6 @@ const INVALID_PASSWORD_LENGTH: AuthFailure = {
   message: `The new password is outside the allowed length. Choose a password between ${PASSWORD_LENGTH.min} and ${PASSWORD_LENGTH.max} characters.`,
 };
 
-/** Better Auth failures translated into Swizzle codes and recovery steps. */
 const AUTH_ERRORS: Readonly<Record<string, AuthFailure>> = {
   INVALID_BACKUP_CODE: INVALID_CODE,
   INVALID_CODE,
@@ -543,7 +448,6 @@ const AUTH_ERRORS: Readonly<Record<string, AuthFailure>> = {
     error: "AUTH_CURRENT_PASSWORD_INVALID",
     message: "The current password is incorrect. Enter your current password and try again.",
   },
-  // Of the forwarded routes, only /reset-password sends it: the link is used, expired or unknown.
   INVALID_TOKEN: {
     error: "AUTH_RESET_LINK_INVALID",
     message: "This password reset link is invalid or expired. Request a new password reset link.",
@@ -558,7 +462,6 @@ const AUTH_ERRORS: Readonly<Record<string, AuthFailure>> = {
   PASSWORD_TOO_SHORT: INVALID_PASSWORD_LENGTH,
 };
 
-/** Swizzle's `{ error, message }` in place of Better Auth's `{ code, message }`. */
 async function swizzleError(response: Response): Promise<AuthFailure> {
   const body: unknown = await response.json().catch(() => null);
   const code = isRecord(body) && typeof body.code === "string" ? body.code : "";
@@ -576,7 +479,6 @@ async function swizzleError(response: Response): Promise<AuthFailure> {
   );
 }
 
-/** The key Better Auth's `symmetricEncrypt` takes, for re-encryption after a key rotation. */
 export function betterAuthSecretConfig(environment: NodeJS.ProcessEnv) {
   const secrets = betterAuthSecrets(environment);
   return {
@@ -585,10 +487,6 @@ export function betterAuthSecretConfig(environment: NodeJS.ProcessEnv) {
   };
 }
 
-/**
- * One Better Auth secret per Swizzle key, current first. The version is the key's fingerprint,
- * so a value encrypted before a rotation names the key that opens it.
- */
 function betterAuthSecrets(
   environment: NodeJS.ProcessEnv,
 ): readonly { readonly value: string; readonly version: number }[] {
@@ -608,8 +506,6 @@ function resolveSessionIdleTimeoutMs(environment: NodeJS.ProcessEnv): number {
   return minutes * 60 * 1000;
 }
 
-// Passwords are salted scrypt hashes from node:crypto, which runs on the thread pool instead of
-// the event loop. Changing a parameter makes every stored hash fail verification.
 const PASSWORD_SCHEME = "scrypt";
 const PASSWORD_KEY_LENGTH = 64;
 const PASSWORD_COST = 32_768;

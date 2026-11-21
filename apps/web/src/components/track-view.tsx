@@ -1,7 +1,3 @@
-// The window a track scrolls in. It opens on the station `focused` names and follows it, and every
-// edge that clips the track shows a fade and a button, because overlay scrollbars show nothing until
-// someone scrolls.
-
 import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
 const EDGES = {
@@ -12,10 +8,8 @@ const EDGES = {
 } as const;
 type Edge = keyof typeof EDGES;
 
-/** How much of the window one press moves, so what stood at the edge stays in view. */
 const PRESS = 0.75;
 
-/** The edges with more of the track behind them, as a string so that an equal answer renders nothing. */
 function clippedEdges(view: HTMLElement): string {
   const { clientHeight, clientWidth, scrollHeight, scrollLeft, scrollTop, scrollWidth } = view;
   return [
@@ -30,7 +24,6 @@ function clippedEdges(view: HTMLElement): string {
 
 export function TrackView(props: {
   readonly children: ReactNode;
-  /** The station to keep in view; a change moves the window to it. */
   readonly focused: string | null;
 }) {
   const view = useRef<HTMLDivElement>(null);
@@ -52,7 +45,6 @@ export function TrackView(props: {
     };
   }, []);
 
-  // Scrolls this window alone: scrollIntoView would move the pane around it too.
   // biome-ignore lint/correctness/useExhaustiveDependencies: `focused` says when to look again.
   useLayoutEffect(() => {
     const element = view.current;

@@ -34,8 +34,6 @@ export function MarkdownDocument(props: {
 
     void import("marked")
       .then(({ marked }) =>
-        // Any agent token can deploy a README. Without style, class and id it cannot position
-        // itself over the dashboard or borrow the dashboard's own classes to look like its UI.
         DOMPurify.sanitize(marked.parse(props.content ?? "", { async: false, gfm: true }), {
           FORBID_ATTR: ["class", "id", "style"],
           FORBID_TAGS: ["audio", "form", "iframe", "img", "object", "style", "video"],

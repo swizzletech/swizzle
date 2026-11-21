@@ -16,24 +16,12 @@ export const AUTOMATION_WEBHOOK_SIGNATURE_ALGORITHMS = ["hmac-sha256"] as const;
 
 export const AUTOMATION_WEBHOOK_SIGNATURE_ENCODINGS = ["hex", "base64"] as const;
 
-// Webhook headers are forwarded to automations by default; only the channels the
-// platform itself authenticates with are withheld. An allowlist would have to name
-// every provider's signature header (Stripe, Slack, Close, whatever ships next) and
-// would still leave the real invariant implicit — the security property lives
-// entirely in denying these names, never in permitting the others. Keep this list
-// minimal and credential-shaped: each entry must be a channel that carries an
-// Swizzle credential, not merely a header that looks sensitive.
 export const AUTOMATION_WEBHOOK_HEADER_DENYLIST = [
-  // API bearer tokens (apps/api/src/auth-routes.ts) — forwarding this would hand
-  // automation code the caller's platform credentials.
   "authorization",
   "proxy-authorization",
-  // Dashboard session cookies.
   "cookie",
 ] as const;
 
-// RFC 9110 field-name token, minus the characters no real header uses. Rejects
-// whitespace, colons, and the other shapes that would silently never match.
 const WEBHOOK_HEADER_NAME_PATTERN = /^[a-z0-9!#$%&'*+.^_`|~-]+$/;
 
 const jsonValueSchema = z.json();
@@ -134,8 +122,6 @@ const SINGLE_SOURCE_CHAIN_STATUSES = [
   "finished",
 ] as const satisfies readonly (typeof AUTOMATION_CHAIN_STATUSES)[number][];
 
-// Mirrors @swizzle/core's createDisplayName. packages/config stays
-// dependency-light by contract, so the one-liner is replicated instead of imported.
 export function normalizeAutomationName(name: string): string {
   return name.trim().replaceAll(/\s+/g, "-").toLowerCase();
 }
@@ -196,9 +182,6 @@ export const chainTriggerSchema = z
 
     if (hasSources) {
       const sources = trigger.sources ?? [];
-      // Deployment resolves each source through the same slug normalization
-      // (core's createDisplayName), so uniqueness must hold on normalized values —
-      // otherwise "Review Bot" and "review-bot" pass here and collide at sync time.
       const uniqueSources = new Set(sources.map(normalizeAutomationName));
       if (sources.length < 2 || uniqueSources.size !== sources.length) {
         ctx.addIssue({
@@ -241,7 +224,6 @@ export const chainTriggerSchema = z
     }
   });
 
-// A join defaults `on` and `payload` to the only values it accepts; a single source keeps the schema defaults.
 export function defaultChainJoinFields(value: unknown): unknown {
   if (value !== null && typeof value === "object" && !Array.isArray(value)) {
     const trigger = value as Record<string, unknown>;

@@ -16,7 +16,6 @@ it("leaves a truncated Docker export unmeasured when it exits normally", async (
   );
   const archive = path.join(directory, "image.tar");
   await tarCreate({ cwd: directory, file: archive }, [config]);
-  // Keep the valid header and cut the config body short. Docker still exits with code 0.
   await writeFile(archive, (await readFile(archive)).subarray(0, 520));
   await writeFile(
     path.join(directory, "docker"),

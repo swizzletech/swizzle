@@ -1,11 +1,5 @@
 export type ConnectionProviderErrorKind = "invalid-grant" | "provider-rejected" | "transient";
 
-/**
- * Normalized provider failure. `kind` decides platform behavior:
- * - `invalid-grant`: the stored grant is dead; re-authorization is required.
- * - `provider-rejected`: the provider answered with a definitive OAuth error.
- * - `transient`: network/5xx/timeout; safe to retry without touching state.
- */
 export class ConnectionProviderError extends Error {
   readonly kind: ConnectionProviderErrorKind;
   readonly providerErrorCode: string | null;

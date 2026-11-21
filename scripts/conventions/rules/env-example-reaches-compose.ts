@@ -2,9 +2,7 @@ import type { Rule } from "../lint.js";
 
 const ENV_EXAMPLE = ".env.example";
 const COMPOSE = "infra/docker/compose.yml";
-/** `extends: { file: execution.yml, ... }`: Compose interpolates the extended file with the same env. */
 const EXTENDED = /\bfile:\s*["']?([\w.-]+\.ya?ml)/gu;
-/** A setting, set or commented out: `KEY=value` or `# KEY=value`. Indented examples are not settings. */
 const SETTING = /^(?:# ?)?([A-Z][A-Z0-9_]*)=/u;
 
 export const envExampleReachesCompose: Rule = {

@@ -74,10 +74,6 @@ export interface ListTimeoutGrantAuditEventsInput extends AutomationTimeoutGrant
   readonly limit?: number;
 }
 
-/**
- * One step of a run. `finishedAt` set: the step has its result, which retries reuse. Unset: the
- * step started (`startedAt`) and has not returned; when the attempt died, that is where it broke.
- */
 export interface StoredRunStepEntry {
   readonly approval: ApprovalDecision | null;
   readonly executionNumber: number;
@@ -87,7 +83,6 @@ export interface StoredRunStepEntry {
   readonly startedAt: string | null;
   readonly stepKey: string;
   readonly updatedAt: string;
-  /** Null until the step finished. */
   readonly value: unknown;
 }
 
@@ -99,13 +94,9 @@ export interface GetRunStepTotalsInput extends ListRunStepsInput {
   readonly stepKey: string;
 }
 
-/** What a run's steps hold against its step limits, and the row of one step key. */
 export interface RunStepTotals {
-  /** Step rows, started or finished. */
   readonly steps: number;
-  /** JSON bytes of the stored results, as `stepResultBytes` counts them; a started step has none. */
   readonly resultBytes: number;
-  /** The row of the asked key, null when the run has none. */
   readonly step: StoredRunStepEntry | null;
 }
 
@@ -128,18 +119,11 @@ export interface AppendRunExecutionOutputInput {
   readonly stdout?: string;
 }
 
-/**
- * One execution of a run: one start of its process. `executionNumber` counts every execution of
- * the run; `attempt` is the retry attempt it spends against `runtime.retry.max_attempts`, which
- * starts again at 1 when the run resumes from a wait. People and the automation see the attempt.
- */
 export interface StoredRunExecution {
   readonly executionId: string;
   readonly executionNumber: number;
   readonly attempt: number;
-  /** The wait this execution suspended at; null unless its status is `suspended`. */
   readonly wait: ExecutionWait | null;
-  /** The wait this execution resumed the run after: the previous execution's `wait`. */
   readonly resumedAfter: ExecutionWait | null;
   readonly durationMs: number | null;
   readonly errorCause: string | null;
@@ -159,7 +143,6 @@ export interface StoredRunExecution {
   readonly status: PlatformRunExecutionStatus;
   readonly stderr: string;
   readonly stdout: string;
-  /** The worker that claimed the execution, by the name it had then. */
   readonly workerName: string;
 }
 
@@ -167,23 +150,15 @@ export interface StoredRun {
   readonly artifactBackend: StoredArtifactStorageBackend;
   readonly artifactLocator: StoredArtifactLocator;
   readonly artifactRootPath: string;
-  /** Every execution of the run, oldest first. */
   readonly executions: readonly StoredRunExecution[];
-  /** Attempts since the run started or last resumed from a wait: the count `attemptsMax` bounds. */
   readonly attemptsMade: number;
   readonly attemptsMax: number;
   readonly automationId: string;
   readonly automationName: string;
   readonly automationSlug: string;
   readonly config: AutomationConfig;
-  /** The project the automation was in when the run was created; a move leaves it. */
   readonly projectId: string;
-  /**
-   * The run a chain run correlates under: its source run, or for a join the origin run its
-   * sources share. Null for other triggers.
-   */
   readonly chainOriginRunId: string | null;
-  /** The source runs whose success started this chain run: one, or every source of a join. */
   readonly chainSourceRunIds: readonly string[];
   readonly correlationId: string | null;
   readonly deadLetterReason: string | null;
@@ -281,7 +256,6 @@ export interface CompleteRunExecutionInput {
   readonly status: PlatformRunExecutionStatus;
   readonly stderr: string;
   readonly stdout: string;
-  /** The wait a `suspended` execution stopped at. */
   readonly wait?: ExecutionWait;
 }
 
@@ -296,7 +270,6 @@ export interface UpdateRunExecutionHeartbeatInput {
   readonly runId: string;
 }
 
-/** Pages queued runs in `queuedAt, runId` order: pass the last run id of a page to get the next. */
 export interface ListQueuedRunsPageInput {
   readonly afterRunId?: string;
   readonly environment?: string;
@@ -325,20 +298,14 @@ export interface ListChildRunsInput {
   readonly parentRunId: string;
 }
 
-/**
- * Ends a wait in one commit: the run leaves `waiting` and the step gets its result, or neither
- * happens. Only the first of concurrent resolutions wins; the rest get null.
- */
 export interface ResumeWaitingRunInput {
   readonly expectedWaitReason: PlatformRunWaitReason;
   readonly runId: string;
   readonly stepKey: string;
   readonly result: StepResultInput;
-  /** When given, the wait must still be assigned to exactly this assignee. */
   readonly expectedAssignee?: ApprovalAssignee | null;
 }
 
-/** Moves an open approval from one assignee to another, if it is still open and still `from`'s. */
 export interface ReassignApprovalInput {
   readonly runId: string;
   readonly stepKey: string;

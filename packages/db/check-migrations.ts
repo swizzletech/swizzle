@@ -1,16 +1,3 @@
-// Fails when packages/db/src/schema.ts and the migrations in packages/db/drizzle drift apart.
-// `just check` runs this. It proves three things:
-//   1. The journal and the files agree: every listed migration has its SQL and snapshot, every
-//      SQL file is listed, because the migrator applies only what the journal lists, and each
-//      snapshot follows the one before it.
-//   2. The baseline SQL is what drizzle-kit renders from the baseline snapshot.
-//   3. drizzle-kit renders schema.ts into a snapshot from scratch, which equals the latest one.
-// A failure of 1 means two branches added a migration under the same number, and
-// `just db-migration-rebase`, run where `git rebase main` stops, renumbers this branch's; a
-// failure of 2 or 3 means schema.ts changed without `just db-generate <name>`.
-// Later migrations' SQL is not replayed: drizzle-kit asks interactively about renames there, and a
-// hand-written data migration is legitimate.
-
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
@@ -57,10 +44,6 @@ function snapshotOfSchema(): Snapshot {
 
 const withoutIds = ({ id: _id, prevId: _prevId, ...rest }: Snapshot) => rest;
 
-/**
- * Each problem says how the journal and the files disagree, as they do when two branches each
- * added a migration under the same number; an empty list means `listed` is a sound chain.
- */
 function collisions(listed: readonly Migration[]): string[] {
   const missing = listed
     .flatMap(({ sqlPath, snapshot }) => [sqlPath, snapshot])
@@ -89,7 +72,6 @@ function collisions(listed: readonly Migration[]): string[] {
   return [...unlisted, ...broken];
 }
 
-/** Each problem says how schema.ts and the migrations drifted; an empty list means they agree. */
 async function drift(listed: readonly Migration[]): Promise<string[]> {
   const baseline = listed[0];
   const latest = listed.at(-1);
@@ -138,7 +120,6 @@ async function drift(listed: readonly Migration[]): Promise<string[]> {
   return problems;
 }
 
-/** What a kind of problem means, and how to fix it. */
 interface Verdict {
   readonly headline: string;
   readonly fix: readonly string[];

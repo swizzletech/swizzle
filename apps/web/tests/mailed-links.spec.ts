@@ -2,9 +2,6 @@ import { expect, test } from "@playwright/test";
 
 import { mockDashboardApi, seededState } from "./dashboard-mock";
 
-// A mailed link opened in a tab that already shows that page changes only the fragment, so the
-// page must read the new token without a reload.
-
 test("a second invitation link opened in the same tab shows its invitation", async ({ page }) => {
   await mockDashboardApi(page, seededState(), { authenticated: false });
   await page.route(

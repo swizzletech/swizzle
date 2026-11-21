@@ -1,7 +1,3 @@
-// The Overview's timetable: each automation's top-level runs of the last 24 hours, counted per hour
-// and run state in one grouped query, and the deploys inside the same window. The hours follow the
-// viewer's clock, so the API passes the viewer's offset from UTC with the moment it asks.
-
 import { and, count, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import type { ReadScope } from "./access.js";
 import type { DatabaseClient } from "./client.js";
@@ -19,10 +15,8 @@ import { automations, deployments, runs } from "./schema.js";
 
 const HOUR_MS = 60 * 60_000;
 const HOURS = 24;
-/** More deploys than this in one day would draw marks on top of each other anyway. */
 const DEPLOYMENT_LIMIT = 500;
 
-/** The start of the viewer's current hour, 23 hours back: the first of the timetable's 24 hours. */
 function timetableStart(clock: TimetableClock): Date {
   const offsetMs = clock.utcOffsetMinutes * 60_000;
   const hourStart = Math.floor((clock.now.getTime() + offsetMs) / HOUR_MS) * HOUR_MS - offsetMs;
@@ -37,8 +31,6 @@ export async function getTimetable(
 ): Promise<DashboardTimetable> {
   const from = timetableStart(clock);
   const until = new Date(from.getTime() + HOURS * HOUR_MS);
-  // A literal of whole seconds, so the select list and GROUP BY hold the same expression; two
-  // bound parameters would be two expressions to Postgres.
   const fromSeconds = sql.raw(String(from.getTime() / 1000));
   const hour = sql<number>`floor((extract(epoch from ${runs.queuedAt}) - ${fromSeconds}) / 3600)::int`;
   const cancelled = sql<boolean>`coalesce(${runs.deadLetterReason} = ${sql.raw(`'${USER_CANCELLED}'`)}, false)`;
@@ -90,7 +82,6 @@ export async function getTimetable(
     const hourCounts = rowOf(group.automationSlug).hours[group.hour];
     if (hourCounts !== undefined) hourCounts[state] = (hourCounts[state] ?? 0) + group.runs;
   }
-  // Newest first from the store; the timetable reads left to right.
   for (const change of changes.toReversed()) {
     if (Date.parse(change.occurredAt) >= until.getTime()) continue;
     rowOf(change.automationSlug).deployments.push({

@@ -1,6 +1,3 @@
-// Settings › Status, for instance owners and admins: the version, the environments and whether
-// workers, scheduler and cleanup run.
-
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { Chip, ErrorNote, Skeleton } from "../../components/ui";
@@ -31,7 +28,6 @@ export function Status() {
   );
 }
 
-/** Workers, scheduler and cleanup. */
 function PlatformState() {
   const { api, queryScope } = useDashboardClient();
   const operations = useQuery({

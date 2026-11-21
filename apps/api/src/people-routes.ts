@@ -1,26 +1,3 @@
-/**
- * The people of an instance over HTTP (ADR 0014). Owners and admins invite, change, suspend and
- * remove people. The auth store decides who may change whom (`mayManagePeople` in
- * packages/db/src/access.ts) in the transaction that makes the change, and keeps the last active
- * owner; these routes pass it the actor. `POST /invitations` answers with the invitation's link
- * once, for the inviter to pass on, and also mails it when SWIZZLE_SMTP_URL is set. The recipient
- * reads it with `POST /auth/invitation` and accepts it through `/auth/sign-up/email`.
- *
- * | Route                               | Access    | Does                                        |
- * |-------------------------------------|-----------|---------------------------------------------|
- * | GET /users                          | instance  | everyone, with role and suspension           |
- * | GET /directory                      | resource  | minimal identities in visible projects       |
- * | PUT /users/:userId/role             | instance  | changes the instance role                    |
- * | PUT /users/:userId/suspension       | instance  | suspends: sessions end, tokens are refused   |
- * | DELETE /users/:userId/suspension    | instance  | reactivates                                  |
- * | DELETE /users/:userId/two-factor    | instance  | turns off a lost second factor               |
- * | POST /users/:userId/reset-link      | instance  | a one-time password reset link, shown once   |
- * | DELETE /users/:userId               | instance  | offboards: deletes the account               |
- * | GET /invitations                    | instance  | pending invitations                          |
- * | POST /invitations                   | instance  | invites with project grants; link shown once |
- * | DELETE /invitations/:invitationId   | instance  | revokes one                                  |
- * | POST /auth/invitation               | public    | what a token's invitation offers             |
- */
 import {
   type AccessStore,
   type AuthUser,
@@ -57,7 +34,6 @@ const roleField = { enum: [...INSTANCE_ROLES], type: "string" } as const;
 export function registerPeopleRoutes(app: ApiServer, options: RegisterPeopleRoutesOptions): void {
   const { accessStore, auth } = options;
 
-  /** Each grant with its project's name; a project deleted since drops out. */
   const withProjects = async (invitation: Invitation) => {
     const grants = await Promise.all(
       invitation.grants.map(async (grant) => {
@@ -237,7 +213,6 @@ export function registerPeopleRoutes(app: ApiServer, options: RegisterPeopleRout
   );
 }
 
-/** The person who asks; a service account never manages people. */
 function actingPerson(request: FastifyRequest): string {
   const actor = request.actor;
   if (actor?.kind === "person") return actor.userId;

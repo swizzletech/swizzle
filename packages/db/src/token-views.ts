@@ -7,7 +7,6 @@ import { type ProjectRef, projectRef } from "./project-ref.js";
 export interface TokenDirectory {
   project(id: string): Promise<ProjectRef | null>;
 }
-/** A token as the API shows it: its scope's projects by slug, and who minted it. */
 export async function tokenView(names: TokenDirectory, token: StoredApiToken) {
   const projects =
     token.scope.projectIds === null
@@ -23,7 +22,6 @@ export async function tokenView(names: TokenDirectory, token: StoredApiToken) {
     revokedAt: token.revokedAt,
     scope: {
       environments: token.scope.environments,
-      // A project deleted since the token was minted is left out; the token reaches nothing there.
       projects:
         projects === null
           ? null
@@ -38,7 +36,6 @@ export function tokenViews(names: TokenDirectory, tokens: readonly StoredApiToke
   return Promise.all(tokens.map((token) => tokenView(names, token)));
 }
 
-/** A service account with who created it, its grants in its project, and its tokens. */
 export async function accountView(
   names: TokenDirectory,
   store: ApiTokenStore,
@@ -66,7 +63,6 @@ export async function accountView(
 export type TokenView = Awaited<ReturnType<typeof tokenView>>;
 export type ServiceAccountView = Awaited<ReturnType<typeof accountView>>;
 
-/** What GET /auth/identity answers: who the request acts as, and its role in the target. */
 export interface IdentityResponse {
   readonly kind: "person" | "service-account";
   readonly person: {

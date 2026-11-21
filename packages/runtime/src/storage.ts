@@ -68,10 +68,6 @@ export async function checkConfiguredArtifactStorageReadiness(
   }
 }
 
-/**
- * Names the tree that deleting a reference's artifacts removes. Deployments with
- * the same key share one tree: a rollback copies its target's locator.
- */
 export function getArtifactTreeKey(reference: ArtifactStorageReference): string {
   const locator = reference.artifactLocator;
   return locator.type === "s3"

@@ -3,6 +3,7 @@ import type { ControlPlaneStore, StoredTrigger } from "@swizzle/db";
 import { describe, expect, it, vi } from "vitest";
 
 import { startManualRun, triggerWebhookByPath } from "./triggers.js";
+import { createWebhookRunContext } from "./webhook-context.js";
 
 describe("startManualRun", () => {
   it("refuses a chain automation, which runs only when its sources succeed", async () => {
@@ -34,16 +35,8 @@ describe("startManualRun", () => {
   });
 });
 
-it("keeps schema rejection audits separate from invalid configuration and enqueue failures", async () => {
-  const trigger = {
-    automationId: "automation-1",
-    automationName: "schema-probe",
-    automationSlug: "schema-probe",
-    chainOnStatus: null,
-    chainPayloadMode: null,
-    chainSourceAutomationId: null,
-    chainSourceAutomationIds: [],
-    config: parseAutomationConfig(`
+it("verifies webhook signatures before payload validation and audits input rejections separately from enqueue failures", async () => {
+  const configSource = `
 name: schema-probe
 version: 1.0.0
 entrypoint: main.js
@@ -53,7 +46,16 @@ trigger:
   payload_schema:
     type: object
     required: [event]
-`),
+`;
+  const trigger = {
+    automationId: "automation-1",
+    automationName: "schema-probe",
+    automationSlug: "schema-probe",
+    chainOnStatus: null,
+    chainPayloadMode: null,
+    chainSourceAutomationId: null,
+    chainSourceAutomationIds: [],
+    config: parseAutomationConfig(configSource),
     cronIntervalMs: null,
     cronSchedule: null,
     deploymentId: "deployment-1",
@@ -73,8 +75,12 @@ trigger:
   const createTriggerAuditEvent = vi.fn();
   const getWebhookTriggerByPath = vi.fn().mockResolvedValue(trigger);
   const store = {
+    boundCredentials: vi
+      .fn()
+      .mockResolvedValue([{ id: "secret-1", kind: "secret", name: "SIGNING_SECRET" }]),
     createTriggerAuditEvent,
     getWebhookTriggerByPath,
+    resolveSecrets: vi.fn().mockResolvedValue([{ value: "signing-key" }]),
   } as unknown as ControlPlaneStore;
   const enqueueRun = vi.fn().mockRejectedValue(new Error("queue unavailable"));
   const options = { environment: "local", path: "/schema-probe", store, enqueueRun };
@@ -89,6 +95,34 @@ trigger:
       validationErrors: [expect.objectContaining({ keyword: "required" })],
     }),
   ]);
+
+  getWebhookTriggerByPath.mockResolvedValue({
+    ...trigger,
+    config: parseAutomationConfig(`${configSource}  signature:
+    secret: SIGNING_SECRET
+    header: x-signature
+    prefix: sha256=
+`),
+  });
+  for (const { headers, signatureReason } of [
+    { headers: {}, signatureReason: "signature-header-missing" },
+    {
+      headers: { "x-signature": `sha256=${"0".repeat(64)}` },
+      signatureReason: "signature-mismatch",
+    },
+  ]) {
+    createTriggerAuditEvent.mockClear();
+    await expect(
+      triggerWebhookByPath({
+        ...options,
+        payload: {},
+        webhookContext: createWebhookRunContext({ headers, rawBody: Buffer.from("{}") }),
+      }),
+    ).rejects.toMatchObject({ code: "WEBHOOK_NOT_AVAILABLE" });
+    expect(createTriggerAuditEvent.mock.calls.map(([event]) => event.metadata)).toEqual([
+      expect.objectContaining({ reason: "signature-invalid", signatureReason }),
+    ]);
+  }
 
   createTriggerAuditEvent.mockClear();
   getWebhookTriggerByPath.mockResolvedValue({
@@ -111,7 +145,6 @@ trigger:
   );
   expect(createTriggerAuditEvent.mock.calls).toEqual([]);
 
-  // A broken stored schema is an internal failure, not a rejected delivery.
   getWebhookTriggerByPath.mockResolvedValue({
     ...trigger,
     config: {

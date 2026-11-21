@@ -1,6 +1,3 @@
-// The run's live stream: `GET /runs/:id/logs/stream` relays the executions' stderr so far, then every
-// chunk, step and status event the worker publishes while the run is open.
-
 import { useEffect, useRef, useState } from "react";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
@@ -12,9 +9,7 @@ interface RunLogChunk {
   readonly timestamp: string;
 }
 
-/** A step of the run started or finished, as the worker reported it. */
 export interface RunStepEvent {
-  /** The retry attempt the reporting execution spends. */
   readonly attempt: number;
   readonly executionNumber: number;
   readonly key: string;
@@ -26,14 +21,12 @@ export interface RunLogStreamState {
   readonly chunks: readonly RunLogChunk[];
   readonly error: string | null;
   readonly status: string | null;
-  /** Step events in arrival order, from the moment the stream opened. */
   readonly steps: readonly RunStepEvent[];
   readonly streaming: boolean;
 }
 
 export function useRunLogStream(runId: string, enabled: boolean): RunLogStreamState {
   const [chunks, setChunks] = useState<RunLogChunk[]>([]);
-  // Kept with the run they belong to, so another run's events never read as this run's.
   const [steps, setSteps] = useState<{ runId: string; events: RunStepEvent[] }>({
     events: [],
     runId,
@@ -51,7 +44,6 @@ export function useRunLogStream(runId: string, enabled: boolean): RunLogStreamSt
       return;
     }
 
-    // The stream replays the executions' stderr so far, so a reconnect starts from nothing.
     setChunks([]);
     setSteps({ events: [], runId });
     setStatus(null);

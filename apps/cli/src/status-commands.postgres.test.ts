@@ -20,7 +20,6 @@ import {
 
 import { runCli } from "./main.js";
 
-// Commands that talk to an API instance, run against a real in-process API server with PostgreSQL stores.
 useCliTestEnvironment();
 
 describe("status commands", () => {
@@ -47,7 +46,6 @@ describe("status commands", () => {
         serverVersion: releaseVersion,
       });
 
-      // A regular file where the artifacts directory belongs fails the probe, root included.
       await rm(artifactsDirectory, { recursive: true });
       await writeFile(artifactsDirectory, "");
       const failingIo = createBufferIO();
@@ -109,7 +107,6 @@ describe("status commands", () => {
   it("doctor reports an unreachable API even when it cannot learn the environment", async () => {
     vi.stubEnv("SWIZZLE_ENVIRONMENT", undefined);
     const io = createBufferIO();
-    // Nothing listens here, so the instance cannot name its environment either.
     expect(await runCli(["doctor", "--json", "--api-url", "http://127.0.0.1:9"], io)).toBe(1);
     expect(JSON.parse(io.stdoutText)).toMatchObject({
       checks: expect.arrayContaining([expect.objectContaining({ name: "api", status: "fail" })]),
@@ -215,7 +212,6 @@ describe("status commands", () => {
         environment: "staging (from profile)",
         role: "operator",
       });
-      // A person's token without limits acts with all their rights, an owner's beyond project admin.
       expect(JSON.parse(atDesk.io.stdoutText).token).toBe(
         `desk; all your rights; expires ${desk.expiresAt}`,
       );
@@ -290,7 +286,6 @@ describe("status commands", () => {
       expect(requests).toEqual(["/security/audit", "/security/audit"]);
       const report = JSON.parse(io.stdoutText);
       expect(report.status).toBe("ok");
-      // Warnings leave the status ok; the default view lists only what needs attention.
       expect(report.checks.map((check: { level: string }) => check.level)).not.toContain("pass");
       expect(report.checks.map((check: { level: string }) => check.level)).not.toContain(
         "critical",

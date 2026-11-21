@@ -1,4 +1,3 @@
-/** Canonical path used by deployment registration and webhook ingress. */
 export function normalizeWebhookPath(path: string | undefined): string {
   const trimmed = path?.trim();
   if (!trimmed) {

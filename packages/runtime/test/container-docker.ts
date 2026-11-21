@@ -33,7 +33,6 @@ runtime:
 
 interface FakeDockerOptions {
   readonly missingImage: boolean;
-  /** Another process holds the assembly container's name and tags the image while it is asked. */
   readonly assembledElsewhere?: boolean;
   readonly stallControl?: string;
   readonly installGate?: boolean;
@@ -41,7 +40,6 @@ interface FakeDockerOptions {
   readonly sizeUnknown?: boolean;
   readonly failCommit?: "always" | "once";
   readonly commitError?: string;
-  /** Emitted after releaseStderr(), so stdout has been consumed before an overflow. */
   readonly execStderr?: string;
   readonly execAfterOutputStalls?: boolean;
   readonly installOutput?: string;
@@ -50,22 +48,9 @@ interface FakeDockerOptions {
   readonly failAttach?: boolean;
   readonly cliGoneAtAttach?: boolean;
   readonly execHangs?: boolean;
-  /** What the automation prints on stdout; `{"ok":true}` by default. */
   readonly execStdout?: string;
 }
 
-/**
- * Puts a `docker` on PATH that logs each call and answers as the daemon would: the image inspect
- * fails when `missingImage`, commit fails `always` or `once` with `failCommit`, tag fails after a
- * commit when `failTag`, the install step fails or stalls with `failInstall`, `docker start
- * --attach` fails before the install container ran with `failAttach`, the CLI can no longer be
- * started from the install step on with `cliGoneAtAttach`, and exec prints a JSON
- * result. With `layerMiB`, the install step runs until `docker kill` and the container's writable
- * layer holds that many MiB. With `sizeUnknown`, the layer's size cannot be read; a stalled install
- * stalls the size reading too. With `execHangs`, exec ignores every signal but SIGKILL and never
- * ends, like a CLI whose daemon stopped answering. `execPid` reads the last exec's process id. `inputs`
- * lists the files of the last exec's input archive.
- */
 export async function fakeDocker(input: FakeDockerOptions) {
   const bin = await temporaryDirectory("swizzle-fake-docker-");
   const log = path.join(bin, "calls.log");
@@ -95,12 +80,9 @@ exit 0
 `,
     { mode: 0o755 },
   );
-  // Without the fake, no `docker` may be left on PATH for the CLI to fall back to.
   vi.stubEnv("PATH", input.cliGoneAtAttach ? bin : `${bin}:${process.env.PATH}`);
   const calls = async () =>
     (await readFile(log, "utf8").catch(() => "")).split("\n").filter(Boolean);
-  // Sandbox and assembly removals can outlive the result. Keep the fake until cleanup ends,
-  // including retries, so a late call cannot recreate its log during directory removal.
   onTestFinished(async ({ signal }) => {
     await waitFor(signal, async () => {
       const logged = await calls();
@@ -114,13 +96,11 @@ exit 0
   });
   return {
     calls,
-    /** Waits until a call that starts with `prefix` reached the fake. */
     reached: (signal: AbortSignal, prefix: string) =>
       waitFor(signal, async () => (await calls()).some((call) => call.startsWith(prefix))),
     releaseInstall: () => writeFile(path.join(bin, "release"), ""),
     releaseStderr: () => writeFile(path.join(bin, "stderr-release"), ""),
     execPid: async () => Number(await readFile(path.join(bin, "exec.pid"), "utf8")),
-    /** The files the last exec received in its input archive. */
     inputs: async () => {
       const names: string[] = [];
       await listTar({

@@ -163,7 +163,6 @@ it("scopes sharing identities to visible projects for people, narrowed tokens an
       expect.objectContaining({ id: privateTeam.id, memberIds: [hidden] }),
     );
   }
-  // A direct automation share also connects its recipient to the project's directory.
   const fixture = await createAutomationFixture({
     name: "report",
     mainJs: "console.log('{}');",

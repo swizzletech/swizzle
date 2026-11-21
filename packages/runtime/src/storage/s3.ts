@@ -22,7 +22,6 @@ import type {
   S3ArtifactLocator,
 } from "./types.js";
 
-/** The client of one S3-backed storage and the SDK module its commands come from. */
 interface S3Connection {
   readonly client: S3Client;
   readonly sdk: typeof import("@aws-sdk/client-s3");
@@ -35,11 +34,7 @@ export function createS3ArtifactStorage(options: {
   readonly prefix: string | null;
   readonly region: string;
 }): ArtifactStorage {
-  // The SDK's own agents, plus the control egress proxy: the Compose worker reaches no endpoint
-  // outside the stack except through it.
   const agentOptions = { keepAlive: true, maxSockets: 50, ...controlEgressAgentOptions() };
-  // The AWS SDK takes longer to import than the rest of the runtime, so the storage loads it on
-  // first use: a local-backend install and the CLI never pay for it.
   let connection: Promise<S3Connection> | undefined;
   const connect = () =>
     (connection ??= import("@aws-sdk/client-s3").then((sdk) => ({

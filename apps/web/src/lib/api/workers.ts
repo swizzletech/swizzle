@@ -1,5 +1,3 @@
-// The machines that run automations: enrollment and revocation.
-
 import type {
   WorkerEnrollmentResponse,
   WorkerGrants,

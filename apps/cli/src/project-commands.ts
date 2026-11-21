@@ -1,5 +1,3 @@
-/** `swizzle projects`: projects, their grants and protected environments; the command table is in access-commands.ts. */
-
 import type {
   EnvironmentHold,
   ProjectRole,
@@ -34,7 +32,6 @@ type Grant = ProjectAccess["grants"][number];
 
 const segment = encodeURIComponent;
 
-/** Where a grant applies: the project, one environment, or one automation. */
 type GrantPlaceRef =
   | { readonly on: "project" }
   | { readonly on: "environment"; readonly environment: string }
@@ -48,7 +45,6 @@ type SubjectOptions = {
 
 type PlaceOptions = { readonly onEnvironment?: string; readonly onAutomation?: string };
 
-/** The one subject `--user`, `--team` or `--service-account` names; none or several is a usage error. */
 function subjectFromOptions(options: SubjectOptions): SubjectRef {
   const given = [
     ...(options.user !== undefined ? [{ user: options.user }] : []),
@@ -68,7 +64,6 @@ function subjectFromOptions(options: SubjectOptions): SubjectRef {
   return subject;
 }
 
-/** `--on-environment` or `--on-automation`, never both; neither is the whole project. */
 function placeFromOptions(options: PlaceOptions): GrantPlaceRef {
   if (options.onEnvironment !== undefined && options.onAutomation !== undefined) {
     throw new AgentError({
@@ -106,7 +101,6 @@ interface DeleteProjectOptions extends ApiCommandOptions {
   readonly yes?: boolean;
 }
 
-/** "2 automations, 1 credential, 40 runs", or null for an empty project. */
 function contentsText(counts: ProjectContentCounts): string | null {
   const parts = Object.entries(counts)
     .filter(([, count]) => count > 0)
@@ -445,16 +439,11 @@ async function projectAccess(
   return await apiRequest<ProjectAccess>(url(`/projects/${segment(reference)}/access`, options));
 }
 
-/**
- * What a holder may do in one environment. A team acts only through its members, so in a
- * protected environment it shows the role its grant there caps them at.
- */
 function holdLabel(hold: EnvironmentHold, kind: Subject["kind"]): string {
   if (kind === "team" && hold.cap !== null) return `${hold.cap} (grant)`;
   return hold.role ?? "none";
 }
 
-/** Labels for grant subjects: a person's email, a team's or a service account's name. */
 function subjectNames(state: ProjectAccess): (subject: Subject) => string {
   return (subject) => {
     const holder = state.holders.find((candidate) => sameSubject(candidate.subject, subject));

@@ -1,6 +1,3 @@
-// Settings › Notifications (`/settings/notifications`): the default Telegram rule, advanced rules
-// and the delivery history.
-
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -45,12 +42,10 @@ export function Notifications({ operator }: { readonly operator: boolean }) {
         <ErrorNote error={rules.error} title="The notification rules could not be loaded" />
       ) : rules.data === undefined ? (
         <div className="card">
-          {/* As tall as the loaded card, so Account and Instance stay put when it arrives. */}
           <Skeleton label="Loading notification rules" lines={8} />
         </div>
       ) : (
         <div className="card rows overflow-hidden">
-          {/* Keyed by rule, so the chat id field follows a default rule created in Advanced. */}
           <DefaultRule key={defaultRule?.ruleId ?? "none"} rule={defaultRule} />
           <details className="group">
             <summary className="setting cursor-pointer list-none">
@@ -85,7 +80,6 @@ export function Notifications({ operator }: { readonly operator: boolean }) {
   );
 }
 
-/** The switch most owners need: one rule for every automation, when a run finally fails. */
 function DefaultRule({ rule }: { readonly rule: NotificationRule | undefined }) {
   const { api } = useDashboardClient();
   const queryClient = useQueryClient();
@@ -137,7 +131,6 @@ function DefaultRule({ rule }: { readonly rule: NotificationRule | undefined }) 
   );
 }
 
-/** "When 3 runs fail within 60 min", "When a run finally fails", with the cooldown. */
 function ruleInWords(rule: NotificationRule): string {
   const when =
     rule.eventType === "dead-lettered"

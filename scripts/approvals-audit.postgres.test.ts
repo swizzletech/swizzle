@@ -1,12 +1,3 @@
-import { it } from "vitest";
-import { testDatabase } from "../test/postgres.js";
-import { testControlPlaneStore } from "../test/stores.js";
-// Assigned approvals, the audit and per-person notifications on PostgreSQL: of two decisions
-// racing for one wait exactly one commits its step result,
-// a reassignment lands only on the assignee it expects, an assignee resolves by email or team
-// name, a person's read access answers a notification send, and audit events outlive the
-// automation they name.
-
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import {
@@ -20,6 +11,9 @@ import {
   createPostgresAuditStore,
   type DatabaseClient,
 } from "@swizzle/db/postgres";
+import { it } from "vitest";
+import { testDatabase } from "../test/postgres.js";
+import { testControlPlaneStore } from "../test/stores.js";
 import { commitDeploymentFixture, createQueuedRun } from "./verify-state-fixtures.js";
 
 async function verifyApprovalsAndAudit(
@@ -43,7 +37,6 @@ async function verifyApprovalsAndAudit(
     projectId: project.id,
   };
 
-  // An assignee resolves by email in any case, or by team name.
   const team = await access.createTeam("Approvals Crew");
   await access.setTeamMember(team.id, ada, true);
   assert.deepEqual(await store.resolveApprovalAssignee({ user: "ada@approvals.verify" }), {
@@ -56,7 +49,6 @@ async function verifyApprovalsAndAudit(
   assert.equal(await store.resolveApprovalAssignee({ user: "nobody@approvals.verify" }), null);
   if (crew === null) return;
 
-  // Of two decisions racing for the same wait, one commits; the step result is the winner's.
   const runId = await waitingApproval(store, deployment, crew);
   const decide = (label: string) =>
     store.resumeWaitingRun({
@@ -86,7 +78,6 @@ async function verifyApprovalsAndAudit(
     "the step result names the decision that landed",
   );
 
-  // A reassignment lands only on the assignee it expects; a decision for the old one then fails.
   const reassigned = await waitingApproval(store, deployment, crew);
   const adaAlone: ApprovalAssignee = { kind: "user", label: "Ada", userId: ada };
   assert.equal(
@@ -114,7 +105,6 @@ async function verifyApprovalsAndAudit(
     null,
   );
 
-  // Read access answers a notification send: granted, revoked, then suspended.
   assert.equal(await store.personMayRead(ada, target), false);
   await access.setGrant(
     { kind: "team", teamId: team.id },
@@ -127,7 +117,6 @@ async function verifyApprovalsAndAudit(
   await client.pool.query("UPDATE auth_users SET suspended_at = now() WHERE id = $1", [ada]);
   assert.equal(await store.personMayRead(ada, target), false, "a suspended person reads nothing");
 
-  // A rule belongs to its person and goes with them.
   const rule = await store.createNotificationRule({
     automationId: null,
     channel: "telegram",
@@ -151,7 +140,6 @@ async function verifyApprovalsAndAudit(
     "a project rule covers the project's automations",
   );
 
-  // Audit events outlive the automation they name.
   const audit = createPostgresAuditStore({ client });
   const actor = {
     kind: "person",
@@ -175,7 +163,6 @@ async function verifyApprovalsAndAudit(
       runId,
     },
   });
-  // What a route learns is durable before its change runs, and a later fact keeps a known target.
   await audit.describe(eventId, {
     details: { reason: "verify" },
     privileged: false,
@@ -385,7 +372,6 @@ async function verifyApprovalsAndAudit(
   );
 }
 
-/** A run waiting at the approval step `gate`, assigned to `assignee`. */
 async function waitingApproval(
   store: ControlPlaneStore,
   deployment: Awaited<ReturnType<typeof commitDeploymentFixture>>,
@@ -409,7 +395,7 @@ async function waitingApproval(
   return runId;
 }
 
-it("approvals and audit", async () => {
+it("commits one decision per approval and retains audit events after deletion", async () => {
   const client = testDatabase();
   const store = testControlPlaneStore();
   await verifyApprovalsAndAudit(client, store);

@@ -1,7 +1,3 @@
-/**
- * Better Auth 1.7.14 owns code verification and the twoFactor row. This module owns
- * Swizzle's replay ledger and the integration with the library's challenge and endpoints.
- */
 import { createHash } from "node:crypto";
 
 import type {
@@ -29,8 +25,6 @@ export interface AuthFactors {
 const TOTP_PERIOD_MS = 30_000;
 
 export function createAuthFactors(): AuthFactors {
-  // Swizzle's device and account budgets replace the per-account lockout, which anyone who
-  // knows the password could trip to lock the person out of every browser.
   const library = twoFactor({ accountLockout: { enabled: false }, issuer: "Swizzle" });
   const original = library.endpoints.verifyTOTP;
   const verifyTOTP = createAuthEndpoint(original.path, original.options, async (ctx) => {
@@ -52,14 +46,12 @@ export function createAuthFactors(): AuthFactors {
       throw error;
     });
     if (reservation !== null) {
-      // Verification can cross a step boundary after the reservation was inserted.
       await ctx.context.adapter.update({
         model: "authTotpUse",
         update: { expiresAt: codeExpiry(Date.now()) },
         where: [{ field: "id", value: reservation.id }],
       });
     }
-    // The nested endpoint owns the cookies, including the challenge it consumes on sign-in.
     for (const [name, value] of result.headers) {
       if (name !== "set-cookie") ctx.setHeader(name, value);
     }
@@ -113,8 +105,6 @@ export function createAuthFactors(): AuthFactors {
         headers: ctx.headers,
         body: { code, trustDevice: false },
       };
-      // Direct endpoint calls skip the sign-in hooks. The enclosing operation spends its code
-      // budget and keeps its session; Better Auth alone checks and consumes the supplied code.
       if (/^\d{6}$/u.test(code)) await verifyTOTP(input);
       else
         await library.endpoints.verifyBackupCode({
@@ -142,7 +132,6 @@ async function verifiedFactor(context: AuthContext, userId: string): Promise<boo
   return factor !== null && factor.verified !== false;
 }
 
-/** Better Auth's signed challenge identifies the person between password and code. */
 async function codeUser(ctx: Context) {
   const session = await getSessionFromCtx(ctx);
   if (session !== null) return session.user;
@@ -156,11 +145,6 @@ async function codeUser(ctx: Context) {
   return await ctx.context.internalAdapter.findUserById(verification.value);
 }
 
-/**
- * Reserve before verification so concurrent requests cannot both open a session. Failed checks
- * release only their own reservation. A crash fails closed until expiry. Better Auth accepts
- * steps S-1, S and S+1, so a code submitted in S can stay valid through the end of S+2.
- */
 async function reserveCode(ctx: Context, userId: string, code: string) {
   const adapter = ctx.context.adapter;
   const now = Date.now();

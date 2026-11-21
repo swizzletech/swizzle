@@ -1,7 +1,3 @@
-// The frontend half of `just perf`: load metrics and bundle bytes of each main dashboard page, and
-// the main-thread cost of the main interactions, in Chromium under a fixed CPU and network
-// profile. Every measurement opens a fresh browser context, so each load starts from a cold cache.
-
 /// <reference lib="dom" />
 
 import { type Browser, chromium, type Page } from "@playwright/test";
@@ -9,7 +5,6 @@ import type { PackagedStack } from "../packaged-stack.mts";
 import { API_PROFILE } from "./api.mts";
 import { quantile, Rounds } from "./result.ts";
 
-/** The fixed scenario; perf.mts records it in the result, so a change makes runs incomparable. */
 export const WEB_PROFILE = {
   cpuThrottle: 4,
   downloadKbps: 10_240,
@@ -19,8 +14,6 @@ export const WEB_PROFILE = {
   viewport: "1280x720",
 } as const;
 
-// Credentials and Settings replace the Secrets, Connections and Alerting pages of dashboards
-// before the rebuild. Measured against such a base, those two rows load its not-found page.
 const PAGES = [
   "/",
   `/automations/${API_PROFILE.referenceAutomation}`,
@@ -32,7 +25,6 @@ const PAGES = [
 interface Interaction {
   readonly name: string;
   readonly start: string;
-  /** Does what the user does and resolves when the result is on screen. */
   act(page: Page): Promise<void>;
 }
 
@@ -58,7 +50,6 @@ const INTERACTIONS: readonly Interaction[] = [
   },
   {
     act: async (page) => {
-      // Run rows are buttons whose name holds the automation, the run id and the trigger type.
       await page
         .getByRole("button", { name: /· webhook/u })
         .nth(1)
@@ -70,10 +61,6 @@ const INTERACTIONS: readonly Interaction[] = [
   },
 ];
 
-/**
- * Runs in the page before its own scripts: buffers the entries the metrics are computed from.
- * `mark` starts an interaction; frames and entries before it belong to the load.
- */
 function observe(): void {
   const state = {
     events: [] as { start: number; duration: number }[],
@@ -117,7 +104,6 @@ function observe(): void {
   requestAnimationFrame(frame);
 }
 
-/** What `observe` buffered, read back after the page settled. */
 interface Observed {
   readonly events: readonly { start: number; duration: number }[];
   readonly fcp: number;
@@ -138,7 +124,6 @@ async function read(page: Page): Promise<Observed> {
   }));
 }
 
-/** Cumulative layout shift: the largest session window (gaps under 1 s, at most 5 s long). */
 function cumulativeLayoutShift(shifts: Observed["shifts"]): number {
   let largest = 0;
   let current = 0;
@@ -156,7 +141,6 @@ function cumulativeLayoutShift(shifts: Observed["shifts"]): number {
   return largest;
 }
 
-/** Main-thread time beyond 50 ms per long task: the share that blocks input. */
 const blocking = (tasks: Observed["longTasks"]) =>
   tasks.reduce((total, task) => total + Math.max(0, task.duration - 50), 0);
 
@@ -165,15 +149,12 @@ const kibibytes = (resources: Observed["resources"], extension: RegExp) =>
     .filter((entry) => extension.test(new URL(entry.name).pathname))
     .reduce((total, entry) => total + entry.transferSize, 0) / 1024;
 
-/** A page in a fresh context, logged in, throttled, loaded until it settles. */
 async function open(browser: Browser, stack: PackagedStack, path: string): Promise<Page> {
   const [width, height] = WEB_PROFILE.viewport.split("x").map(Number);
   const context = await browser.newContext({
     viewport: { height: height ?? 720, width: width ?? 1280 },
   });
   await context.addCookies([{ ...stack.session, url: stack.dashboard }]);
-  // tsx compiles with esbuild's keepNames, which wraps inner functions in a `__name` helper the
-  // page lacks; the script defines it before it runs `observe`.
   await context.addInitScript({ content: `const __name = (f) => f; (${observe})();` });
   const page = await context.newPage();
   const cdp = await context.newCDPSession(page);
@@ -187,15 +168,12 @@ async function open(browser: Browser, stack: PackagedStack, path: string): Promi
   });
   await page.goto(`${stack.dashboard}${path}`, { waitUntil: "load" });
   await settle(page);
-  // Only the sign-in form asks for an email address, before and after the dashboard rebuild. A
-  // page the dashboard lacks renders its not-found page, which still counts as signed in.
   if (await page.locator('input[autocomplete="email"]').isVisible()) {
     throw new Error(`${path} showed the sign-in form instead of the signed-in dashboard.`);
   }
   return page;
 }
 
-/** Waits until the network is quiet, then WEB_PROFILE.settleMs more for late work. */
 async function settle(page: Page): Promise<void> {
   await page.waitForLoadState("networkidle");
   await page.waitForTimeout(WEB_PROFILE.settleMs);
@@ -269,15 +247,12 @@ async function measureInteraction(
   }
 }
 
-/** The browser every measurement opens its fresh context in. */
 export const launchBrowser = (): Promise<Browser> => chromium.launch();
 
-/** Loads every page once, unrecorded, so the stack's caches and JIT are warm. */
 export async function warmWeb(browser: Browser, stack: PackagedStack): Promise<void> {
   for (const path of PAGES) await measureLoad(browser, stack, path, new Rounds());
 }
 
-/** One round: every page load and every interaction once, in turn. */
 export async function webRound(
   browser: Browser,
   stack: PackagedStack,

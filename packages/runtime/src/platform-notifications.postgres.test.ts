@@ -18,8 +18,6 @@ import {
   sendApiAlert,
 } from "./notifications.js";
 
-// Run execution: retries, durable steps, child invokes, cancellation and failure alerts.
-
 const READER = "00000000-0000-4000-8000-0000000000aa";
 
 async function seedReader() {
@@ -29,7 +27,6 @@ async function seedReader() {
   );
 }
 
-/** Where a rule of READER points: one automation, or with null every one of the default project. */
 async function ruleTarget(
   platform: Awaited<ReturnType<typeof testPlatform>>,
   automationName: string | null,
@@ -331,7 +328,6 @@ describe("platform notifications", () => {
     await testDatabase().pool.query("UPDATE auth_users SET suspended_at = now() WHERE id = $1", [
       READER,
     ]);
-    // Inside the rule's cooldown: the record names the revoked access, not the cooldown.
     await crash();
 
     const deliveries = await platform.listNotificationDeliveries({ environment: "local" });

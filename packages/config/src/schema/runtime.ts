@@ -228,7 +228,6 @@ export const runtimeConfigSchema = runtimeInputSchema
   })
   .default(runtimeInputSchema.parse({ on_overlap: "queue" }));
 
-// Installed artifacts retain the binary-rule grammar accepted by earlier 1.x releases.
 const deployedRequirementsSchema = runtimeRequirementsSchema.extend({
   binaries: z
     .array(binaryRequirementSchema.extend({ version: z.string().min(1).optional() }))
@@ -259,7 +258,6 @@ export type AutomationRuntimeRequirements = z.output<typeof runtimeRequirementsS
 export type AutomationRuntimePermissions = z.output<typeof runtimePermissionSchema>;
 
 export type AutomationRuntimeConfig = z.output<typeof runtimeSchema> & {
-  /** Absent in artifacts saved before numeric prefix matching was introduced. */
   readonly binary_version_matching?: "numeric-prefix";
 };
 

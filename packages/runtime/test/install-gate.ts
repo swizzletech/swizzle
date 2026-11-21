@@ -6,7 +6,6 @@ import { promisify } from "node:util";
 
 const exec = promisify(execFile);
 
-/** A real npm install that emits a join marker and waits for the test to release it. */
 export async function createInstallGate(directory: string, stack: string) {
   const name = `swizzle-install-gate-${randomUUID()}`;
   const baseImage = `swizzle-install-gate:${randomUUID()}`;

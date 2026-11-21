@@ -22,7 +22,6 @@ export interface CwdAutomationContext {
   readonly directory: string;
 }
 
-/** Read the closest config.yaml above or at cwd and return the declared name. */
 export async function detectCwdAutomation(
   cwd = process.cwd(),
 ): Promise<CwdAutomationContext | undefined> {
@@ -59,7 +58,6 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
-/** slugify mirrors the server-side logic: lowercase, non-alnum → `-`, trim edges. */
 function slugify(value: string): string {
   return value
     .toLowerCase()
@@ -67,11 +65,6 @@ function slugify(value: string): string {
     .replaceAll(/^-+|-+$/g, "");
 }
 
-/**
- * Fuzzy-resolve an automation name against the candidates the caller can see.
- * Strategy: exact slug > exact displayName > prefix > substring > every word, in any order.
- * Null when none matches (with `exact`, when none matches exactly): the caller then asks the API.
- */
 export function resolveAutomation<T extends AutomationLike>(
   query: string,
   candidates: readonly T[],
@@ -140,8 +133,6 @@ function fuzzyScore<T extends AutomationLike>(query: string, candidate: T): numb
   const queryTokens = tokenize(query);
   const candidateTokens = new Set([...tokenize(slug), ...tokenize(name)]);
   if (queryTokens.length === 0 || candidateTokens.size === 0) return 0;
-  // Every word must match, in any order ("export nightly" finds nightly-export). One shared word
-  // such as "verify" in verify-upstream and verify-probe names a different automation.
   return queryTokens.every((token) => candidateTokens.has(token)) ? 0.6 : 0;
 }
 
@@ -165,13 +156,6 @@ const DURATION_MS: Record<string, number> = {
   w: 604_800_000,
 };
 
-/**
- * Parse agent-friendly time values.
- * Accepted:
- *   - ISO 8601 timestamps (2026-04-01T12:00:00Z)
- *   - Duration shorthand (1h, 30m, 2d, 1w)
- *   - Literal keywords: now, today
- */
 function parseTimeValue(value: string, now = new Date()): Date {
   const trimmed = value.trim();
   if (trimmed.length === 0) {

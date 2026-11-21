@@ -1,11 +1,3 @@
-/**
- * Sign-in over HTTP. `@swizzle/db/postgres` owns the people, their sessions, the guarantees
- * (ADR 0014) and the shape of every forwarded answer (AuthResults); this file forwards the Better
- * Auth routes with their cookies, answers the routes Swizzle adds,
- * and guards every route that is not public in ROUTE_ACCESS with a session cookie or a bearer
- * token, which settles `request.actor` for request-access.ts. Tokens themselves are in
- * token-routes.ts.
- */
 import type { AccessStore, WorkerRegistry } from "@swizzle/db";
 import { CodedError } from "@swizzle/db";
 import {
@@ -35,7 +27,6 @@ import { type Actor, routeAccess } from "./request-access.js";
 import { readBooleanSetting } from "./security-config.js";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
-/** The request headers Better Auth reads; the client address is set from the resolved one. */
 const FORWARDED_REQUEST_HEADERS = [
   "cookie",
   "origin",
@@ -63,8 +54,6 @@ export interface RegisterAuthGuardOptions {
 }
 
 export function registerAuthRoutes(app: ApiServer, auth: SwizzleAuth): void {
-  // Each Better Auth route is registered by its literal path, so the API reference lists it.
-  // The public ones need an allowed page, as the guard asks of every cookie write.
   const forward =
     <Route extends AuthRoute>(route: Route) =>
     async (request: FastifyRequest, reply: FastifyReply): Promise<AuthResults[Route]> => {
@@ -150,7 +139,6 @@ export function registerAuthRoutes(app: ApiServer, auth: SwizzleAuth): void {
   });
 }
 
-/** Runs before request validation, so an anonymous caller learns nothing about request shapes. */
 export function registerAuthGuard(app: ApiServer, options: RegisterAuthGuardOptions): void {
   app.addHook("preValidation", async (request, reply) => {
     if (routeAccess(request) === "public" || isDirectLoopbackReadinessRequest(request)) return;
@@ -158,7 +146,6 @@ export function registerAuthGuard(app: ApiServer, options: RegisterAuthGuardOpti
     const verified =
       rawApiToken === undefined ? null : await options.apiTokenStore.verifyToken(rawApiToken);
     const workerRoute = routeAccess(request) === "worker";
-    // Resolve the verified holder, never a token prefix. Workers cannot fall through to cookies.
     if (workerRoute || verified?.holder.kind === "worker") {
       if (verified?.holder.kind !== "worker" || options.workerRegistry === undefined) {
         return reply
@@ -191,8 +178,6 @@ export function registerAuthGuard(app: ApiServer, options: RegisterAuthGuardOpti
       });
     }
 
-    // A browser names the page behind every write in Origin; the CLI sends none. A write from a
-    // foreign page is refused whatever credential it carries.
     const unsafe = UNSAFE_METHODS.has(request.method);
     if (unsafe && request.headers.origin !== undefined && !isAllowedBrowserOrigin(request)) {
       return respondOriginForbidden();
@@ -201,7 +186,6 @@ export function registerAuthGuard(app: ApiServer, options: RegisterAuthGuardOpti
     if (request.headers.cookie !== undefined) {
       const person = await options.auth.verifySession(requestHeaders(request));
       if (person !== null) {
-        // The cookie rides along on any request, so a session write must name an allowed page.
         if (unsafe && !isAllowedBrowserOrigin(request)) {
           return respondOriginForbidden();
         }
@@ -220,7 +204,6 @@ export function registerAuthGuard(app: ApiServer, options: RegisterAuthGuardOpti
     if (rawApiToken !== undefined) {
       const actor = verified === null ? null : await tokenActor(options, verified);
       if (actor === "suspended") {
-        // A new token would be refused too; only lifting the suspension helps.
         return respondAuthError({
           code: "AUTH_ACCOUNT_SUSPENDED",
           message: "The person this agent token belongs to is suspended.",
@@ -251,11 +234,6 @@ export function registerAuthGuard(app: ApiServer, options: RegisterAuthGuardOpti
   });
 }
 
-/**
- * Who a verified token acts as, "suspended" while its person is, or null when nobody may act by it.
- * An agent token acts with its person's current role, so a demotion or suspension counts at once;
- * a service account token acts as the account in its project, whoever minted it.
- */
 async function tokenActor(
   { accessStore, auth }: RegisterAuthGuardOptions,
   token: StoredApiToken,
@@ -343,10 +321,6 @@ function respondSessionRequired(): never {
   );
 }
 
-/**
- * Whether session and device cookies carry `Secure`: SWIZZLE_AUTH_COOKIE_SECURE when set, else
- * whether a dashboard origin is HTTPS, since that is where the browser keeps them.
- */
 export function resolveSecureCookies(environment: NodeJS.ProcessEnv = process.env): boolean {
   return (
     readBooleanSetting(environment, "SWIZZLE_AUTH_COOKIE_SECURE") ??
@@ -354,7 +328,6 @@ export function resolveSecureCookies(environment: NodeJS.ProcessEnv = process.en
   );
 }
 
-/** The auth guard has admitted this session route before its handler runs. */
 export function browserSession(request: FastifyRequest): SignedInPerson {
   const person = request.signedInPerson;
   if (person === undefined) throw new Error("Session route ran without the auth guard.");

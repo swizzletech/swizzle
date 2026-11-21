@@ -13,7 +13,6 @@ type OutputPumpOptions = {
   readonly stdoutLimitBytes: number;
   readonly stderrLimitBytes: number;
   readonly onStderrChunk?: ChunkCallback | undefined;
-  /** Runs stop at the limit. Docker control commands bound capture but deliver all bytes. */
   readonly limitPolicy: "stop" | "capture";
   readonly onStop: (reason: StopReason) => void;
 } & (
@@ -21,7 +20,6 @@ type OutputPumpOptions = {
   | { readonly onStdoutBytes: (chunk: Buffer) => void; readonly onStdoutChunk?: never }
 );
 
-/** Owns bounded capture and ordered delivery across both pipes of a subprocess. */
 export class OutputPump {
   private readonly captures: Record<StreamName, BoundedOutput>;
   private callbacks: Promise<void> = Promise.resolve();

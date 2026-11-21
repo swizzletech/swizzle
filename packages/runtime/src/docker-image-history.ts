@@ -1,5 +1,3 @@
-// Docker history omits empty_layer flags. Saved image configs retain them, so ambiguous
-// histories can be mapped without counting metadata-only entries as filesystem layers.
 import { StringDecoder } from "node:string_decoder";
 import { z } from "zod";
 import { BoundedOutput } from "./bounded-output.js";
@@ -21,11 +19,6 @@ type ImageHistoryRead =
   | { readonly state: "read"; readonly histories: ReadonlyMap<string, readonly boolean[]> }
   | { readonly state: "unreadable" };
 
-/**
- * Reads available config entries from one export; missing configs are absent from the map.
- * Layers pass through without writing to disk. A transfer timeout or invalid archive leaves
- * the batch unmeasured. Caller cancellation and other Docker failures reject the read.
- */
 export async function readImageLayerHistory(
   images: readonly { readonly id: string; readonly layers: readonly string[] }[],
   owner: DockerScope,
@@ -47,7 +40,6 @@ export async function readImageLayerHistory(
       entry.on("data", (chunk: Buffer) => body.append(decoder.write(chunk)));
       entry.on("end", () => {
         body.append(decoder.end());
-        // A small layer blob can occupy the same namespace as metadata.
         let value: unknown;
         try {
           value = JSON.parse(body.value);
@@ -89,7 +81,6 @@ export async function readImageLayerHistory(
   return unreadable ? { state: "unreadable" } : { state: "read", histories };
 }
 
-/** Classic IDs name configs; containerd IDs can name manifests or multi-platform indexes. */
 function findHistory(
   records: ReadonlyMap<string, Metadata>,
   digest: string,

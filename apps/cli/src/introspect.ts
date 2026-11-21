@@ -1,8 +1,3 @@
-/**
- * The command tree as data: `swizzle commands` prints it, `just gen` renders docs/reference/cli.md
- * from it, and `checkInvocation` walks a written command through it, so error messages, help
- * examples and the builder skill name only commands and flags that exist.
- */
 import type { Command, Option } from "commander";
 
 import { examplesOf } from "./command-support.js";
@@ -90,20 +85,12 @@ function extractArgName(flags: string): string | null {
   return match ? (match[1] ?? match[2] ?? null) : null;
 }
 
-/** Where a written command lands in the tree, and the first part of it the tree does not know. */
 export interface Invocation {
   readonly command: Command;
   readonly problem: string | null;
-  /** The word the tree does not know, when the problem is a command or an argument. */
   readonly word?: string;
 }
 
-/**
- * Walks `swizzle --profile prod a b c --flag value` (without `swizzle`) through the tree the way
- * commander parses it: a flag must exist on the resolved command, an ancestor, or the default
- * subcommand it dispatches to, and takes its value; words descend into subcommands, and once none
- * matches, each further word must be a positional the resolved command declares.
- */
 export function checkInvocation(program: Command, words: readonly string[]): Invocation {
   let command = program;
   const chain = [program];
@@ -155,7 +142,6 @@ export function checkInvocation(program: Command, words: readonly string[]): Inv
   return { command, problem: null };
 }
 
-/** `swizzle runs list`, as a person types it. */
 export function commandPath(command: Command): string {
   const names: string[] = [];
   for (let current: Command | null = command; current !== null; current = current.parent) {
@@ -165,8 +151,6 @@ export function commandPath(command: Command): string {
 }
 
 function withDefaultSubcommand(command: Command): Command[] {
-  // Commander keeps `{ isDefault: true }` only in this field; `swizzle runs --status`
-  // parses as `swizzle runs list --status`.
   const name = (command as Command & { _defaultCommandName?: string })._defaultCommandName;
   const fallback = command.commands.find((candidate) => candidate.name() === name);
   return fallback === undefined ? [command] : [command, fallback];

@@ -1,8 +1,3 @@
-// A project's Credentials tab: the shares other projects offer it, which its admins accept or
-// decline, and the credentials it owns that the person manages, each with the projects it is
-// offered to and a control to offer it to one more. Accepting lets deployments in this project
-// bind the credential; until then they cannot.
-
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -135,7 +130,6 @@ function Offered({ project }: { readonly project: Project }) {
   );
 }
 
-/** The project's credentials in this environment that the person manages, each with its shares. */
 function Shared({ project }: { readonly project: Project }) {
   const { api, environment, queryScope } = useDashboardClient();
   const shared = useQuery({

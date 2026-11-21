@@ -3,11 +3,6 @@ import { expect, type Page, test } from "@playwright/test";
 import type { Person, Project, ProjectAccess, ProjectHolder, Team } from "../src/lib/api";
 import { mockDashboardApi, PROJECT_ID, seededState } from "./dashboard-mock";
 
-// The sharing dialog: a project admin gives a team a role in the protected production environment.
-// It shows what the person already holds through the team and what the role means for
-// credentials, sends the grant the API's grant route takes, and shows the roles the API answers
-// afterwards.
-
 const MIA: Person = {
   email: "mia@example.com",
   id: "user-mia",
@@ -50,7 +45,6 @@ function holder(name: string, subject: ProjectHolder["subject"], production: "op
   } satisfies ProjectHolder;
 }
 
-/** Default with the team as project editor, and its production role as the API computes it. */
 function access(production: "operator" | null): ProjectAccess {
   return {
     automationSlugs: {},
@@ -89,7 +83,6 @@ const PROJECTS: readonly Project[] = [
   },
 ];
 
-/** Answers the project and directory routes; a grant or protection change moves Default to `after`. */
 async function serveProjects(page: Page, after: ProjectAccess, before = access(null)) {
   const sent: unknown[] = [];
   let current = before;
@@ -251,7 +244,6 @@ test("switching projects closes a sharing dialog prepared for the other project"
   await mockDashboardApi(page, seededState());
   const sent = await serveProjects(page, access("operator"));
 
-  // With both projects' access cached, the page swaps projects without a loading state.
   await page.goto("/projects/finance");
   await expect(page.getByRole("heading", { name: "Finance", level: 1 })).toBeVisible();
   await page.getByRole("combobox", { name: "Project" }).selectOption("default");

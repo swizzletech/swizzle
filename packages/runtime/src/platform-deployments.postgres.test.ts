@@ -377,7 +377,6 @@ describe("platform deployments", () => {
     await expect(
       platform.listAutomationDeploymentAuditEvents("hello-webhook-collision", "local"),
     ).resolves.toEqual([]);
-    // The failed first deploy leaves no automation behind to hold the name.
     expect(await platform.findAutomation("hello-webhook-collision")).toBeNull();
 
     const trigger = await platform.getAutomationTrigger("hello-webhook", "local");
@@ -570,7 +569,6 @@ describe("platform deployments", () => {
       deploymentId: "35b84770-c9cd-50fd-a06b-a19a1dd86116",
     });
     expect(redeployed.automationId).not.toBe(result.automationId);
-    // The new automation's trigger history starts empty: the deleted one keeps its own pause.
     await platform.pauseAutomationTrigger("hello-webhook", "local");
     const triggerHistory = await platform.listAutomationTriggerAuditEvents(
       "hello-webhook",

@@ -1,4 +1,3 @@
-/** Default execution slots for every worker, including the stack's local identity. */
 export const DEFAULT_WORKER_CONCURRENCY = 2;
 
 export function readWorkerConcurrency(value: string | undefined): number {

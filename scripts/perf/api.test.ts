@@ -42,8 +42,6 @@ test("a complete route round does not retain fetch listeners on a shared abort s
   });
   const fetch = globalThis.fetch;
   vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
-    // Eight concurrent clients need fewer than sixteen active abort listeners. Lower the
-    // warning threshold so this check does not depend on GC or Node's automatic limit growth.
     if (init?.signal) setMaxListeners(16, init.signal);
     return fetch(input, init);
   });
@@ -78,7 +76,6 @@ test("a request's derived signal still cancels an unfinished response with its p
   await result;
 });
 
-/** Answers every Docker stats read with valid stats; returns how many reads it answered. */
 async function statsServing(): Promise<() => number> {
   const socket = path.join(await temporaryDirectory("perf-api-stats-"), "docker.sock");
   let reads = 0;
@@ -97,11 +94,6 @@ async function statsServing(): Promise<() => number> {
   return () => reads;
 }
 
-/**
- * A server that accepts each request and stalls its headers, or its body after one byte. The
- * newest operation's deadline ends once its stall is in place: at the request for the headers,
- * and once the headers arrived for the body. Stats reads keep their real deadline.
- */
 function stalling(phase: string): RequestListener {
   const deadlines = heldDeadlines(OPERATION_TIMEOUT_MS);
   if (phase === "body") {
@@ -129,7 +121,6 @@ test.each(["headers", "body"])(
     await expect(
       routeRound(stack, [{ containerId: "api", name: "api" }], "seed", new Rounds()),
     ).rejects.toMatchObject({ name: "TimeoutError" });
-    // The round started with a stats read, and a failed read would have rejected with its error instead.
     expect(statsReads()).toBeGreaterThanOrEqual(1);
   },
 );

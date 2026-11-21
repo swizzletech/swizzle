@@ -15,6 +15,14 @@ Examples:
   just test-affected --base main --shard 1/3
   just verify-fast --base HEAD`;
 
+function hasGreenResult(marker: string): boolean {
+  try {
+    return readFileSync(marker, "utf8") === "passed\n";
+  } catch {
+    return false;
+  }
+}
+
 async function main() {
   let values: ReturnType<typeof parseOptions>;
   try {
@@ -46,7 +54,6 @@ async function main() {
     const files = values.shard
       ? await new BaseSequencer(vitest).shard(selection.files)
       : selection.files;
-    // Shard before global setup so an empty shard starts no database. The pool must not shard again.
     delete vitest.config.shard;
     delete vitest.config.related;
     console.log(
@@ -59,13 +66,7 @@ async function main() {
     const key = resultKey(root, files);
     const cache = path.join(root, "node_modules/.cache/affected-tests");
     const marker = path.join(cache, `${key}.green`);
-    let cached = false;
-    try {
-      cached = readFileSync(marker, "utf8") === "passed\n";
-    } catch {
-      /* Missing or unreadable cache entries run the tests. */
-    }
-    if (cached) {
+    if (hasGreenResult(marker)) {
       console.log(`cache: reused green results for ${files.length} test files`);
       return;
     }

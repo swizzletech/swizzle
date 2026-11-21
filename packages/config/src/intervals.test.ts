@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { formatIntervalMs, parseIntervalToMs } from "./intervals.js";
 
-// `trigger.every` is stored as milliseconds and shown again in the CLI and dashboard.
 describe("trigger.every intervals", () => {
   it.each([
     ["45s", 45_000],

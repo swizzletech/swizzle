@@ -1,5 +1,3 @@
-/** The instance audit over PostgreSQL. Resource writers enrich the same rows inside their transactions. */
-
 import { and, asc, type Column, desc, eq, inArray, isNull, or, type SQL, sql } from "drizzle-orm";
 
 import { parseInstanceRole } from "./access.js";
@@ -204,7 +202,6 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(value);
 }
 
-/** Resource writers use their own transaction, enriching the already durable request row. */
 export async function recordAuditChange(
   db: DatabaseClient["db"],
   input: RecordAuditChange,

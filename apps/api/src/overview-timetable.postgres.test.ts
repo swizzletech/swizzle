@@ -11,17 +11,13 @@ import { testPeople } from "../test/people.js";
 import { buildTestServer } from "../test/server-harness.js";
 import { createDashboardDataProvider } from "./dashboard.js";
 
-// 20:07 on a clock five and a half hours east of UTC: the timetable's last hour starts at 20:00
-// there, so its first hour starts at 21:00 the day before, 15:30 UTC.
 const NOW = new Date("2026-11-06T14:37:00.000Z");
 const FROM = "2026-11-05T15:30:00.000Z";
 const at = (hours: number, minutes = 10) =>
   new Date(Date.parse(FROM) + hours * 3_600_000 + minutes * 60_000).toISOString();
 
-/** An owner's API over `report`, whose run fails when its payload says so. */
 async function reportAutomation() {
   vi.useFakeTimers({ now: NOW, toFake: ["Date"] });
-  // Tests run without Valkey; the queue counts are not under test.
   vi.spyOn(Queue.prototype, "getJobCounts").mockRejectedValue(new Error("no Valkey"));
   const people = testPeople();
   const apiTokenStore = testApiTokenStore();
@@ -95,8 +91,6 @@ async function reportAutomation() {
   };
 }
 
-// The hours follow the viewer's clock, each counts its runs by the state their owner reads, and a
-// run a person cancelled stays apart from the failures.
 it("counts each of the viewer's last 24 hours by run state", async () => {
   const report = await reportAutomation();
   await report.succeeded(at(-1, 59));

@@ -3,7 +3,6 @@ import { syncBuiltinESMExports } from "node:module";
 import { fileURLToPath } from "node:url";
 import { onTestFinished, vi } from "vitest";
 
-/** Own the statfs measurement in this process and in recipe children. */
 export function diskSpace(gib: number): void {
   const bytes = gib * 1024 ** 3;
   const measurement = vi.spyOn(fs, "statfsSync").mockReturnValue({

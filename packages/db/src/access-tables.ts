@@ -123,7 +123,6 @@ export function createPostgresAccessStore(
           await tx
             .insert(protectedEnvironments)
             .values({ environment: PROTECTED_BY_DEFAULT, projectId: row.id });
-          // The share lock keeps the team from being deleted before its grant is in.
           const [release] = await tx
             .select({ id: teams.id })
             .from(teams)
@@ -177,7 +176,6 @@ export function createPostgresAccessStore(
     async setGrant(subject, target) {
       try {
         return await db.transaction(async (tx) => {
-          // Every grant/protection write locks its project, including the first grant with no row yet.
           await tx
             .select({ id: projects.id })
             .from(projects)
@@ -476,7 +474,6 @@ export function createPostgresAccessStore(
   };
 }
 
-/** Whom a holder's grants may name: a person and each of their teams, or a service account. */
 function holderSubjects(holder: GrantHolder, teamIds: readonly string[]): readonly Subject[] {
   if (holder.kind === "service-account") {
     return [{ kind: "service-account", serviceAccountId: holder.serviceAccountId }];
@@ -499,7 +496,6 @@ function serviceAccountView(row: typeof serviceAccounts.$inferSelect): StoredSer
 
 function validServiceAccountName(name: string): string {
   const valid = validName("service account", name);
-  // A service account is named by id or name, so a name shaped like an id would be ambiguous.
   if (isUuid(valid)) {
     throw new CodedError(
       "SERVICE_ACCOUNT_NAME_INVALID",
@@ -536,7 +532,6 @@ function teamView(
 
 function validProject(input: { readonly slug: string; readonly name: string }) {
   const slug = input.slug.trim();
-  // A project is named by id or slug, so a slug shaped like an id would be ambiguous.
   if (!PROJECT_SLUG.test(slug) || isUuid(slug)) {
     throw new CodedError(
       "PROJECT_SLUG_INVALID",

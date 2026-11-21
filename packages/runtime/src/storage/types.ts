@@ -68,14 +68,12 @@ export interface ArtifactStorage {
     reference: ArtifactStorageReference,
     targetDirectory: string,
   ): Promise<ArtifactStorageReference>;
-  /** Creates a private export destination; refuses an existing path without changing it. */
   exportStore(targetDirectory: string): Promise<void>;
   importDeploymentBundle(input: {
     readonly bundleDirectory: string;
     readonly locator: ArtifactLocator;
   }): Promise<ArtifactStorageReference>;
   importStore(sourceDirectory: string): Promise<void>;
-  /** Owns the private source copy through copy failure, use, and cleanup. */
   withSourceDirectory<T>(
     reference: ArtifactStorageReference,
     use: (directory: string) => Promise<T>,

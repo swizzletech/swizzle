@@ -1,19 +1,7 @@
-import { CodedError } from "@swizzle/db";
-import { it } from "vitest";
-import { testDatabase, untilLockWaiters } from "../test/postgres.js";
-import { testControlPlaneStore } from "../test/stores.js";
-// The ADR 0014 access model on PostgreSQL: grants
-// reach a person directly and through teams, a revocation shows on the next read, deletes cascade
-// to the grants they orphan, an automation keeps its project when deployed, runs stay in the
-// project they were written in across a move, deleting the automation deletes its runs while its
-// audit events stay, secrets are per project,
-// every project grants production to the team Release, every dashboard list and count filters by
-// the reader's scope in SQL, and a service account outlives its creator, never administers, and
-// takes its grants and tokens with it.
-
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import {
+  CodedError,
   type ControlPlaneStore,
   type DashboardTriggerSummary,
   DEFAULT_PROJECT_ID,
@@ -29,6 +17,9 @@ import {
   createPostgresApiTokenStore,
   type DatabaseClient,
 } from "@swizzle/db/postgres";
+import { it } from "vitest";
+import { testDatabase, untilLockWaiters } from "../test/postgres.js";
+import { testControlPlaneStore } from "../test/stores.js";
 import { commitDeploymentFixture, createQueuedRun } from "./verify-state-fixtures.js";
 
 const ENVIRONMENT = "state-machine";
@@ -55,8 +46,6 @@ async function verifyAccess(client: DatabaseClient, store: ControlPlaneStore): P
       .map((project) => project.protectedEnvironments),
     [["production"]],
   );
-  // The release_team migration grants the Default project's production to the team Release;
-  // createProject grants every new project's.
   for (const projectId of [DEFAULT_PROJECT_ID, office.id]) {
     assert.deepEqual(
       (await access.projectAccess(projectId))?.grants.flatMap((grant) =>
@@ -101,7 +90,6 @@ async function verifyAccess(client: DatabaseClient, store: ControlPlaneStore): P
     "PROJECT_PROTECTED",
   );
 
-  // Write outcomes come from the serialized write, including concurrent first grants.
   const outcomes = await access.createProject({
     name: "Write outcomes",
     slug: "access-write-outcomes",
@@ -150,7 +138,6 @@ async function verifyAccess(client: DatabaseClient, store: ControlPlaneStore): P
   });
   await store.deleteProject({ projectId: outcomes.id, contents: null });
 
-  // Mia: viewer directly, editor through Ops, operator in production through Ops.
   const ops = await access.createTeam("Access Ops");
   assert.equal(await access.setTeamMember(ops.id, mia, true), true);
   assert.equal(await access.setTeamMember(ops.id, mia, true), false);
@@ -185,7 +172,6 @@ async function verifyAccess(client: DatabaseClient, store: ControlPlaneStore): P
       role: "viewer",
     },
   );
-  // The dashboard removes an automation grant by the slug the access read names.
   assert.deepEqual((await access.projectAccess(finance.id))?.automationSlugs, {
     [exported.automationId]: "access-export",
   });
@@ -204,7 +190,6 @@ async function verifyAccess(client: DatabaseClient, store: ControlPlaneStore): P
     false,
   );
 
-  // The dashboard lists and counts in SQL: Mia sees office, Sam sees only the shared automation.
   const reportRun = randomUUID();
   await createQueuedRun(store, report, reportRun, `access-${randomUUID()}`, {});
   await createQueuedRun(store, exported, randomUUID(), `access-${randomUUID()}`, {});
@@ -223,7 +208,6 @@ async function verifyAccess(client: DatabaseClient, store: ControlPlaneStore): P
       dashboard.countRunsSince(ENVIRONMENT, since, scope),
       dashboard.listDeploymentChanges(ENVIRONMENT, since, 50, scope),
     ]);
-    // Unfiltered: the automations earlier verify steps left in this environment are the negatives.
     return {
       automations: automations.map((entry) => entry.automationSlug),
       changes: [...new Set(changes.map((entry) => entry.automationSlug))],
@@ -246,7 +230,6 @@ async function verifyAccess(client: DatabaseClient, store: ControlPlaneStore): P
   const none = await seen({ all: false, automations: [], projectIds: [] });
   assert.deepEqual(none, { automations: [], changes: [], queued: 0, runs: [] });
 
-  // A summary's last run comes from its own environment, never from one the reader may not see.
   const elsewhere = await commitDeploymentFixture(
     store,
     "access-report",
@@ -261,7 +244,6 @@ async function verifyAccess(client: DatabaseClient, store: ControlPlaneStore): P
     "the last run stays in the summary's environment",
   );
 
-  // A child run names its automation to readers of the parent only where they may read the child.
   await createQueuedRun(
     store,
     exported,
@@ -287,7 +269,6 @@ async function verifyAccess(client: DatabaseClient, store: ControlPlaneStore): P
     "a child in a project the reader cannot see stays unnamed",
   );
 
-  // A chain trigger names its sources to readers of the consumer only where they may read them.
   const chainEnvironment = "access-chain";
   await commitDeploymentFixture(store, "access-chain-office", office.id, chainEnvironment);
   await commitDeploymentFixture(store, "access-chain-private", office.id, chainEnvironment);
@@ -341,7 +322,6 @@ async function verifyAccess(client: DatabaseClient, store: ControlPlaneStore): P
     "access-after-both": named(["access-chain-office", "access-chain-private"], 0),
     "access-after-private": named(["access-chain-private"], 0),
   });
-  // Sharing a consumer does not share its same-project sources.
   for (const slug of ["access-chain-office", "access-after-private", "access-after-both"]) {
     const automation = await store.findAutomation(slug);
     assert.ok(automation);
@@ -375,7 +355,6 @@ async function verifyAccess(client: DatabaseClient, store: ControlPlaneStore): P
     store,
   });
 
-  // A revocation is in the next read; deletes take the grants they orphan with them.
   await access.setTeamMember(ops.id, mia, false);
   const afterLeaving = await access.loadGrants({
     instanceRole: "member",
@@ -443,11 +422,6 @@ async function verifyAccess(client: DatabaseClient, store: ControlPlaneStore): P
   );
 }
 
-/**
- * Credentials on PostgreSQL: the creator manages what they create, a deployment binds credentials
- * by id, a share binds only once accepted, and deleting a credential or revoking a share drops the
- * bindings made with it, so the next run receives nothing.
- */
 async function verifyCredentials(input: {
   readonly access: ReturnType<typeof createPostgresAccessStore>;
   readonly client: DatabaseClient;
@@ -458,7 +432,6 @@ async function verifyCredentials(input: {
   readonly store: ControlPlaneStore;
 }): Promise<void> {
   const { client, finance, office, sam, store } = input;
-  /** Each secret a finance automation declares, with the state the dashboard shows for it. */
   const shown = async (automation: string) =>
     (
       await input.dashboard.listAutomationSummaries(ENVIRONMENT, {
@@ -484,7 +457,6 @@ async function verifyCredentials(input: {
   const token = (await store.findCredential("secret", "CRM_TOKEN", place(office))) ?? assert.fail();
   const [held] = await store.credentialAccess([token]);
   assert.deepEqual(held?.grants, [{ right: "manage", subject: { kind: "user", userId: sam } }]);
-  // Two first grants to one subject at once leave one grant, not a unique violation.
   const crew = { kind: "team", teamId: (await input.access.createTeam("Access Crew")).id } as const;
   await Promise.all(
     (["use", "use"] as const).map((right) =>
@@ -520,7 +492,6 @@ async function verifyCredentials(input: {
     "a rollback binds what its target binds",
   );
 
-  // A share binds once the receiving project accepts it, and its revocation unbinds.
   const offered = await store.offerCredentialShare({
     accepted: false,
     credential: token,
@@ -550,7 +521,6 @@ async function verifyCredentials(input: {
   assert.equal(await store.removeCredentialShare(offered.shareId), true);
   assert.deepEqual(await bound(ledger.deploymentId, finance), [], "a revoked share unbinds");
   assert.deepEqual(await shown("access-ledger"), [["CRM_TOKEN", "missing"]]);
-  // Shared again, the secret waits for the next deploy to bind it.
   const reoffered = await store.offerCredentialShare({
     accepted: true,
     credential: token,
@@ -560,7 +530,6 @@ async function verifyCredentials(input: {
   assert.deepEqual(await shown("access-ledger"), [["CRM_TOKEN", "unbound"]]);
   assert.equal(await store.removeCredentialShare(reoffered.shareId), true);
 
-  // An authorization checked against no connection, or another one, never writes the stored one.
   const authorize = (reauthorizes: string | null) =>
     store.beginConnectionAuthorization({
       ...place(office),
@@ -584,7 +553,6 @@ async function verifyCredentials(input: {
   }
   assert.equal((await authorize(crmOauth.id)).clientId, "second");
 
-  // A secret write or delete checked against one secret never touches its replacement.
   const checked = await store.upsertSecret({ ...place(office), name: "CRM_KEY", value: "v1" });
   assert.equal(await store.deleteSecret(checked.id), true);
   const replacement = await store.upsertSecret({ ...place(office), name: "CRM_KEY", value: "v2" });
@@ -602,7 +570,6 @@ async function verifyCredentials(input: {
     "the replacement keeps its value",
   );
 
-  // Two projects offering the same name leave the receiver to choose.
   const legal = await input.access.createProject({ name: "Legal", slug: "access-legal" });
   for (const projectId of [office, legal.id]) {
     await store.upsertSecret({ ...place(projectId), name: "SHARED_KEY", value: projectId });
@@ -620,7 +587,6 @@ async function verifyCredentials(input: {
     (error: Error & { code?: string }) => error.code === "CREDENTIAL_AMBIGUOUS",
   );
 
-  // A credential deleted between finding and committing refuses the deploy.
   const found = await declared(office, "CRM_TOKEN");
   assert.equal(await store.deleteSecret(token.id), true);
   await assert.rejects(
@@ -640,12 +606,6 @@ async function verifyCredentials(input: {
   assert.equal(Number(leftover.rows[0]?.n), 0, "deleting a secret removes its grants and bindings");
 }
 
-/**
- * Moving and deleting `access-report` (office, with the queued run `reportRun` in ENVIRONMENT and
- * one more in access-other): a move leaves runs and audit events in office, a delete takes every
- * run of the automation with it and keeps its audit events, the name frees up, and each project
- * holds its own secret of a name.
- */
 async function verifyHistoryAcrossMoveAndDelete(input: {
   readonly client: DatabaseClient;
   readonly dashboard: ReturnType<typeof createDashboardStore>;
@@ -665,7 +625,6 @@ async function verifyHistoryAcrossMoveAndDelete(input: {
     changes: (await dashboard.listDeploymentChanges(ENVIRONMENT, since, 50, only(projectId)))
       .filter((change) => change.automationSlug === "access-report")
       .map((change) => change.target.projectId),
-    // The name filter, as the Runs page uses it.
     runs: (
       await dashboard.listRuns({
         automationSlug: "access-report",
@@ -703,7 +662,6 @@ async function verifyHistoryAcrossMoveAndDelete(input: {
     "the automation's audit starts over in its new project",
   );
 
-  // A run written after the move belongs to the new project.
   const [active] = await store.listDeploymentsByAutomationSlug("access-report", ENVIRONMENT);
   const laterRun = randomUUID();
   await createQueuedRun(
@@ -748,8 +706,6 @@ async function verifyHistoryAcrossMoveAndDelete(input: {
     "the automation and its run leave finance; its audit events do not count",
   );
 
-  // A delete in flight holds the automation's row. A run or a resume that starts meanwhile waits
-  // for it, then finds the automation gone instead of landing after the delete's checks.
   const deleting = await client.pool.connect();
   try {
     await deleting.query("BEGIN");
@@ -774,7 +730,6 @@ async function verifyHistoryAcrossMoveAndDelete(input: {
     deleting.release();
   }
 
-  // Each project holds its own secret of a name; neither reads the other's.
   const place = (projectId: string) => ({ environment: "production", projectId });
   const officeToken = await store.upsertSecret({
     ...place(office),
@@ -800,11 +755,6 @@ async function verifyHistoryAcrossMoveAndDelete(input: {
   );
 }
 
-/**
- * Service accounts on PostgreSQL: a name is unique per project, the database refuses admin to an
- * account, its token survives its creator and rotates under one name until it expires, and deleting the account
- * takes its grants and tokens with it.
- */
 async function verifyServiceAccounts(input: {
   readonly access: ReturnType<typeof createPostgresAccessStore>;
   readonly client: DatabaseClient;
@@ -901,7 +851,7 @@ async function rejects(promise: Promise<unknown>, code: CodedError["code"]): Pro
   await assert.rejects(promise, (error) => error instanceof CodedError && error.code === code);
 }
 
-it("access", async () => {
+it("enforces project grants, credential bindings, and service account scopes", async () => {
   const client = testDatabase();
   const store = testControlPlaneStore();
   await verifyAccess(client, store);

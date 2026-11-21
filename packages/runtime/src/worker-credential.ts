@@ -19,10 +19,6 @@ export class WorkerHttpError extends Error {
 const TOKEN = /^swz_[A-Za-z0-9_-]{43}$/u;
 const RENEW_BEFORE_MS = 7 * 24 * 60 * 60_000;
 
-/**
- * Owns durable rotation. A saved candidate recovers a renewal whose response was lost.
- * `onReply` sees the Date header of every API reply, refusals included.
- */
 export async function createWorkerRequest(
   origin: URL,
   source: WorkerCredentialSource,
@@ -120,7 +116,6 @@ export async function createWorkerRequest(
       !Number.isFinite(Date.parse(worker.tokenExpiresAt))
     )
       throw new Error("Invalid worker token expiry response.");
-    // Set memory only after the file is durable. A failed save keeps the candidate for recovery.
     values.SWIZZLE_WORKER_TOKEN = candidate;
     values.SWIZZLE_WORKER_TOKEN_EXPIRES_AT = worker.tokenExpiresAt;
     delete values.SWIZZLE_WORKER_PENDING_TOKEN;
@@ -144,7 +139,6 @@ export async function createWorkerRequest(
     try {
       return await raw(sent, route, body, signal);
     } catch (error) {
-      // A request authenticated just before rotation may be refused by a generation check.
       if (error instanceof WorkerHttpError && [401, 403].includes(error.status)) {
         if (rotation !== undefined) await waitForRotation(rotation, signal);
         if (sent !== token) return await raw(token, route, body, signal);
@@ -154,7 +148,6 @@ export async function createWorkerRequest(
   };
 }
 
-/** Cancel only this caller's wait, preserving the shared operation for other requests. */
 async function waitForRotation(rotation: Promise<void>, signal?: AbortSignal): Promise<void> {
   if (signal === undefined) return await rotation;
   signal.throwIfAborted();

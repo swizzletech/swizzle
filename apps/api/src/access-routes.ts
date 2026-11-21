@@ -1,28 +1,8 @@
-import type { CreateProjectResult, CreateTeamResult, DeleteTeamResult } from "@swizzle/db";
-import { CodedError } from "@swizzle/db";
-import type {
-  CreateProjectResponse,
-  CreateTeamResponse,
-  DeleteProjectResponse,
-  DeleteTeamResponse,
-  EnvironmentProtectionResponse,
-  ProjectAccessResponse,
-  ProjectContentsResponse,
-  ProjectsResponse,
-  RemoveGrantResponse,
-  SetGrantResponse,
-  TeamMembershipResponse,
-  TeamsResponse,
-} from "@swizzle/runtime/http-contract";
-/**
- * Projects, teams and grants over HTTP (ADR 0014). Instance owners and admins create projects and
- * teams; a project's admins grant roles in it, protect its environments and share its automations.
- * What a grant allows is decided in packages/db/src/access.ts, never here.
- */
-
 import { createDisplayName } from "@swizzle/core";
+import type { CreateProjectResult, CreateTeamResult, DeleteTeamResult } from "@swizzle/db";
 import {
   type AccessStore,
+  CodedError,
   type GrantPlace,
   type GrantQuery,
   type GrantRemovalResult,
@@ -42,6 +22,20 @@ import {
 } from "@swizzle/db";
 import type { EnvironmentStore, SwizzleAuth } from "@swizzle/db/postgres";
 import { AutomationRuntimeError } from "@swizzle/runtime";
+import type {
+  CreateProjectResponse,
+  CreateTeamResponse,
+  DeleteProjectResponse,
+  DeleteTeamResponse,
+  EnvironmentProtectionResponse,
+  ProjectAccessResponse,
+  ProjectContentsResponse,
+  ProjectsResponse,
+  RemoveGrantResponse,
+  SetGrantResponse,
+  TeamMembershipResponse,
+  TeamsResponse,
+} from "@swizzle/runtime/http-contract";
 import type { PlatformServices } from "@swizzle/runtime/platform";
 import type { FastifyRequest } from "fastify";
 
@@ -57,15 +51,10 @@ import {
 export interface RegisterAccessRoutesOptions {
   readonly accessStore: AccessStore;
   readonly auth: SwizzleAuth;
-  /** Lists the environments a project's holders get a role in. */
   readonly environmentStore: Pick<EnvironmentStore, "listEnvironments">;
   readonly platform: PlatformServices;
 }
 
-/**
- * Who a grant names and where it applies: `user` by id or email, `team` by id or name, or
- * `serviceAccount` by id or name among the project's own service accounts.
- */
 export type SubjectQuery = Pick<GrantQuery, "serviceAccount" | "team" | "user">;
 
 export const subjectFields = { serviceAccount: urlText, team: urlText, user: urlText };
@@ -109,10 +98,6 @@ export function registerAccessRoutes(app: ApiServer, options: RegisterAccessRout
     return { on: "project", projectId: project.id };
   };
 
-  /**
-   * The project once the actor administers it. A grant change passes the place it names, so a
-   * refused one is audited with that environment or automation, as the request named them.
-   */
   const administered = async (request: FastifyRequest, place: GrantQuery = {}) => {
     const { project } = request.params as { project: string };
     return await request.access.project(
@@ -127,7 +112,6 @@ export function registerAccessRoutes(app: ApiServer, options: RegisterAccessRout
     );
   };
 
-  // Everyone who sees a project sees where it is protected, so a refused change there explains itself.
   app.get<{ Reply: ProjectsResponse }>("/projects", async (request) => {
     const projects = await accessStore.listProjects();
     const seen = await Promise.all(
@@ -156,7 +140,6 @@ export function registerAccessRoutes(app: ApiServer, options: RegisterAccessRout
     }
   });
 
-  // What deleting the project must decide about: its automations, credentials and runs.
   app.get<{ Reply: ProjectContentsResponse }>("/projects/:project/contents", async (request) => {
     const project = await administered(request);
     const counts = await platform.countProjectContents(project.id);
@@ -166,9 +149,6 @@ export function registerAccessRoutes(app: ApiServer, options: RegisterAccessRout
     return counts;
   });
 
-  // ADR 0015: `contents=move&to=<project>` moves the automations, credentials and runs to a
-  // project the caller also administers; `contents=delete` deletes them. Without `contents` only
-  // an empty project goes. Audit events stay either way.
   const deleteProjectQuery = {
     schema: {
       querystring: objectSchema({
@@ -402,11 +382,6 @@ export function registerAccessRoutes(app: ApiServer, options: RegisterAccessRout
   );
 }
 
-/**
- * The person (`user` by id or email), team (`team` by id or name) or service account
- * (`serviceAccount` by id or name, in `projectId`) a grant names; 404 for none. A service account
- * of another project is no one here.
- */
 export async function subjectNamed(
   stores: { readonly accessStore: AccessStore; readonly auth: Pick<SwizzleAuth, "listPeople"> },
   query: SubjectQuery,

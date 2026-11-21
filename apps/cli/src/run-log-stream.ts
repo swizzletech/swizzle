@@ -5,10 +5,6 @@ import { type CliIO, outputFormat } from "./output.js";
 
 const POLL_INTERVAL_MS = 2_000;
 
-/**
- * Prints a run's log (its stderr) on stdout as it arrives, until the run ends. Its stdout is the
- * result, which the caller prints afterwards. Under `--json` each chunk is one `{"log":…}` line.
- */
 export async function followRunLogs(
   io: CliIO,
   options: ApiCommandOptions & { readonly environment: string },

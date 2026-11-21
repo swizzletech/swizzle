@@ -1,8 +1,3 @@
-// One run, as the Runs page and the automation's Runs tab show it in the run pane of their
-// workbench: the status in words, the facts with the worker each execution ran on, the cause in
-// words for a failed run, why a queued run waits for a worker, the approval card for an approval
-// wait, the actions, and the run's error, output, logs, payload and steps.
-
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -41,11 +36,8 @@ const TAB_LABEL: Record<InnerTab, string> = {
 
 export function RunPanel(props: {
   readonly runId: string;
-  /** Selects another run in the surrounding list, such as the one Run again starts. */
   readonly onSelectRun: (runId: string) => void;
-  /** False inside the automation page, which is where Open automation leads. */
   readonly showAutomationLink: boolean;
-  /** True when a track above the panel carries Approve and Reject on the station of that step. */
   readonly approvalOnTrack?: (stepKey: string) => boolean;
 }) {
   const { api, queryScope } = useDashboardClient();
@@ -68,7 +60,6 @@ export function RunPanel(props: {
     );
   }
   if (runQuery.data === undefined) return <Skeleton label="Loading the run" lines={6} />;
-  // Keyed by run, so the inner tab starts over for each run.
   return <LoadedRun {...props} key={runQuery.data.runId} run={runQuery.data} />;
 }
 
@@ -86,7 +77,6 @@ function LoadedRun(props: {
   const failed = run.state === "failed" || run.state === "dead-lettered";
   const open = isOpenRun(run.status);
   const { cancel: cancelRefusal, edit: editRefusal, runAgain: runAgainRefusal } = run.refusals;
-  // The agent a failed run is handed to changes and deploys the automation, which needs editor.
   const handsOff = failed && editRefusal === null;
   const refused = [
     ...(failed && editRefusal !== null ? [{ label: "Hand to agent", refusal: editRefusal }] : []),
@@ -97,8 +87,6 @@ function LoadedRun(props: {
   ];
   const ranOn = ranOnInWords(run.executions);
 
-  // A failed run's diagnosis never changes. A queued run's placement carries its own words, which
-  // the run detail polls.
   const diagnosisQuery = useQuery({
     enabled: failed,
     queryFn: () => api.getRunDiagnosis(run.runId),
@@ -108,8 +96,6 @@ function LoadedRun(props: {
   const childrenQuery = useQuery({
     placeholderData: keepPreviousData,
     queryFn: () => api.listRuns({ limit: 50, parentRunId: run.runId }),
-    // `open` in the key reads the children once more when the run ends; a child may have finished
-    // after the last poll.
     queryKey: ["child-runs", run.runId, open, ...queryScope],
     refetchInterval: (query) =>
       open || query.state.data?.runs.some((child) => isOpenRun(child.status)) ? 5_000 : false,
@@ -241,7 +227,6 @@ function LoadedRun(props: {
             <b>{run.errorMessage ?? "The run failed without an error message"}</b>
             {diagnosisQuery.data ? (
               <>
-                {/* An uncatalogued cause repeats the error; the title already says it. */}
                 {diagnosisQuery.data.likelyCause.summary === run.errorMessage ? null : (
                   <p>{diagnosisQuery.data.likelyCause.summary}</p>
                 )}
@@ -356,12 +341,6 @@ function LoadedRun(props: {
   );
 }
 
-/**
- * A header action that exists in only some run states. Most runs in view have ended, so Run again
- * stands outermost and Cancel run's empty slot sits to its left. The other states keep its space, empty, so
- * the actions beside it stay put when the run changes state and a click aimed at one of them never
- * lands on another.
- */
 function ReservedSlot(props: { readonly active: boolean; readonly children: ReactNode }) {
   return (
     <span
@@ -374,10 +353,6 @@ function ReservedSlot(props: { readonly active: boolean; readonly children: Reac
   );
 }
 
-/**
- * Why a queued run has not started, in the words `swizzle diagnose` prints: the reason and the
- * next steps, with the machines that could take it and when it fails.
- */
 function Placement(props: { readonly now: Date; readonly placement: ExplainedPlacement }) {
   const { now, placement } = props;
   return (
@@ -436,7 +411,6 @@ function Screen(props: { readonly children: string; readonly empty: string }) {
   );
 }
 
-/** Each execution's stderr, then live chunks while the run is still going. */
 function LiveLogs(props: { readonly runId: string }) {
   const { chunks, error, streaming } = useRunLogStream(props.runId, true);
   const text = useMemo(() => chunks.map((chunk) => chunk.chunk).join(""), [chunks]);
@@ -469,13 +443,11 @@ function useRunSteps(runId: string, open: boolean) {
   return useQuery({
     placeholderData: keepPreviousData,
     queryFn: () => api.listRunSteps(runId),
-    // As with child runs, `open` in the key reads the steps once more when the run ends.
     queryKey: ["run-steps", runId, open, ...queryScope],
     refetchInterval: open ? 5_000 : false,
   });
 }
 
-/** Each approval step the run passed: the verdict, who gave it, for whom it was and the comment. */
 function Decisions(props: { readonly now: Date; readonly open: boolean; readonly runId: string }) {
   const decided = (useRunSteps(props.runId, props.open).data ?? []).flatMap((step) =>
     step.approval === null ? [] : [{ decision: step.approval, stepKey: step.stepKey }],

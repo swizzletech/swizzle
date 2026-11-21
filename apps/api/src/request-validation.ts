@@ -4,22 +4,6 @@ import { MAX_WAIT_LINK_TOKEN_LENGTH } from "@swizzle/runtime";
 
 import type { ApiServer } from "./http-shared.js";
 
-/**
- * Request shapes at the route boundary. Fastify checks params, query and body against these JSON
- * schemas after the auth guard and before the handler, and answers a mismatch with 400
- * `FST_ERR_VALIDATION`, so no handler or query sees a NUL byte, a malformed id or a wrong type.
- *
- * `registerRequestValidation` validates every path parameter by its name and `environment` on
- * every query. A route with a parameter name missing from `PATH_PARAMETERS` fails at startup. A
- * route declares the rest of its query and its JSON body with `objectSchema` and the fragments
- * below; the JSON parser in `server.ts` refuses a NUL character in any body.
- *
- * Ajv converts no types, so a JSON body field must already have its declared type. Every query
- * value is text: a query flag or count uses `queryBoolean` or `queryInteger`, never `boolean` or
- * `integer`, and the handler reads the text.
- */
-
-/** Text from the URL: non-empty, bounded, no control characters. */
 export const urlText = {
   maxLength: 512,
   minLength: 1,
@@ -39,7 +23,6 @@ export const environmentName = {
 } as const;
 
 const PATH_PARAMETERS: Readonly<Record<string, object>> = {
-  // A service account by id or name.
   account: urlText,
   automationName: urlText,
   connectionName: { pattern: AUTOMATION_CONNECTION_NAME_PATTERN.source, type: "string" },
@@ -48,9 +31,7 @@ const PATH_PARAMETERS: Readonly<Record<string, object>> = {
   identifier: urlText,
   invitationId: uuid,
   kind: { enum: ["connection", "secret"], type: "string" },
-  // A secret's or a connection's name; the lookup finds none for a name of the wrong shape.
   name: urlText,
-  // A project by id or slug, a team by id or name.
   project: urlText,
   provider: urlText,
   ruleId: uuid,
@@ -66,7 +47,6 @@ const PATH_PARAMETERS: Readonly<Record<string, object>> = {
   workerId: uuid,
 };
 
-/** An object schema whose unlisted properties pass through unchecked. */
 export function objectSchema(
   properties: Readonly<Record<string, object>>,
   required: readonly string[] = [],
@@ -74,7 +54,6 @@ export function objectSchema(
   return { properties, required, type: "object" } as const;
 }
 
-/** Call before the first route, so every route gets its parameter and environment schemas. */
 export function registerRequestValidation(app: ApiServer): void {
   app.addHook("onRoute", (route) => {
     const names = [...route.url.matchAll(/:(\w+)/gu)].map((match) => match[1] as string);

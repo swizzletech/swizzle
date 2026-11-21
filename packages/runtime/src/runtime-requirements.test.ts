@@ -85,7 +85,6 @@ describe("collectWorkerCapabilities", () => {
 
 describe("evaluateLocalAutomationReadiness", () => {
   it("finds a declared binary on PATH and its version without assuming --version", async () => {
-    // pdftoppm answers --version with exit 99 and prints its version only for -v.
     const bin = await temporaryDirectory("swizzle-path-");
     await writeFile(
       path.join(bin, "pdftoppm"),
@@ -115,7 +114,6 @@ describe("evaluateLocalAutomationReadiness", () => {
         },
       ],
     });
-    // A binary that prints no version passes a bare declaration but no version rule.
     await writeFile(path.join(bin, "swizzle-quiet"), "#!/bin/sh\nexit 0\n");
     await chmod(path.join(bin, "swizzle-quiet"), 0o755);
     expect(await readiness("      - name: swizzle-quiet")).toMatchObject({ status: "ready" });

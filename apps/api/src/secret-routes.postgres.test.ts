@@ -37,7 +37,6 @@ describe("secret routes", () => {
     const app = await buildTestServer({ platform });
     const fixture = path.join(repoRoot, "packages/runtime/test-fixtures/requires-secret");
 
-    // A version deploys once the secrets it declares are set.
     expect((await deployFixture(app, fixture, {}, { headers: owner })).json()).toMatchObject({
       error: "PLATFORM_REQUIRED_SECRETS_MISSING",
     });
@@ -116,7 +115,6 @@ describe("secret routes", () => {
       url: "/secrets/REQUIRED_TOKEN",
     });
     expect(deletedInspectResponse.statusCode).toBe(404);
-    // Its deployment lost the secret with it, and one set again waits for the next deploy.
     const health = async () =>
       (
         await app.inject({

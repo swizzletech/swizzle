@@ -1,10 +1,3 @@
-// The runs of a filter beside the chosen run, as Runs and an automation's Runs tab show them: one
-// bordered card that fills the page, a list pane and a run pane with the same edges, each scrolling
-// on its own. The list groups runs by day under sticky headers, loads older runs at its end, and
-// moves the selection with the arrow keys. A phone has no beside, and beside a long list it would
-// put the run far down: it shows the list, or the run once the address names one, with a button
-// back to the list. useRunSplit decides what is on screen; a page reads that view too.
-
 import { type KeyboardEvent, type ReactNode, useEffect, useRef } from "react";
 
 import type { RunListItem } from "../lib/api";
@@ -17,15 +10,11 @@ import { Dot, ErrorNote, Skeleton, useNow, usePhone } from "./ui";
 import "./run-workbench.css";
 
 export interface RunSplitView {
-  /** The run the address names, else the first in the list. */
   readonly selected: string | undefined;
-  /** Whether the list is on screen. */
   readonly list: boolean;
-  /** The run on screen, if any. */
   readonly run: string | undefined;
 }
 
-/** `opened` is the run the address names; `first` is the first run of the list. */
 export function useRunSplit(opened: string | undefined, first: string | undefined): RunSplitView {
   const phone = usePhone();
   const selected = opened ?? first;
@@ -39,17 +28,11 @@ export function useRunSplit(opened: string | undefined, first: string | undefine
 export function RunWorkbench(props: {
   readonly pages: RunPages;
   readonly view: RunSplitView;
-  /** What a row's first line names: the automation, or the run's state on one automation's page. */
   readonly leads: "automation" | "state";
-  /** What the list says when no run matches. */
   readonly empty: string;
-  /** `replace` keeps a walk through the list out of the browser's history. */
   readonly onSelect: (runId: string, options?: { readonly replace: boolean }) => void;
-  /** Takes the run out of the address, which shows the list again. */
   readonly onBack: () => void;
-  /** What sits above the run, such as the flow; below it on a phone, where the run comes first. */
   readonly band?: ReactNode;
-  /** The last line of the list. */
   readonly listEnd?: ReactNode;
   readonly run: (runId: string) => ReactNode;
 }) {
@@ -98,7 +81,6 @@ function RunList(props: {
   const rows = useRef<HTMLDivElement | null>(null);
   const runs = pages.runs;
   const loaded = runs !== undefined;
-  // A link can open a run far down the list, and the arrow keys walk past the pane's edge.
   // biome-ignore lint/correctness/useExhaustiveDependencies: `loaded` scrolls once the rows exist
   useEffect(() => {
     rows.current?.querySelector('[aria-current="true"]')?.scrollIntoView({ block: "nearest" });
@@ -115,7 +97,6 @@ function RunList(props: {
   if (runs.length === 0) return <p className="pane-note t-meta">{props.empty}</p>;
 
   const tabStop = runs.some((run) => run.runId === selected) ? selected : runs[0]?.runId;
-  // A phone's row opens the run, so only a list beside its run walks with the keys.
   const beside = view.list && view.run !== undefined;
   const walk = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!beside || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
@@ -131,7 +112,6 @@ function RunList(props: {
 
   return (
     <>
-      {/* The rows are buttons, so a key press here always comes from one of them. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: the keys reach the row's own button */}
       <div data-testid="run-list" onKeyDown={walk} ref={rows}>
         {runsByDay(runs, now).map((day) => (

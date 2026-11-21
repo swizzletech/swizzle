@@ -35,7 +35,6 @@ export function registerApprovalRoutes(
     },
   );
 
-  // GET only shows the page, so a mail scanner that opens the link decides nothing.
   app.get<{ Reply: HtmlResponse }>("/approvals/:token", async (request, reply) => {
     reply.header("Referrer-Policy", "no-referrer");
     reply.header("Content-Security-Policy", APPROVAL_PAGE_CSP);
@@ -149,7 +148,6 @@ function renderConfirmationHtml(approved: boolean): string {
   });
 }
 
-/** An assigned approval is decided only signed in, so its assignee is who decided. */
 function renderAssignedHtml(assignee: ApprovalAssignee): string {
   return messagePage({
     heading: "Decide in Swizzle",

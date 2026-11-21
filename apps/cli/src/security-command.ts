@@ -11,7 +11,6 @@ import {
 } from "./command-support.js";
 import { type CliIO, EXIT_CODES, HandledCliError, respond } from "./output.js";
 
-/** `swizzle security audit`: the instance's public-deployment checks; exit 1 when any needs attention. */
 export function registerSecurityCommand(program: Command, io: CliIO, runHandler: RunHandler): void {
   const security = program.command("security").description("Inspect instance security posture");
   showsSubcommands(security);

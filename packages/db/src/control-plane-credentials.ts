@@ -1,9 +1,3 @@
-/**
- * Credential grants, shares and deployment bindings over PostgreSQL (ADR 0014). access.ts decides
- * what they allow; this module only reads and writes them. A secret and a connection are both a
- * credential: each row names one by `secret_id` or `connection_id`.
- */
-
 import { and, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { CredentialGrant, CredentialKind, Subject } from "./access.js";
@@ -57,7 +51,6 @@ function asCredential(
   };
 }
 
-/** The `secret_id` or `connection_id` column of a credential row. */
 function credentialIs(
   table: typeof credentialGrants | typeof credentialShares | typeof deploymentCredentials,
   credential: Pick<StoredCredential, "id" | "kind">,
@@ -127,7 +120,6 @@ export async function setCredentialGrant(
   credential: StoredCredential,
   grant: CredentialGrant,
 ): Promise<void> {
-  // One statement, so two first grants to the same subject cannot both insert.
   await client.db
     .insert(credentialGrants)
     .values({
@@ -240,7 +232,6 @@ export async function findDeploymentCredentials(
   return [...secrets, ...connections];
 }
 
-/** Each name's own credential in the place, else the one shared into the place's project. */
 async function findDeployable(
   client: DatabaseClient,
   kind: CredentialKind,
@@ -312,7 +303,6 @@ export async function boundCredentials(
   return [...(await bound("secret")), ...(await bound("connection"))];
 }
 
-/** Records what a new deployment binds; fails when a credential went away since it was found. */
 export async function insertDeploymentCredentials(
   tx: Transaction,
   deploymentId: string,
@@ -337,7 +327,6 @@ export async function insertDeploymentCredentials(
   }
 }
 
-/** A rollback binds what its target still binds. */
 export async function copyDeploymentCredentials(
   tx: Transaction,
   fromDeploymentId: string,

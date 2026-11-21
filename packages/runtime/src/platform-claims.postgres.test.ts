@@ -6,8 +6,6 @@ import { temporaryDirectory } from "../../../test/support.js";
 import { createAutomationFixture, repoRoot } from "../test/platform-harness.js";
 import { runAutomation } from "./runner.js";
 
-// Two deliveries of one order that run at the same time perform the side effect once.
-
 describe.each([
   {
     entrypoint: "main.ts",
@@ -78,8 +76,6 @@ describe.each([
       ),
     );
 
-    // Both deliveries execute at once, as on a worker with WORKER_CONCURRENCY=2. A claim queues
-    // its run again, so each run finishes in a later round.
     for (let round = 0; round < 3; round += 1) {
       await Promise.all([platform.processNextPlatformRun(), platform.processNextPlatformRun()]);
       await platform.reconcileQueuedRuns({});
@@ -89,7 +85,6 @@ describe.each([
       deliveries.map((delivery) => platform.getPlatformRun(delivery.runId)),
     );
     expect(runs.map((run) => run.status)).toEqual(["succeeded", "succeeded"]);
-    // The first executions overlapped, so neither read state after the other had decided.
     const [first, second] = runs.map((run) => run.executions[0]);
     expect(String(first?.startedAt) < String(second?.finishedAt)).toBe(true);
     expect(String(second?.startedAt) < String(first?.finishedAt)).toBe(true);

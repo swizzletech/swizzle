@@ -14,7 +14,6 @@ beforeEach(() => {
   vi.stubEnv("SWIZZLE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
 });
 
-/** A server whose first account needs SETUP_TOKEN, closed when the test finishes. */
 async function server() {
   const apiTokenStore = testApiTokenStore();
   const app = await buildTestServer({
@@ -37,8 +36,6 @@ async function setUp(app: Awaited<ReturnType<typeof server>>["app"]) {
   return browser;
 }
 
-// Sign-in hashes with production-cost scrypt, about 180 ms per hash on an idle core; 30 s leaves
-// room for parallel worktrees on a loaded machine.
 describe("sign-in over HTTP", () => {
   it("returns the public fallback for an unmapped library validation failure", async () => {
     const auth = testAuth({ trustedOrigins: [DASHBOARD_ORIGIN] });

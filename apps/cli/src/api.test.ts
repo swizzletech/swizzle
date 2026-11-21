@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 import { apiRequest, resolveApiUrl } from "./api.js";
 import { mapApiErrorToAgentError } from "./errors.js";
 
-// Profiles behind Caddy carry an /api prefix that a plain `new URL(path, base)` would drop.
 describe("resolveApiUrl", () => {
   it.each([
     ["http://localhost:19826/api", "http://localhost:19826/api/deployments"],

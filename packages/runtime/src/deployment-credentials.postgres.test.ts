@@ -21,7 +21,6 @@ describe("deployment credentials", () => {
     const first = await platform.upsertSecret("DECLARED_SECRET", "first", place);
     await platform.deployAutomationToPlatform({ automationDirectory, environment: "local" });
 
-    // A new value under the old name is a new secret, which nobody approved for this version.
     await platform.deleteSecret(first.id);
     await platform.upsertSecret("DECLARED_SECRET", "second", place);
     await expect(trigger()).rejects.toMatchObject({
@@ -29,7 +28,6 @@ describe("deployment credentials", () => {
       details: { missingSecrets: ["DECLARED_SECRET"] },
     });
 
-    // Deploying the same version again binds it, though source and config did not change.
     expect(
       await platform.checkDeployment({ automationDirectory, environment: "local" }),
     ).toMatchObject({ action: "update", changes: [] });
@@ -60,7 +58,6 @@ describe("deployment credentials", () => {
       environment: "local",
       projectId: DEFAULT_PROJECT_ID,
     });
-    // The deployer may use the secret when the deploy starts; the right is gone right after.
     let mayUse = true;
     const deploy = platform.deployAutomationToPlatform({
       automationDirectory: path.join(packageRoot, "test-fixtures/platform-env-snapshot"),

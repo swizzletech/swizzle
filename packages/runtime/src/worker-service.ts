@@ -25,7 +25,6 @@ import {
 
 const OUTPUT_CHUNKS = new RegExp(`[\\s\\S]{1,${OUTPUT_CHUNK_LENGTH}}`, "gu");
 
-/** A worker has one credential and initiates every request. It opens no control-plane store. */
 export async function startPlatformWorkerService(
   options: StartPlatformWorkerOptions,
 ): Promise<PlatformWorkerController> {
@@ -140,8 +139,6 @@ export async function startPlatformWorkerService(
         beating = false;
       });
   }, 15_000);
-  // Only a refusal ends ownership. A transport failure, HTTP 429 or 5xx may be a reconnect, so the
-  // execution retries until its local deadline, which the server cannot extend behind its back.
   const refused = (error: unknown) =>
     error instanceof WorkerHttpError && error.status < 500 && error.status !== 429;
   const backoff = (attempt: number) => Math.min(1000, 100 * 2 ** Math.min(attempt, 4));
@@ -178,13 +175,11 @@ export async function startPlatformWorkerService(
       renewing = true;
       const startedAt = performance.now();
       try {
-        // A short timeout lets the next renewal open a fresh connection after a network change.
         const { lease: renewed } = await call(
           WORKER_ROUTES.renew,
           owned(),
           AbortSignal.any([abort.signal, AbortSignal.timeout(10_000)]),
         );
-        // A reply that arrives after the local deadline cannot revive it.
         if (abort.signal.aborted || performance.now() >= deadline) return;
         lease = renewed;
         deadline = startedAt + lease.remainingMs - 100;
@@ -196,9 +191,6 @@ export async function startPlatformWorkerService(
         renewing = false;
       }
     };
-    // The pull reply may have waited behind preparation, so its validity has no local start. Nothing
-    // runs until a renewal measured from this side sets the deadline. Shutdown gives the unstarted
-    // execution up; the server requeues it without spending an attempt.
     const establish = async () => {
       for (let attempt = 0; ; attempt++) {
         if (closing) throw new Error("Worker is closing before the execution started.");
@@ -222,9 +214,6 @@ export async function startPlatformWorkerService(
       }
     };
     await establish();
-    // The renewal may be the first reply after a pause, or Docker may have stopped while the pull
-    // waited. Nothing has run yet, so the server requeues it at lease expiry without spending an
-    // attempt.
     if (!wake.settled()) throw new Error("Host was asleep; leaving the assignment unstarted.");
     if (await dockerMissing())
       throw new Error("Docker broker unavailable; leaving the assignment unstarted.");
@@ -235,7 +224,6 @@ export async function startPlatformWorkerService(
         await callOwned(WORKER_ROUTES.ready, owned);
       },
       output: (stream, chunk) => {
-        // By code point, so a chunk boundary never splits a surrogate pair.
         for (const part of chunk.match(OUTPUT_CHUNKS) ?? []) {
           const index = ++sequence;
           output = output.then(() =>

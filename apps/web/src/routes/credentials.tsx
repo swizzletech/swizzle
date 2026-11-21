@@ -1,10 +1,3 @@
-// Credentials `/credentials`: what deployed automations need and do not have, the stored secrets
-// and the connected accounts. Values stay write-only: the page can set, rotate and delete a
-// secret but never shows one. The head adds a secret or connects an account, and a link the agent
-// prints opens either form prefilled. `?project=` puts one project in view: the lists show only its
-// credentials and a new secret or account joins it unless the form picks another. A row shows its
-// most likely action; the rest, with who may use and manage it, sit in its menu.
-
 import { AUTOMATION_CONNECTION_NAME_PATTERN } from "@swizzle/config/browser";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useSearch } from "@tanstack/react-router";
@@ -48,8 +41,6 @@ export function CredentialsPage() {
   const automationsQuery = useAutomations();
   const usage: Usage = automationsQuery.isError ? "unknown" : (automationsQuery.data ?? "loading");
   const view: ProjectView = { inView: inView ?? null, projects: projects.data ?? [] };
-  // A link on this page (Missing › Connect) changes only the search; the key remounts the form so
-  // it opens with the link's values.
   const connectLink = [search.connect, search.name, search.scopes, inView?.id].join("|");
   const [addingSecret, setAddingSecret] = useState(false);
   const [connectingAccount, setConnectingAccount] = useState(false);
@@ -146,16 +137,11 @@ export function CredentialsPage() {
   );
 }
 
-/** The project the page shows, null for all, and every project the person sees. */
 interface ProjectView {
   readonly inView: Project | null;
   readonly projects: readonly Project[];
 }
 
-/**
- * The projects a new credential may join: those the person edits, the project in view first so
- * the form starts there. A protected environment may still refuse, and the API says why.
- */
 function creatableIn(view: ProjectView): readonly Project[] {
   const editable = view.projects.filter(
     (project) => project.role === "editor" || project.role === "admin",
@@ -165,7 +151,6 @@ function creatableIn(view: ProjectView): readonly Project[] {
   );
 }
 
-/** Which project a new credential joins, among those the person may create one in. */
 function ProjectPicker(props: {
   readonly label: string;
   readonly onChange: (projectId: string) => void;
@@ -191,7 +176,6 @@ function ProjectPicker(props: {
   );
 }
 
-/** Whether a row's Access panel is open: who may use and manage the credential. */
 function useAccessToggle() {
   const [open, setOpen] = useState<string | null>(null);
   const keyOf = (credential: CredentialRef) =>
@@ -209,12 +193,10 @@ function useAccessToggle() {
   };
 }
 
-/** The deployed automations, or why they are not known yet. */
 type Usage = readonly AutomationSummary[] | "loading" | "unknown";
 
 function usedBy(usage: Usage, uses: (automation: AutomationSummary) => boolean): string {
   if (usage === "loading") return "used by …";
-  // Claiming "no automation" here could invite deleting a credential a deployed run needs.
   if (usage === "unknown") return "use unknown";
   const names = usage.filter(uses).map((automation) => automation.automationName);
   return names.length === 0 ? "used by no automation" : `used by ${namesInWords(names)}`;
@@ -239,7 +221,6 @@ function Secrets(props: {
   const shown = (secrets.data ?? []).filter(
     (secret) => view.inView === null || secret.projectId === view.inView.id,
   );
-  // Two projects can hold a secret of the same name, so each row names its project.
   const projectOf = (secret: SecretMetadata) => secret.project.name;
   const keyOf = (secret: SecretMetadata) => `${secret.projectId}:${secret.name}`;
   const refOf = (secret: SecretMetadata): CredentialRef => ({
@@ -376,10 +357,8 @@ function AddSecret(props: {
   const [value, setValue] = useState("");
   const options = creatableIn(props.view);
   const [chosen, setChosen] = useState<string | null>(null);
-  // Until the person picks one, the form follows the project in view as the projects load.
   const projectId = chosen ?? options[0]?.id;
   const valueField = useRef<HTMLInputElement>(null);
-  // A link that names the secret leaves only the value to type.
   useEffect(() => {
     if (props.prefill !== undefined) valueField.current?.focus();
   }, [props.prefill]);
@@ -457,7 +436,6 @@ const CONNECTION_STATE: Record<
   revoked: { label: "Revoked", tone: "idle" },
 };
 
-/** "Verified 3 min ago", "Not verified" or "Last error 2 h ago". */
 function connectionCheckInWords(connection: ConnectionMetadata, now: Date): string {
   if (connection.status === "active") {
     return `Verified ${ageInWords(connection.lastRefreshedAt ?? connection.createdAt, now)}`;
@@ -467,32 +445,23 @@ function connectionCheckInWords(connection: ConnectionMetadata, now: Date): stri
   return `Last error ${ageInWords(connection.lastErrorAt, now)}`;
 }
 
-/**
- * Opens a blank window for the provider's sign-in, or null when the browser blocked it. Call it
- * inside the click: a popup blocker refuses a window opened after the API answers. Each sign-in
- * keeps its own window, so two that overlap never swap pages.
- */
 function openSignInWindow(): Window | null {
   return window.open("about:blank", "_blank");
 }
 
-/** The sign-in the page last started: its consent page, and whether the browser blocked its window. */
 interface Consent {
   readonly blocked: boolean;
   readonly url: string;
 }
 
-/** Sends a sign-in's own window to the provider's consent page; the page keeps the link too. */
 function showConsent(signInWindow: Window | null, authorizationUrl: string): Consent {
   if (signInWindow !== null && !signInWindow.closed) {
-    // The provider's page must not reach back into the dashboard.
     signInWindow.opener = null;
     signInWindow.location.replace(authorizationUrl);
   }
   return { blocked: signInWindow === null, url: authorizationUrl };
 }
 
-/** True while the owner's sign-in at the provider has not come back yet. */
 function signingIn(connection: ConnectionMetadata): boolean {
   return connection.status === "pending" || connection.authorizationPending;
 }
@@ -513,7 +482,6 @@ function Accounts(props: {
   const connections = useQuery({
     queryFn: () => api.listConnections(),
     queryKey: ["connections", ...queryScope],
-    // While a sign-in at the provider is open, watch for it to finish.
     refetchInterval: (query) => (query.state.data?.connections.some(signingIn) ? 3_000 : false),
   });
   const [consent, setConsent] = useState<Consent | null>(null);
@@ -681,7 +649,6 @@ function Accounts(props: {
 
 const NEW_CREDENTIALS = "";
 
-/** The provider settings beyond client id and secret: endpoints for generic OAuth2, a tenant for Microsoft. */
 function providerConfigFor(
   provider: string,
   fields: { readonly authorizeUrl: string; readonly tenant: string; readonly tokenUrl: string },
@@ -723,8 +690,6 @@ function ConnectForm(props: {
   const [chosenProject, setChosenProject] = useState<string | null>(null);
   const projectId = chosenProject ?? projects[0]?.id;
 
-  // An account of the same provider that the person manages can lend its client id and secret to
-  // a new one, which then joins the lender's project.
   const reusable = props.connections.filter(
     (connection) => connection.provider === provider && connection.right === "manage",
   );

@@ -1,7 +1,6 @@
 import type { DeploymentDiff } from "./audit.js";
 import type { StoredDeployment } from "./control-plane-types.js";
 
-/** Compares a deployment with the one it replaces; with no previous deployment every `*Changed` flag is false. */
 export function computeDeploymentDiff(
   current: StoredDeployment,
   previous: StoredDeployment | null,

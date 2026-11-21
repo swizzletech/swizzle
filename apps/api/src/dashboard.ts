@@ -58,37 +58,22 @@ import { Queue } from "bullmq";
 
 const DEFAULT_HEARTBEAT_TTL_MS = 30_000;
 const DEFAULT_MAINTENANCE_STALE_MS = 5 * 60_000;
-/**
- * Only surface a stale-service alert for heartbeats that fell silent recently.
- * Older rows are decommissioned/forgotten services (the retention job will
- * remove them eventually) and must not keep the platform pinned to `degraded`.
- */
 const DEFAULT_STALE_ALERT_WINDOW_MS = 15 * 60_000;
 const DEFAULT_QUEUE_NAME = createQueueNameForProfile("host-default");
 const DEFAULT_VALKEY_URL = process.env.VALKEY_URL ?? "redis://localhost:6379";
 const DAY_MS = 24 * 60 * 60_000;
-/** How many of an automation's latest runs the static track counts reach over. */
 const STEP_REACH_RUNS = 50;
-// Leave room for database reads and the reply within the CLI's 30-second API timeout.
 const IMAGE_READINESS_RESPONSE_TIMEOUT_MS = 20_000;
-/** Who looks at the Overview: what Needs you lists depends on what they may act on. */
 interface OverviewViewer {
-  /** The person and their teams, whose assigned approvals they may decide. */
   readonly subjects: readonly Subject[];
   mayDecide(run: DashboardRunListItem, approval: RunApproval): Promise<boolean>;
-  /** Whether they may change the automation here: fix its code, trigger or credentials. */
   mayEdit(automation: AccessTarget): Promise<boolean>;
-  /** Whether they operate the instance, so grant workers and act on its problems. */
   readonly operatesInstance: boolean;
-  /** How far their clock stands east of UTC, so the timetable's hours start on their full hours. */
   readonly utcOffsetMinutes: number;
 }
 
-/** The automation's detail before its route adds what the viewer's role refuses. */
-
 export interface DashboardDataProvider {
   close(): Promise<void>;
-  /** The automation, naming among what it invokes only what `scope` lets the viewer read. */
   getAutomationDetail(
     automationSlug: string,
     environment: string,
@@ -98,13 +83,11 @@ export interface DashboardDataProvider {
     automationSlug: string,
     environment: string,
   ): Promise<DashboardAutomationReadme | null>;
-  /** The flow.mermaid of the active deployment, or of `deploymentId` when it is one of this automation's. */
   getMermaidDiagram(
     automationSlug: string,
     environment: string,
     deploymentId?: string,
   ): Promise<DashboardMermaidDiagram | null>;
-  /** The entrypoint of the active deployment, or of `deploymentId` when it is one of this automation's. */
   getAutomationSource(
     automationSlug: string,
     environment: string,
@@ -112,13 +95,6 @@ export interface DashboardDataProvider {
   ): Promise<DashboardAutomationSource | null>;
   getStepReach(automationSlug: string, environment: string): Promise<DashboardStepReach | null>;
   getOperationsSummary(environment: string): Promise<DashboardOperationsSummary>;
-  /**
-   * The Overview's read model: 24 h counts, Needs you, the timetable and Recently changed, over the automations
-   * in `scope`. Platform and notification problems and runs waiting for a worker need an instance
-   * owner or admin, so only a viewer who operates the instance sees them. Needs you lists the
-   * approvals the viewer may decide, and what an automation needs fixed only where the viewer may
-   * edit it.
-   */
   getOverview(
     environment: string,
     scope: ReadScope,
@@ -151,8 +127,6 @@ export function createDashboardDataProvider(
     connection: createBullMqConnection(options.valkeyUrl ?? DEFAULT_VALKEY_URL),
   });
   const heartbeatTtlMs = options.heartbeatTtlMs ?? DEFAULT_HEARTBEAT_TTL_MS;
-  // The readme, flow, source and step counts read only the deployments of an automation whose
-  // route already checked read access.
   const deployed = (automationSlug: string, environment: string) =>
     dashboardStore.getAutomationDetail(automationSlug, environment, { all: true });
   const deploymentOf = (detail: DashboardAutomationDetail, deploymentId: string | undefined) =>
@@ -358,7 +332,6 @@ export function createDashboardDataProvider(
           topLevelOnly: true,
         }),
         dashboardStore.listAutomationSummaries(environment, scope),
-        // Only approvals the viewer might decide, before the limit cuts the list.
         dashboardStore.listRuns({
           approvalOnly: true,
           assignedTo: viewer.subjects,
@@ -366,7 +339,6 @@ export function createDashboardDataProvider(
           limit: 200,
           scope,
         }),
-        // Valkey can be down while Postgres answers; the Overview then still lists what it knows.
         readQueueViews({
           profiles: workers.flatMap((worker) => worker.profiles),
           queue,
@@ -395,7 +367,6 @@ export function createDashboardDataProvider(
           scope,
         ),
       ]);
-      // Every item an automation raises asks for a change to it, which only an editor can make.
       const editable = (
         await Promise.all(
           automations.map(async (automation) =>
@@ -481,7 +452,6 @@ export function createDashboardDataProvider(
   };
 }
 
-/** Reads a deployment's entrypoint; a file that cannot be read becomes `error`, never a throw. */
 async function readAutomationSource(
   automationSlug: string,
   deployment: DashboardDeploymentSummary,
@@ -515,19 +485,14 @@ async function readAutomationSource(
   }
 }
 
-/** What readiness judges an automation against: the live workers and scheduler, and timeout grants. */
 interface ReadinessContext {
   readonly environment: string;
-  /** Each automation's timeout grant in ms, by automation id. */
   readonly grants: ReadonlyMap<string, number>;
-  /** The environments a live scheduler serves. */
   readonly schedulerEnvironments: ReadonlySet<string>;
   readonly workers: readonly RegisteredReadinessWorker[];
   readonly inspectImage: PlatformServices["runnerImageChecks"]["workers"];
 }
 
-/** Whether a service's last heartbeat is recent enough that it still runs. */
-/** A run that failed before it started has no end time. */
 function lastFailureAt(run: DashboardRunListItem | undefined): string | null {
   return run === undefined ? null : (run.finishedAt ?? run.queuedAt);
 }
@@ -559,10 +524,6 @@ async function runtimeReadiness(
   );
 }
 
-/**
- * The automation with its active deployment's readiness: the persisted runtime snapshot judged
- * against the live workers and its timeout grant, and its secrets and connections as they stand.
- */
 export async function withReadiness(
   automation: DashboardAutomationSummary,
   context: ReadinessContext,
@@ -623,7 +584,6 @@ async function withDetailReadiness(
 ): Promise<JudgedAutomationDetail> {
   const [summary, deploymentHistory] = await Promise.all([
     withReadiness(automation, context),
-    // Secrets and connections belong to the active deployment, so earlier ones show the runtime.
     Promise.all(
       automation.deploymentHistory.map(async (deployment) => ({
         ...deployment,
@@ -642,14 +602,12 @@ async function buildOperabilitySummary(input: {
   readonly dashboardStore: DashboardStore;
   readonly environment: string;
   readonly heartbeatTtlMs: number;
-  /** The groups of the workers that reach the environment, whose queues the summary counts. */
   readonly profiles: readonly string[];
   readonly queue: Queue;
   readonly queueName: string;
   readonly valkeyUrl: string;
 }): Promise<DashboardOperabilitySummary> {
   const { environment } = input;
-  // Only instance owners and admins read operability, so it counts every project.
   const scope = { all: true } as const;
   const [automations, recentRuns, heartbeats] = await Promise.all([
     input.dashboardStore.listAutomationSummaries(environment, scope),
@@ -728,7 +686,6 @@ async function buildOperabilitySummary(input: {
   } satisfies DashboardOperabilitySummary;
 }
 
-/** The unrevoked workers whose grants reach an environment. */
 async function reachingWorkers(
   registry: Pick<WorkerRegistry, "list">,
   environment: string,
@@ -739,7 +696,6 @@ async function reachingWorkers(
   );
 }
 
-/** Counts of every queue a worker group names, plus the default queue. */
 async function readQueueViews(input: {
   readonly profiles: readonly string[];
   readonly queue: Queue;
@@ -801,22 +757,6 @@ export interface ComputeOperationsStateReasonsResult {
   readonly stateReasons: readonly string[];
 }
 
-/**
- * Pure reducer that turns observed platform signals into the list of
- * `stateReasons` surfaced on the dashboard. Extracted so the alerting rules can
- * be tested in isolation — `getOperationsSummary` otherwise depends on a live
- * queue + control-plane store.
- *
- * Rules:
- *   - `stale-service-heartbeats` fires only when a service went silent within
- *     the alert window. Long-decommissioned rows are ignored until the
- *     maintenance retention job deletes them.
- *   - `queue-pressure` fires on any failed job or sustained backlog.
- *   - `notification-delivery-failed` fires if any recent delivery is marked
- *     failed.
- *   - `maintenance-never-ran` / `maintenance-stale-or-failed` reflect the
- *     latest maintenance run.
- */
 export function computeOperationsStateReasons(
   input: ComputeOperationsStateReasonsInput,
 ): ComputeOperationsStateReasonsResult {

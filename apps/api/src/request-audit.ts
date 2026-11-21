@@ -1,21 +1,3 @@
-/**
- * The audit (packages/db/src/audit.ts) at the HTTP boundary. Every request that may change
- * something, which is every route `ROUTE_POLICY` (http-contract.ts) marks `audit`, plus the
- * approval and event links, writes its event before its handler runs and completes it with the
- * status it ended with. A request whose event cannot be written fails before it changes anything.
- * One refused before its handler, by the instance check or the body's schema, is recorded
- * afterwards.
- *
- * The access check (request-access.ts) tells the event what the request is about: the first
- * automation, run, project or credential it resolves. A route adds what the check cannot see with
- * `await request.audit.note(...)`. Both are written to the event as soon as they are known, so
- * they are durable before the handler changes anything. A read creates no event, not even one
- * that only an owner's or admin's instance role allowed, and neither does a deployment check.
- *
- * `GET /audit` reads the events, newest first, as far as `auditView` (packages/db/src/access.ts)
- * lets the actor. The events name the automation by id and slug without a foreign key, so they
- * outlive its deletion.
- */
 import {
   type AuditActor,
   type AuditStore,
@@ -32,12 +14,7 @@ import type { ApiServer } from "./http-shared.js";
 import { objectSchema, queryInteger, urlText } from "./request-validation.js";
 
 interface RequestAudit {
-  /** What the request is about; a field already known keeps its first value. */
   target(target: Partial<AuditTarget>, privileged?: boolean): Promise<void>;
-  /**
-   * Facts the route adds to its event, such as the reason for a reassignment. Await it before the
-   * change: it fails the request when the event cannot be written.
-   */
   note(details: Readonly<Record<string, unknown>>): Promise<void>;
 }
 
@@ -47,7 +24,6 @@ declare module "fastify" {
   }
 }
 
-/** Public routes that change a run: whoever holds the link acts. */
 const LINK_PATHS = ["/approvals/:token", "/events/:token"] as const;
 const LINK_ROUTES = new Set<string>(LINK_PATHS);
 interface Collected {
@@ -57,7 +33,6 @@ interface Collected {
   eventId: string | null;
 }
 
-/** Register after the auth guard, so the event knows the actor. */
 export function registerAudit(app: ApiServer, options: { readonly store: AuditStore }): void {
   const { store } = options;
   const collected = new WeakMap<FastifyRequest, Collected>();
@@ -77,7 +52,6 @@ export function registerAudit(app: ApiServer, options: { readonly store: AuditSt
       target: NO_AUDIT_TARGET,
     };
     collected.set(request, entry);
-    // Before the event exists the facts wait in `entry`, and `begin` writes them.
     const describe = async () => {
       if (entry.eventId === null) return;
       await store.describe(entry.eventId, {
@@ -171,7 +145,6 @@ export function registerAudit(app: ApiServer, options: { readonly store: AuditSt
       if (entry.eventId !== null) {
         await store.finish(entry.eventId, reply.statusCode);
       } else if (changes(request) && (request.actor !== undefined || isLink(request))) {
-        // Refused before its handler ran, so it changed nothing: recorded after the fact.
         await store.finish(await begin(request, entry), reply.statusCode);
       }
     } catch (error) {
@@ -200,7 +173,6 @@ function action(request: FastifyRequest): string {
   return `${request.method} ${request.routeOptions.url ?? request.url}`;
 }
 
-/** The path parameters, except a link's token, which is a capability. */
 function params(request: FastifyRequest): Record<string, string> {
   const raw = (request.params ?? {}) as Record<string, unknown>;
   return Object.fromEntries(

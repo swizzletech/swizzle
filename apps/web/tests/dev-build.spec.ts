@@ -7,10 +7,6 @@ import { createServer, type ViteDevServer } from "vite";
 
 import { mockDashboardApi, seededState } from "./dashboard-mock";
 
-// The other flows run on the production build, which leaves out React's development diagnostics.
-// This one serves the dashboard from Vite's dev server, as `just dev` does, where React reports
-// misuse such as a hook a component calls only on some renders.
-
 let server: ViteDevServer | undefined;
 let cacheDir: string;
 
@@ -45,7 +41,6 @@ test("moving between pages in the dev build logs no React diagnostic", async ({ 
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
 
   const nav = page.getByRole("navigation", { name: "Dashboard" });
-  // Settings opens its first section.
   for (const [place, heading] of [
     ["Runs", "Runs"],
     ["Credentials", "Credentials"],

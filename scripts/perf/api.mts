@@ -1,53 +1,36 @@
-import { FINISHED_RUN_STATUSES } from "@swizzle/db";
-// The backend half of `just perf`: latency and throughput of the main API routes, the run
-// lifecycle of a reference automation, the first run after deploying a new version of it, and the
-// CPU and memory of every service meanwhile. All requests pass the stack's Caddy ingress. Routes carry the owner's session cookie, as the
-// dashboard's requests do; runs are triggered with the owner's token, as the CLI triggers them.
-
 import { randomUUID } from "node:crypto";
 import { appendFile, cp, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import { FINISHED_RUN_STATUSES } from "@swizzle/db";
 import type { PackagedStack } from "../packaged-stack.mts";
 import { type Sampled, type Service, whileSampling } from "./resources.mts";
 import { quantile, type Rounds } from "./result.ts";
 
-/** The fixed scenario; perf.mts records it in the result, so a change makes runs incomparable. */
 export const API_PROFILE = {
   apiConcurrency: 8,
   apiRequestsPerRound: 200,
   apiWarmupRequests: 50,
   burstRuns: 10,
-  /** Each round deploys a new version of the reference automation and measures its first run. */
   deploysPerRound: 1,
   referenceAutomation: "hello-webhook",
   sequentialRuns: 10,
 } as const;
 
-/** How long one route load, run trigger, run wait or run detail request may take. */
 export const OPERATION_TIMEOUT_MS = 60_000;
 const POLL_MS = 50;
-/** How long a new deployment may take until every worker has prepared it. */
 const PREPARE_TIMEOUT_MS = 60_000;
 const PREPARE_POLL_MS = 250;
 
-/** How a request authenticates: as the dashboard does, or as the CLI and machine clients do. */
 type Auth = "session" | "token";
 
 interface Route {
-  /** Names the route the same in every result, so two results compare. */
   readonly label: string;
   readonly path: string;
   readonly auth: Auth;
 }
 
-/**
- * The GET routes the dashboard's main pages read, with the owner's session as the dashboard sends
- * them, and /health as the floor of the ingress. One route repeats with the owner token, so the
- * pair shows what token authentication costs. A token request writes the token's last use at most
- * once a minute, so a round includes that write about once.
- */
 function routes(stack: PackagedStack, runId: string): Route[] {
   const environment = `environment=${stack.environment}`;
   const automation = API_PROFILE.referenceAutomation;
@@ -78,17 +61,11 @@ interface Load {
   readonly errors: number;
 }
 
-/**
- * Aborts at the operation's own deadline, or earlier with the measured phase's lifecycle signal.
- * A fetch derives its own signal from this one, so completed requests do not retain listeners on
- * the phase signal.
- */
 function operationSignal(lifecycle: AbortSignal | undefined): AbortSignal {
   const deadline = AbortSignal.timeout(OPERATION_TIMEOUT_MS);
   return lifecycle === undefined ? deadline : AbortSignal.any([deadline, lifecycle]);
 }
 
-/** Sends `total` GETs from `concurrency` closed loops; each waits for the full body. */
 async function load(
   stack: PackagedStack,
   route: Route,
@@ -124,7 +101,6 @@ interface RunTimes {
   readonly finishedAt: number;
 }
 
-/** Triggers the reference automation; returns the run id and how long the trigger call took. */
 export async function triggerRun(
   stack: PackagedStack,
   payload: unknown,
@@ -147,7 +123,6 @@ export async function triggerRun(
   return { runId: (JSON.parse(body) as { runId: string }).runId, triggerMs };
 }
 
-/** Polls the run until it is terminal and returns its server-side timestamps. */
 export async function waitForRun(
   stack: PackagedStack,
   runId: string,
@@ -179,7 +154,6 @@ export async function waitForRun(
   }
 }
 
-/** The phase's wall time, and each service's CPU and memory during it. */
 function recordUsage(rounds: Rounds, phase: string, { seconds, usage }: Sampled<unknown>): void {
   rounds.record("phase duration", phase, "s", "lower", seconds);
   for (const [service, { cpuSeconds, hugePagesMiB, rssPeakMiB }] of usage) {
@@ -188,14 +162,12 @@ function recordUsage(rounds: Rounds, phase: string, { seconds, usage }: Sampled<
   }
 }
 
-/** Sends every route its warmup requests, unrecorded. */
 export async function warmRoutes(stack: PackagedStack, seedRunId: string): Promise<void> {
   for (const route of routes(stack, seedRunId)) {
     await load(stack, route, API_PROFILE.apiWarmupRequests);
   }
 }
 
-/** One round of every route in turn, sampled as one phase. */
 export async function routeRound(
   stack: PackagedStack,
   services: readonly Service[],
@@ -223,20 +195,15 @@ export async function routeRound(
   recordUsage(rounds, "routes", sampled);
 }
 
-/** Where a run's execute time went, as the worker records it on the run's last attempt. */
 interface Phases {
-  /** Assembling the run image; 0 when it existed. */
   readonly image: number;
-  /** Claiming the sandbox: a standby, or creating and starting one. */
   readonly sandbox: number;
-  /** Staging the inputs and running the automation in the sandbox. */
   readonly process: number;
   readonly standby: boolean;
 }
 
 type MeasuredRun = RunTimes & { readonly phases: Phases | null };
 
-/** The run's phases, or null from a worker that records none. */
 async function phasesOf(stack: PackagedStack, runId: string, lifecycle: AbortSignal) {
   const response = await fetch(`${stack.dashboard}/api/dashboard/runs/${runId}`, {
     headers: credentials(stack, "token"),
@@ -266,10 +233,6 @@ async function measuredRun(
   return { ...times, phases: await phasesOf(stack, runId, signal), triggerMs };
 }
 
-/**
- * Deploys a new version of the reference automation from a copy of its example with a changed
- * source file, and returns the deployment id.
- */
 async function deployNewVersion(stack: PackagedStack): Promise<string> {
   const directory = await mkdtemp(path.join(os.tmpdir(), "swizzle-perf-version-"));
   try {
@@ -287,12 +250,6 @@ async function deployNewVersion(stack: PackagedStack): Promise<string> {
   }
 }
 
-/**
- * Waits until every worker has logged the deployment prepared, and returns how long that took. A
- * stack whose workers do not prepare deployments returns null after PREPARE_TIMEOUT_MS. A worker
- * that failed to prepare it, or did not finish in time, is reported on stderr, because its first
- * run then waits for the image and the round's first-run cells mean something else.
- */
 async function waitForPrepared(
   stack: PackagedStack,
   deploymentId: string,
@@ -341,10 +298,6 @@ async function waitForPrepared(
   return null;
 }
 
-/**
- * Records the medians of `runs` in `group`, with their phases when the worker recorded them. A
- * metric's name ends in `suffix`, such as " p50".
- */
 function recordRuns(
   rounds: Rounds,
   group: string,
@@ -372,7 +325,6 @@ function recordRuns(
     "process",
     phases.map((entry) => entry.process),
   );
-  // The rest of execute: loading the deployment, its secrets and state, and storing the result.
   record(
     "other",
     phases.map((entry) => executeMs(entry.run) - entry.image - entry.sandbox - entry.process),
@@ -390,10 +342,6 @@ function executeMs(run: RunTimes): number {
   return run.finishedAt - run.startedAt;
 }
 
-/**
- * Deploys a new version of the reference automation, waits until the workers prepared it, and
- * measures its first run, sampled as one phase.
- */
 export async function deployRound(
   stack: PackagedStack,
   services: readonly Service[],
@@ -415,7 +363,6 @@ export async function deployRound(
   recordUsage(rounds, "deploy", sampled);
 }
 
-/** One round of sequential runs, then a burst, sampled as one phase. */
 export async function runRound(
   stack: PackagedStack,
   services: readonly Service[],
@@ -449,7 +396,6 @@ export async function runRound(
   const failed = [...sequential, ...burst].filter((run) => run.status !== "succeeded").length;
   rounds.record(group, "failed", "count", "lower", failed);
 
-  // Queued and execute split the burst's time between waiting for a worker slot and running.
   const burstGroup = `burst of ${API_PROFILE.burstRuns} runs`;
   const seconds =
     (Math.max(...burst.map((run) => run.finishedAt)) -

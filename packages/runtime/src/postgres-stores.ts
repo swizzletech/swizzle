@@ -1,6 +1,3 @@
-// Opens the Postgres stores the runtime's services use. `@swizzle/db/postgres` loads drizzle and pg,
-// so the runtime imports it here, when a service opens a store, instead of at module load: the CLI
-// and tests that use only pure runtime helpers need no database client.
 import type { ControlPlaneStore, DashboardStore } from "@swizzle/db";
 
 export async function openControlPlaneStore(): Promise<ControlPlaneStore> {

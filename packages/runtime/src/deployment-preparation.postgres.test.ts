@@ -22,7 +22,6 @@ describe("run images of prepared deployments", () => {
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", String(budgetMiB));
     const docker = await fakeDockerImages();
     const { deploy, run } = await platformWithPreparation();
-    // Waits until a prune pass listed the stack's images after the newest assembly.
     const pruned = (commits: number) =>
       waitFor(signal, async () => (await docker.listingsAfterCommit(commits)) > 0);
 
@@ -44,13 +43,11 @@ describe("run images of prepared deployments", () => {
       await waitFor(signal, async () => (await docker.totalMiB()) <= budgetMiB);
     }
     const [kept, , replaced, churn] = await docker.commits();
-    // The pass after the last preparation removes the replaced deployment's image.
     await waitFor(signal, async () => !(await docker.imageIds()).includes(replaced ?? ""));
 
     await waitFor(signal, async () => (await docker.totalMiB()) <= budgetMiB);
     expect(await docker.tagged()).toEqual(new Set([kept, churn]));
     expect(await docker.totalMiB()).toBeLessThanOrEqual(budgetMiB);
-    // An assembled image counts against the budget once the pass after its assembly ran.
     expect(await docker.peakMiB()).toBeLessThanOrEqual(budgetMiB + IMAGE_MIB);
   });
 });
@@ -65,7 +62,6 @@ it("retains a shared released image while one-bundle polls learn other active ta
   await waitFor(signal, async () => logged.length > 0 && (await docker.commits()).length === 1);
   const [kept] = await docker.commits();
   await docker.age(25 * HOUR_MS);
-  // Sorted active snapshots deliver a-other before the replacement z-kept.
   await deploy("a-other");
   await deploy("z-kept");
   await waitFor(
@@ -77,7 +73,6 @@ it("retains a shared released image while one-bundle polls learn other active ta
 });
 
 describe("a prune pass", () => {
-  // The owner sees the measurement in Settings > Workers when the active bytes pass the budget.
   it("keeps an active image past the disk budget, removes an inactive one and measures both", async () => {
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "100");
     const docker = await fakeDockerImages();
@@ -155,7 +150,6 @@ describe("a prune pass", () => {
     expect(await docker.commits()).toHaveLength(2);
   });
 
-  // An assembly committed and tagged the image; the run that needs it has not started its sandbox.
   it("keeps an image an assembly just made, also past the disk budget", async () => {
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "1");
     const docker = await fakeDockerImages();
@@ -170,7 +164,6 @@ describe("a prune pass", () => {
     expect(await docker.tagged()).toEqual(new Set([image]));
   });
 
-  // Runs of replaced deployments and local runs assemble images no active deployment keeps.
   it("holds images no deployment keeps to the disk budget once their runs started", async () => {
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", String(2 * IMAGE_MIB + 100));
     const docker = await fakeDockerImages();
@@ -224,7 +217,6 @@ describe("the recorded images of active deployments", () => {
     signal,
   }) => {
     const docker = await fakeDockerImages();
-    // The worker reads its artifact store from here; an empty one fails the source download.
     const environment = { ...process.env };
     const { deploy, logged, otherWorkerPass, run, recordedCount } =
       await platformWithPreparation(environment);
@@ -237,7 +229,6 @@ describe("the recorded images of active deployments", () => {
     environment.SWIZZLE_ARTIFACTS_DIR = artifacts;
     expect((await run("late")).image).toBeTypeOf("number");
     jump(16 * MINUTE_MS);
-    // The retried preparation records the tag before another worker prunes.
     await waitFor(signal, () => recordedCount() === 1);
     jump(50 * MINUTE_MS);
     await docker.age(25 * HOUR_MS);
@@ -269,7 +260,6 @@ describe("the recorded images of active deployments", () => {
     expect(await docker.imageIds()).toEqual([kept]);
   });
 
-  // The run image tag hashes the source and recipe, so a deploy of the same source shares it.
   it("include an image that the next deployment of the same source reuses", async ({ signal }) => {
     const docker = await fakeDockerImages();
     const { deploy, logged, run, recordedCount } = await platformWithPreparation();
@@ -290,7 +280,6 @@ describe("the recorded images of active deployments", () => {
   });
 });
 
-/** Moves the preparation retry and pruning clocks without slowing the test. */
 function useMovableClock(): (ms: number) => void {
   vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ["Date"] });
   onTestFinished(() => {
@@ -299,7 +288,6 @@ function useMovableClock(): (ms: number) => void {
   return (ms) => vi.setSystemTime(Date.now() + ms);
 }
 
-/** A fresh module graph: closing a preparation closes its graph's Docker scopes for good. */
 async function freshRuntime() {
   vi.resetModules();
   return {
@@ -312,10 +300,6 @@ async function freshRuntime() {
   };
 }
 
-/**
- * A test platform whose worker prepares its deployments, as the worker service starts it,
- * with `environment` as the worker's environment and its log messages in `logged`.
- */
 async function platformWithPreparation(environment: NodeJS.ProcessEnv = { ...process.env }) {
   const { testPlatform, pruneRunImages, startDeploymentPreparation, readDeployedSource } =
     await freshRuntime();
@@ -369,15 +353,10 @@ async function platformWithPreparation(environment: NodeJS.ProcessEnv = { ...pro
   const fixtures = new Map<string, string>();
   return {
     logged,
-    /**
-     * Stops the worker's preparation and starts it again as a new worker process would. The
-     * platform's own runs share the stopped process's Docker scopes, so a test runs none after it.
-     */
     restart: async () => {
       await preparation.close();
       preparation = start((await freshRuntime()).startDeploymentPreparation);
     },
-    /** A pass of another worker on the same daemon, which keeps none of these images. */
     otherWorkerPass: async () => pruneRunImages({ keep: new Set((await keptImages()) ?? []) }),
     recordedCount: () => records.size,
     deploy: async (name: string, mainJs?: string) => {
@@ -390,7 +369,6 @@ async function platformWithPreparation(environment: NodeJS.ProcessEnv = { ...pro
         }));
       fixtures.set(name, directory);
       if (mainJs !== undefined) await writeFile(path.join(directory, "main.js"), mainJs);
-      // Forced, so a deploy of unchanged source still makes a new deployment.
       await platform.deployAutomationToPlatform({
         automationDirectory: directory,
         deploymentId: randomUUID(),
@@ -398,7 +376,6 @@ async function platformWithPreparation(environment: NodeJS.ProcessEnv = { ...pro
         force: true,
       });
     },
-    /** Runs the automation once and reports how long it waited for its run image. */
     run: async (automationName: string) => {
       const runId = randomUUID();
       await platform.enqueuePlatformRun({ automationName, environment: "local", runId });
@@ -411,14 +388,6 @@ async function platformWithPreparation(environment: NodeJS.ProcessEnv = { ...pro
   };
 }
 
-/**
- * A `docker` on PATH with an image store in files, for the calls run image assembly, sandboxes
- * and pruning make. Commit makes an image of IMAGE_MIB that carries its container's labels; tag,
- * image rm, image inspect and image ls act on the store as the daemon does. The create of the nth
- * assembly container waits while the test holds that assembly. After every call the fake records
- * the peak size of all images. A shell script, not a Node one, so
- * each call stays fast while other test files load the host.
- */
 async function fakeDockerImages() {
   const bin = await temporaryDirectory("swizzle-fake-docker-");
   const state = path.join(bin, "state");
@@ -518,8 +487,6 @@ exit $status
     );
   const mib = async (file: string) =>
     Math.round(Number(await readFile(file, "utf8").catch(() => "0")) / 1_048_576);
-  // Sandboxes are removed in the background. The test waits for that removal, or it deletes this
-  // fake mid-call and the removal's retry lands in a later test's log.
   onTestFinished(async ({ signal }) => {
     await waitFor(signal, async () => {
       const logged = await lines();
@@ -530,22 +497,17 @@ exit $status
     });
   });
   return {
-    /** Calls the fake as the runtime would, for state a test sets up. */
     run: async (args: readonly string[]) =>
       (await execFileAsync(path.join(bin, "docker"), [...args])).stdout,
-    /** Makes the create of the `n`th assembly container wait until releaseAssembly(n). */
     holdAssembly: (n: number) => writeFile(path.join(state, `hold-${n}`), ""),
     releaseAssembly: (n: number) => rm(path.join(state, `hold-${n}`)),
-    /** How many assembly containers were created, a held one included. */
     assemblies: async () =>
       (await readFile(path.join(state, "assemblies"), "utf8").catch(() => "")).split("\n").length -
       1,
-    /** The ids of the images commit made, oldest first. */
     commits: async () =>
       (await readFile(path.join(state, "commits"), "utf8").catch(() => ""))
         .split("\n")
         .filter(Boolean),
-    /** How many `image ls` calls came after the `commits`th commit. */
     listingsAfterCommit: async (commits: number) => {
       const logged = await lines();
       let seen = 0;
@@ -556,7 +518,6 @@ exit $status
       }
       return listings;
     },
-    /** Moves every image's creation `ms` into the past. */
     age: async (ms: number) => {
       for (const image of await images()) {
         const created = Number(await readFile(path.join(image, "created"), "utf8"));
@@ -564,7 +525,6 @@ exit $status
       }
     },
     imageIds: async () => (await images()).map((image) => path.basename(image)),
-    /** The ids of the images that still carry a tag. */
     tagged: async () => {
       const tags = await readdir(path.join(state, "tags")).catch(() => []);
       return new Set(

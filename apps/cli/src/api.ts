@@ -4,20 +4,6 @@ import type { BearerToken } from "./profile.js";
 
 export const DEFAULT_API_URL = process.env.SWIZZLE_API_URL ?? "http://api.localhost:19826";
 
-/**
- * Resolve an API endpoint path against a base URL that may itself contain a
- * path prefix (e.g. `http://localhost:19826/api`). The whatwg `URL` constructor
- * replaces the base path when the second argument starts with `/`, which drops
- * any prefix the user has configured via their profile. This helper appends
- * the path to the base instead, matching operator intuition.
- *
- *   resolveApiUrl("http://localhost:19826/api",  "/deployments")
- *     -> http://localhost:19826/api/deployments
- *   resolveApiUrl("http://localhost:19820",      "/deployments")
- *     -> http://localhost:19820/deployments
- *   resolveApiUrl("https://app.example.com/api/","/runs/abc")
- *     -> https://app.example.com/api/runs/abc
- */
 export function resolveApiUrl(base: string, pathname: string): URL {
   const normalizedBase = base.endsWith("/") ? base : `${base}/`;
   const normalizedPath = pathname.startsWith("/") ? pathname.slice(1) : pathname;
@@ -30,10 +16,6 @@ export interface ApiRequestOptions extends RequestInit {
   readonly token?: BearerToken | null;
   readonly debug?: boolean;
   readonly debugLogger?: (message: string) => void;
-  /**
-   * Return `undefined` instead of throwing when the API responds with 404.
-   * Used for existence-check patterns (e.g. "does this secret already exist?").
-   */
   readonly acceptNotFound?: boolean;
 }
 

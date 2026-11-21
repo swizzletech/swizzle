@@ -52,28 +52,15 @@ export interface NotificationRuleBody {
 
 declare module "fastify" {
   interface FastifyInstance {
-    /** The process's SWIZZLE_ENVIRONMENT, which buildServer decorates the server with. */
     readonly configuredEnvironment: string;
   }
 }
 
-/**
- * The request's `?environment=`, which every route's query schema checks against the environment
- * name rule, or the environment the API is configured to serve.
- */
 export function getEnvironment(request: FastifyRequest): string {
   const query = request.query as EnvironmentQuery | undefined;
   return query?.environment ?? request.server.configuredEnvironment;
 }
 
-// Fastify `trustProxy` value derived from SWIZZLE_TRUSTED_PROXY. Direct exposure
-// (unset/false) keeps `request.ip` bound to the real socket, so a client cannot
-// forge it. Behind a reverse proxy the operator sets the proxy's address so
-// Fastify derives the real client IP from X-Forwarded-For in a spoof-resistant
-// way (only that address is trusted). A hop count cannot tell the proxy from a
-// client that forges the header; Fastify reads one as an address, and production
-// refuses it (security-config.ts). This is what makes the webhook ingress
-// rate-limit key trustworthy — never trust XFF unconditionally.
 export function resolveTrustProxy(): boolean | string {
   const raw = process.env.SWIZZLE_TRUSTED_PROXY?.trim();
   if (raw === undefined || raw.length === 0) {
@@ -82,12 +69,9 @@ export function resolveTrustProxy(): boolean | string {
   const normalized = raw.toLowerCase();
   if (normalized === "true") return true;
   if (normalized === "false" || normalized === "off" || normalized === "0") return false;
-  // Comma-separated IPs / CIDRs — Fastify's proxy-addr parses this form directly.
   return raw;
 }
 
-// Normalizes an IP for use as a stable rate-limit bucket key (strips the
-// IPv4-mapped IPv6 prefix so ::ffff:1.2.3.4 and 1.2.3.4 share a bucket).
 export function normalizeClientIp(ip: string | undefined): string {
   const value = ip ?? "unknown";
   return value.startsWith("::ffff:") ? value.slice("::ffff:".length) : value;
@@ -101,10 +85,6 @@ export function randomRequestId(): string {
   return `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/**
- * The browser origins the API answers cross-origin and accepts session writes from:
- * SWIZZLE_CORS_ORIGINS, else SWIZZLE_DASHBOARD_ORIGIN, else none.
- */
 export function getAllowedOrigins(environment: NodeJS.ProcessEnv = process.env): readonly string[] {
   const configuredOrigins = splitOrigins(environment.SWIZZLE_CORS_ORIGINS);
   if (configuredOrigins.length > 0) return configuredOrigins;
@@ -112,10 +92,6 @@ export function getAllowedOrigins(environment: NodeJS.ProcessEnv = process.env):
   return dashboardOrigin ? [dashboardOrigin] : [];
 }
 
-/**
- * The origin of SWIZZLE_DASHBOARD_ORIGIN, whose `/invitation` and `/reset-password` pages open the
- * links the API hands out. Null unless it is an http or https URL: mailto: or file: has "null".
- */
 export function dashboardOrigin(environment: NodeJS.ProcessEnv = process.env): string | null {
   const origin = URL.parse(environment.SWIZZLE_DASHBOARD_ORIGIN?.trim() ?? "");
   return origin !== null && (origin.protocol === "https:" || origin.protocol === "http:")
@@ -134,12 +110,6 @@ export { deploymentResponse as serializeDeploymentResponse } from "@swizzle/runt
 
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "[::1]", "localhost", "0.0.0.0"]);
 
-/**
- * The base URL senders reach this API at: the origin and path of SWIZZLE_PUBLIC_URL, or, when it
- * is unset, the address a loopback request came to. Host and X-Forwarded-* are attacker-influenced
- * behind a misconfigured proxy, so no other request names it. Null when neither applies. A query
- * or fragment is dropped, since the paths appended to the base would land inside it.
- */
 export function publicApiUrl(request: FastifyRequest): string | null {
   return apiBaseUrl(request, process.env.SWIZZLE_PUBLIC_URL);
 }
@@ -148,7 +118,6 @@ function apiBaseUrl(request: FastifyRequest, setting: string | undefined): strin
   const configured = setting?.trim();
   if (configured !== undefined && configured !== "") {
     const url = URL.parse(configured);
-    // An unparsable value is returned as is, so the caller that needs it reports it.
     return (url === null ? configured : `${url.origin}${url.pathname}`).replace(/\/+$/u, "");
   }
   const host = request.headers.host ?? "";
@@ -157,7 +126,6 @@ function apiBaseUrl(request: FastifyRequest, setting: string | undefined): strin
     : null;
 }
 
-/** `record` with the URL its trigger's webhook answers at (`webhookUrl`). */
 export function withWebhookUrl<T extends { readonly trigger: JudgedTriggerSummary | null }>(
   request: FastifyRequest,
   record: T,
@@ -171,7 +139,6 @@ export function withWebhookUrl<T extends { readonly trigger: JudgedTriggerSummar
   return { ...record, trigger: { ...trigger, webhookUrl: url } };
 }
 
-/** Root paths need the private API base; only /hooks/ is forwarded by the public listener. */
 export function webhookUrl(
   request: FastifyRequest,
   webhookPath: string,
@@ -196,7 +163,6 @@ export function formatSecretDeclarationCollisionWarnings(
   });
 }
 
-/** The collisions with automations the caller may read; the others stay unnamed. */
 export async function visibleCollisions(
   request: FastifyRequest,
   platform: PlatformServices,
@@ -205,7 +171,6 @@ export async function visibleCollisions(
 ): Promise<readonly SecretDeclarationCollision[]> {
   const scope = await request.access.scope(environment);
   if (scope.all) return collisions;
-  // A name and a slug both find their automation; each is looked up once per request.
   const readable = new Map<string, Promise<boolean>>();
   const isReadable = (name: string) => {
     let answer = readable.get(name);

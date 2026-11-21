@@ -63,10 +63,6 @@ export const apiCheckSchema = z.discriminatedUnion("mode", [
   }),
 ]);
 
-/**
- * The first secret or connection through which an automation reaches an outside API, or null.
- * A webhook signing secret verifies calls that come in, so it does not count.
- */
 export function findExternalApiDependency(config: {
   readonly connections: readonly string[];
   readonly secrets: readonly string[];
@@ -82,10 +78,6 @@ export function findExternalApiDependency(config: {
   return connection === undefined ? null : { kind: "connection", name: connection };
 }
 
-/**
- * The secrets and connections a version binds when it deploys: those it lists, and a webhook's
- * signing secret, each once. `swizzle apply` binds them; `swizzle validate` checks their use.
- */
 export function declaredCredentialNames(config: {
   readonly connections: readonly string[];
   readonly secrets: readonly string[];
@@ -101,7 +93,6 @@ export function declaredCredentialNames(config: {
   };
 }
 
-/** An automation's `api_check` level, with the check entrypoint resolved. */
 export type AutomationApiCheck =
   | {
       readonly mode: "active";
@@ -112,7 +103,6 @@ export type AutomationApiCheck =
   | { readonly mode: "passive"; readonly untested_after: string }
   | { readonly mode: "off"; readonly reason: string };
 
-/** `check.ts` beside `main.ts`: the check entrypoint an active `api_check` uses by default. */
 export function defaultCheckEntrypoint(entrypoint: string): string {
   return path.posix.join(path.posix.dirname(entrypoint), `check${path.extname(entrypoint)}`);
 }

@@ -122,7 +122,6 @@ describe("scheduler service", () => {
     const duplicatePollRuns = await scheduler.pollOnce(requireDate(trigger.nextRunAt));
     expect(duplicatePollRuns).toHaveLength(0);
 
-    // Process the first run so overlap-prevention does not skip the next slot.
     await platform.processNextPlatformRun();
 
     const updatedTrigger = await platform.getAutomationTrigger("cron-success", "local");
@@ -299,7 +298,6 @@ describe("scheduler service", () => {
     const deployment = await platform.store.getActiveDeploymentBySlug("hello-webhook", "local");
     if (deployment === null) throw new Error("Expected an active deployment.");
 
-    // Rows PostgreSQL holds while their BullMQ jobs are gone, as after a Valkey restart.
     const orphanedRunIds: string[] = [];
     for (let index = 0; index < 150; index += 1) {
       const runId = randomUUID();
@@ -339,7 +337,6 @@ describe("scheduler service", () => {
       platform,
     });
 
-    // A deploy needs its secrets, so the slot is skipped once the bound secret is deleted.
     const place = { environment: "local", projectId: DEFAULT_PROJECT_ID };
     const secret = await platform.upsertSecret("CRON_REQUIRED_TOKEN", "token", place);
     await platform.deployAutomationToPlatform({

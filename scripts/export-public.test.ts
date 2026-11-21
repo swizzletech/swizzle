@@ -72,7 +72,6 @@ test("exports the selected commit without private files, dirty changes or source
   expect(exported).toBe(
     "README.md\napps/cli/assets/skills/swizzle-builder/SKILL.md\nbiome.jsonc\nknip.jsonc\npnpm-lock.yaml\nscripts/check.ts\nscripts/conventions/comment-budget.json\ntest/inputs.json\ntsconfig.test.json\n",
   );
-  // The no-private-paths convention reads the same list, so it agrees with the archive.
   expect(
     Object.keys(files)
       .filter((file) => !isPrivate(file))

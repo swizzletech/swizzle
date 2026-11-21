@@ -1,6 +1,3 @@
-// Access in words: what each role allows, why a request was refused, grants and token scopes, and
-// sign-in and account errors.
-
 import { PASSWORD_LENGTH } from "@swizzle/config/browser";
 
 import type { AccessGrant, AccessRefusal, ApiErrorCode, ProjectRole, TokenScope } from "../api";
@@ -25,15 +22,12 @@ const SIGN_IN_PROBLEMS: Readonly<Partial<Record<ApiErrorCode, string>>> = {
     "The setup token is wrong. Copy SWIZZLE_SETUP_TOKEN from the server's .env.",
 };
 
-/** The rule under a new password field. */
 export const PASSWORD_RULE = `At least ${PASSWORD_LENGTH.min} characters.`;
 
-/** Whether a new password has a length the API accepts. Forms enable their button on this. */
 export function passwordAccepted(password: string): boolean {
   return password.length >= PASSWORD_LENGTH.min && password.length <= PASSWORD_LENGTH.max;
 }
 
-/** Why a typed new password cannot be sent; null while it is empty or has an accepted length. */
 export function passwordProblemInWords(password: string): string | null {
   const { length } = password;
   if (length === 0 || passwordAccepted(password)) return null;
@@ -43,12 +37,10 @@ export function passwordProblemInWords(password: string): string | null {
     : `${counted} The password can have at most ${PASSWORD_LENGTH.max}.`;
 }
 
-/** The sentence for a sign-in or account error code; null leaves the API's own message. */
 export function signInProblemInWords(code: ApiErrorCode | undefined): string | null {
   return code === undefined ? null : (SIGN_IN_PROBLEMS[code] ?? null);
 }
 
-/** What each project role lets its holder do; each role does everything the one before does. */
 export const ROLE_IN_WORDS: Record<ProjectRole, string> = {
   viewer: "Reads automations, their runs, logs and results.",
   operator: "Also starts what is deployed, and retries and cancels runs.",
@@ -57,28 +49,23 @@ export const ROLE_IN_WORDS: Record<ProjectRole, string> = {
     "Also decides who may do what, protects environments and manages service accounts and every credential.",
 };
 
-/** A token scope as a refusal carries it: projects by id. */
 interface RefusalScope {
   readonly role: ProjectRole;
   readonly projectIds: readonly string[] | null;
   readonly environments: readonly string[] | null;
 }
 
-/** A role given at one place, as a refusal lists where the person's role comes from. */
 type RefusalSource = AccessRefusal["sources"][number];
 
-/** A 403's details: a project refusal, a credential right, or an instance role. */
 interface Refusal {
   readonly required: string;
   readonly role: string | null;
-  /** Present only when the token's scope is what limits the caller. */
   readonly scope?: RefusalScope | null;
   readonly sources?: readonly RefusalSource[];
   readonly credential?: { readonly kind: string; readonly name: string };
   readonly right?: string | null;
 }
 
-/** "editor on the project through the team Office", "operator in production". */
 function sourceInWords(source: RefusalSource): string {
   let where: string;
   switch (source.on) {
@@ -101,11 +88,6 @@ const HIDDEN: ReadonlySet<ApiErrorCode> = new Set([
   "RUN_NOT_FOUND",
 ]);
 
-/**
- * The sentences for a request refused for a missing right, or null for any other failure: what
- * it needs, what the person holds and through which grant or token, and whom to ask. An unknown
- * and an invisible resource answer alike, so a 404 says both.
- */
 export function accessProblemInWords(error: {
   readonly status: number;
   readonly code?: ApiErrorCode | undefined;
@@ -124,18 +106,12 @@ export function accessProblemInWords(error: {
     return `This needs ${refusal.required} on the ${kind} ${name}; you hold ${refusal.right ?? "no right"} on it.${token} Ask someone who manages it.`;
   }
   if (refusal.sources === undefined) {
-    // An instance owner or admin is refused here only for a narrowed token; the API says what works.
     if (refusal.role === "owner" || refusal.role === "admin") return `${error.message}${token}`;
     return `Only an instance owner or admin may do this. You are ${refusal.role === null ? "not signed in" : `a ${refusal.role}`} of this instance.${token}`;
   }
   return `This needs ${refusal.required}. ${refusalReasonInWords(error.details as AccessRefusal)}`;
 }
 
-/**
- * "Pause and Move to folder need editor and Run now needs operator. Your role here is viewer, …":
- * the controls a page leaves out, grouped by the role each needs, and those by why the person
- * lacks it, which reads once.
- */
 export function refusedControlsInWords(
   controls: readonly { readonly label: string; readonly refusal: AccessRefusal }[],
 ): string {
@@ -157,18 +133,12 @@ export function refusedControlsInWords(
     .join(" ");
 }
 
-/** "a", "a and b", "a, b and c". */
 function andList(parts: readonly string[]): string {
   return parts.length === 1
     ? parts.join("")
     : `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}`;
 }
 
-/**
- * Why a project refusal holds, after what it needs: the role the person holds and from which
- * grants, what limits it, and whom to ask. A grant that gives nothing where it was asked, such as
- * a project role in a protected environment, says so instead of calling itself their role there.
- */
 function refusalReasonInWords(refusal: AccessRefusal): string {
   const sources = refusal.sources.map(sourceInWords);
   const environment = refusal.protectedEnvironment;
@@ -191,7 +161,6 @@ function refusalReasonInWords(refusal: AccessRefusal): string {
   return `${held}${capped}${token}${ask}`;
 }
 
-/** "The token you use acts at most as operator, only in staging and in 1 project." */
 function tokenLimitInWords(scope: RefusalScope): string {
   const limits = [`at most as ${scope.role}`];
   if (scope.environments !== null) limits.push(`only in ${scope.environments.join(", ")}`);
@@ -203,7 +172,6 @@ function tokenLimitInWords(scope: RefusalScope): string {
   return `The token you use acts ${limits.join(", ")}.`;
 }
 
-/** "editor on the project", "operator on export", "editor in production", with its team. */
 export function grantInWords(
   grant: AccessGrant,
   automationName: (automationId: string) => string,
@@ -223,14 +191,12 @@ function placeInWords(grant: AccessGrant, automationName: (automationId: string)
   }
 }
 
-/** "All your rights", or "editor · Office · staging, production". */
 export function scopeInWords(scope: TokenScope, holder: "person" | "service-account"): string {
   const everything =
     scope.role === "admin" && scope.projects === null && scope.environments === null;
   if (everything && holder === "person") return "All your rights";
   const parts = [`at most ${scope.role}`];
   if (scope.projects !== null) {
-    // A token's projects can all be deleted after it was minted.
     parts.push(
       scope.projects.length === 0
         ? "no project left"
@@ -241,8 +207,6 @@ export function scopeInWords(scope: TokenScope, holder: "person" | "service-acco
   return parts.join(" · ");
 }
 
-// The first match names it: Edge and Opera also say Chrome, Chrome also says Safari, Android also
-// says Linux.
 const BROWSERS: readonly (readonly [RegExp, string])[] = [
   [/\bEdg(?:e|A|iOS)?\//u, "Edge"],
   [/\b(?:OPR|Opera)\//u, "Opera"],
@@ -260,13 +224,11 @@ const DEVICES: readonly (readonly [RegExp, string])[] = [
   [/\bLinux\b/u, "Linux"],
 ];
 
-/** "Chrome on Mac", "Safari on iPhone", "curl": the browser a session signed in from. */
 export function sessionDeviceInWords(userAgent: string | null): string {
   const agent = userAgent?.trim() ?? "";
   if (agent === "") return "Unknown browser";
   const browser = BROWSERS.find(([pattern]) => pattern.test(agent))?.[1];
   const device = DEVICES.find(([pattern]) => pattern.test(agent))?.[1];
-  // Every browser's agent starts with Mozilla/; anything else, such as a script, by its own name.
   if (browser === undefined && agent.startsWith("Mozilla/"))
     return device === undefined ? "Unknown browser" : `Browser on ${device}`;
   if (browser === undefined) return agent.split(/[\s/]/u)[0] ?? agent;

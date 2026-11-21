@@ -92,8 +92,6 @@ describe("triggerInWords", () => {
     expect(nextRunInWords(trigger({ status: "invalid", triggerType: "chain" }), NOW)).toBe("–");
   });
 
-  // The scheduler never advances a cron trigger of an environment it does not serve, so its next
-  // run time has passed and never comes.
   it("names the environment no scheduler serves instead of a next run", () => {
     const unserved = trigger({
       environment: "production",

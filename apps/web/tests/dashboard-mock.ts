@@ -21,11 +21,6 @@ import type {
   TriggerSummary,
 } from "../src/lib/api";
 
-// The API the dashboard flows run against: a seeded staging instance with one approval wait, one
-// failing automation, one missing secret, a two-stage pipeline and a running cron, or an empty
-// one. The mock changes its state the way the API would, so a flow sees the result of its action,
-// and records every request, so a flow can assert what the dashboard sent.
-
 const MINUTE = 60_000;
 export const PROJECT_ID = "00000000-0000-4000-8000-000000000001";
 
@@ -53,7 +48,6 @@ export interface MockState {
   automations: AutomationSummary[];
   connections: ListedConnection[];
   needsYou: AttentionItem[];
-  /** What GET /projects answers: the projects the signed-in person sees. */
   projects: Project[];
   readonly recentChanges: Overview["recentChanges"];
   readonly requests: MockRequest[];
@@ -61,13 +55,9 @@ export interface MockState {
   runs: RunListItem[];
   secrets: SecretMetadata[];
   tokens: TokenResponse[];
-  /** What the viewer may not do with every automation, as its detail answers; none by default. */
   automationRefusals: AutomationDetail["refusals"];
-  /** The folder list as GET /automation-folders answers it; none and no refusal by default. */
   folders: AutomationFoldersResponse;
-  /** Why the viewer may not deploy a new automation, as the Overview answers it; null by default. */
   deploy: Overview["deploy"];
-  /** API paths no handler answered; a flow that ends with entries here missed a route. */
   readonly unhandled: string[];
 }
 
@@ -193,7 +183,6 @@ function glance(item: RunListItem): AutomationSummary["recentRuns"][number] {
 function detail(item: RunListItem, extra: Partial<RunDetail> = {}): RunDetail {
   return {
     ...item,
-    // The seeded viewer is an owner: they decide an open approval and reassign it.
     approval:
       item.approval === null ? null : { ...item.approval, may: { decide: true, reassign: true } },
     executions: [],
@@ -214,10 +203,6 @@ export const APPROVAL_RUN_ID = "7c1e02aa-aaaa-4bbb-8ccc-000000000002";
 const RUNNING_RUN_ID = "a1b2c3d4-aaaa-4bbb-8ccc-000000000003";
 export const OK_RUN_ID = "2c6c0c77-aaaa-4bbb-8ccc-000000000004";
 
-/**
- * Adds `count` finished runs of verify-probe behind the seeded ones, one every hour going back, so
- * a list spans several days and more than one page.
- */
 export function addOlderRuns(state: MockState, count: number): void {
   for (let index = 0; index < count; index += 1) {
     const failed = index % 7 === 0;
@@ -427,7 +412,6 @@ export function seededState(): MockState {
   };
 }
 
-/** A fresh instance: signed in, nothing deployed. */
 export function emptyState(): MockState {
   return {
     automations: [],
@@ -447,8 +431,6 @@ export function emptyState(): MockState {
   };
 }
 
-// What verify-probe ships: a flowchart whose node ids are its step names, and the entrypoint the
-// API scanned for those steps, with the line each one spans.
 const PROBE_FLOW = `flowchart LR
   start([Webhook]) --> fetch[Fetch order]
   fetch --> gate{Approve refund?}
@@ -477,9 +459,6 @@ const PROBE_STEPS = [
   { endLine: 9, key: "notify", kind: "step", startLine: 9, target: null },
 ] as const;
 
-// A branching flow of ten stations with long labels, the shape a real invoice intake has: the
-// widest word sits in a label, and lanes from three decisions meet at one task. `move` ran last, so
-// a run opens near the far end of the track.
 const WIDE_FLOW = `flowchart TD
   cron([Hourly schedule]) --> read[Mail: read the label Rechnungseingang]
   read --> pdf{PDF attached?}
@@ -497,7 +476,6 @@ const WIDE_FLOW = `flowchart TD
 
 const WIDE_STEPS = ["read", "sort", "upload", "task", "move"] as const;
 
-/** Gives verify-probe `WIDE_FLOW`: its flowchart, its code, and every run having walked its steps. */
 export async function serveWideFlow(page: Page) {
   await page.route("**/dashboard/automations/verify-probe/mermaid?*", (route) =>
     route.fulfill({ json: { available: true, content: WIDE_FLOW, error: null } }),
@@ -550,22 +528,12 @@ const PERSON = {
   twoFactorEnabled: false,
 } as const;
 
-/** Answers every `/api` request of `page` from `state`. */
-/**
- * A person with two-factor sign-in on: the password step answers with a challenge, and the code
- * step accepts `totp` at /verify-totp and `recoveryCode` at /verify-backup-code. With
- * `expireFirstChallenge`, the first code arrives after the challenge ran out.
- */
 export interface MockTwoFactor {
   readonly expireFirstChallenge?: boolean;
   readonly recoveryCode: string;
   readonly totp: string;
 }
 
-/**
- * The timetable as the API counts it: the top-level runs and the deploys of the viewer's last 24
- * hours, each in the hour it was queued or happened.
- */
 function timetableOf(state: MockState, utcOffsetMinutes: number): Overview["timetable"] {
   const hourMs = 60 * MINUTE;
   const offsetMs = utcOffsetMinutes * MINUTE;
@@ -623,7 +591,6 @@ export async function mockDashboardApi(
       state.requests.push({ body, method, pathname, search: url.searchParams });
       const is = (verb: string, pattern: RegExp) => method === verb && pattern.test(pathname);
       const param = (pattern: RegExp) => decodeURIComponent(pattern.exec(pathname)?.[1] ?? "");
-      // As the API: the named project, `default` when the request names none.
       const requestedProject = () => {
         const project = url.searchParams.get("project") ?? "default";
         return project === "default" ? PROJECT_ID : project;
@@ -749,7 +716,6 @@ export async function mockDashboardApi(
             (!approvalOnly || item.approval !== null) &&
             (!failedOnly || failed(item)),
         );
-        // A cursor here is just the offset of the next page; the client only hands it back.
         const from = Number(url.searchParams.get("cursor") ?? 0);
         const to = from + Number(url.searchParams.get("limit") ?? 100);
         return json(route, {
@@ -771,7 +737,6 @@ export async function mockDashboardApi(
         if (run?.automationSlug !== "verify-probe" || run.status === "dead-lettered") {
           return json(route, []);
         }
-        // The fetch step ran in the first 400 ms of every probe run; notify only when it finished.
         const startedAt = run.startedAt ?? run.queuedAt;
         const at = (ms: number) => new Date(Date.parse(startedAt) + ms).toISOString();
         const step = (
@@ -889,7 +854,6 @@ export async function mockDashboardApi(
         const same = (item: { readonly name: string; readonly projectId: string }) =>
           item.name === name && item.projectId === projectId;
         state.secrets = [...state.secrets.filter((item) => !same(item)), secret];
-        // The deployment bound the secret it lost, so the new one waits for the next deploy.
         state.needsYou = state.needsYou.map((item) =>
           item.kind === "missing-secret" &&
           item.secretName === name &&
@@ -962,7 +926,6 @@ export async function mockDashboardApi(
           readonly scope?: ScopeInput;
         };
         const id = `token-${state.tokens.length + 1}`;
-        // As the API: an omitted field limits nothing, and projects come back by name.
         const projects =
           input.scope?.projects?.map((slug) => ({ id: PROJECT_ID, name: "Default", slug })) ?? null;
         const token: TokenResponse = {
@@ -1016,7 +979,6 @@ export async function mockDashboardApi(
         return json(route, { service: "api", status: "ok", version: "0.9.0" });
 
       state.unhandled.push(`${method} ${pathname}`);
-      // The mock's own signal, deliberately no API code: a flow that reaches it missed a route.
       return json(
         route,
         { error: "NOT_MOCKED", message: `${method} ${pathname} is not mocked.` },
@@ -1030,7 +992,6 @@ function json(route: Route, body: unknown, status = 200) {
   return route.fulfill({ body: JSON.stringify(body), contentType: "application/json", status });
 }
 
-/** An error body as the API sends it, with a code and status the shared catalogue pairs. */
 function apiError<Code extends ApiErrorCode>(
   route: Route,
   code: Code,

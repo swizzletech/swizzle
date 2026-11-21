@@ -589,7 +589,6 @@ describe("deployment routes", () => {
     await app.close();
   });
 
-  // The dashboard's deployment list reads readiness on every deployment, not only the active one.
   it("answers the dashboard each deployment with its readiness", async () => {
     const stateDirectory = await temporaryDirectory("swizzle-api-");
     const platform = await testPlatform({
@@ -632,8 +631,6 @@ describe("deployment routes", () => {
     await app.close();
   });
 
-  // Behind the dashboard's proxy the API answers under /api, so the URL a sender needs keeps
-  // the path of SWIZZLE_PUBLIC_URL. Without it, only a loopback Host names the address.
   it("names a webhook's URL with the path of SWIZZLE_PUBLIC_URL and never from a foreign Host", async () => {
     const platform = await testPlatform({
       artifactsDirectory: path.join(await temporaryDirectory("swizzle-api-"), "artifacts"),

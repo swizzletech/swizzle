@@ -1,6 +1,3 @@
-// The Overview's "Needs you": one row per thing the owner has to act on, each with its action
-// inline or one click away. The API names each item's kind and facts; this module words them.
-
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
@@ -311,7 +308,6 @@ function AutomationName({ automation }: { readonly automation: AutomationRef }) 
 function Need(props: {
   readonly act?: ReactNode;
   readonly children: ReactNode;
-  /** Shown whole under the title, before the meta line. */
   readonly detail?: ReactNode;
   readonly kind: AttentionItem["kind"];
   readonly label: string;

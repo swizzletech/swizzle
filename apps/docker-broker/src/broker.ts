@@ -1,15 +1,3 @@
-// The HTTP server between the worker and the Docker socket. It routes each request through
-// policy.ts, looks up the owner of the container, exec or image a request names, and forwards an
-// allowed request to the daemon with the container's id in place of the name it was given, so a
-// container renamed after the check cannot receive the call. Docker's hijacked streams (attach and
-// exec start) pass the same check, and the broker forwards raw bytes only once the daemon has
-// answered 101; before that, it holds what the client sends, and nothing after the request body
-// reaches the daemon.
-//
-// Each client request owns what the broker asks of the daemon for it: when the client disconnects,
-// its lookups and its forwarded request are closed. Lookups have a deadline; a forwarded call has
-// none, because a wait or an attach lasts as long as its container.
-
 import { createServer, type IncomingMessage, request, type Server, STATUS_CODES } from "node:http";
 import type { Socket } from "node:net";
 
@@ -25,9 +13,7 @@ import {
   route,
 } from "./policy.js";
 
-/** Bounds headers and create/exec bodies, including large selected-image reference filters. */
 const REQUEST_LIMIT_BYTES = 1_048_576;
-/** How long the daemon may take to answer an ownership lookup, as long as a worker control call. */
 const LOOKUP_TIMEOUT_MS = 5_000;
 
 type Decision =
@@ -68,8 +54,6 @@ export function createBroker(options: {
           },
           (response) => {
             res.writeHead(response.statusCode ?? 502, response.headers);
-            // A wait answers with headers at once and its body only when the container exits,
-            // and the CLI starts the container only once it has those headers.
             res.flushHeaders();
             response.on("error", () => res.destroy());
             response.pipe(res);
@@ -86,10 +70,8 @@ export function createBroker(options: {
     socket.on("error", () => socket.destroy());
     const client = new AbortController();
     socket.on("close", () => client.abort());
-    // Read from the start, not after the ownership lookup: once holdUntilSwitch makes the socket
-    // flow, Node 26 drops a body chunk of an upgrade request that nothing reads yet.
     const requestBody = framedBody(req) ? readBody(req).catch(() => null) : Promise.resolve(null);
-    const held = holdUntilSwitch(socket, head);
+    const held = holdStreamUntilDaemonSwitch(socket, head);
     const daemon = (path: string) => daemonJson(socketPath, path, client.signal);
     void decide(req, true, scope, daemon)
       .then(async (decision) => {
@@ -125,13 +107,11 @@ export function createBroker(options: {
             `HTTP/1.1 101 ${response.statusMessage}\r\n${headerLines(response.rawHeaders)}\r\n`,
           );
           socket.write(upstreamHead);
-          stream.write(held.release());
+          stream.write(held.releaseBufferedBytes());
           stream.on("error", () => socket.destroy());
           socket.on("close", () => stream.destroy());
           socket.pipe(stream).pipe(socket);
         });
-        // The daemon answered without a raw stream, as for a detached exec or an error. Relay the
-        // answer and close: a byte the client sent after it would reach the daemon unchecked.
         upstream.on("response", (response) => {
           const chunks: Buffer[] = [];
           response.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -170,7 +150,6 @@ async function decide(
     };
   }
   if (routed.kind === "deny") return refuse(routed.reason);
-  // A raw stream skips the body checks, so only the two calls that need one may open it.
   if (upgrade && !mayHijack(routed)) return refuse("this call cannot switch to a raw stream");
   try {
     return await decideRoute(req, url, routed, scope, daemon);
@@ -203,14 +182,14 @@ async function decideRoute(
       return reason === null ? { allow: true, body, path: url } : refuse(reason);
     }
     case "commit": {
-      const owner = await ownedContainer(routed.container, scope, daemon);
+      const owner = await resolveOwnedContainerId(routed.container, scope, daemon);
       if (!owner.allow) return owner;
       const rewritten = new URL(url, "http://broker");
       rewritten.searchParams.set("container", owner.id);
       return { allow: true, body: null, path: `${rewritten.pathname}${rewritten.search}` };
     }
     case "container": {
-      const owner = await ownedContainer(routed.container, scope, daemon);
+      const owner = await resolveOwnedContainerId(routed.container, scope, daemon);
       if (!owner.allow) return owner;
       const path = url.replace(`/containers/${routed.container}`, `/containers/${owner.id}`);
       if (routed.action !== "exec") return { allow: true, body: null, path };
@@ -223,7 +202,7 @@ async function decideRoute(
       if (exec.status !== 200) return passThrough(exec);
       const container = isRecord(exec.body) ? exec.body.ContainerID : undefined;
       if (typeof container !== "string") return refuse("the exec names no container");
-      const owner = await ownedContainer(container, scope, daemon);
+      const owner = await resolveOwnedContainerId(container, scope, daemon);
       return owner.allow ? { allow: true, body: null, path: url } : owner;
     }
     case "image": {
@@ -240,7 +219,7 @@ async function decideRoute(
   }
 }
 
-async function ownedContainer(
+async function resolveOwnedContainerId(
   name: string,
   scope: BrokerScope,
   daemon: (path: string) => Promise<DaemonAnswer>,
@@ -259,7 +238,6 @@ function refuse(reason: string): Exclude<Decision, { allow: true }> {
   return { allow: false, message: `docker-broker refused the call: ${reason}`, status: 403 };
 }
 
-/** The daemon's own answer to a lookup that failed, such as "No such container" with 404. */
 function passThrough(answer: DaemonAnswer): Exclude<Decision, { allow: true }> {
   const message =
     isRecord(answer.body) && typeof answer.body.message === "string" ? answer.body.message : "";
@@ -273,7 +251,6 @@ interface DaemonAnswer {
 
 class LookupTimeout extends Error {}
 
-/** A lookup for one client request, closed when that client disconnects or the deadline passes. */
 function daemonJson(socketPath: string, path: string, client: AbortSignal): Promise<DaemonAnswer> {
   const deadline = AbortSignal.timeout(LOOKUP_TIMEOUT_MS);
   return new Promise((resolve, reject) => {
@@ -301,7 +278,6 @@ function daemonJson(socketPath: string, path: string, client: AbortSignal): Prom
   });
 }
 
-/** Writes a complete HTTP answer to a socket that has not switched to a raw stream, and closes it. */
 function answerAndClose(
   socket: Socket,
   status: number,
@@ -326,22 +302,13 @@ function headerLines(rawHeaders: readonly string[]): string {
   return lines;
 }
 
-/** Whether an upgrade request's body has a Content-Length the broker accepts. */
 function framedBody(req: IncomingMessage): boolean {
   if (req.headers["transfer-encoding"] !== undefined) return false;
   const length = Number(req.headers["content-length"] ?? 0);
   return Number.isSafeInteger(length) && length >= 0 && length <= REQUEST_LIMIT_BYTES;
 }
 
-/**
- * Reads and holds what the client of an upgrade request sends after its body, starting with
- * `head`, until the daemon switches to a raw stream. Node delivers the Content-Length body on the
- * request itself and only the bytes after it here. Reading, rather than pausing the socket, lets
- * the broker see the client leave. A client that ends its side or sends more than REQUEST_LIMIT_BYTES
- * before the switch is disconnected: a Docker client sends nothing after the body until the daemon
- * answers.
- */
-function holdUntilSwitch(socket: Socket, head: Buffer) {
+function holdStreamUntilDaemonSwitch(socket: Socket, head: Buffer) {
   const chunks = [head];
   let bytes = head.length;
   const onData = (chunk: Buffer) => {
@@ -353,8 +320,7 @@ function holdUntilSwitch(socket: Socket, head: Buffer) {
   socket.on("data", onData);
   socket.on("end", onEnd);
   return {
-    /** Stops holding and returns what the client sent after its body, for the raw stream. */
-    release(): Buffer {
+    releaseBufferedBytes(): Buffer {
       socket.off("data", onData);
       socket.off("end", onEnd);
       socket.pause();

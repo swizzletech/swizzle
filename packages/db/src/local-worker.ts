@@ -5,10 +5,6 @@ import { recordAuditChange } from "./audit-tables.js";
 import { createDatabaseClient } from "./client.js";
 import { workers } from "./schema.js";
 
-/**
- * The packaged instance explicitly provisions its own machine, which serves every project and
- * environment of the instance. Remote enrollment stays owner-only and grant-scoped.
- */
 export async function provisionLocalWorker(input: {
   readonly token: string;
   readonly capacity: number;
@@ -20,7 +16,6 @@ export async function provisionLocalWorker(input: {
   if (!Number.isInteger(input.capacity) || input.capacity < 1 || input.capacity > 256)
     throw new Error("Local worker capacity must be between 1 and 256.");
   const hash = hashApiToken(input.token);
-  // The stable identity prevents a restart from recreating a worker the owner revoked.
   const id = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
   const client = createDatabaseClient();
   try {
@@ -40,7 +35,6 @@ export async function provisionLocalWorker(input: {
         .onConflictDoNothing({ target: workers.id })
         .returning({ id: workers.id });
       if (inserted.length === 0) {
-        // Operator sizing never revives a revoked identity.
         await tx.update(workers).set({ capacity: input.capacity }).where(eq(workers.id, id));
         return;
       }

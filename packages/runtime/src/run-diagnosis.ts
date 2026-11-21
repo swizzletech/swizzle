@@ -1,15 +1,8 @@
-import type { RunWait } from "@swizzle/db";
-
-// Explains why a run ended as it did, or why a queued run has not started, from its record, the
-// automation's secrets and its deployments. `swizzle diagnose` prints it and
-// GET /runs/:runId/diagnosis serves it to the dashboard's run panel, so both say the same thing.
-
-import type { CredentialState, RunPlacement } from "@swizzle/db";
+import type { CredentialState, RunPlacement, RunWait } from "@swizzle/db";
 import { placementInWords } from "@swizzle/db";
 import type { Diagnosis, DiagnosisEvidence, DiagnosisFix } from "./platform-records.js";
 import { exceptionSummary, findRunException } from "./run-exception.js";
 
-/** The fields of a run record the diagnosis reads. */
 export interface DiagnosableRun {
   readonly attempts?: readonly {
     readonly metadata?: Record<string, unknown>;
@@ -24,7 +17,6 @@ export interface DiagnosableRun {
   readonly environment?: string;
   readonly errorCode?: string | null;
   readonly errorMessage?: string | null;
-  /** Why a queued run waits for a worker; the API attaches it to a queued run. */
   readonly placement?: RunPlacement | null;
   readonly projectId?: string;
   readonly runId: string;
@@ -119,7 +111,6 @@ export function buildDiagnosis(
       detail: `${missingSecrets.length} secret(s) missing: ${missingSecrets.join(", ")}`,
       kind: "secrets_missing",
     });
-    // The deployment bound its secrets at publish, so a secret set since needs a new deploy.
     for (const secret of lostSecrets) {
       fixes.push(
         secret.state === "missing"
@@ -163,7 +154,6 @@ export function buildDiagnosis(
   let likelyCode: string;
   let summary: string;
   const placement = run.status === "queued" ? (run.placement ?? null) : null;
-  // A queued run's wait decides its cause; an earlier attempt's error stays in the evidence.
   if (placement !== null) {
     const words = placementInWords(placement, run);
     likelyCode = "WAITING_FOR_WORKER";
@@ -223,7 +213,6 @@ export function buildDiagnosis(
           "Automation process exited non-zero. Inspect stderr for the root cause.";
         break;
       case "UPSTREAM_CONTRACT_CHANGED":
-        // The message names the field the automation's own parser reported, see api-signals.ts.
         likelyCode = "UPSTREAM_CONTRACT_CHANGED";
         summary = run.errorMessage ?? "The answer of an API the automation calls changed.";
         fixes.push({
@@ -254,7 +243,6 @@ export function buildDiagnosis(
         });
         break;
       case "APPROVAL_ASSIGNEE_NOT_FOUND":
-        // The message names the email or team that matched nobody.
         likelyCode = "APPROVAL_ASSIGNEE_NOT_FOUND";
         summary = run.errorMessage ?? "The approval's assignee has no account here.";
         fixes.push({

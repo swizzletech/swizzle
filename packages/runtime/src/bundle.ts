@@ -92,11 +92,6 @@ export async function bundleEntrypointDryRun(
   }
 }
 
-/**
- * Collect the list of files under `directory` that should be part of the
- * deployment bundle, honouring the shared ignore set with the runtime package.
- * Returned paths are relative to `directory` and use POSIX separators.
- */
 export async function collectBundleFiles(directory: string): Promise<string[]> {
   const resolved = path.resolve(directory);
   return walk(resolved, "");
@@ -132,11 +127,6 @@ async function walk(root: string, relative: string): Promise<string[]> {
   return result;
 }
 
-/**
- * Pack an automation folder into a deterministic tar.gz bundle ready for upload
- * to the platform API. Produces the source hash that the API would compute for
- * deployment identity, so callers can display it without extra roundtrips.
- */
 export async function packAutomation(
   automationDirectory: string,
   options: PackAutomationOptions = {},
@@ -161,8 +151,6 @@ export async function packAutomation(
       cwd: resolvedDir,
       gzip: { level: 6 },
       portable: true,
-      // `noMtime` makes tar contents independent of filesystem mtimes so that
-      // bundles for the same logical input are byte-identical.
       noMtime: true,
     },
     [...includedFiles],

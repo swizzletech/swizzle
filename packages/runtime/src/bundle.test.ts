@@ -95,7 +95,6 @@ describe("packAutomation", () => {
 
   it("throws BundleTooLargeError when limit is exceeded", async () => {
     const dir = await createTempFixture();
-    // 2 MB of low-entropy data compresses well, so we set a tiny limit to force the error.
     const payload = "A".repeat(2 * 1024 * 1024);
     await writeFile(path.join(dir, "config.yaml"), "name: demo\n");
     await writeFile(path.join(dir, "big.txt"), payload);

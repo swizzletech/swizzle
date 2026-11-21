@@ -1,6 +1,3 @@
-// API checks and sunset notices in words, and what "Hand to agent" copies for them. Hand-off texts
-// name times in UTC so they read the same everywhere.
-
 import { formatIntervalMs } from "@swizzle/config/browser";
 import type { ApiCheck, AttentionItem } from "../api";
 import type { Tone } from "./health";
@@ -12,10 +9,8 @@ type ApiSunsetItem = Extract<AttentionItem, { readonly kind: "api-sunset" }>;
 
 type ApiUntestedItem = Extract<AttentionItem, { readonly kind: "api-untested" }>;
 
-/** A run that failed with `UPSTREAM_CONTRACT_CHANGED` failed because its API changed. */
 export const UPSTREAM_CONTRACT_CHANGED = "UPSTREAM_CONTRACT_CHANGED";
 
-/** "crm-export's check of api.hubapi.com fails", "crm-export's API check could not decide 3 times in a row". */
 export function apiCheckInWords(item: ApiCheckItem): string {
   const name = item.automation.automationName;
   if (item.check.status === "credentials") return `${name}'s API check credentials failed`;
@@ -26,10 +21,6 @@ export function apiCheckInWords(item: ApiCheckItem): string {
   return host ? `${name}'s check of ${host} fails` : `${name}'s API check fails`;
 }
 
-/**
- * "its runs fail too", or "its runs still succeed" once a run succeeded after the check started
- * failing; null while no run finished since, because an older success says nothing yet.
- */
 export function apiCheckRunsInWords(item: ApiCheckItem): string | null {
   const run = item.latestRun;
   if (run === null) return null;
@@ -37,7 +28,6 @@ export function apiCheckRunsInWords(item: ApiCheckItem): string | null {
   return ranSinceFailing(item) ? "its runs still succeed" : null;
 }
 
-/** "amount: expected number, got string", or null when the check output names no field. */
 export function apiChangeInWords(change: ApiCheckItem["change"]): string | null {
   if (change === null || change.field === null) return null;
   const expected = change.expected === null ? null : `expected ${change.expected}`;
@@ -46,14 +36,12 @@ export function apiChangeInWords(change: ApiCheckItem["change"]): string | null 
   return detail === "" ? change.field : `${change.field}: ${detail}`;
 }
 
-/** "api.example-bank.de retires on 2026-12-31", or "deprecated since 2026-10-01" without a sunset. */
 export function apiSunsetInWords(contact: ApiSunsetItem["contact"]): string {
   return contact.sunsetAt === null
     ? `${contact.host}, deprecated since ${utcDate(contact.deprecatedAt ?? "")}`
     : `${contact.host} retires on ${utcDate(contact.sunsetAt)}`;
 }
 
-/** "API check active", "API check passive", "API check off: Paid per call". */
 export function apiCheckLevelInWords(apiCheck: ApiCheck | null): string {
   if (apiCheck === null) return "no API check";
   return apiCheck.mode === "off"
@@ -61,7 +49,6 @@ export function apiCheckLevelInWords(apiCheck: ApiCheck | null): string {
     : `API check ${apiCheck.mode}`;
 }
 
-/** "has not reached api.hubapi.com for 34 days", or since its deploy when no call was seen. */
 export function apiUntestedInWords(item: ApiUntestedItem, now: Date): string {
   const days = durationInWords(Math.max(0, now.getTime() - Date.parse(item.since)));
   return item.host === null
@@ -71,7 +58,6 @@ export function apiUntestedInWords(item: ApiUntestedItem, now: Date): string {
 
 type CheckStatus = NonNullable<Extract<ApiCheck, { readonly mode: "active" }>["record"]>["status"];
 
-/** An active check's latest result as the About tab's chip shows it. */
 export const CHECK_STATUS: Record<CheckStatus, { readonly label: string; readonly tone: Tone }> = {
   credentials: { label: "Credentials failed", tone: "warn" },
   drift: { label: "Drift", tone: "warn" },
@@ -80,11 +66,6 @@ export const CHECK_STATUS: Record<CheckStatus, { readonly label: string; readonl
   pending: { label: "Not run yet", tone: "idle" },
 };
 
-/**
- * What "Hand to agent" copies for an API check under Needs you: since when checks fail and how the
- * latest one ended, whether the runs feel it yet, the latest and the last green output side by side,
- * and the commands to act.
- */
 export function apiCheckHandoff(item: ApiCheckItem): string {
   const { check } = item;
   const name = item.automation.automationName;
@@ -140,13 +121,11 @@ function runsLine(item: ApiCheckItem): string {
     : `Its last run succeeded at ${utcTime(run.queuedAt)}, before the check started failing; no run finished since.`;
 }
 
-/** Whether the latest finished run was queued after the check started failing. */
 function ranSinceFailing(item: ApiCheckItem): boolean {
   const since = item.check.failingSince;
   return item.latestRun !== null && since !== null && item.latestRun.queuedAt > since;
 }
 
-/** What "Hand to agent" copies for a sunset notice: the dates, where the headers came, the notice and the level. */
 export function apiSunsetHandoff(item: ApiSunsetItem, now: Date): string {
   const { contact } = item;
   const name = item.automation.automationName;
@@ -180,7 +159,6 @@ function sunsetDistance(sunsetAt: string, now: Date): string {
   return ms < 0 ? `${durationInWords(-ms)} ago` : `in ${durationInWords(ms)}`;
 }
 
-/** "2026-10-24 08:00 UTC"; Hand to agent texts name times in UTC so they read the same everywhere. */
 function utcTime(iso: string): string {
   return iso === "" ? "an unknown time" : `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
 }

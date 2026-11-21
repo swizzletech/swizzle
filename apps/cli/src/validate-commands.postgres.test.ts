@@ -75,7 +75,6 @@ runtime:
 
   it("validates an automation folder with a richer authoring summary", async () => {
     const io = createBufferIO();
-    // A path inside the working directory prints relative to it.
     const shown = path.relative(process.cwd(), path.join(repoRoot, "infra/examples/hello-webhook"));
 
     const exitCode = await runCli(
@@ -111,7 +110,6 @@ runtime:
   });
 
   it("leaves the automation folder untouched when it validates a Python entrypoint", async () => {
-    // vitest.config.ts redirects bytecode for the whole run; validate must not depend on it.
     vi.stubEnv("PYTHONPYCACHEPREFIX", undefined);
     const automationDirectory = await temporaryDirectory("swizzle-validate-untouched-");
     await cp(path.join(repoRoot, "infra/examples/hello-webhook"), automationDirectory, {

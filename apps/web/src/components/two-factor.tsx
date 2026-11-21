@@ -1,7 +1,3 @@
-// Setting up two-factor sign-in, shared by Settings › Two-factor sign-in and the step after an
-// account is created. `sessionApi.enableTwoFactor` returns the enrollment; TwoFactorSetup shows
-// its QR code and confirms a code from the app; RecoveryCodes shows the codes once.
-
 import { useMutation } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
@@ -11,13 +7,11 @@ import { signInProblemInWords } from "../lib/words/access";
 import { ActionError } from "./actions";
 import { CopyButton } from "./ui";
 
-/** An action's error, in the words the dashboard has for sign-in and account codes. */
 export function AuthActionError(props: { readonly error: unknown }) {
   const words = props.error instanceof ApiError ? signInProblemInWords(props.error.code) : null;
   return <ActionError error={words === null ? props.error : new Error(words)} />;
 }
 
-/** The QR code and key of an enrollment, and the code that turns two-factor sign-in on. */
 export function TwoFactorSetup(props: {
   readonly enrollment: TwoFactorEnrollment;
   readonly cancelLabel: string;
@@ -81,7 +75,6 @@ export function TwoFactorSetup(props: {
   );
 }
 
-/** The one-time block with the recovery codes, each of which signs in once without the app. */
 export function RecoveryCodes(props: {
   readonly codes: readonly string[];
   readonly onDismiss: () => void;
@@ -106,7 +99,6 @@ export function RecoveryCodes(props: {
   );
 }
 
-/** Draws `text` as a QR code. The encoder loads only when a person sets up two-factor sign-in. */
 function QrCode({ text }: { readonly text: string }) {
   const [modules, setModules] = useState<
     { readonly path: string; readonly size: number } | "failed" | null
@@ -122,7 +114,6 @@ function QrCode({ text }: { readonly text: string }) {
         }
         if (current) setModules({ path, size: code.size });
       })
-      // A chunk that fails to load, after a deployment or on a dropped connection, leaves the key.
       .catch(() => {
         if (current) setModules("failed");
       });
@@ -138,7 +129,6 @@ function QrCode({ text }: { readonly text: string }) {
     );
   }
   if (modules === null) return <div className="h-[200px] w-[200px] shrink-0" />;
-  // Scanners need dark modules on a light ground in either colour scheme, so the colours are fixed.
   return (
     <svg
       aria-label="QR code for your authenticator app"

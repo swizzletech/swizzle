@@ -9,8 +9,6 @@ import { apiTokens } from "./schema.js";
 const TOKEN_PREFIX = "swz_";
 const TOKEN_RANDOM_BYTES = 32;
 const TOKEN_PREFIX_LENGTH = 10;
-// A token's last_used_at is written at most this often, so bearer requests do not queue on one row
-// lock; the dashboard shows a last use up to this much out of date.
 const TOKEN_TOUCH_INTERVAL_MS = 60 * 1_000;
 const TOKEN_NAME_MAX_LENGTH = 120;
 const DEFAULT_TOKEN_LIFETIME_MS = 90 * 24 * 60 * 60 * 1_000;
@@ -61,10 +59,6 @@ export function createPostgresApiTokenStore(
         return eq(apiTokens.workerId, holder.workerId);
     }
   };
-  /**
-   * The holder's token by id, else its live token by name, else a revoked one of that name. An id
-   * wins over a name, so a token named like another's id never stands in for it.
-   */
   const find = async (holder: TokenHolder, identifier: string) => {
     const trimmed = identifier.trim();
     if (trimmed.length === 0) {
@@ -170,7 +164,6 @@ export function createPostgresApiTokenStore(
       )
         return null;
       return await db.transaction(async (tx) => {
-        // The guard makes a concurrent second rotation, or an expiry meanwhile, match nothing.
         const now = new Date();
         const revoked = await tx
           .update(apiTokens)
@@ -233,8 +226,6 @@ export function createPostgresApiTokenStore(
         return mapRow(row);
       }
 
-      // The guard repeats the check in SQL: concurrent first uses after the interval write once,
-      // because the waiting updates re-read the committed row and match nothing.
       await db
         .update(apiTokens)
         .set({ lastUsedAt: now })
@@ -270,9 +261,6 @@ export function createPostgresApiTokenStore(
   };
 }
 
-/** For tests. */
-
-/** Among a holder's tokens matching an identifier, newest first: the one it names. */
 function pick<T extends { readonly id: string; readonly revokedAt: Date | null }>(
   rows: readonly T[],
   identifier: string,
@@ -305,10 +293,6 @@ function validTokenName(raw: string): string {
   return name;
 }
 
-/**
- * A scope as stored: lists without duplicates and never empty. A service account token carries at
- * most SERVICE_ACCOUNT_MAX_ROLE and no project list, since its account acts in one project only.
- */
 function validScope(holder: TokenHolder, scope: TokenScope): TokenScope {
   const invalid = (message: string) => new CodedError("API_TOKEN_SCOPE_INVALID", message);
   if (!PROJECT_ROLES.includes(scope.role)) throw invalid(`Unknown role: ${scope.role}.`);

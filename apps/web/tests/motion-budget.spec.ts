@@ -2,34 +2,10 @@ import { expect, type Page, test } from "@playwright/test";
 
 import { mockDashboardApi, seededState } from "./dashboard-mock";
 
-/*
- * A regression fence for one specific failure mode: an `infinite` CSS animation
- * keeps the page from ever going idle, so the compositor commits a frame at the
- * display refresh rate and re-pays for every expensive layer in each of them. A
- * dashboard people leave open all day turns that into sustained GPU load.
- *
- * These tests read what the browser actually resolved, so they hold regardless
- * of which utility class or stylesheet introduced the animation. They do not
- * see requestAnimationFrame loops, canvas, or video.
- */
-
-/** Properties the compositor can animate without a main-thread repaint. */
 const COMPOSITED_PROPERTIES = new Set(["opacity", "transform"]);
 
-/**
- * Share of the cycle an animation must spend holding a value flat. Chromium
- * skips producing a frame while an animated value is unchanged, so the holds
- * are what makes a permanent animation affordable.
- */
 const MINIMUM_FLAT_SHARE = 0.5;
 
-/**
- * Stock Tailwind animations that legitimately run continuously: duty-cycling a
- * spinner reads as a stutter, not as motion. They stay affordable by only being
- * mounted while a transient state lasts, which is a rule about component
- * lifetime that no static assertion can see — so the property check below still
- * applies to them, only the flat-value requirement does not.
- */
 const TRANSIENT_ANIMATIONS = new Set(["bounce", "spin"]);
 
 interface RunawayAnimation {
@@ -56,7 +32,6 @@ async function collectInfiniteAnimations(page: Page): Promise<RunawayAnimation[]
         ),
       ];
 
-      // Sum the stretches of the timeline where no animated value changes.
       let flatShare = 0;
       for (let index = 1; index < frames.length; index += 1) {
         const previous = frames[index - 1];
@@ -89,10 +64,6 @@ interface BlurOffender {
   readonly target: string;
 }
 
-/**
- * `backdrop-filter` behind a near-opaque background is invisible and still
- * costs a full re-blur of the region whenever the page produces a frame.
- */
 async function collectInvisibleBlurLayers(page: Page): Promise<BlurOffender[]> {
   return await page.evaluate(() => {
     const offenders: BlurOffender[] = [];
@@ -104,8 +75,6 @@ async function collectInvisibleBlurLayers(page: Page): Promise<BlurOffender[]> {
         style.getPropertyValue("-webkit-backdrop-filter");
       if (!backdrop || backdrop === "none") continue;
 
-      // Chromium serializes theme colours as `oklab(l a b / alpha)` and plain
-      // ones as `rgba(r, g, b, alpha)`; both forms have to resolve.
       const background = style.backgroundColor;
       const slashAlpha = /\/\s*([\d.]+)(%?)\s*\)$/.exec(background);
       const commaAlpha = /^rgba\(\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*,\s*([\d.]+)\s*\)$/.exec(
@@ -148,8 +117,6 @@ function expectWithinBudget(animations: readonly RunawayAnimation[]) {
   ).toEqual([]);
 }
 
-// The seeded instance has a running run, so its live dot shows on Runs. The Overview draws its
-// hour in the timetable without one.
 test("keeps live run indicators inside the animation budget", async ({ page }) => {
   await mockDashboardApi(page, seededState());
 
@@ -159,8 +126,6 @@ test("keeps live run indicators inside the animation budget", async ({ page }) =
 
   await page.goto("/runs?status=running");
   await expect(page.getByTestId("run-row").first()).toBeVisible();
-  // The live treatment must actually be on screen, or the budget check below
-  // would pass by animating nothing at all.
   await expect(page.locator(".dot.run").first()).toBeVisible();
   expectWithinBudget(await collectInfiniteAnimations(page));
 });
@@ -186,12 +151,6 @@ const DASHBOARD_PAGES = [
   "/settings/agent-access",
 ] as const;
 
-/**
- * Holds every page's API request until `open`, so a page stays in the loading state where its
- * skeletons and spinners run. The sign-in check and the environment list pass, because the shell
- * mounts no page before both answer. Register it after mockDashboardApi: the held requests then
- * fall back to the mock.
- */
 async function holdDashboardData(page: Page) {
   let open = () => {};
   let held = Promise.resolve();
@@ -220,11 +179,8 @@ test("stops every infinite animation on every page under prefers-reduced-motion"
 }) => {
   await mockDashboardApi(page, seededState());
   const data = await holdDashboardData(page);
-  // Inside the page, so the shell's own "Connecting" skeleton does not count as the page's.
   const loading = page.locator("main .skeleton").first();
 
-  // Without the preference the loading state animates, so the empty lists below come from the
-  // preference and not from a page that animates nothing.
   data.hold();
   await page.goto("/");
   await expect(loading).toBeVisible();
@@ -244,7 +200,6 @@ test("stops every infinite animation on every page under prefers-reduced-motion"
     expect(await collectInfiniteAnimations(page), `${path} once loaded`).toEqual([]);
   }
 
-  // The live run indicator rests at a visible opacity instead of disappearing.
   await page.goto("/runs?status=running");
   await expect(page.locator(".dot.run").first()).toBeVisible();
 });

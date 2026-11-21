@@ -1,5 +1,3 @@
-// `just verify-images <evidence>` exercises install, upgrade, rollback and refusal on one packaged
-// stack and a private OCI registry. All resources belong to this invocation and are removed.
 import assert from "node:assert/strict";
 import { execFile, execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -374,7 +372,6 @@ process.exit(result.status ?? 1);
       `v${version}`,
     ];
     try {
-      // Override the recipe shell so mise cannot repair the deliberately restricted PATH.
       await command(realJust, invocation, checkout, { PATH: limited });
     } catch (error) {
       refusal = String(error);
@@ -415,7 +412,7 @@ process.exit(result.status ?? 1);
   const fallback = await events();
   await writeFile(path.join(evidence, "fallback-events.json"), JSON.stringify(fallback, null, 2));
   const builds = fallback.filter((event) => event.args.includes("build"));
-  assert.equal(builds.length, 12); // all twelve target images, including the backup tool
+  assert.equal(builds.length, 12);
   assert.ok(
     builds.every(
       (event) =>

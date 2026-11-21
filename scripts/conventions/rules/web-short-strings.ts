@@ -1,7 +1,6 @@
 import ts from "typescript";
 import type { Rule } from "../lint.js";
 
-/** Attributes that name a thing, whatever the component: a period there reads as a stray mark. */
 const ATTRIBUTES = new Set(["aria-label", "description", "empty", "label", "placeholder", "title"]);
 const TITLE_TAGS = new Set([
   "b",
@@ -18,19 +17,16 @@ const TITLE_TAGS = new Set([
   "th",
 ]);
 const CAPTION_TAGS = new Set(["dd", "div", "li", "p", "pre", "span"]);
-/** Past this many words a line alone reads as a sentence, so it keeps its period. */
 const CAPTION_WORDS = 8;
 const WORDS_MODULE = /^apps\/web\/src\/lib\/words\/[^/]+\.ts$/u;
 const DASHBOARD_PAGE = /^apps\/web\/src\/.*\.tsx$/u;
 
-/** A period a short string ends with: `position` is its offset in the file. */
 interface ShortStringPeriod {
   readonly position: number;
   readonly line: number;
   readonly text: string;
 }
 
-/** A string may end in a period here: one sentence, not the tail of a longer one. */
 function endsShort(text: string): boolean {
   const trimmed = text.trim();
   return (
@@ -41,7 +37,6 @@ function endsShort(text: string): boolean {
   );
 }
 
-/** The string literals an expression can evaluate to, through ternaries and fallbacks. */
 function literalsOf(
   node: ts.Expression,
 ): readonly (ts.StringLiteralLike | ts.TemplateExpression)[] {
@@ -65,7 +60,6 @@ function textOf(node: ts.StringLiteralLike | ts.TemplateExpression): string {
   return [node.head.text, ...node.templateSpans.map((span) => `x${span.literal.text}`)].join("");
 }
 
-/** A quoted literal ends with its closing quote, so its period sits one character before. */
 function literalPeriod(node: ts.StringLiteralLike | ts.TemplateExpression): number {
   return node.getEnd() - 2;
 }
@@ -74,7 +68,6 @@ function tagOf(node: ts.JsxElement): string {
   return node.openingElement.tagName.getText();
 }
 
-/** Text that continues the line beside an element, so the element's sentence belongs to it. */
 function runsOn(element: ts.JsxElement): boolean {
   const parent = element.parent;
   if (!ts.isJsxElement(parent) && !ts.isJsxFragment(parent)) return false;
@@ -92,7 +85,6 @@ function runsOn(element: ts.JsxElement): boolean {
   });
 }
 
-/** The period an element's text ends with, or null when the element is running text. */
 function elementPeriod(element: ts.JsxElement): readonly [string, number][] {
   const tag = tagOf(element);
   const title = TITLE_TAGS.has(tag);
@@ -121,7 +113,6 @@ function elementPeriod(element: ts.JsxElement): readonly [string, number][] {
   );
 }
 
-/** Every short string of one dashboard source file that ends with a period. */
 function shortStringPeriods(file: string, content: string): readonly ShortStringPeriod[] {
   const source = ts.createSourceFile(
     file,
@@ -165,9 +156,6 @@ function shortStringPeriods(file: string, content: string): readonly ShortString
   return periods;
 }
 
-// A title, label, button, badge, empty state or caption stands alone on its line, where a period
-// reads as a stray mark. A sentence in running text keeps its period, so this reads only strings
-// that nothing continues.
 export const webShortStrings: Rule = {
   id: "web-short-strings",
   check(repo) {

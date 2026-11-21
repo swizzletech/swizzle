@@ -1,8 +1,3 @@
-/**
- * `swizzle skill install`: copies the packaged swizzle-builder skill into a workspace's
- * `.agents/skills/` and links `.claude/skills` to it. An identical copy is a no-op; a changed one
- * is replaced only with `--force`. `workspace init` installs it the same way.
- */
 import type { Dirent } from "node:fs";
 import { cp, lstat, mkdir, readdir, readFile, rm, symlink } from "node:fs/promises";
 import path from "node:path";
@@ -116,7 +111,6 @@ export async function installSwizzleSkill(input: {
   };
 }
 
-/** Whether two directories hold the same entries, each of the same kind, and files of the same bytes. */
 async function sameTree(left: string, right: string): Promise<boolean> {
   const entries = async (root: string) =>
     (await readdir(root, { recursive: true, withFileTypes: true }))

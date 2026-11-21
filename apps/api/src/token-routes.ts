@@ -1,18 +1,4 @@
 import type { DeleteServiceAccountResult } from "@swizzle/db";
-/**
- * Agent tokens and service accounts over HTTP (ADR 0014), and who a request acts as.
- *
- * - A person mints, lists and revokes their own tokens. A token's scope is fixed when it is
- *   minted: a highest role and optionally its projects and environments (access.ts, TokenScope).
- *   Without a scope it acts with all of its person's rights.
- * - A project's admins list, create and delete its service accounts, signed in or with a token
- *   whose scope reaches admin there, and mint, rotate and revoke their tokens. The account's
- *   rights are grants on the project (access-routes.ts, `serviceAccount`), at most editor; a token
- *   can narrow them further.
- * - Every mint, rotation and revocation needs a browser session, so no token mints a token.
- * - `GET /auth/identity` tells any caller who it acts as, with which token scope, and its role in
- *   a project and environment it names. The CLI's `swizzle whoami` shows it.
- */
 import {
   type AccessStore,
   accountView,
@@ -57,7 +43,6 @@ export interface RegisterTokenRoutesOptions {
   readonly auth: SwizzleAuth;
 }
 
-/** A scope as a request names it: projects by slug or id; a missing field limits nothing. */
 interface ScopeBody {
   readonly role?: TokenScope["role"];
   readonly projects?: readonly string[];
@@ -105,7 +90,6 @@ export function registerTokenRoutes(app: ApiServer, options: RegisterTokenRoutes
         query.project === undefined
           ? null
           : await targetRole(request, accessStore, query.project, query.environment);
-      // The auth guard admits only people and service accounts to this route.
       if (actor === undefined || actor.kind === "worker") throw new Error("No signed-in actor.");
       const token =
         actor.token === null
@@ -172,7 +156,6 @@ export function registerTokenRoutes(app: ApiServer, options: RegisterTokenRoutes
     return await tokenView(directory(options), revoked);
   });
 
-  /** The project once the caller administers it, by session or by a token that reaches admin. */
   const administered = async (request: FastifyRequest) => {
     const { project: reference } = request.params as { project: string };
     return await request.access.project(reference, { action: "administer" });
@@ -190,10 +173,6 @@ export function registerTokenRoutes(app: ApiServer, options: RegisterTokenRoutes
     const holder: TokenHolder = { kind: "service-account", serviceAccountId: account.id };
     return { account, holder, project };
   };
-  /**
-   * An account's token for the session's person. The right comes first, so a caller who cannot see
-   * the project learns nothing of it; a token learns that only a session mints.
-   */
   const accountForSession = async (request: FastifyRequest) => {
     const found = await accountOf(request);
     return { ...found, person: sessionPerson(request) };
@@ -222,7 +201,6 @@ export function registerTokenRoutes(app: ApiServer, options: RegisterTokenRoutes
     async (request, reply) => {
       const project = await administered(request);
       const actor = request.actor;
-      // An agent token's person, or the session's.
       const creator =
         actor?.kind === "person" && actor.token !== null
           ? await auth.findPerson(actor.userId)
@@ -318,7 +296,6 @@ export function registerTokenRoutes(app: ApiServer, options: RegisterTokenRoutes
   );
 }
 
-/** The person of the browser session; minting, rotating and revoking tokens needs one. */
 function sessionPerson(request: FastifyRequest): PersonOnRecord {
   const person = request.signedInPerson;
   if (person === undefined) {
@@ -330,7 +307,6 @@ function sessionPerson(request: FastifyRequest): PersonOnRecord {
   return { id: person.user.id, name: person.user.name };
 }
 
-/** An agent token scope with its projects resolved to ids; a project the person cannot see is a 404. */
 async function agentTokenScope(
   request: FastifyRequest,
   accessStore: AccessStore,
@@ -359,7 +335,6 @@ async function agentTokenScope(
   };
 }
 
-/** The caller's role in a project and environment; null when it cannot see the project. */
 async function targetRole(
   request: FastifyRequest,
   accessStore: AccessStore,
@@ -377,7 +352,6 @@ async function targetRole(
   return { environment: environment ?? null, project: { reference, ...projectRef(project) }, role };
 }
 
-/** The token row of the request, read again so the answer shows its last use and expiry. */
 async function currentToken(
   store: ApiTokenStore,
   actor:
@@ -393,11 +367,6 @@ async function currentToken(
   if (token === undefined) throw tokenNotFound(tokenId);
   return token;
 }
-
-/**
- * The projects and people token views name, each read once per request when first asked for, so
- * a list of accounts reads only what its tokens reference.
- */
 
 function directory({ accessStore }: RegisterTokenRoutesOptions): TokenDirectory {
   const projects = new Map<string, ReturnType<TokenDirectory["project"]>>();

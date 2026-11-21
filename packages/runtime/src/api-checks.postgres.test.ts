@@ -11,9 +11,6 @@ import { deliverPendingNotification } from "./notifications.js";
 
 import type { RunQueueProducer } from "./run-queue.js";
 
-// An active API check end to end on the test platform: the deploy makes it due, the
-// scheduler enqueues it, the worker runs check.js and writes the automation_checks record.
-
 const CHECK_JS = (body: string) =>
   [
     "const log = (event) => process.stderr.write(JSON.stringify(event) + '\\n');",
@@ -159,7 +156,6 @@ describe("API checks", () => {
         "The check printed state or step events; checks hold no state, so they were ignored.",
       status: "green",
     });
-    // The check records which secret version it received, as a run attempt does, never the value.
     expect(recorded?.lastSecretUsages).toEqual([
       {
         algorithm: "aes-256-gcm",
@@ -172,7 +168,6 @@ describe("API checks", () => {
     ]);
     expect(recorded?.lastStderrTail).toContain("using [REDACTED]");
     expect(recorded?.lastStderrTail).not.toContain("secret-key-value");
-    // No run was queued or recorded for the automation.
     expect(await platform.processNextPlatformRun()).toBeNull();
     expect(
       await platform.store.countActiveRunsForAutomation(check?.automationId ?? "", "local"),
@@ -183,7 +178,6 @@ describe("API checks", () => {
         environment: "local",
       }),
     ).toEqual([]);
-    // The check recorded the API's sunset notice like a run would: a second sighting is not new.
     const sighting = {
       host: "api.example.com",
       lastContactAt: new Date().toISOString(),
@@ -204,7 +198,6 @@ describe("API checks", () => {
       }),
     ).toEqual([]);
 
-    // The same due time again is a duplicate job: it runs nothing.
     expect(
       await platform.processPlatformCheck(check?.checkId ?? "", check?.nextCheckAt ?? "", {
         environment,
@@ -331,8 +324,6 @@ describe("API checks", () => {
     const platform = await testPlatform({
       artifactsDirectory: path.join(await temporaryDirectory("swizzle-platform-"), "artifacts"),
     });
-    // The webhook's schema requires a field the check's payload {} lacks, and the automation
-    // declares a secret the check does not name and the environment no longer holds.
     const directory = await createAutomationFixture({
       configLines: [
         "secrets: [API_KEY, EXPORT_TOKEN]",

@@ -85,11 +85,6 @@ export async function getConnection(
   return row ? { ...mapConnectionRow(row), project: row.project } : null;
 }
 
-/**
- * Load a connection's decrypted OAuth client credentials. Used to build the
- * authorization URL, exchange the code, refresh tokens, and best-effort revoke.
- * Never surfaced to automation code.
- */
 export async function getConnectionCredentials(
   client: DatabaseClient,
   name: string,
@@ -216,8 +211,6 @@ export async function beginConnectionAuthorization(
         status: "pending",
         updatedAt: now,
       })
-      // A concurrent authorization that inserted the name first wins; this one was checked
-      // against a connection that did not exist.
       .onConflictDoNothing({
         target: [
           environmentConnections.projectId,
@@ -275,8 +268,6 @@ export async function consumeConnectionAuthorization(
       return null;
     }
 
-    // Single-use: the pending authorization is consumed no matter what the
-    // caller does with it afterwards. A replayed state finds nothing.
     await tx
       .update(environmentConnections)
       .set({
@@ -354,7 +345,6 @@ export async function markConnectionError(
   input: MarkConnectionErrorInput,
 ): Promise<StoredConnection | null> {
   const now = new Date();
-  // An abandoned reconnect keeps an active connection active.
   const status =
     input.preserveActive === true
       ? sql`CASE WHEN ${environmentConnections.status} = 'active' THEN 'active' ELSE 'error' END`
@@ -389,8 +379,6 @@ export async function resolveConnectionToken(
     };
   }
 
-  // Slow path: serialize concurrent refreshers on the row so exactly one
-  // worker talks to the provider while the others wait and re-read.
   return client.db.transaction(async (tx) => {
     const [row] = await tx
       .select({
@@ -418,7 +406,6 @@ export async function resolveConnectionToken(
       return { connection, outcome: "inactive" } satisfies ResolveConnectionTokenResult;
     }
 
-    // Another worker may have refreshed while we waited on the lock.
     if (!needsRefresh(connection, input.refreshSkewMs)) {
       return {
         accessToken: payload.accessToken,
@@ -529,10 +516,6 @@ export async function deleteConnection(
   return deleted ?? { credentials: null, deleted: false, payload: null };
 }
 
-/**
- * Deletes the connections `where` matches, in `db` or a transaction, and decrypts what the
- * caller needs to revoke each one at its provider.
- */
 export async function deleteConnectionsWhere(
   db: Pick<DatabaseClient["db"], "delete">,
   where: SQL,
@@ -547,7 +530,6 @@ export async function deleteConnectionsWhere(
     tokenCiphertext: environmentConnections.tokenCiphertext,
   });
   return rows.map((deleted) => {
-    // Undecryptable material must not block deletion; it only skips the provider revocation.
     try {
       return {
         credentials: decryptCredentials(deleted),

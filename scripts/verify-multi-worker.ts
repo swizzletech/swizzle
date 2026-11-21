@@ -36,8 +36,6 @@ const logger: PlatformLogger = {
   },
 };
 
-// The platform logs pino-style: an object of fields or an error, then the message. Print the
-// message first, then each field as key=value, an error as its message.
 function formatLogLine(args: readonly unknown[]): string {
   const [first, ...rest] = args;
   const fields =
@@ -65,8 +63,6 @@ async function main(client: DatabaseClient): Promise<void> {
       path.join(os.tmpdir(), "swizzle-multi-worker-artifacts-"),
     );
     cleanups.push(() => rm(artifactsDirectory, { force: true, recursive: true }));
-    // The workers resolve artifacts from the environment; point them at this run's directory,
-    // not at the SWIZZLE_ARTIFACTS_DIR the caller's .env carries.
     process.env.SWIZZLE_ARTIFACTS_DIR = artifactsDirectory;
     const automationDirectory = await createIsolatedAutomationFixture(smokeProfile);
     cleanups.push(() => rm(automationDirectory, { force: true, recursive: true }));
@@ -170,9 +166,6 @@ async function main(client: DatabaseClient): Promise<void> {
       );
     }
 
-    // Suspend/resume smoke: parent invokes a child through the real BullMQ
-    // path. This is the only verification that exercises resume job ids
-    // against actual BullMQ (the in-memory queue accepts ids BullMQ rejects).
     const resumeFixtures = await createResumeFixtures(smokeProfile);
     try {
       await platform.deployAutomationToPlatform({
@@ -200,7 +193,6 @@ async function main(client: DatabaseClient): Promise<void> {
       if (executionStatuses.join(",") !== "suspended,succeeded") {
         throw new Error(`Expected executions [suspended, succeeded], got [${executionStatuses}].`);
       }
-      // The parent's stdout JSON, so its shape is whatever the fixture above prints.
       const parentResult = parentRun.result as { child?: { result?: { ok?: unknown } } } | null;
       if (parentResult?.child?.result?.ok !== true) {
         throw new Error("Expected the parent result to contain the child envelope.");

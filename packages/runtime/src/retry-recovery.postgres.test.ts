@@ -10,9 +10,6 @@ import { thisMachine } from "./runtime-requirements.js";
 
 const RUN_ID = "ad881a21-0f5e-5fd9-b153-cddce37ee44b";
 
-// A local platform with one run, RUN_ID, of an automation that retries up to three times.
-// When `resumed`, attempt 1 sleeps and the run is resumed, so attempt 2 starts a new segment; every
-// other attempt prints "attempt" to stderr and exits 1.
 async function retryingRun(backoff: string, resumed: boolean) {
   const directory = await temporaryDirectory("swizzle-retry-recovery-");
   const store = testControlPlaneStore();
@@ -57,7 +54,6 @@ async function retryingRun(backoff: string, resumed: boolean) {
     runId: RUN_ID,
   });
   const execution = await createTestExecution({ queue, store, profiles: ["host-default"] });
-  /** Runs the run's next attempt as a worker would, and returns the run after it. */
   const attempt = async (onStderrChunk?: () => void) => {
     await execution.run(RUN_ID, {
       environment: process.env,
@@ -73,7 +69,6 @@ async function retryingRun(backoff: string, resumed: boolean) {
 }
 
 describe("retry recovery", () => {
-  // The dashboard reads "Running, attempt 2" from attemptsMade while the attempt runs.
   it.each([
     { resumed: false, attemptsMade: [1, 2] },
     { resumed: true, attemptsMade: [1, 2] },
@@ -121,7 +116,7 @@ describe("retry recovery", () => {
         const finishedAt = run.executions.at(-1)?.finishedAt;
         if (!finishedAt) throw new Error("retry attempt must have a finish timestamp");
         now.mockReturnValue(Date.parse(finishedAt) + 250);
-        jobs.clear(); // Lose the delayed job, including on a second recovery of this segment.
+        jobs.clear();
         expect(await platform.reconcileQueuedRuns({ environment: "local" })).toMatchObject({
           requeuedRunIds: [RUN_ID],
         });

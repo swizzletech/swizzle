@@ -1,10 +1,3 @@
-// A throwaway packaged stack: infra/docker/compose.yml as a compose project of its own, from an
-// env file with fresh credentials and free ports, with its first account set up and an agent token made.
-// `just smoke` and `just perf` boot one, `just perf --against` two; each runs beside every other
-// stack, and `remove` (also run on SIGINT, SIGTERM or SIGHUP) deletes the project with its volumes
-// and the images it built. A SIGKILL skips `remove`, so each throwaway's name carries its owner's
-// PID and process incarnation, and the next start sweeps the ones that no longer match.
-
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
@@ -18,22 +11,14 @@ import { processOwnerState, readProcessIdentity } from "./process-identity.ts";
 
 export interface PackagedStack {
   readonly project: string;
-  /** The private env file, for checks that restart this same installed stack. */
   readonly envFile: string;
   readonly environment: string;
-  /** The dashboard origin; `${dashboard}/api` reaches the api through the same ingress. */
   readonly dashboard: string;
-  /** The api hostname. */
   readonly api: string;
-  /** The loopback listener a tunnel forwards to; serves only links, webhooks and OAuth callbacks. */
   readonly links: string;
-  /** A bearer token minted by the first account. */
   readonly token: string;
-  /** The first account's session cookie. */
   readonly session: { readonly name: string; readonly value: string };
-  /** Runs `swizzle <args> --json` in process against the stack and returns its stdout. */
   cli(...args: string[]): Promise<string>;
-  /** `docker compose <args>` for this project; resolves with its stdout. */
   compose(...args: string[]): Promise<string>;
   remove(): Promise<void>;
 }
@@ -42,7 +27,6 @@ const STEP_TIMEOUT_MS = 180_000;
 
 let current: ChildProcess | undefined;
 
-/** Runs `argv`; resolves with its stdout, which goes to stderr as progress unless `quiet`. */
 function run(argv: readonly [string, ...string[]], quiet: boolean): Promise<string> {
   const [command, ...args] = argv;
   return new Promise((resolve, reject) => {
@@ -63,10 +47,6 @@ function run(argv: readonly [string, ...string[]], quiet: boolean): Promise<stri
   });
 }
 
-/**
- * The name prefix of a throwaway this process owns: a compose project, its temp directory, and the
- * checkout `just perf` unpacks. Sweeping verifies the recorded PID and incarnation.
- */
 export function throwawayPrefix(name: "smoke" | "perf"): string {
   const identity = readProcessIdentity(process.pid);
   if (identity === undefined) throw new Error("Cannot identify the packaged stack owner");
@@ -75,12 +55,6 @@ export function throwawayPrefix(name: "smoke" | "perf"): string {
 
 const THROWAWAY = /^(swizzle-(?:smoke|perf)-(\d+)-([0-9a-f]{32})-[0-9a-f]{8})(?:-|$)/u;
 
-/**
- * Deletes a throwaway project: its services, volumes, networks and built images, and also the run
- * containers and runner images the worker made outside compose. The worker labels its images
- * swizzle.stack=<project>, and they and their containers inherit the compose project label from
- * runner-base. Removing labelled resources also covers a partial start whose Compose config is gone.
- */
 async function removeProject(project: string): Promise<void> {
   const label = `label=com.docker.compose.project=${project}`;
   const removeContainers = async () => {
@@ -88,19 +62,15 @@ async function removeProject(project: string): Promise<void> {
     const ids = containers.split("\n").filter((id) => id !== "");
     if (ids.length > 0) await run(["docker", "rm", "--force", "--volumes", ...ids], true);
   };
-  // Run containers carry --rm, so the daemon may already be removing one, and `docker rm` then
-  // fails on it; a second pass after that removal finds only what is really left.
   await removeContainers().catch(async () => {
     await delay(2_000);
     await removeContainers();
   });
-  // Cleanup cannot depend on the Compose file or profiles that created a partial project.
   for (const resource of ["network", "volume"] as const) {
     const listed = await run(["docker", resource, "ls", "--quiet", "--filter", label], true);
     const ids = listed.split("\n").filter((id) => id !== "");
     if (ids.length > 0) await run(["docker", resource, "rm", ...ids], true);
   }
-  // Image prune holds a daemon-wide lock. Delete owned IDs so parallel stacks can clean up.
   const images = new Set<string>();
   for (const filter of [label, `label=swizzle.stack=${project}`]) {
     const listed = await run(
@@ -112,11 +82,6 @@ async function removeProject(project: string): Promise<void> {
   if (images.size > 0) await run(["docker", "image", "rm", "--force", ...images], true);
 }
 
-/**
- * Removes the throwaway projects and temp directories whose owner process is gone, as a SIGKILL
- * leaves them. A project shows up by its label on any container, volume, network or image, so one
- * killed before its first container still goes. A project whose owner identity still matches is left alone.
- */
 async function sweepAbandonedThrowaways(log: (message: string) => void): Promise<void> {
   const label = '{{.Label "com.docker.compose.project"}}';
   const listed = await Promise.all(
@@ -126,7 +91,6 @@ async function sweepAbandonedThrowaways(log: (message: string) => void): Promise
       ["docker", "network", "ls", "--format", label],
     ].map((argv) => run(argv as [string, ...string[]], true)),
   );
-  // `image ls` cannot print a label, so the images' labels come from `image inspect`.
   const images = await run(
     ["docker", "image", "ls", "--all", "--quiet", "--filter", "label=com.docker.compose.project"],
     true,
@@ -174,7 +138,6 @@ async function sweepAbandonedThrowaways(log: (message: string) => void): Promise
   }
 }
 
-/** Three ports nobody listens on, held open together so they differ. */
 async function freePorts(): Promise<[number, number, number]> {
   const listen = () =>
     new Promise<Server>((resolve, reject) => {
@@ -190,7 +153,6 @@ async function freePorts(): Promise<[number, number, number]> {
   return [http, https, links];
 }
 
-/** The body of a 2xx answer to a GET, or undefined while the stack does not give one. */
 export async function get(url: string, token?: string): Promise<string | undefined> {
   try {
     const response = await fetch(url, {
@@ -203,7 +165,6 @@ export async function get(url: string, token?: string): Promise<string | undefin
   }
 }
 
-/** POSTs JSON as the dashboard does and returns the answer; anything but a 2xx throws. */
 async function post(
   url: string,
   origin: string,
@@ -227,13 +188,8 @@ async function post(
   return response;
 }
 
-/** Cleanups for SIGINT, SIGTERM and SIGHUP, run newest first before the process exits. */
 const cleanups: (() => Promise<void>)[] = [];
 
-/**
- * Runs `cleanup` when the process is signalled. Cleanups run newest first, so a stack goes before
- * the checkout it was built from.
- */
 export function cleanUpOnSignal(cleanup: () => Promise<void>): void {
   if (cleanups.length === 0) {
     for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
@@ -248,7 +204,6 @@ export function cleanUpOnSignal(cleanup: () => Promise<void>): void {
   cleanups.push(cleanup);
 }
 
-/** Polls `probe` until it returns a value, and fails after STEP_TIMEOUT_MS. */
 export async function until<T>(
   description: string,
   probe: () => Promise<T | undefined>,
@@ -269,11 +224,6 @@ export async function until<T>(
   }
 }
 
-/**
- * Runs `swizzle <args> --json` against the stack whose CLI profile lives in `configHome` and
- * returns its stdout; a non-zero exit throws. The CLI reads its profile from SWIZZLE_CONFIG_HOME
- * and the token from the variable the profile names, so each call points both at its own stack.
- */
 async function cli(configHome: string, token: string, args: readonly string[]): Promise<string> {
   process.env.SWIZZLE_CONFIG_HOME = configHome;
   process.env.SWIZZLE_STACK_TOKEN = token;
@@ -292,17 +242,12 @@ async function cli(configHome: string, token: string, args: readonly string[]): 
   return stdout;
 }
 
-/**
- * Boots the stack from the checkout at `root` and waits until api, scheduler and worker are ready.
- * A failure prints the project's logs and removes it before it throws.
- */
 export async function startPackagedStack(
   name: "smoke" | "perf",
   log: (message: string) => void,
   root = ".",
   environment: Readonly<Record<string, string>> = {},
 ): Promise<PackagedStack> {
-  // A sweep that fails, as when two starts race for the same project, reports and lets the stack boot.
   await sweepAbandonedThrowaways(log).catch((error: unknown) =>
     process.stderr.write(`sweep: ${String(error)}\n`),
   );
@@ -409,7 +354,6 @@ export async function startPackagedStack(
     );
     const { token } = (await created.json()) as { token: string };
     log("claimed the instance and created an agent token");
-    // Outside loopback the api answers /ready only to an authenticated caller.
     await until(
       "the api reports ready",
       async () =>
@@ -426,7 +370,6 @@ export async function startPackagedStack(
           token,
         );
         if (body === undefined) return undefined;
-        // The scheduler writes a service heartbeat; a worker's liveness lives on its workers row.
         const summary = JSON.parse(body) as {
           services: { summary: { service: string; alive: number }[] };
           onlineWorkers: number;

@@ -1,6 +1,3 @@
-// `just upgrade [vX.Y.Z]`: self-contained so an older checkout can run the target's script
-// and stack-images.ts from its git directory before it has the recipe.
-
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { chmod, copyFile, mkdir, readFile } from "node:fs/promises";
@@ -64,7 +61,6 @@ function resolveRelease(requestedTag: string | undefined): Release {
 }
 
 async function upgrade(requestedTag: string | undefined): Promise<void> {
-  // This guard precedes even fetching tags and creating the backup directory.
   if (capture("git", ["status", "--porcelain", "--untracked-files=all"]) !== "") {
     throw new Error(
       "Checkout has uncommitted changes. Commit or remove them before running just upgrade.",
@@ -93,13 +89,11 @@ async function upgrade(requestedTag: string | undefined): Promise<void> {
     envFile: path.join(targetRoot, ".env"),
     version: release.version,
   };
-  // Trust the selected release's pinned toolchain before the installed services are touched.
   run("mise", ["trust"], targetRoot);
   preflight(target);
   await copyFile(source.envFile, target.envFile);
   run("mise", ["exec", "--", "node", "scripts/init-env.ts"], targetRoot);
   const prepared = prepareImages(target, path.join(directory, "target.json"));
-  // Backup format 1 is schema-agnostic: use the prepared tool before applying migrations.
   const currentBackupImage = prepared.images.backup;
   if (currentBackupImage === undefined) throw new Error("The release has no backup image.");
   const rollback = readCompose(source);
@@ -144,7 +138,6 @@ async function upgrade(requestedTag: string | undefined): Promise<void> {
     `Upgrading ${previous} to ${release.tag} (${release.commit}).\nBackup directory: ${directory}\n`,
   );
   try {
-    // Drain all writers before exporting the database and artifacts together.
     run("docker", [...compose, "--profile", "stack", "stop", "api", "scheduler", "worker"]);
     const recipes = await readFile("justfile", "utf8");
     if (recipes.includes("_backup dir config:")) run("just", ["_backup", backup, rollbackFile]);
@@ -158,7 +151,6 @@ async function upgrade(requestedTag: string | undefined): Promise<void> {
   process.stdout.write(`Backup complete: ${backup}\nRestore with: ${restore}\n`);
   try {
     run("git", ["checkout", "--detach", release.commit]);
-    // Move configuration forward with the target release before migrations start.
     await copyFile(target.envFile, source.envFile);
     await chmod(source.envFile, 0o600);
     run("docker", [
@@ -174,7 +166,6 @@ async function upgrade(requestedTag: string | undefined): Promise<void> {
       "-d",
       "--wait",
     ]);
-    // Probe the running process inside its container, independent of public DNS or TLS.
     run("docker", [
       ...compose,
       "exec",

@@ -1,16 +1,3 @@
-/**
- * The policy (packages/db/src/access.ts) at the HTTP boundary. Every route states its rule in
- * ROUTE_ACCESS; the auth guard checks worker credentials on "worker" routes and lets "public"
- * routes through. This module refuses "instance" routes
- * to anyone but an instance owner or admin, and a "resource" route asks `request.access` about the
- * resource it names before it answers. A route missing from the table fails at registration, and a
- * "resource" route that answers without asking fails closed with a 500.
- *
- * The owner of a resource comes from its record, never from the request: a run's automation, an
- * automation's project. Unknown and invisible resources answer the same 404; a visible resource the
- * actor may not change answers 403 ACCESS_DENIED with the actor's role and where it comes from.
- * The grants are read once per request, so a revoked grant takes effect on the next one.
- */
 import {
   type AccessGrants,
   type AccessRefusal,
@@ -64,23 +51,17 @@ import type { FastifyRequest } from "fastify";
 
 import type { ApiServer } from "./http-shared.js";
 
-/** The token a request came with: what caps it, and what `fresh()` checks again. */
 interface ActingToken {
   readonly id: string;
   readonly name: string;
   readonly scope: TokenScope;
 }
 
-/**
- * Who sent a request: a person by session (token null) or agent token, a service account by
- * its token, or a worker with its independent protocol identity.
- */
 export type Actor =
   | { readonly kind: "worker"; readonly worker: RegisteredWorker }
   | {
       readonly kind: "person";
       readonly userId: string;
-      /** The email, as the audit and a decided approval name the person. */
       readonly label: string;
       readonly role: InstanceRole;
       readonly token: ActingToken | null;
@@ -93,7 +74,6 @@ export type Actor =
       readonly token: ActingToken;
     };
 
-/** The grant subject an actor is, to give a credential's creator manage; null for a worker. */
 function actorSubject(actor: Actor | undefined): Subject | null {
   if (actor === undefined || actor.kind === "worker") return null;
   return actor.kind === "person"
@@ -101,7 +81,6 @@ function actorSubject(actor: Actor | undefined): Subject | null {
     : { kind: "service-account", serviceAccountId: actor.serviceAccountId };
 }
 
-/** `{ creator }` for an actor a credential can name, else nothing. */
 export function creatorOf(request: FastifyRequest): { readonly creator?: Subject } {
   const creator = actorSubject(request.actor);
   return creator === null ? {} : { creator };
@@ -113,79 +92,34 @@ interface ApprovalRights {
 }
 
 interface RequestAccess {
-  /** The automation once the actor may do `need` to it; 404 AUTOMATION_NOT_FOUND when they may not see it. */
   automation(automationName: string, need: Need): Promise<AutomationOwner>;
-  /**
-   * The run once the actor may do `action` in the run's own project and environment, which stay
-   * the run's after its automation moves or is deleted; 404 RUN_NOT_FOUND when invisible.
-   */
   run(runId: string, action: "read" | "run"): Promise<PlatformRunDetail>;
-  /** The folder once the actor may organize its project; 404 FOLDER_NOT_FOUND when invisible. */
   folder(folderId: string): Promise<AutomationFolder>;
-  /** The projects the actor holds a project role in, or "all" for an instance owner or admin. */
   projects(): Promise<readonly string[] | "all">;
-  /** What of the audit the actor reads (`auditView`). */
   auditView(): Promise<AuditView>;
-  /** Whether the actor operates the instance: an owner or admin with a full-scope token or none. */
   operatesInstance(): Promise<boolean>;
-  /** The person and their teams, whom an approval can be assigned to. */
   subjects(): Promise<readonly Subject[]>;
-  /**
-   * The project once the actor may do `need` to it as such; 404 PROJECT_NOT_FOUND when invisible.
-   * `named` adds what the request itself names inside the project, such as the environment of a
-   * grant, to the audit's target of a visible project, allowed or refused.
-   */
   project(reference: string, need: Need, named?: Partial<AuditTarget>): Promise<StoredProject>;
-  /** The automations a list may show in `environment`. */
   scope(environment: string): Promise<ReadScope>;
-  /**
-   * Why the actor may not do `need` to a target they read, as its 403 would say; null when they
-   * may. The dashboard leaves out a control it refuses and says this instead.
-   */
   refusal(target: AccessTarget, need: Need): Promise<AccessRefusal | null>;
-  /** The actor's role in a project as such, before any environment caps it; null for none. */
   role(projectId: string): Promise<ProjectRole | null>;
-  /** The same role after `environment` caps it. */
   roleIn(projectId: string, environment: string): Promise<ProjectRole | null>;
-  /**
-   * The project a deployment lands in, once the actor may edit the automation there. An existing
-   * automation stays in its project; a new one joins `requested`, or the default project.
-   */
   place(
     automation: { readonly automationSlug: string; readonly current: AutomationOwner | null },
     requested: string | undefined,
     environment: string,
   ): Promise<string>;
-  /**
-   * Why `place` refuses a new automation that names no project, as the empty Overview says before
-   * the first deploy; null when it lands.
-   */
   placeRefusal(environment: string): Promise<AccessRefusal | null>;
-  /**
-   * The credential once the actor holds `right` on it. 404 SECRET_NOT_FOUND or
-   * CONNECTION_NOT_FOUND when it does not exist, or the actor can neither read its place nor holds
-   * a right on it; 403 ACCESS_DENIED when they see it but lack the right.
-   */
   credential(
     kind: CredentialKind,
     name: string,
     place: CredentialPlace,
     right: CredentialRight,
   ): Promise<StoredCredential>;
-  /** The actor's right on each credential, in the order given, for a list. */
   credentialRights(
     credentials: readonly StoredCredential[],
   ): Promise<readonly (CredentialRight | null)[]>;
-  /**
-   * Refuses with 403 CREDENTIAL_USE_DENIED, naming each credential the actor may not bind in a
-   * deployment to `projectId`.
-   */
   useCredentials(credentials: readonly DeploymentCredential[], projectId: string): Promise<void>;
-  /**
-   * The run and its open approval at `stepKey`, with what the actor may do with it
-   * (`approvalRights`). 404 RUN_NOT_FOUND when the run is invisible; 409 RUN_EVENT_NOT_WAITING
-   * when it does not wait for that approval.
-   */
   approval(
     runId: string,
     stepKey: string,
@@ -194,15 +128,10 @@ interface RequestAccess {
     readonly approval: RunApproval;
     readonly may: ApprovalRights;
   }>;
-  /**
-   * What the actor may do with an open approval of a run they can read. Only a person with a
-   * session decides; a token never does.
-   */
   approvalRights(
     run: AccessTarget & { readonly environment: string },
     approval: RunApproval,
   ): Promise<ApprovalRights>;
-  /** The same questions with the grants read again, for a request that outlives a revocation. */
   fresh(): RequestAccess;
 }
 
@@ -215,22 +144,18 @@ declare module "fastify" {
 
 export interface RegisterAccessOptions {
   readonly accessStore: AccessStore;
-  /** Re-reads a person for `fresh()`, so a demotion, suspension or removal reaches a long-lived request. */
   readonly auth: Pick<SwizzleAuth, "findPerson">;
-  /** Re-checks a token for `fresh()`, so a revocation or expiry reaches a long-lived request too. */
   readonly tokens: Pick<ApiTokenStore, "isLive">;
   readonly folders: Pick<AutomationFolderStore, "getFolder">;
   readonly platform: PlatformServices;
 }
 
-/** The rule of the route a request matched; a request no route matched needs a signed-in actor. */
 export function routeAccess(request: FastifyRequest): RouteAccess {
   const url = request.routeOptions.url;
   if (url === undefined) return "signed-in";
   return ROUTE_ACCESS[routeKey(request.method, url)] ?? "signed-in";
 }
 
-/** Register before any route, so the check sees every one. */
 export function registerAccess(app: ApiServer, options: RegisterAccessOptions): void {
   app.addHook("onRoute", (route) => {
     for (const method of [route.method].flat()) {
@@ -254,11 +179,9 @@ export function registerAccess(app: ApiServer, options: RegisterAccessOptions): 
     );
   });
 
-  // Runs after the auth guard's preValidation, which has settled `request.actor`.
   app.addHook("preValidation", async (request) => {
     if (routeAccess(request) !== "instance") return;
     const actor = request.actor;
-    // Operating the instance depends on the instance role and the token's scope alone.
     if (
       actor?.kind === "person" &&
       isInstanceOperator({
@@ -294,10 +217,6 @@ export function registerAccess(app: ApiServer, options: RegisterAccessOptions): 
   });
 }
 
-/**
- * What a check resolved, for the request's audit event (request-audit.ts): an allowed one, and a
- * refused one the actor may know about. A target the actor may not see never reaches the audit.
- */
 type Reached = (target: Partial<AuditTarget>, privileged: boolean) => Promise<void>;
 
 function createRequestAccess(
@@ -314,10 +233,6 @@ function createRequestAccess(
     return loaded;
   };
 
-  /**
-   * `found` once the actor may do `need` to its target: 404 by `notFound` when it is missing or
-   * invisible, 403 when visible. Either outcome the actor may know names its target in the audit.
-   */
   const permit = async <T>(
     found: T | null,
     check: (found: T) => {
@@ -471,7 +386,6 @@ function createRequestAccess(
           `${kind === "secret" ? "Secret" : "Connection"} not found in environment ${place.environment}: ${name}`,
         );
       }
-      // Whether a right on the credential falls short of the one asked for.
       const short = (holds: CredentialRight | null) =>
         holds !== "manage" && (right === "manage" || holds === null);
       const holds = credentialRight(access, held.credential, held.grants);
@@ -531,13 +445,11 @@ function createRequestAccess(
           action: "edit",
           environment,
         });
-        // A new automation has no id before the deploy commits; its slug names it in the audit.
         await reached({ automationSlug }, false);
         return project.id;
       }
       const decision = decide(await grants(), { action: "edit", environment }, current);
       if (!decision.allowed && !decision.visible) {
-        // Automation names are unique across projects, so the name alone is what this reveals.
         throw new AutomationRuntimeError(
           "AUTOMATION_PROJECT_MISMATCH",
           `The name ${automationSlug} belongs to an automation in a project you cannot see. Rename the automation.`,
@@ -594,7 +506,6 @@ const NO_GRANTS: AccessGrants = {
   subjects: [],
 };
 
-/** What the policy knows about an actor, capped by the scope of the token they came with. */
 async function grantsOf(actor: Actor | undefined, accessStore: AccessStore): Promise<AccessGrants> {
   if (actor === undefined || actor.kind === "worker") return NO_GRANTS;
   const grants = await accessStore.loadGrants(
@@ -619,7 +530,6 @@ function denied(decision: Extract<Decision, { allowed: false }>): AutomationRunt
   );
 }
 
-/** What a token's scope limits, as a clause of a refusal: ", which allows at most viewer and reaches only staging". */
 function scopeLimits(scope: TokenScope, required: ProjectRole): string {
   const limits = [
     ...(PROJECT_ROLES.indexOf(scope.role) < PROJECT_ROLES.indexOf(required)

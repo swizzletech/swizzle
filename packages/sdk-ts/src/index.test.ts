@@ -124,8 +124,6 @@ describe("durable wait helpers", () => {
     );
   });
 
-  // JSON.stringify drops an undefined or function payload from the envelope, so the child would
-  // start with no input; the payload itself must be JSON.
   it.each([
     [
       "undefined",
@@ -246,7 +244,6 @@ describe("durable wait helpers", () => {
 });
 
 describe("durable step helpers", () => {
-  // A step under a claim's name would answer claim() without asking the platform.
   it("refuses a step named like a claim", async () => {
     const fn = vi.fn(() => ({ claimed: true }));
     await expect(runStep("claim:order:A-1001", fn)).rejects.toThrow(
@@ -284,8 +281,6 @@ describe("durable step helpers", () => {
     ]);
   });
 
-  // JSON.stringify turns a Date into a string, a Map or Set into {} and drops an undefined field,
-  // so a replayed step would return another value than the run saw.
   it.each([
     [
       "a Date",
@@ -374,8 +369,6 @@ describe("state helpers", () => {
   });
 });
 
-// The values below pass a type check and a first look, but serialization would read them again
-// or let a method rewrite them, so what was validated is not what is stored.
 const hiddenRewrites: [string, () => unknown, string][] = [
   [
     "a toJSON method",
@@ -464,7 +457,6 @@ describe("rate limit helpers", () => {
     const second = pace("api").then(() => {
       paced = true;
     });
-    // 20 calls a second leave 50 ms between two calls.
     await vi.advanceTimersByTimeAsync(49);
     expect(paced).toBe(false);
     await vi.advanceTimersByTimeAsync(1);

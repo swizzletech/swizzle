@@ -10,12 +10,6 @@ import type {
 import type { ApiServer } from "./http-shared.js";
 import { objectSchema, text, urlText } from "./request-validation.js";
 
-/**
- * Folders belong to a project. A list shows the folders of every project the caller holds a role
- * in; creating, renaming, deleting and filing need organize (editor) in the folder's project, and
- * an automation goes only into a folder of its own project. The list says, per folder and for a
- * new one, why the caller may not organize there, so the dashboard leaves those controls out.
- */
 export function registerAutomationFolderRoutes(app: ApiServer, store: AutomationFolderStore): void {
   const folderNameBody = { schema: { body: objectSchema({ name: text }) } };
   const newFolderBody = { schema: { body: objectSchema({ name: text, project: urlText }) } };
@@ -28,7 +22,6 @@ export function registerAutomationFolderRoutes(app: ApiServer, store: Automation
   app.get<{ Reply: AutomationFoldersResponse }>("/automation-folders", async (request) => {
     const folders = await store.listFolders(await request.access.projects());
     return {
-      // A folder made without naming a project goes to the default project.
       create: await request.access.refusal(
         { automationId: null, projectId: DEFAULT_PROJECT_ID },
         organize,

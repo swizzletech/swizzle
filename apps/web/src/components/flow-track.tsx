@@ -1,8 +1,3 @@
-// The live track above the selected run: an automation's flow with the run's position on it, or,
-// with no run selected, every station with how many recent runs reached it. It is a band at the top
-// of the run pane, folds away, and the browser remembers the fold. A run waiting at an approval
-// station is decided on that station.
-
 import {
   type ApprovalDetailsInWords,
   approvalDetailsInWords,
@@ -20,7 +15,6 @@ import "./flow-track.css";
 
 const FOLD_KEY = "swizzle.dashboard.flow-track-folded";
 
-/** Whether the owner folded the track in this browser; the choice outlives reloads. */
 export function useTrackFolded(): [boolean, (folded: boolean) => void] {
   const [folded, setFolded] = useState(() => window.localStorage.getItem(FOLD_KEY) === "true");
   useEffect(() => {
@@ -33,9 +27,7 @@ export function FlowTrack(props: {
   readonly flow: AutomationFlow;
   readonly folded: boolean;
   readonly onFold: (folded: boolean) => void;
-  /** The selected run; null draws the static track with reach counts. */
   readonly run: RunDetail | null;
-  /** Whether the station of this step carries its approval; the run panel reads the same answer. */
   readonly approvalOnTrack: (stepKey: string) => boolean;
 }) {
   const { flow, folded, run } = props;
@@ -73,14 +65,12 @@ export function FlowTrack(props: {
   );
 }
 
-/** Which run the track shows, or how many runs the reach counts come from. */
 function trackHeadline(flow: AutomationFlow, run: RunDetail | null): string {
   if (run !== null) return `run ${run.runId.slice(0, 8)} · ${runStatusInWords(run)}`;
   if (flow.reach === null || flow.reach.runs === 0) return "no runs yet";
   return `last ${flow.reach.runs} ${flow.reach.runs === 1 ? "run" : "runs"}`;
 }
 
-/** Where the flow and the code disagree, in one line; the full list is the title. */
 export function DriftNote({ flow }: { readonly flow: AutomationFlow }) {
   const steps = flow.drift.length;
   if (steps === 0) return null;
@@ -113,10 +103,6 @@ function RunTrack(props: {
   );
 }
 
-/**
- * The approval on the station the run waits at, instead of a card elsewhere: what the automation
- * asks, who decides, and Approve and Reject.
- */
 export function approvalOnStation(node: TrackNode, run: RunDetail) {
   if (
     node.state !== "waiting" ||
@@ -137,8 +123,6 @@ export function approvalOnStation(node: TrackNode, run: RunDetail) {
         <ApprovalActions may={run.approval.may} runId={run.runId} stepKey={run.approval.stepKey} />
       </>
     ),
-    // Room for the tallest the actions get: Reassign adds a row beside Approve and Reject, and its
-    // form takes four rows where the comment and the buttons took two.
     size: {
       height:
         88 +
@@ -150,12 +134,7 @@ export function approvalOnStation(node: TrackNode, run: RunDetail) {
   };
 }
 
-/**
- * The height of the details on a station, whose text column is 200 px of 12 px type. The track
- * lays out before it renders, so lines are estimated from characters, generously, as for labels.
- */
 function detailsHeight(asks: ApprovalDetailsInWords): number {
-  // A full-width character (CJK, fullwidth forms, emoji) is about twice as wide as a Latin one.
   const lines = (text: string, charWidth: number) => {
     let width = 0;
     for (const char of text)

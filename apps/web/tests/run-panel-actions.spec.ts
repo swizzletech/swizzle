@@ -2,10 +2,6 @@ import { expect, test } from "@playwright/test";
 
 import { APPROVAL_RUN_ID, mockDashboardApi, OK_RUN_ID, seededState } from "./dashboard-mock";
 
-// A click aimed at one action never lands on another because the run changed state under the
-// pointer: Open automation keeps its place and Run again appears where no button was. The panel
-// stays mounted and picks each state up through its polling query.
-
 type Box = { x: number; y: number; width: number; height: number };
 
 for (const width of [390, 800, 1280]) {
@@ -81,8 +77,6 @@ for (const width of [390, 800, 1280]) {
   });
 }
 
-// 480 and 1100 px are widths where the comment field and two buttons fit a row and the third
-// does not; 800 px is the width the field test named.
 for (const width of [480, 800, 1100]) {
   test(`at ${width} px the approval actions wrap as one group`, async ({ page }) => {
     await page.setViewportSize({ width, height: 800 });
@@ -97,13 +91,10 @@ for (const width of [480, 800, 1100]) {
       if (box === null) throw new Error(`${name} has no box`);
       ys.push(Math.round(box.y));
     }
-    // The three buttons share one line, so none is stranded.
     expect(new Set(ys).size).toBe(1);
   });
 }
 
-// At 200% zoom the effective viewport can be narrower than the buttons side by side. The run panel
-// clips overflow, so each button must wrap to a line inside it.
 for (const width of [260]) {
   test(`at ${width} px every approval button stays inside the run panel`, async ({ page }) => {
     await page.setViewportSize({ width, height: 800 });

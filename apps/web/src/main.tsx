@@ -1,5 +1,3 @@
-// First, so Tailwind declares its layer order before a component's stylesheet adds to the
-// components layer; a component layer declared first would sink below base.
 import "./styles.css";
 import { QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -27,15 +25,6 @@ import {
   SETTINGS_SECTIONS,
 } from "./lib/search";
 
-// The dashboard has five places: Overview, Runs, Projects, Credentials and Settings, plus one page
-// per automation, per project and per settings section, all inside AppShell, which signs the
-// person in. The pages a mailed link opens, /invitation and /reset-password, sit outside it. Each
-// page loads on first visit, so a library one page imports (Mermaid and marked on the automation
-// page) stays out of the others. Any other address shows NotFound.
-// Each route's component is the lazy page itself, never a component that renders it: the router
-// loads a route's own component before it renders the route. A page that starts loading only when
-// it renders blanks the screen while it loads, and React's dev build logs conditional-use-of-use.
-// A page reads its search params and path params with useSearch and useParams.
 const OverviewPage = lazyRouteComponent(() => import("./routes/overview"), "OverviewPage");
 const AutomationPage = lazyRouteComponent(() => import("./routes/automation"), "AutomationPage");
 const RunsPage = lazyRouteComponent(() => import("./routes/runs"), "RunsPage");
@@ -46,8 +35,6 @@ const SettingsPage = lazyRouteComponent(() => import("./routes/settings"), "Sett
 const InvitationPage = lazyRouteComponent(() => import("./routes/account"), "InvitationPage");
 const ResetPasswordPage = lazyRouteComponent(() => import("./routes/account"), "ResetPasswordPage");
 
-// A mailed link opens its page before anyone signs in, so a route with `outsideShell` renders
-// without the shell. The router's match decides, so every address that reaches the route counts.
 function Root() {
   const outsideShell = useMatches({
     select: (matches) => matches.some((match) => match.staticData.outsideShell === true),
@@ -119,7 +106,6 @@ const credentialsRoute = createRoute({
   validateSearch: parseCredentialsSearch,
 });
 
-// The sidebar's Settings opens the first section.
 const settingsRoute = createRoute({
   beforeLoad: () => {
     throw redirect({

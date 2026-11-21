@@ -41,7 +41,6 @@ function runFileLogger(file: string, script: string, signal: AbortSignal, freque
   );
 }
 
-// Fastify logs each incoming request through the logger's `req` serializer.
 function loggedUrl(url: string): unknown {
   const serializers: Record<string, (value: unknown) => { readonly url?: unknown }> = Reflect.get(
     createLogger("test"),
@@ -63,8 +62,6 @@ describe("request logging", () => {
 });
 
 describe("error logging", () => {
-  // pino serializes only `err` by default; an Error under any other key logs its enumerable
-  // properties alone, which hid a worker's DOCKER_CONTROL_TIMEOUT as `error: {}`.
   it("logs an error's message, code and cause under err and error", () => {
     const serializers: Record<string, (value: unknown) => Record<string, unknown>> = Reflect.get(
       createLogger("test"),
@@ -162,8 +159,6 @@ describe("production logging", () => {
     ]);
   });
 
-  // An async stdout buffer has no bound: when Docker's log pipe falls behind a request flood, the
-  // buffered lines fill the heap and the API dies. A sync write waits for the pipe instead.
   it("writes stdout synchronously", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("SWIZZLE_LOG_FILE", "");

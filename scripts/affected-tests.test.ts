@@ -316,7 +316,6 @@ it("fails Verify when a test outside a mapped change fails", async () => {
     { cwd: root },
   );
   await writeFile(path.join(root, "src/core.ts"), "export const value = 42;\n");
-  // Prove that this failing file is outside the worker's affected selection.
   expect((await run("--list")).stdout).toContain("selected: 2 of 3 test files");
   const workflow = parseDocument(
     await readFile(path.join(source, ".github/workflows/ci.yml"), "utf8"),

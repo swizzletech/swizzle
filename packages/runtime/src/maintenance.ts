@@ -41,7 +41,6 @@ export interface MaintenanceRetentionPolicy {
   readonly notificationDeliveryRetentionDays: number;
   readonly queueFailedRetentionHours: number;
   readonly queueMetricRetentionDays: number;
-  /** Days a finished run is kept after it finished; null keeps runs forever. */
   readonly runRetentionDays: number | null;
 }
 
@@ -124,11 +123,6 @@ export async function runMaintenanceCycle(
           )
         : [];
 
-    // Prune failed BullMQ jobs older than the retention window BEFORE counting.
-    // Without this, a single failure keeps queue.counts.failed > 0 forever,
-    // which pins the dashboard to `state: degraded — queue-pressure` regardless
-    // of recent activity. Matches how heartbeats and notification deliveries
-    // decay — operator-relevant signal is "recent failures", not "ever-failed".
     if (queueReaders.length > 0 && input.queueCounts === undefined) {
       await Promise.all(
         queueReaders.map(
@@ -164,7 +158,6 @@ export async function runMaintenanceCycle(
       ).toISOString(),
     });
 
-    // ADR 0015: a finished run expires as a whole; queued, running and waiting runs never do.
     const runExpiry =
       retention.runRetentionDays !== null
         ? await input.store.expireRuns({
@@ -288,7 +281,6 @@ async function sweepDeploymentArtifacts(input: {
     }
   }
 
-  // A rollback deployment runs from its target's tree, so retention protects trees, not ids.
   const retainedTrees = new Set(retained.map(getArtifactTreeKey));
   const deleteCandidates = expired.filter(
     (deployment) => !retainedTrees.has(getArtifactTreeKey(deployment)),
@@ -329,8 +321,6 @@ function createQueueMetricsReader(options: {
     },
 
     async cleanFailedOlderThan(gracePeriodMs: number) {
-      // BullMQ's clean() returns the list of removed job ids. A very large
-      // limit is effectively "clean all"; we cap at 10_000 to bound one tick.
       const removed = await queue.clean(gracePeriodMs, 10_000, "failed");
       return Array.isArray(removed) ? removed.length : 0;
     },

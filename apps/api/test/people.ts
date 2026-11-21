@@ -7,7 +7,6 @@ import { testApiTokenStore, testAuth } from "../../../test/stores.js";
 
 import { dashboardOrigin, getAllowedOrigins } from "../src/http-shared.js";
 
-/** Fixture people written to PostgreSQL for route tests that act as several accounts. */
 export function testPeople(database = testDatabase()) {
   const origin = dashboardOrigin();
   const auth = testAuth(
@@ -45,11 +44,9 @@ export function testPeople(database = testDatabase()) {
   return {
     add,
     auth,
-    /** Changes a person's instance role, as a later admin page will. */
     async setRole(userId: string, role: InstanceRole): Promise<void> {
       await database.pool.query("UPDATE auth_users SET role = $2 WHERE id = $1", [userId, role]);
     },
-    /** A person and an agent token of theirs: the bearer header to act as them. */
     async bearer(
       apiTokenStore: ApiTokenStore,
       email: string,
@@ -67,13 +64,8 @@ export function testPeople(database = testDatabase()) {
   };
 }
 
-/** The token `ownerToken()` mints, the same in every database, so one CLI profile reaches each. */
 export const OWNER_TOKEN = `swz_${"o".repeat(43)}`;
 
-/**
- * Seeds an instance owner with an agent token of full scope, OWNER_TOKEN: how a test that is not
- * about access calls the API. Call it once per test and database, after the database reset.
- */
 export async function ownerToken(database = testDatabase()): Promise<string> {
   const userId = await testPeople(database).add("owner@swizzle.test", { role: "owner" });
   const { token } = await testApiTokenStore(database).createToken({
@@ -86,7 +78,6 @@ export async function ownerToken(database = testDatabase()): Promise<string> {
   return token;
 }
 
-/** The headers that send `ownerToken()`. */
 export async function ownerHeaders(): Promise<{ readonly authorization: string }> {
   return { authorization: `Bearer ${await ownerToken()}` };
 }

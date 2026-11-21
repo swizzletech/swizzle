@@ -1,9 +1,3 @@
-// The store contract every workspace can import without loading the database driver: record and
-// store types, their errors, secret encryption and the pure rules the stores share. Importing it
-// loads neither drizzle nor pg, so the runtime and the CLI stay cheap to start. The Postgres
-// implementations are in `@swizzle/db/postgres` (src/postgres.ts); `just check` keeps drizzle and
-// pg unreachable from here.
-
 export {
   type AccessGrants,
   type AccessRefusal,

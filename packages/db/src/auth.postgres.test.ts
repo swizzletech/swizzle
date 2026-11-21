@@ -27,8 +27,6 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-// Sign-ins hash with production-cost scrypt, about 180 ms per hash on an idle core; 30 s leaves
-// room for parallel worktrees on a loaded machine.
 describe("Swizzle auth", () => {
   it.each([
     {
@@ -90,7 +88,6 @@ describe("Swizzle auth", () => {
     { libraryCode: "INVALID_ORIGIN", origin: "https://untrusted.test" },
     { libraryCode: "MISSING_OR_NULL_ORIGIN", origin: "" },
   ])("gives a Swizzle next step for $libraryCode", async ({ origin }) => {
-    // Better Auth captures NODE_ENV at import and skips origin checks under Vitest.
     const { stdout } = await promisify(execFile)(
       process.execPath,
       [
@@ -366,11 +363,9 @@ describe("Swizzle auth", () => {
     const knownDevice = new Browser(auth);
     await knownDevice.signIn();
     await knownDevice.post("/sign-out", {});
-    // A device, but of another account: for Ada it is a stranger.
     const otherAccount = new Browser(auth);
     expect((await otherAccount.signIn(OTHER_PERSON.password, OTHER_PERSON.email)).status).toBe(200);
 
-    // The known device's first sign-in came from no device yet, so it spent one of the five.
     const strangers = [new Browser(auth, "198.51.100.1"), new Browser(auth, "198.51.100.2")];
     const guesses = [];
     for (let attempt = 0; attempt < 4; attempt += 1) {
@@ -431,7 +426,6 @@ describe("Swizzle auth", () => {
     const before = browser.sessionCookie();
 
     vi.setSystemTime(START.getTime() + 20 * 60_000);
-    // Turning on 2FA replaces the session; the replacement keeps the first sign-in's end.
     await enrollTwoFactor(browser);
     expect(browser.sessionCookie()).not.toBe(before);
     vi.setSystemTime(START.getTime() + 40 * 60_000);
@@ -463,12 +457,10 @@ describe("Swizzle auth", () => {
     const foreignRevoke = await auth.revokeSession(strangerPerson.user.id, phoneSessionId);
     const revoked = await auth.revokeSession(person.user.id, phoneSessionId);
 
-    // Setup signed in a third browser.
     expect(sessions).toHaveLength(3);
     expect(sessions.filter((session) => session.current).map((session) => session.id)).toEqual([
       person.sessionId,
     ]);
-    // Each session keeps the browser it signed in from, so the person can tell them apart.
     expect(sessions.find((session) => session.id === phoneSessionId)?.userAgent).toBe(phoneAgent);
     expect(foreignRevoke).toBe(false);
     expect(revoked).toBe(true);
@@ -634,7 +626,6 @@ async function setUp(options: TestOptions = {}): Promise<SwizzleAuth> {
   return auth;
 }
 
-/** A second account, written as rows, for tests about something other than invitations. */
 async function addSecondPerson(): Promise<void> {
   const id = randomUUID();
   const now = new Date();

@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { resolveServiceInstanceId } from "./instance-id.js";
 
-// The instance id is half the heartbeat row key, so it must stay stable per container.
 describe("resolveServiceInstanceId", () => {
   it("uses the trimmed SWIZZLE_INSTANCE_ID override", () => {
     expect(

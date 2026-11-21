@@ -1,7 +1,3 @@
-// In the Compose stack the api and the worker reach the internet only through the control egress
-// proxy. `configureOutboundHttpProxy` sends fetch through it; `controlEgressAgentOptions` sends the
-// clients that use node:http and node:https directly through it: the S3 client and the OTLP exporter.
-
 import type { AgentOptions } from "node:https";
 import type { Dispatcher, ProxyAgent } from "undici";
 
@@ -16,12 +12,6 @@ export class EgressProxyConfigurationError extends ConfigurationError {
   }
 }
 
-/**
- * The one rule for an egress proxy URL, read from `variable`: a plain HTTP proxy such as
- * http://runner-egress-proxy:3128, with no credentials. The API checks SWIZZLE_CONTROL_EGRESS_PROXY
- * with it at startup, configureOutboundHttpProxy and controlEgressAgentOptions before they route
- * requests through the proxy, and the container runner SWIZZLE_RUNNER_EGRESS_PROXY before a sandboxed run gets its host and port.
- */
 export function parseEgressProxyUrl(variable: string, value: string): URL {
   let proxy: URL;
   try {
@@ -45,7 +35,6 @@ export function parseEgressProxyUrl(variable: string, value: string): URL {
   return proxy;
 }
 
-/** The validated SWIZZLE_CONTROL_EGRESS_PROXY, or null when it is unset. */
 function readControlEgressProxy(environment: NodeJS.ProcessEnv): URL | null {
   const raw = environment[SWIZZLE_CONTROL_EGRESS_PROXY_ENV]?.trim();
   return raw ? parseEgressProxyUrl(SWIZZLE_CONTROL_EGRESS_PROXY_ENV, raw) : null;
@@ -54,12 +43,6 @@ function readControlEgressProxy(environment: NodeJS.ProcessEnv): URL | null {
 let directDispatcher: Dispatcher | undefined;
 let proxyAgent: ProxyAgent | undefined;
 
-/**
- * Route Node's global fetch through the operator-controlled HTTP proxy. It replaces the
- * process-wide undici dispatcher, which every fetch in the process uses; the API and the worker
- * call it once at startup. undici loads only when a proxy is configured: it takes longer to import
- * than the rest of core, and every importer of core would pay for it.
- */
 export async function configureOutboundHttpProxy(
   environment: NodeJS.ProcessEnv = process.env,
 ): Promise<boolean> {
@@ -73,7 +56,6 @@ export async function configureOutboundHttpProxy(
   return true;
 }
 
-/** Undo configureOutboundHttpProxy: fetch dispatches directly again. Tests call it after each case. */
 export async function resetOutboundHttpProxy(): Promise<void> {
   if (directDispatcher !== undefined)
     (await import("undici")).setGlobalDispatcher(directDispatcher);
@@ -82,10 +64,6 @@ export async function resetOutboundHttpProxy(): Promise<void> {
   proxyAgent = undefined;
 }
 
-/**
- * Options for a node:http or node:https Agent that sends its requests through the control egress
- * proxy with Node's built-in proxy support, or no options when none is configured.
- */
 export function controlEgressAgentOptions(
   environment: NodeJS.ProcessEnv = process.env,
 ): AgentOptions {

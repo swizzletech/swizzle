@@ -1,4 +1,3 @@
-/** The people and teams the runtime asks about: whom an approval names, who a notification reaches. */
 import { eq, sql } from "drizzle-orm";
 
 import { decide } from "./access.js";

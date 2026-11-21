@@ -102,10 +102,6 @@ export async function loadAutomationDefinition(
   return definition;
 }
 
-/**
- * The API check of an automation with `api_check.mode: active`: the script that runs in place of
- * the entrypoint, and the secrets it receives (all declared secrets unless it names a subset).
- */
 export function activeApiCheck(definition: AutomationDefinition): {
   readonly path: string;
   readonly relativePath: string;
@@ -132,7 +128,6 @@ export function activeApiCheck(definition: AutomationDefinition): {
   };
 }
 
-/** The secrets an active API check receives: the subset it names, else every declared secret. */
 export function apiCheckSecretNames(config: {
   readonly api_check?: AutomationConfig["api_check"];
   readonly secrets: readonly string[];

@@ -11,7 +11,6 @@ import { readWorkerReply, WORKER_ROUTES } from "@swizzle/runtime/platform";
 import { startVerificationApi } from "./verify-api-process.js";
 import { commitDeploymentFixture } from "./verify-state-fixtures.js";
 
-/** The keep set and disk measurement over the real worker routes and PostgreSQL. */
 export async function verifyRunImages(client: DatabaseClient): Promise<void> {
   const registry = createPostgresWorkerRegistry({ client });
   const store = createPostgresControlPlaneStore({ client });
@@ -104,7 +103,6 @@ export async function verifyRunImages(client: DatabaseClient): Promise<void> {
       "Run images: each worker keeps only its own tags, and a same-source replacement keeps its image.",
     );
 
-    // A laptop that wakes polls before its next heartbeat: its keep set must not depend on it.
     await client.pool.query(
       "update workers set last_seen_at = now() - interval '1 hour' where id = $1",
       [a.worker.id],

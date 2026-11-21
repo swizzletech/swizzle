@@ -223,7 +223,6 @@ describe("withReadiness", () => {
     expect((await withReadiness(a, context())).activeDeployment.readiness.status).toBe("ready");
     expect((await withReadiness(b, context())).activeDeployment.readiness.status).toBe("not-ready");
   });
-  // The automation as the dashboard store lists it, its snapshot persisted from `runtime`.
   function deployed(runtime: string, overrides: Record<string, unknown> = {}) {
     const config = parseAutomationConfig(
       `name: demo\nversion: 1.0.0\nentrypoint: main.js\ntrigger:\n  type: webhook\nruntime:\n${runtime}\n`,
@@ -275,8 +274,6 @@ describe("withReadiness", () => {
     });
   });
 
-  // Runs wait in the queue until a worker comes online, as deploy and `swizzle list` report it, so a
-  // worker restart does not mark every automation blocked.
   it("keeps a registered sleeping worker group ready with a warning", async () => {
     const { status, warnings } = (
       await withReadiness(deployed("  language: node"), {

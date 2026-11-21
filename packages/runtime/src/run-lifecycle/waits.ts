@@ -16,7 +16,6 @@ import type { RunQueueProducer } from "../run-queue.js";
 import { verifyWaitLinkToken, type WaitLinkKind } from "../wait-links.js";
 import { assertStepWriteWithinLimits } from "./events.js";
 
-// How long the link of a wait without a timeout works after the wait began.
 const WAIT_LINK_DEFAULT_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 
 import { enqueuePersistedRun } from "./enqueue.js";
@@ -66,8 +65,6 @@ export async function resumeDueWaitingRunsWithStore(input: {
       continue;
     }
 
-    // A timed-out approval names the assignee it had; a reassignment since the sweep read the run
-    // leaves it waiting for the next sweep.
     const resumed = await resumeWaitingRunAndEnqueue({
       ...(run.wait?.reason === "approval" ? { expectedAssignee: run.wait.assignee } : {}),
       expectedWaitReason: run.wait?.reason,
@@ -103,7 +100,6 @@ export async function resumeDueWaitingRunsWithStore(input: {
   };
 }
 
-/** Resolves the `waitForEvent` of a step with `value`. An approval is decided by `decideWaitingApproval`. */
 export async function resolveWaitingEventRun(input: {
   readonly queue: RunQueueProducer;
   readonly run: PlatformRunRecord;
@@ -136,12 +132,6 @@ export async function resolveWaitingEventRun(input: {
   });
 }
 
-/**
- * Decides the approval a run waits for at `stepKey`, as `decidedBy`. `assignee` is the assignee
- * the caller checked the decider against: the decision lands only while the wait is still
- * assigned to exactly them, so a reassignment in between makes it `not-waiting`. Of concurrent
- * decisions exactly one lands, and the step result names that one.
- */
 export async function decideWaitingApproval(input: {
   readonly approved: boolean;
   readonly assignee: ApprovalAssignee | null;
@@ -213,12 +203,6 @@ async function resumeResolvedWait(input: {
   return { run: resumed, status: "resolved" };
 }
 
-/**
- * The wait a public link may resolve. A link is open only while its run waits at exactly the
- * step it names, the wait is of the link's kind, and `expiresAt` has not passed. A decided or
- * timed-out step keeps its result for the life of the run, so it never waits again and its
- * link stays closed.
- */
 export async function findWaitByLink(input: {
   readonly environment?: NodeJS.ProcessEnv;
   readonly kind: WaitLinkKind;
@@ -250,7 +234,6 @@ export async function findWaitByLink(input: {
   ) {
     return { status: "closed", target: audit };
   }
-  // An approval assigned to a person or team needs them signed in; a link proves nobody.
   if (run.wait.reason === "approval" && run.wait.assignee !== null) {
     return { assignee: run.wait.assignee, status: "assigned", target: audit };
   }
@@ -318,11 +301,9 @@ export async function resumeParentAfterChildTerminal(input: {
     });
   } catch (error) {
     if (input.retryFailures) throw error;
-    // Parent resume is a follow-up side effect; it must not corrupt the child terminal state.
   }
 }
 
-/** Ends a wait with its step result in one commit (ControlPlaneStore.resumeWaitingRun), then queues the run. */
 async function resumeWaitingRunAndEnqueue(input: {
   readonly expectedAssignee?: ApprovalAssignee | null;
   readonly expectedWaitReason: PlatformRunWaitReason;

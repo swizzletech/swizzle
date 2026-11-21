@@ -1,8 +1,3 @@
-// The pages a mailed link opens, outside the sign-in gate: `/invitation#<token>` creates the
-// invited account and `/reset-password#<token>` sets a new password. The token sits in the
-// fragment, which the browser never sends to a server, and leaves the address bar and the history
-// as soon as the page has read it.
-
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -28,17 +23,12 @@ const ROLE_IN_WORDS = {
   owner: "an owner, who manages the instance, every project and its people",
 } as const;
 
-/**
- * The one-use token of a mailed link; the address keeps only the path once it is read. A second
- * link opened in the same tab changes only the fragment, so the token follows each hashchange.
- */
 function useLinkToken(): string {
   const [token, setToken] = useState(() => window.location.hash.slice(1));
   useEffect(() => {
     const read = () => {
       if (window.location.hash === "") return;
       setToken(window.location.hash.slice(1));
-      // The router's own entry state stays, so Back and Forward still work.
       window.history.replaceState(window.history.state, "", window.location.pathname);
     };
     read();
@@ -48,7 +38,6 @@ function useLinkToken(): string {
   return token;
 }
 
-/** Each token gets a fresh page, so nothing typed or decided for one link carries to the next. */
 export function InvitationPage() {
   const token = useLinkToken();
   return <Invitation key={token} token={token} />;
@@ -195,8 +184,6 @@ function ResetPassword({ token }: { readonly token: string }) {
       if (password !== confirm) throw new Error("The new passwords do not match.");
       await sessionApi.resetPassword({ newPassword: password, token });
     },
-    // The reset ended every session of the account, this browser's too, so nothing it had loaded
-    // as that person stays.
     onSuccess: () => {
       queryClient.clear();
       refreshAuth();

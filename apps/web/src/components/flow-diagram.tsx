@@ -1,7 +1,3 @@
-// The flow diagram an automation ships as Mermaid source, drawn on its About tab. Mermaid loads on
-// the first diagram only, and the diagram takes the colour tokens of `styles.css` in the mode the
-// system is in when it is drawn.
-
 import DOMPurify from "dompurify";
 import { useEffect, useRef, useState } from "react";
 
@@ -11,13 +7,10 @@ let renderCount = 0;
 
 async function renderDiagram(code: string): Promise<string> {
   const { default: mermaid } = await import("mermaid");
-  // Mermaid needs literal colours, so read the tokens' current values.
   const tokens = getComputedStyle(document.documentElement);
   const token = (name: string) => tokens.getPropertyValue(name).trim();
   mermaid.initialize({
-    // DOMPurify strips HTML labels from the SVG, so labels are drawn as SVG text.
     htmlLabels: false,
-    // Mermaid 12 defaults to the ELK layout, a 450 kB gzip chunk; dagre is 17 kB.
     layout: "dagre",
     look: "classic",
     securityLevel: "strict",
@@ -44,7 +37,6 @@ export function FlowDiagram(props: { readonly code: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    // An old drawing must not stand in for new source that fails to draw.
     if (target.current !== null) target.current.innerHTML = "";
     setState("drawing");
     renderDiagram(props.code).then(

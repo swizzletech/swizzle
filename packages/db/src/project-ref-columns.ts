@@ -6,7 +6,6 @@ type ProjectColumns = {
   readonly name: AnyPgColumn;
 };
 
-/** The project reference from the projects table or one of its aliases. */
 export function projectRefColumns<T extends ProjectColumns>(
   table: T,
 ): Pick<T, "id" | "slug" | "name"> {

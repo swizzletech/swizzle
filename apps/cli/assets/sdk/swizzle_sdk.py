@@ -1,15 +1,4 @@
 #!/usr/bin/env python3
-"""Portable Swizzle helper for Python automations.
-
-Scaffolds vendor this file into each automation folder as ``swizzle_sdk.py``, so
-local runs need no published package. It stays tiny and keeps the runtime contract:
-
-- read the JSON payload from stdin
-- read runtime metadata from ``SWIZZLE_*`` environment variables
-- write logs to stderr
-- write one JSON result to stdout
-- exit 0 only on success
-"""
 
 from __future__ import annotations
 
@@ -41,18 +30,13 @@ _REPORTED_API_CONTACTS: set[tuple[str, int, str | None, str | None]] = set()
 
 @dataclass(frozen=True)
 class AutomationMetadata:
-    # The retry attempt this execution spends; a resume from a wait starts again at 1.
     attempt: int | None
     automation_id: str | None
     automation_name: str | None
     automation_version: str | None
     environment: str | None
-    # Which execution of the run this is, counting every resume and retry.
     execution_number: int | None
     run_id: str | None
-    # What started the run: "webhook", "cron", "chain", "manual" or "check" (an API check). Only
-    # "webhook" passed the trigger's signature check; a run started by hand, on the platform or
-    # with `swizzle run`, is "manual" and has no webhook headers.
     trigger_type: str | None
     version_id: str | None
 
@@ -95,9 +79,6 @@ def _connection_env_var_name(connection_name: str) -> str:
 
 
 def get_connection_token(connection_name: str) -> str:
-    """Return the access token for a connection declared under connections: in
-    config.yaml. The platform injects the current (auto-refreshed) token;
-    refresh tokens and client secrets never reach automation code."""
     token = os.getenv(_connection_env_var_name(connection_name))
     if token is None or token == "":
         raise RuntimeError(
@@ -110,8 +91,6 @@ def get_connection_token(connection_name: str) -> str:
 
 
 def get_connection_token_expiry(connection_name: str) -> str | None:
-    """ISO expiry of the injected connection access token, when the provider
-    supplied one. Tokens are refreshed automatically by the platform."""
     return os.getenv(f"{_connection_env_var_name(connection_name)}_EXPIRES_AT")
 
 
@@ -131,12 +110,10 @@ def _read_state_snapshot() -> dict[str, Any]:
 
 
 def state_get(key: str, default: Any = None) -> Any:
-    """Read a durable automation state value from the snapshot for this run."""
     return _read_state_snapshot().get(key, default)
 
 
 def state_set(key: str, value: Any) -> None:
-    """Persist a JSON-serializable durable automation state value."""
     line = _platform_json(
         {"type": "state_set", "key": key, "value": value}, f"Swizzle state value {key!r}"
     )
@@ -145,7 +122,6 @@ def state_set(key: str, value: Any) -> None:
 
 
 def state_delete(key: str) -> None:
-    """Delete a durable automation state value."""
     sys.stderr.write(json.dumps({"type": "state_delete", "key": key}) + "\n")
     sys.stderr.flush()
 
@@ -172,7 +148,6 @@ def _read_steps_snapshot() -> dict[str, Any]:
 def _validate_step_name(name: str) -> None:
     if not isinstance(name, str) or name == "":
         raise ValueError("Swizzle step names must be non-empty strings.")
-    # claim() keeps its answers under these names; a step of the same name would forge one.
     if name.startswith(_CLAIM_PREFIX):
         raise ValueError(f"Swizzle step names starting with {_CLAIM_PREFIX!r} are reserved for claim().")
 
@@ -184,12 +159,6 @@ def _normalize_snapshot_file(value: str | None) -> str | None:
 
 
 def run_step(name: str, fn: Callable[[], Any]) -> Any:
-    """Run a named durable step and memoize its JSON-serializable result.
-
-    A step_start event tells the platform the step runs. Successful step results
-    are stored by the platform and returned without re-running fn on retry
-    attempts. Use None when a step has no meaningful result.
-    """
     _validate_step_name(name)
     if name in _COMPLETED_STEPS:
         return _COMPLETED_STEPS[name]
@@ -199,7 +168,6 @@ def run_step(name: str, fn: Callable[[], Any]) -> Any:
         _COMPLETED_STEPS[name] = snapshot[name]
         return snapshot[name]
 
-    # The dashboard lights this step's station now; a crash before step_result marks it failed.
     sys.stderr.write(json.dumps({"type": "step_start", "key": name}) + "\n")
     sys.stderr.flush()
     value = fn()
@@ -243,11 +211,6 @@ def _normalize_until(until: datetime | str) -> str:
 
 
 def _platform_json(value: Any, what: str) -> str:
-    """Serialize a value for the platform to store: a state value, a step, a result.
-
-    NaN and Infinity have no JSON form: json.dumps would write a token the runtime cannot
-    parse, and the platform would drop the step or state without a word.
-    """
     try:
         return json.dumps(value, allow_nan=False)
     except ValueError as error:
@@ -262,13 +225,6 @@ def _suspend_and_exit(suspend: dict[str, Any]) -> None:
 
 
 def sleep_until(name: str, until: datetime | str) -> None:
-    """Durably sleep until an ISO timestamp or datetime.
-
-    On the first call for a step name, this writes a suspend sentinel to stdout
-    and exits with code 0. When the platform resumes the run, the whole
-    entrypoint runs again and this helper returns immediately from the memoized
-    step result.
-    """
     hit, _value = _memoized_step(name)
     if hit:
         return
@@ -283,24 +239,12 @@ def sleep_until(name: str, until: datetime | str) -> None:
 
 
 def sleep(name: str, duration_seconds: float) -> None:
-    """Durably sleep for a duration in seconds.
-
-    On a miss this helper exits the process after emitting the suspend sentinel;
-    it never returns on that path.
-    """
     if not math.isfinite(duration_seconds):
         raise ValueError("sleep duration_seconds must be finite.")
     sleep_until(name, datetime.now(timezone.utc) + timedelta(seconds=duration_seconds))
 
 
 def invoke_automation(name: str, automation: str, payload: Any) -> dict[str, Any]:
-    """Invoke another automation as a durable child step.
-
-    On the first call for a step name, this writes a suspend sentinel to stdout
-    and exits with code 0. On resume it returns the memoized child result
-    envelope. Child failure is returned as data with status "dead-lettered"; it
-    is not thrown by this helper.
-    """
     hit, value = _memoized_step(name)
     if hit:
         return value
@@ -325,7 +269,6 @@ def wait_for_event(
     timeout_ms: float | None = None,
     until: datetime | str | None = None,
 ) -> dict[str, Any]:
-    """Suspend until an external resolver supplies a JSON value or a timeout fires."""
     hit, value = _memoized_step(name)
     if hit:
         return value
@@ -349,14 +292,6 @@ def request_approval(
     timeout_ms: float | None = None,
     until: datetime | str | None = None,
 ) -> dict[str, Any]:
-    """Suspend until a human approves/rejects the step or a timeout fires.
-
-    `assignee` names who decides, signed in to the dashboard: `{"user": "<email>"}` for a
-    Swizzle person or `{"team": "<name>"}` for any member of a Swizzle team. Without it, the
-    approval link or anyone who may run the automation decides. The result holds approved,
-    assignee, decidedBy (`{"kind": "person", ...}`, `{"kind": "link"}`, or None after a timeout),
-    comment, decidedAt and timedOut.
-    """
     hit, value = _memoized_step(name)
     if hit:
         return value
@@ -375,25 +310,14 @@ def request_approval(
 
 
 def get_approval_url(step: str) -> str:
-    """Return the public link to the approval page of one approval step.
-
-    It works only while the run waits at that step, at most until the wait's timeout. Send it
-    inside a step, so a resume does not send it again. What readers see of the run, its logs,
-    steps, details, state and child payloads, shows it as `[REDACTED]`, so whoever may only read
-    the run cannot decide with it.
-    """
     return _wait_link("approvals", "approval", step)
 
 
 def get_event_callback_url(step: str) -> str:
-    """Return the public URL a third-party system POSTs to, without a Swizzle credential, to
-    resolve the wait_for_event of one step; the request body becomes the event value."""
     return _wait_link("events", "event", step)
 
 
 def _wait_link(path: str, kind: str, step: str) -> str:
-    # The token packages/runtime/src/wait-links.ts verifies:
-    # <runId>.<base64url(step)>.<base64url(HMAC-SHA256(SWIZZLE_LINK_KEY, "<kind>\n<step>"))>
     _validate_step_name(step)
     base = (os.getenv("SWIZZLE_LINK_URL") or "").strip()
     key = os.getenv("SWIZZLE_LINK_KEY") or ""
@@ -427,19 +351,6 @@ def _normalize_optional_event_until(
 
 
 def claim(key: str) -> bool:
-    """Claim ``key`` in the automation's state for this run.
-
-    True for the first run that claims it, and again for that run's retries and
-    resumes; False for every other run. The platform decides with one insert in
-    PostgreSQL, so of two runs that claim a key at the same time exactly one gets
-    True. Claim before a side effect that must happen once, such as sending order
-    A-1001.
-
-    The first call suspends the run, and the entrypoint runs again from the top
-    with the answer, so code before it runs twice. The claim stays under the state
-    key ``claim:<key>``; delete that key to let a later run claim it again. A local
-    ``swizzle run`` holds no platform state and gets True.
-    """
     if not isinstance(key, str) or key == "":
         raise ValueError("Swizzle claim keys must be non-empty strings.")
     if _normalize_snapshot_file(os.getenv("SWIZZLE_STATE_FILE")) is None:
@@ -532,7 +443,6 @@ def run_automation(handler: Callable[[AutomationContext], Any]) -> int:
 
 @dataclass(frozen=True)
 class ApiResponse:
-    """An HTTP answer from ``api_request``; error statuses are returned, not raised."""
 
     status: int
     headers: dict[str, str]
@@ -553,13 +463,6 @@ def api_request(
     data: bytes | None = None,
     timeout: float = 30.0,
 ) -> ApiResponse:
-    """Call an HTTP API and tell the platform which API answered.
-
-    Prints one ``api_contact`` stderr line per distinct host, status and retirement
-    notice, so the dashboard shows when an API was last reached and warns about
-    Deprecation and Sunset headers. Only the host, the path without its query, the
-    status and those headers leave the process; the platform redacts the path.
-    """
     request = Request(url, data=data, headers=headers or {}, method=method.upper())
     try:
         with urlopen(request, timeout=timeout) as response:
@@ -577,10 +480,6 @@ def _lower_headers(headers: Any) -> dict[str, str]:
 
 
 def _report_api_contact(url: str, method: str, status: int, headers: dict[str, str]) -> None:
-    """Print the api_contact line once the headers arrived, so a stalled body cannot lose it.
-
-    After a redirect, ``url`` is the one that answered.
-    """
     parsed = urlparse(url)
     deprecation = headers.get("deprecation")
     sunset = headers.get("sunset")
@@ -607,13 +506,6 @@ def _report_api_contact(url: str, method: str, status: int, headers: dict[str, s
 
 
 def contract_changed(api: str, field: str, expected: str, got: str) -> NoReturn:
-    """End the process because an API's answer no longer matches what the code expects.
-
-    Name the field and describe both sides as phrases, such as
-    ``contract_changed("api.example.com", "items[].amount", "a number", "a string")``.
-    A run fails with UPSTREAM_CONTRACT_CHANGED and is not retried; an API check
-    records drift.
-    """
     change = {"api": api, "field": field, "expected": expected, "got": got}
     sys.stderr.write(json.dumps({**change, "type": "contract_changed"}) + "\n")
     sys.stderr.flush()
@@ -621,11 +513,6 @@ def contract_changed(api: str, field: str, expected: str, got: str) -> NoReturn:
 
 
 def record_rate_limit_usage(group: str, count: int = 1) -> None:
-    """Record in-run usage counts for run stats.
-
-    This does not enforce cross-run or in-run limits by itself. Use pace(name)
-    for coarse in-process pacing against config.yaml runtime.rate_limits.
-    """
     entry = {
         "type": "rate_limit_usage",
         "group": group,
@@ -637,11 +524,6 @@ def record_rate_limit_usage(group: str, count: int = 1) -> None:
 
 
 def pace(name: str) -> None:
-    """Coarsely pace in-process calls using runtime.rate_limits from config.yaml.
-
-    This helper is local to the current process; it is not a cross-run global
-    limiter. Unknown names are a no-op and emit one warning event.
-    """
     rate_limits = _declared_rate_limits()
     rate = rate_limits.get(name)
     if rate is None:

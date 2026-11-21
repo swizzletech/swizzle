@@ -16,8 +16,6 @@ import {
   waitingStep,
 } from "./track";
 
-// trigger → fetch → check{Over 100?} ─yes→ review → notify → done
-//                                    ─no→ notify
 const FLOW: FlowGraph = {
   edges: [
     { from: "trigger", label: null, to: "fetch" },
@@ -37,7 +35,6 @@ const FLOW: FlowGraph = {
   ],
 };
 
-/** The steps the entrypoint declares; trigger, check and done are narration. */
 const KEYS: ReadonlySet<string> = new Set(["fetch", "review", "notify", "cool-down"]);
 
 const T0 = Date.parse("2026-10-24T10:00:00.000Z");
@@ -123,7 +120,6 @@ describe("trackForRun", () => {
   });
 
   it("times a wait from the step before it, and dots the branch the run reached by another path", () => {
-    // The run took "yes": review (an approval, no start of its own) ended at 60 s, notify after.
     const steps = new Map([
       ["fetch", step("fetch", 100, 500)],
       ["review", step("review", null, 60_000)],
@@ -143,7 +139,6 @@ describe("trackForRun", () => {
   });
 
   it("lights the end of a flow when the run reached it through one branch only", () => {
-    // check ─yes→ review → result; check ─no→ skip → result. Only review ran.
     const flow: FlowGraph = {
       edges: [
         { from: "fetch", label: null, to: "check" },
@@ -177,7 +172,6 @@ describe("trackForRun", () => {
       "review>result": "done",
       "skip>result": "untaken",
     });
-    // Undecided, the end waits: review is still running.
     const open = trackForRun(
       flow,
       run({}),
@@ -299,7 +293,6 @@ describe("replay", () => {
       ["cool-down", "wait", 1_500],
       ["notify", "step", 350],
     ]);
-    // The gap before fetch, no gaps between the waits, a 1 s gap before notify, a 0.8 s tail.
     expect(replay.length).toBe(100 + 400 + 1_500 + 1_500 + 400 + 350 + 400);
   });
 
@@ -321,7 +314,6 @@ describe("replay", () => {
   });
 });
 
-// trigger → fetch → classify → upload → done, where classify and upload run once per mail.
 const LOOP: FlowGraph = {
   edges: [
     { from: "trigger", label: null, to: "fetch" },
@@ -346,10 +338,8 @@ const LOOP_SITES: readonly StepSite[] = [
 
 describe("step families", () => {
   const finished = run({ finishedAt: at(10_000), status: "succeeded" });
-  // The mails classify side by side, then upload one by one: b starts first, so it plays first.
   const steps = [
     step("fetch", 0, 1_000),
-    // The SDK's claim is a step too; its family has no call site, so it names no pass.
     step("claim:inbox:b", 1_000, 1_000),
     step("classify:b", 1_000, 1_800),
     step("classify:a", 1_100, 2_000),
@@ -395,7 +385,6 @@ describe("step families", () => {
       trigger: "done",
       upload: "idle",
     });
-    // The total is unknown: the run never reached the items after b.
     expect(runPass(position, LOOP_FAMILIES)).toEqual({ index: 2, item: "b", of: null });
     expect(track.nodes.find((node) => node.id === "classify")?.meta).toBe("failed at item 2 · b");
     const replay = buildReplay(dead, [...died.values()], LOOP_SITES);
@@ -448,7 +437,6 @@ describe("step families", () => {
   });
 
   it("orders and numbers overlapping items by when they started, not when they finished", () => {
-    // a starts first and finishes last; b and c start later and finish before it.
     const overlapping = [
       step("fetch", 0, 1_000),
       step("upload:a", 1_000, 3_000),
@@ -469,7 +457,6 @@ describe("step families", () => {
       { index: 2, item: "b", of: 3 },
       { index: 3, item: "c", of: 3 },
     ]);
-    // A live run numbers the same items the same way.
     const live = new Map(overlapping.map((one) => [one.stepKey, one]));
     live.set("upload:a", step("upload:a", 1_000, null));
     expect(runPass({ steps: live, waiting: null }, LOOP_FAMILIES)).toEqual({
@@ -504,10 +491,6 @@ describe("step families", () => {
   });
 });
 
-// check{Taken?} ─yes→ accepted ─→ ship (step)
-//               ─no→  rejected ─→ archive (step)
-// Both lanes of the decision lead to narration nodes, and only the step behind a lane tells which
-// one the run took.
 describe("trackForRun with a decision between narration nodes", () => {
   const BRANCH: FlowGraph = {
     edges: [
@@ -645,7 +628,6 @@ describe("trackForRun with a decision between narration nodes", () => {
       }
     }
     const flow: FlowGraph = { edges, nodes };
-    // Path enumeration would not return within the test timeout.
     const track = trackForRun(flow, run({}), { steps: new Map(), waiting: null }, new Set());
     expect(track.nodes).toHaveLength(nodes.length);
   });

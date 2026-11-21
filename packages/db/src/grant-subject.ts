@@ -1,13 +1,8 @@
-/**
- * A grant row names its subject in one of three columns, `user_id`, `team_id` or
- * `service_account_id` (schema.ts, grantSubject). These map a Subject to and from them.
- */
 import { eq } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 
 import type { Subject } from "./access.js";
 
-/** The columns of a grant table that name its subject. */
 export interface SubjectColumns {
   readonly userId: PgColumn;
   readonly teamId: PgColumn;
@@ -36,7 +31,6 @@ function subjectId(subject: Subject): string {
   }
 }
 
-/** The subject columns of a grant row to insert. */
 export function subjectValues(subject: Subject) {
   return {
     serviceAccountId: subject.kind === "service-account" ? subject.serviceAccountId : null,
@@ -45,12 +39,10 @@ export function subjectValues(subject: Subject) {
   };
 }
 
-/** The condition that a grant row names `subject`. */
 export function namesSubject(table: SubjectColumns, subject: Subject) {
   return eq(subjectColumn(table, subject), subjectId(subject));
 }
 
-/** The subject a grant row names; the database keeps exactly one of its columns set. */
 export function subjectOfRow(row: {
   readonly userId: string | null;
   readonly teamId: string | null;

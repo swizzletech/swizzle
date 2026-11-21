@@ -1,11 +1,11 @@
-// One worktree's dev stack: Postgres and Valkey in a compose project of its own, and the api,
-// scheduler, worker and web on the host under turbo. Several worktrees run it at once. The two
-// modes keep apart projects and state, so a fresh stack never touches the data `just dev` keeps.
+// Each worktree has separate Compose projects for persistent, fresh, and verification data.
+// The API, scheduler, worker and web run on the host under turbo.
 //   node scripts/dev-stack.mts dev            keep this worktree's data across runs (`just dev`)
 //   node scripts/dev-stack.mts fresh          start from the seed, delete the data on stop (`just dev-fresh`)
-//   node scripts/dev-stack.mts down [mode]    stop one or both modes (`just dev-down` stops both)
+//   node scripts/dev-stack.mts down [mode]    stop one project or all three
 //   node scripts/dev-stack.mts status <mode>  check the recorded orchestrator, exit 1 when stopped
 //   node scripts/dev-stack.mts run -- <cmd>   run <cmd> against the databases of `just dev` (the db-* recipes)
+//   node scripts/dev-stack.mts verify -- <cmd> run <cmd> against this worktree's verification databases
 // Plain Node runs this file, so it is the one process the recipe signals: on SIGTERM, SIGINT or
 // SIGHUP it stops every process group it started and the containers, then exits. It also runs
 // the stack's mail server, which keeps every invitation and reset mail in `mailbox` and prints it.
@@ -20,19 +20,24 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { startMailSink } from "../test/mail-sink.ts";
 import type { CommandExit } from "./dev-stack-supervisor.mts";
-import { stopTimeoutMs } from "./dev-stack-timeout.ts";
+import { composeTeardownTimeoutMs, stopTimeoutMs } from "./dev-stack-timeout.ts";
 import { ensureEnvFile, secret } from "./env-file.ts";
 import { processOwnerState, readProcessIdentity } from "./process-identity.ts";
 
 /** `dev` keeps its data across runs; `fresh` starts from the seed and deletes its data on stop. */
 type Mode = "dev" | "fresh";
+type ProjectMode = Mode | "verify";
 
 /** What the recipe asked for. */
 type Command =
   | { readonly kind: "start"; readonly mode: Mode }
-  | { readonly kind: "down"; readonly modes: readonly Mode[] }
+  | { readonly kind: "down"; readonly modes: readonly ProjectMode[] }
   | { readonly kind: "status"; readonly mode: Mode }
-  | { readonly kind: "run"; readonly argv: readonly [string, ...string[]] };
+  | {
+      readonly kind: "run";
+      readonly mode: "dev" | "verify";
+      readonly argv: readonly [string, ...string[]];
+    };
 
 /**
  * Where one worktree keeps the stack of one mode. Derived from the checkout path and the mode, so
@@ -109,12 +114,15 @@ const MEMBER_EMAIL = "member@swizzle.test";
 const ENVIRONMENT = "staging";
 const COMPOSE_FILE = "infra/docker/compose.dev.yml";
 const READY_TIMEOUT_MS = 180_000;
+const SHUTDOWN_START_TIMEOUT_MS = 15_000;
 
 function parseCommand(argv: readonly string[]): Command {
   const [verb, separator, ...rest] = argv;
   if (verb === "dev" || verb === "fresh") return { kind: "start", mode: verb };
   if (verb === "down" && rest.length === 0 && separator === undefined)
-    return { kind: "down", modes: ["dev", "fresh"] };
+    return { kind: "down", modes: ["dev", "fresh", "verify"] };
+  if (verb === "down" && rest.length === 0 && separator === "verify")
+    return { kind: "down", modes: ["verify"] };
   if (
     (verb === "down" || verb === "status") &&
     rest.length === 0 &&
@@ -125,11 +133,11 @@ function parseCommand(argv: readonly string[]): Command {
       : { kind: "status", mode: separator };
   }
   const [program, ...args] = rest;
-  if (verb === "run" && separator === "--" && program !== undefined) {
-    return { kind: "run", argv: [program, ...args] };
+  if ((verb === "run" || verb === "verify") && separator === "--" && program !== undefined) {
+    return { kind: "run", mode: verb === "run" ? "dev" : "verify", argv: [program, ...args] };
   }
   throw new Error(
-    "usage: node scripts/dev-stack.mts dev | fresh | down [dev|fresh] | status <dev|fresh> | run -- <command>",
+    "usage: node scripts/dev-stack.mts dev | fresh | down [dev|fresh|verify] | status <dev|fresh> | (run|verify) -- <command>",
   );
 }
 
@@ -138,12 +146,13 @@ function git(...args: string[]): string {
 }
 
 /** The name of each mode's project and state directory; both begin `swizzle-dev`. */
-const NAMES = { dev: "swizzle-dev", fresh: "swizzle-dev-fresh" } as const satisfies Record<
-  Mode,
-  string
->;
+const NAMES = {
+  dev: "swizzle-dev",
+  fresh: "swizzle-dev-fresh",
+  verify: "swizzle-dev-verify",
+} as const satisfies Record<ProjectMode, string>;
 
-function resolveWorktree(mode: Mode): Worktree {
+function resolveWorktree(mode: ProjectMode): Worktree {
   const root = git("rev-parse", "--show-toplevel");
   const directory = path
     .basename(root)
@@ -176,13 +185,56 @@ async function loadDevEnv(): Promise<DevEnv> {
   return values as DevEnv;
 }
 
-function compose(worktree: Worktree, env: DevEnv, args: readonly string[]): string {
-  return execFileSync("docker", ["compose", "-p", worktree.project, "-f", COMPOSE_FILE, ...args], {
-    cwd: worktree.root,
-    encoding: "utf8",
-    env: { ...process.env, ...env },
-    stdio: ["ignore", "pipe", "inherit"],
+function docker(
+  worktree: Worktree,
+  env: DevEnv,
+  args: readonly string[],
+  timeout?: number,
+  stdout: "pipe" | "inherit" = "pipe",
+): string {
+  return (
+    execFileSync("docker", args, {
+      cwd: worktree.root,
+      encoding: "utf8",
+      env: { ...process.env, ...env },
+      stdio: ["ignore", stdout, "inherit"],
+      timeout,
+      killSignal: "SIGKILL",
+    }) ?? ""
+  );
+}
+
+function compose(
+  worktree: Worktree,
+  env: DevEnv,
+  args: readonly string[],
+  timeout?: number,
+): string {
+  return docker(
+    worktree,
+    env,
+    ["compose", "-p", worktree.project, "-f", COMPOSE_FILE, ...args],
+    timeout,
+    timeout === undefined ? "pipe" : "inherit",
+  );
+}
+
+function assertProjectRemoved(worktree: Worktree, env: DevEnv): void {
+  const filter = `label=com.docker.compose.project=${worktree.project}`;
+  const queries = {
+    containers: ["ps", "--all", "--format", "{{.Names}}"],
+    volumes: ["volume", "ls", "--format", "{{.Name}}"],
+    networks: ["network", "ls", "--format", "{{.Name}}"],
+  };
+  const remaining = Object.entries(queries).flatMap(([kind, args]) => {
+    const names = docker(worktree, env, [...args, "--filter", filter], composeTeardownTimeoutMs);
+    return names.trim() ? [`${kind}: ${names.trim().split("\n").join(", ")}`] : [];
   });
+  if (remaining.length > 0) {
+    throw new Error(
+      `${worktree.project} still has Docker resources (${remaining.join("; ")}). Rerun just dev-down to continue cleanup.`,
+    );
+  }
 }
 
 /** Starts the containers, from empty volumes when fresh, and returns their host ports. */
@@ -349,6 +401,41 @@ async function status(mode: Mode): Promise<number> {
   return pid === undefined ? 1 : 0;
 }
 
+function shutdownMarker(worktree: Worktree, owner: ProcessGroup): string {
+  return path.join(worktree.stateDirectory, `stopping-${owner.pid}-${owner.incarnation}`);
+}
+
+async function stopOrchestrator(worktree: Worktree, record: StackRecord): Promise<void> {
+  const pid = ownedOrchestrator(worktree, record);
+  if (pid === undefined) return;
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch (error) {
+    if (ownedOrchestrator(worktree, record) === undefined) return;
+    throw error;
+  }
+  const marker = shutdownMarker(worktree, record);
+  const startDeadline = performance.now() + stopTimeoutMs + SHUTDOWN_START_TIMEOUT_MS;
+  let teardownDeadline: number | undefined;
+  while (ownedOrchestrator(worktree, record) !== undefined) {
+    const now = performance.now();
+    if (teardownDeadline === undefined && existsSync(marker)) {
+      teardownDeadline = now + composeTeardownTimeoutMs;
+    }
+    if (now >= (teardownDeadline ?? startDeadline)) {
+      if (ownedOrchestrator(worktree, record) === undefined) return;
+      const phase =
+        teardownDeadline === undefined
+          ? "without starting Compose teardown"
+          : "and is stuck in Compose teardown";
+      throw new Error(
+        `Orchestrator pid ${pid} survived SIGTERM ${phase}. Refusing cleanup. Confirm the PID still belongs to this worktree, then run kill -KILL ${pid} and rerun just dev-down.`,
+      );
+    }
+    await delay(100);
+  }
+}
+
 /**
  * Asks each group's leader, its supervisor, to stop the command, and kills the whole group once
  * the grace period ends. Signals a group only while its leader matches.
@@ -419,12 +506,14 @@ async function start(worktree: Worktree, mode: Mode): Promise<number> {
   // them before starting anew.
   if (previous !== undefined) await stopGroups(survivingGroups(worktree, previous));
   if (previous?.tailnetUrl !== undefined) tailscaleServe(previous.ports.web, "off");
+  if (previous !== undefined) await rm(shutdownMarker(worktree, previous), { force: true });
   const artifacts = path.join(worktree.stateDirectory, "artifacts");
   const mailbox = path.join(worktree.stateDirectory, "mailbox.txt");
   const forgetData = async () => {
     await rm(artifacts, { force: true, recursive: true });
     await rm(mailbox, { force: true });
   };
+  await mkdir(worktree.stateDirectory, { recursive: true });
   if (fresh) await forgetData();
 
   const groups: ProcessGroup[] = [];
@@ -436,6 +525,10 @@ async function start(worktree: Worktree, mode: Mode): Promise<number> {
     stopping = true;
     if (published !== undefined) tailscaleServe(published, "off");
     await stopGroups(groups);
+    await writeFile(
+      shutdownMarker(worktree, { pid: process.pid, incarnation: identity.incarnation }),
+      "",
+    );
     compose(worktree, env, fresh ? ["down", "--volumes", "--remove-orphans"] : ["stop"]);
     if (fresh) await forgetData();
     process.exit(code);
@@ -450,7 +543,6 @@ async function start(worktree: Worktree, mode: Mode): Promise<number> {
     ]);
     // The stack's own worker, as in the packaged stack: it serves every project and environment.
     // The token stays with the worktree, so a restart keeps the same identity and its revocation.
-    await mkdir(worktree.stateDirectory, { recursive: true });
     const { values: local } = await ensureEnvFile(
       path.join(worktree.stateDirectory, "local-worker.env"),
       "# The local worker token of this worktree's dev stack (scripts/dev-stack.mts).\nSWIZZLE_LOCAL_WORKER_TOKEN=\n",
@@ -556,40 +648,34 @@ async function start(worktree: Worktree, mode: Mode): Promise<number> {
 
 /**
  * Stops this worktree's stack of each mode, also after its recipe was killed: its processes and
- * containers. The fresh stack's data goes with it; the data of `just dev` stays.
+ * containers. The fresh and verification projects lose their data; the data of `just dev` stays.
  */
-async function down(modes: readonly Mode[]): Promise<number> {
-  // Preflight every selected record before touching either stack.
-  for (const mode of modes) {
-    const worktree = resolveWorktree(mode);
-    const record = await readRecord(worktree);
+async function down(modes: readonly ProjectMode[]): Promise<number> {
+  const stacks = await Promise.all(
+    modes.map(async (mode) => {
+      const worktree = resolveWorktree(mode);
+      return { mode, worktree, record: await readRecord(worktree) };
+    }),
+  );
+  // Preflight every selected record before touching any stack.
+  for (const { worktree, record } of stacks) {
     if (record !== undefined) ownedOrchestrator(worktree, record);
   }
   const env = await loadDevEnv();
-  for (const mode of modes) {
-    const worktree = resolveWorktree(mode);
-    const record = await readRecord(worktree);
+  for (const { worktree, record } of stacks) {
+    if (record !== undefined) await stopOrchestrator(worktree, record);
+  }
+  for (const { mode, worktree, record } of stacks) {
     if (record !== undefined) {
-      // A live recipe stops its own groups and containers; wait for it, then sweep what is left.
-      const recipe = ownedOrchestrator(worktree, record);
-      if (recipe !== undefined) process.kill(recipe, "SIGTERM");
-      const deadline = Date.now() + 30_000;
-      while (
-        recipe !== undefined &&
-        ownedOrchestrator(worktree, record) !== undefined &&
-        Date.now() < deadline
-      )
-        await delay(100);
-      if (recipe !== undefined && ownedOrchestrator(worktree, record) !== undefined)
-        throw new Error(`Orchestrator pid ${recipe} survived SIGTERM; refusing cleanup.`);
       await stopGroups(survivingGroups(worktree, record));
       if (record.tailnetUrl !== undefined) tailscaleServe(record.ports.web, "off");
     }
     if (mode === "dev") {
-      compose(worktree, env, ["stop"]);
+      compose(worktree, env, ["stop"], composeTeardownTimeoutMs);
       process.stdout.write(`Stopped ${worktree.project}; its data stays.\n`);
     } else {
-      compose(worktree, env, ["down", "--volumes", "--remove-orphans"]);
+      compose(worktree, env, ["down", "--volumes", "--remove-orphans"], composeTeardownTimeoutMs);
+      assertProjectRemoved(worktree, env);
       await rm(worktree.stateDirectory, { force: true, recursive: true });
       process.stdout.write(`Removed ${worktree.project} and its data.\n`);
     }
@@ -619,7 +705,7 @@ async function main(): Promise<number> {
   if (command.kind === "start") return start(resolveWorktree(command.mode), command.mode);
   if (command.kind === "down") return down(command.modes);
   if (command.kind === "status") return status(command.mode);
-  return run(resolveWorktree("dev"), command.argv);
+  return run(resolveWorktree(command.mode), command.argv);
 }
 
 process.exitCode = await main().catch((error: unknown) => {

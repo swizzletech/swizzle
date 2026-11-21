@@ -1,22 +1,11 @@
-// Writes the KEY=value env files the scripts generate with fresh secrets: the packaged stack's
-// .env (scripts/init-env.ts), the throwaway env of `just smoke` and `just perf`
-// (scripts/packaged-stack.mts) and the per-user dev.env (scripts/dev-stack.mts). Plain Node runs
-// it, so it uses erasable TypeScript only.
-
 import { execFileSync } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { link, readFile, rename, rm, writeFile } from "node:fs/promises";
 
-/** A URL-safe secret of `bytes` random bytes. */
 export function secret(bytes = 32): string {
   return randomBytes(bytes).toString("base64url");
 }
 
-/**
- * What `.env.example` leaves blank: fresh credentials and the compose project that holds the
- * stack's volumes. The project carries the credentials' name, so volumes a former env file
- * initialized never meet the passwords of another.
- */
 export function packagedStackValues(project: string) {
   return {
     SWIZZLE_ENCRYPTION_KEY: secret(32),
@@ -29,19 +18,11 @@ export function packagedStackValues(project: string) {
   };
 }
 
-/** What `ensureEnvFile` left behind. */
 export interface EnvFileState {
-  /** Whether this call created the file. */
   readonly created: boolean;
-  /** The file's `KEY=value` lines after the call, the ones every concurrent caller sees. */
   readonly values: Readonly<Record<string, string>>;
 }
 
-/**
- * Creates `file` from `template` once, or validates its required `values` keys without changing it.
- * Each caller writes a private draft, then links it to the final name without replacing an
- * existing file. Concurrent callers read the same complete file and keep its credentials.
- */
 export async function ensureEnvFile(
   file: string,
   template: string,
@@ -72,12 +53,10 @@ export async function ensureEnvFile(
   }
 }
 
-/** Retires the persistent image tag; the packaged API now reports its own code version. */
 export function removeImageTag(file: string): Promise<boolean> {
   return updateEnvFile(file, { SWIZZLE_IMAGE_TAG: undefined });
 }
 
-/** The CPU count of the Docker engine the Docker CLI selects, which bounds every `cpus` limit. */
 export function dockerCpus(): number {
   const output = execFileSync("docker", ["info", "--format", "{{.NCPU}}"], {
     encoding: "utf8",
@@ -90,11 +69,6 @@ export function dockerCpus(): number {
   return cpus;
 }
 
-/**
- * Sizes a CPU limit to a Docker engine with `hostCpus` CPUs, which refuses a container that asks
- * for more. An empty value becomes `preferred`, or the host's count when that is smaller. An
- * explicit value stays, and one above the host throws an error that names it.
- */
 export function cpuLimit(
   name: string,
   value: string | undefined,
@@ -111,12 +85,6 @@ export function cpuLimit(
   return value;
 }
 
-/**
- * Writes the packaged stack's CPU limits into `file`, sized by `cpuLimit` to the Docker host, and
- * returns the keys it changed. A file without a SWIZZLE_WORKER_CPUS line predates sizing, so its
- * SWIZZLE_MAX_RUN_CPUS=2 is the 1.0.2 template's, never started a smaller host's stack, and is
- * sized like an empty one. Compose prefers an exported limit to the file's, so that must fit too.
- */
 export async function sizeCpuLimits(file: string, hostCpus: number): Promise<string[]> {
   const values = parseEnv(await readFile(file, "utf8"));
   const predatesSizing = values.SWIZZLE_WORKER_CPUS === undefined;
@@ -144,10 +112,6 @@ export async function sizeCpuLimits(file: string, hostCpus: number): Promise<str
   return changed.map(([name]) => name);
 }
 
-/**
- * Sets each key's lines in `file` to its value, appending a key the file lacks, and removes the
- * lines of a key whose value is undefined. Returns whether the file changed.
- */
 async function updateEnvFile(
   file: string,
   changes: Readonly<Record<string, string | undefined>>,
@@ -181,8 +145,6 @@ function fromTemplate(file: string, template: string, values: Readonly<Record<st
   return content;
 }
 
-// The only local worker token provisionLocalWorker (packages/db/src/local-worker.ts) accepts,
-// the one packagedStackValues generates. Checkouts older than 1.0.0 wrote another format.
 const LOCAL_WORKER_TOKEN = /^swz_[A-Za-z0-9_-]{43}$/u;
 
 function validate(file: string, content: string, required: Readonly<Record<string, string>>) {
@@ -206,7 +168,6 @@ function validate(file: string, content: string, required: Readonly<Record<strin
   return values;
 }
 
-/** Reads `KEY=value` lines as Compose does: quotes enclose a value, and ` #` starts a comment. */
 function parseEnv(text: string): Record<string, string> {
   const values: Record<string, string> = {};
   for (const line of text.split("\n")) {

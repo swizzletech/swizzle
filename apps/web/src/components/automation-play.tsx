@@ -1,11 +1,3 @@
-// Automation Play: the deployed code of a run beside its track. The step the run is in reads in
-// full colour, the rest greys out, and every step's lines carry a bracket and a tag in the state's
-// colour. An open run follows the worker live; a finished run replays on a compressed clock, so a
-// two-day approval passes in a second and a half, and a run that looped over items replays one
-// pass per item. The item counter under the track reads the same live, in the replay and at its
-// end, where a failed run names the item it died in. A step's code and its station meet through
-// the step family (`stepFamily`). Display only: nothing here edits code.
-
 import { type StepKind, type StepSite, stepFamily } from "@swizzle/config/browser";
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -108,7 +100,6 @@ export function AutomationPlay(props: {
   );
 }
 
-/** Whether the code reads as deployed, follows a live run, or replays a finished one. */
 function PlayState({ run }: { readonly run: RunDetail | null }) {
   if (run === null) return <span className="t-meta">No run selected: the code as deployed</span>;
   if (!isOpenRun(run.status)) return null;
@@ -191,7 +182,6 @@ function LivePlay(props: {
   );
 }
 
-/** Without a flowchart there is no track to ask; the newest started step's family is the active one. */
 function liveActive(position: RunPosition): string | null {
   if (position.waiting !== null) return stepFamily(position.waiting.stepKey);
   let latest: { key: string; at: number } | null = null;
@@ -212,12 +202,10 @@ function ReplayPlay(props: {
     () => buildReplay(props.run, steps, props.flow.sites),
     [props.run, steps, props.flow.sites],
   );
-  // The clock lives in a ref as well as in state: the frame loop reads the ref, so a frame that
-  // fires after the end cannot restart a finished replay from the stale state it closed over.
   const [playMs, setPlayMs] = useState<number | null>(null);
-  const clock = useRef<number | null>(null);
+  const latestReplayClock = useRef<number | null>(null);
   const setClock = (ms: number | null) => {
-    clock.current = ms;
+    latestReplayClock.current = ms;
     setPlayMs(ms);
   };
   const [playing, setPlaying] = useState(false);
@@ -226,15 +214,15 @@ function ReplayPlay(props: {
     let last = performance.now();
     let frame = 0;
     const tick = (now: number) => {
-      const next = (clock.current ?? 0) + (now - last);
+      const next = (latestReplayClock.current ?? 0) + (now - last);
       last = now;
       if (next >= replay.length) {
-        clock.current = null;
+        latestReplayClock.current = null;
         setPlayMs(null);
         setPlaying(false);
         return;
       }
-      clock.current = next;
+      latestReplayClock.current = next;
       setPlayMs(next);
       frame = requestAnimationFrame(tick);
     };
@@ -249,8 +237,6 @@ function ReplayPlay(props: {
       </div>
     );
   }
-  // At the end the run's own record shows, with every duration exact: a succeeded run all its
-  // items together, any other the item it ended in.
   const atEnd = playMs === null;
   const position = atEnd ? final : positionAt(replay, playMs, props.flow.sites);
   const pass = !atEnd
@@ -297,10 +283,6 @@ function ReplayPlay(props: {
   );
 }
 
-/**
- * Play, pause and a scrubber over the replay's compressed clock, with the real time it stands for,
- * the item counter when the run looped, and a line when the run did no step.
- */
 function Transport(props: {
   readonly onPause: () => void;
   readonly onPlay: () => void;
@@ -344,10 +326,6 @@ function Transport(props: {
   );
 }
 
-/**
- * The item a looping run is on, "Item 37 of 200" with its id, or "Item 37" while the total is
- * unknown; without a current item, how many items the run did. Nothing for a run that named none.
- */
 function ItemCounter(props: { readonly items: number | null; readonly pass: ItemPass | null }) {
   const { pass } = props;
   if (pass === null && (props.items ?? 0) === 0) return null;
@@ -361,7 +339,6 @@ function ItemCounter(props: { readonly items: number | null; readonly pass: Item
   );
 }
 
-/** The run time a point of the replay clock stands for. */
 function realTimeAt(replay: Replay, playMs: number): number {
   let real = 0;
   for (const span of replay.spans) {
@@ -395,10 +372,8 @@ function tagWords(site: StepSite, station: TrackNode | undefined): string {
   return station.meta ?? station.state;
 }
 
-/** The rail, the code and, on the phone, the pinned step and the bars at the bottom. */
 function PlayBody(props: {
   readonly active: string | null;
-  /** The run waiting at an approval, for the phone's Approve and Reject bar. */
   readonly approval: RunDetail | null;
   readonly flow: AutomationFlow;
   readonly source: string;
@@ -406,7 +381,6 @@ function PlayBody(props: {
   readonly transport: ReactNode;
 }) {
   const [focus, setFocus] = useState<string | null>(null);
-  // A click pins a step until the run moves on; the code then follows the run to its new step.
   useEffect(() => {
     setFocus(null);
     if (props.active !== null) scrollToStep(props.active);
@@ -503,12 +477,10 @@ function CodePane(props: {
 }) {
   const lines = props.source.split("\n");
   const sites = props.flow.sites;
-  // The first call of each family is where a click on its station scrolls to.
   const anchors = new Map<string, number>();
   for (const site of sites) {
     if (!anchors.has(stepFamily(site.key))) anchors.set(stepFamily(site.key), site.startLine);
   }
-  // The innermost site that spans a line owns it, so a step nested in a step keeps its own bracket.
   const siteAt = (line: number): StepSite | undefined =>
     sites
       .filter((site) => site.startLine <= line && line <= site.endLine)
@@ -559,7 +531,6 @@ function CodePane(props: {
   );
 }
 
-/** The station as a card above its code on the phone, where there is no room for a rail. */
 function StationCard(props: {
   readonly onSelect: (node: TrackNode) => void;
   readonly site: StepSite;

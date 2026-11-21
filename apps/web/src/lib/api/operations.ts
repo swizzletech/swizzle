@@ -1,11 +1,8 @@
-// The instance's health, its operations summary and the audit history.
-
 import type { AuditResponse, HealthResponse, OperationsSummaryResponse } from "../api";
 import { request } from "./request";
 
 export function operationsCalls(environment: string) {
   return {
-    /** The public liveness answer, which names the platform version. */
     async getHealth() {
       return await request<HealthResponse>("/health");
     },
@@ -17,7 +14,6 @@ export function operationsCalls(environment: string) {
       );
     },
 
-    /** Newest first, as far as the caller may read; `actor` names a person or service account by id. */
     async listAudit(filters: {
       readonly actor?: string;
       readonly automation?: string;

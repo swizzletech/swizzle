@@ -15,7 +15,10 @@ import {
 } from "@swizzle/db";
 
 import { AutomationRuntimeError, getErrorMessage } from "./errors.js";
-import { getDeploymentConnectionHealth, revokeDeletedConnection } from "./platform-connections.js";
+import {
+  getDeploymentConnectionHealth,
+  revokeDeletedConnectionBestEffort,
+} from "./platform-connections.js";
 import type {
   DeleteAutomationResultRecord,
   DeleteProjectResultRecord,
@@ -33,7 +36,6 @@ import {
 } from "./runtime-requirements.js";
 import { createArtifactStorageForReference } from "./storage.js";
 
-/** Lists registered groups and measured online capabilities, or the local executor itself. */
 export type ListReadinessWorkers = (input: {
   readonly projectId: string;
   readonly config: AutomationConfig;
@@ -47,7 +49,6 @@ interface DeploymentReadinessInput {
   readonly workers: readonly ReadinessWorker[];
 }
 
-/** What `workers`, the ones serving the target project and environment, say about a deployment. */
 export function evaluateDeploymentReadiness(
   input: DeploymentReadinessInput,
 ): RuntimeReadinessReport {
@@ -58,16 +59,12 @@ export function evaluateDeploymentReadiness(
   );
 }
 
-/** Refuses a deployment its workers are not ready for, naming each worker's gaps. */
 export function assertDeploymentRuntimeReadiness(
   input: DeploymentReadinessInput,
   readiness: RuntimeReadinessReport = evaluateDeploymentReadiness(input),
 ): void {
   const { workers } = input;
   if (readiness.status !== "ready") {
-    // `workers` serve the target project and environment; only those in the automation's group
-    // can take its runs. Each is named below with its gaps, so the per-worker errors are not
-    // repeated. With none in the group, the group error alone says what to change.
     const { profile } = input.config.runtime;
     const members = workers.filter((worker) =>
       worker.profiles.some(({ name }) => name === profile),
@@ -86,8 +83,6 @@ export function assertDeploymentRuntimeReadiness(
       automationIssues.length > 0
         ? automationIssues.map((issue) => issue.message).join(" ")
         : `No worker in group "${profile}" meets every requirement.`;
-    // A deployed run never sees the worker's own PATH, so neither the author nor the automation
-    // can supply a missing binary.
     const binaryRemedy = readiness.errors.some(
       (issue) => issue.code === "BINARY_REQUIREMENT_MISSING",
     )
@@ -132,8 +127,6 @@ export async function performRollback(input: {
   readonly store: ControlPlaneStore;
   readonly targetDeploymentId: string;
 }): Promise<PlatformDeploymentRecord> {
-  // A rollback runs from its target's artifact tree, and retention sweeps one environment
-  // at a time, so a target from another environment could lose the tree the rollback uses.
   const targetDeployment = await input.store.getDeploymentById(input.targetDeploymentId);
   if (
     targetDeployment === null ||
@@ -183,7 +176,6 @@ export async function performRollback(input: {
   return await enrichDeploymentRecord(input.store, newDeployment, workers);
 }
 
-/** Deletes an automation in every environment; see ControlPlaneStore.deleteAutomation. */
 export async function performDeleteAutomation(input: {
   readonly artifactsDirectory?: string;
   readonly automationName: string;
@@ -221,11 +213,6 @@ export async function performDeleteAutomation(input: {
   };
 }
 
-/**
- * Deletes a project; see ControlPlaneStore.deleteProject. Then removes each deleted automation's
- * artifact trees and revokes each deleted connection at its provider, both best-effort: the
- * records are already gone, and the first artifact error is reported.
- */
 export async function performDeleteProject(input: {
   readonly artifactsDirectory?: string;
   readonly delete: DeleteProjectInput;
@@ -248,11 +235,10 @@ export async function performDeleteProject(input: {
     });
     artifactError ??= error;
   }
-  await Promise.all(deletedConnections.map(revokeDeletedConnection));
+  await Promise.all(deletedConnections.map(revokeDeletedConnectionBestEffort));
   return { ...record, artifactError };
 }
 
-/** Removes an automation's artifact trees; the error message when that failed, else null. */
 async function removeAutomationArtifacts(input: {
   readonly artifactsDirectory?: string;
   readonly automationSlug: string;
@@ -280,7 +266,6 @@ async function removeAutomationArtifacts(input: {
   }
 }
 
-/** Moves an automation to another project; see ControlPlaneStore.moveAutomation. */
 export async function performMoveAutomation(input: {
   readonly automationName: string;
   readonly projectId: string;
@@ -373,9 +358,7 @@ async function validateArtifactExists(
   await storage.validateDeploymentArtifacts(deployment);
 }
 
-/** A registered worker as readiness sees it. */
 export interface RegisteredReadinessWorker extends ReadinessWorker {
-  /** The projects the worker serves in this environment; the local worker serves every one. */
   readonly projectIds: readonly string[] | "all";
 }
 
@@ -386,11 +369,6 @@ const NO_CAPABILITIES = {
   dependencyPackaging: { node: false, python: false },
 } as const satisfies ReadinessWorker["capabilities"];
 
-/**
- * The unrevoked workers that reach an environment, or one project of it. Grants come from the
- * registry; capabilities count only while the worker is online, so a sleeping group stays valid
- * without inventing what it can run.
- */
 export async function listRegisteredReadinessWorkers(
   registry: Pick<WorkerRegistry, "list">,
   environment: string,

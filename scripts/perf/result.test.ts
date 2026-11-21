@@ -1,7 +1,6 @@
 import { expect, test } from "vitest";
 import { compare, formatComparison, type PerfResult, parseResult, Rounds } from "./result.ts";
 
-/** A result whose only metrics took these per-round values. */
 function result(latency: number[], throughput: number[]): PerfResult {
   const rounds = new Rounds();
   for (const value of latency) rounds.record("GET /runs", "p95", "ms", "lower", value);
@@ -29,7 +28,6 @@ function result(latency: number[], throughput: number[]): PerfResult {
   };
 }
 
-/** The comparison of two runs of one scenario. */
 function judged(base: PerfResult, head: PerfResult) {
   const comparison = compare(base, head);
   if (comparison.kind !== "judged") throw new Error(`not judged: ${comparison.kind}`);
@@ -45,7 +43,6 @@ const verdicts = (base: PerfResult, head: PerfResult) =>
   ]);
 
 test("a delta inside the larger range of the rounds is no difference", () => {
-  // Medians 20 and 22; the head's rounds span 4, so +2 ms is noise, as is -50 req/s within 100.
   expect(
     verdicts(result([19, 20, 21], [1000, 1050, 1100]), result([20, 22, 24], [950, 1000, 1050])),
   ).toEqual([
@@ -79,7 +76,6 @@ test("a memory delta under the unit's resolution or the service's huge pages is 
   };
   expect(verdicts(memory(3.9), memory(4.0))).toEqual([["rss", expect.closeTo(0.1), 1, "same"]]);
   expect(verdicts(memory(3.9), memory(6.0))).toEqual([["rss", expect.closeTo(2.1), 1, "worse"]]);
-  // An idle valkey that started with 10 MiB in huge pages: the 7.9 MiB came from the start.
   expect(verdicts(memory(3.9), memory(11.8, 10))).toEqual([
     ["rss", expect.closeTo(7.9), 10, "same"],
   ]);
@@ -103,7 +99,6 @@ test("a metric one side lacks or measures in another unit is reported, not judge
 });
 
 test("runs of different profiles are not judged", () => {
-  // Twice the clients: the same code reads slower, which must not count as a regression.
   const base = { ...result([20, 20, 21], [1000, 1000, 1010]), profile: { apiConcurrency: 8 } };
   const head = { ...result([40, 40, 41], [600, 600, 610]), profile: { apiConcurrency: 16 } };
   expect(compare(base, head)).toEqual({
@@ -113,7 +108,6 @@ test("runs of different profiles are not judged", () => {
 });
 
 test("a sample that is not a finite number fails the run and names the metric", () => {
-  // A terminal run without finishedAt yields NaN, which JSON would store as null.
   expect(() =>
     new Rounds().record("run hello-webhook", "total p50", "ms", "lower", Number.NaN),
   ).toThrow("run hello-webhook total p50 measured NaN ms");

@@ -15,7 +15,6 @@ export interface DatabaseClient {
     | NodePgDatabase<typeof schema>
     | NodePgTransaction<typeof schema, ExtractTablesWithRelations<typeof schema>>;
   readonly pool: Pool;
-  /** Resolves once every connection's socket is closed, not only once the pool stops lending. */
   close(): Promise<void>;
   migrate(): Promise<void>;
 }
@@ -26,15 +25,9 @@ export function createDatabaseClient(
   const pool = new Pool({
     connectionString: options.connectionString ?? DEFAULT_DATABASE_URL,
   });
-  // An idle connection the server ends, as on a restart or a terminated backend, has already
-  // left the pool when this fires; the next query opens a new one and reports any lasting error.
-  // Unheard, the event would crash the process; a process warning reaches the service log.
   pool.on("error", (error) => {
     process.emitWarning(`Postgres ended an idle connection: ${error.message}`);
   });
-  // pg-pool's end() resolves while the sockets of idle connections are still closing, so a
-  // DROP DATABASE ... WITH (FORCE) right after close() could still reach them. The pool emits
-  // "remove" once a connection's socket has closed.
   const connections = new Set<PoolClient>();
   let onAllRemoved = () => {};
   pool.on("connect", (connection) => connections.add(connection));
@@ -63,17 +56,13 @@ export function createDatabaseClient(
   };
 }
 
-/** PostgreSQL error codes the stores turn into domain errors. */
 export const PG_ERROR = {
   foreignKeyViolation: "23503",
-  /** What a uuid column raises for text that is not a UUID. */
   invalidTextRepresentation: "22P02",
-  /** What ON DELETE RESTRICT raises, where NO ACTION raises foreignKeyViolation. */
   restrictViolation: "23001",
   uniqueViolation: "23505",
 } as const;
 
-/** PostgreSQL metadata from the cause chain Drizzle wraps it in. */
 export function causeViolation(
   error: unknown,
 ): { readonly code: string; readonly constraint: string | undefined } | undefined {
@@ -95,7 +84,6 @@ export function causeViolation(
   return undefined;
 }
 
-/** The PostgreSQL error code somewhere in the cause chain Drizzle wraps it in. */
 export function causeCode(error: unknown): string | undefined {
   return causeViolation(error)?.code;
 }

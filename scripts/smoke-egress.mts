@@ -1,4 +1,3 @@
-// Deploy both SDKs through the packaged runner and assert public HTTPS works while private egress fails.
 import assert from "node:assert/strict";
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";

@@ -209,11 +209,6 @@ export async function listQueueMetricSamples(
 
 const EXPIRE_BATCH = 500;
 
-/**
- * Deletes this environment's finished runs at or before the cutoff in batches, so no statement
- * holds many rows locked; attempts, steps, logs and usages cascade. A run whose terminal state is still being
- * written (`terminal_pending`) waits for the next pass.
- */
 export async function expireRuns(
   client: DatabaseClient,
   input: ExpireRunsInput,

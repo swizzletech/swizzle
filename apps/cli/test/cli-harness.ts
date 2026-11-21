@@ -18,47 +18,27 @@ import type { DashboardDataProvider } from "../../api/src/dashboard.js";
 import { ownerToken } from "../../api/test/people.js";
 import { saveProfileConfig } from "../src/profile.js";
 
-// The CLI's contract is the HTTP API, so its tests drive the real API server with PostgreSQL
-// stores. This file is the one place CLI tests reach into the api and db sources.
-
 export { OWNER_TOKEN, ownerToken, testPeople } from "../../api/test/people.js";
 export { buildTestServer } from "../../api/test/server-harness.js";
-
-/**
- * Shared setup for the CLI test files. Each file calls useCliTestEnvironment()
- * once at the top and drives runCli with createBufferIO(); test/support.ts holds
- * what every test file shares.
- */
 
 export const appRoot = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 export const repoRoot = path.resolve(appRoot, "../..");
 export const fixturesRoot = path.join(repoRoot, "packages/runtime/test-fixtures");
 
 export function useCliTestEnvironment(): void {
-  // Each test gets its own SWIZZLE_CONFIG_HOME, so the developer's real ~/.swizzle profiles never
-  // leak into command resolution. Its default profile signs the CLI in as a seeded instance
-  // owner, so a command that passes --api-url reaches the test server with that owner's token.
-  // Tests that exercise stored profiles set their own SWIZZLE_CONFIG_HOME.
   beforeEach(async () => {
     const env = { SWIZZLE_CONFIG_HOME: await temporaryDirectory("swizzle-cli-config-") };
     const owner = { name: "owner", token: await ownerToken(), url: "http://127.0.0.1:1" };
     await saveProfileConfig({ defaultProfile: owner.name, profiles: { owner } }, env);
     vi.stubEnv("SWIZZLE_CONFIG_HOME", env.SWIZZLE_CONFIG_HOME);
-    // The environment of buildTestServer, so a command without -e targets it whatever the
-    // developer's shell sets.
     vi.stubEnv("SWIZZLE_ENVIRONMENT", "local");
   });
 }
 
-/** Leaves the calling test without any profile, as on a machine that never added one. */
 export async function withoutProfile(): Promise<void> {
   vi.stubEnv("SWIZZLE_CONFIG_HOME", await temporaryDirectory("swizzle-cli-no-profile-"));
 }
 
-/**
- * An test platform whose owner lookup knows a dashboard stub's automation, in the default
- * project, so the access check finds it as it finds a deployed one.
- */
 export async function createPlatformForStub(automationSlug: string): Promise<PlatformServices> {
   const platform = await testPlatform();
   platform.findAutomation = async (name) =>
@@ -68,12 +48,6 @@ export async function createPlatformForStub(automationSlug: string): Promise<Pla
   return platform;
 }
 
-/**
- * Serves one deployed automation through the dashboard read model, which the
- * real API reads from Postgres and Valkey. The CLI resolves names through
- * listAutomations, renders inspect from getAutomationDetail and reads
- * readiness from getOperationsSummary.
- */
 export function createDashboardStub(
   automationSlug: string,
   triggerType: DashboardTriggerSummary["triggerType"] = "webhook",

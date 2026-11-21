@@ -11,7 +11,6 @@ import {
 import { it } from "vitest";
 import { testDatabase } from "../test/postgres.js";
 
-/** Real transactions prove single use, revocation races, exact grants, hashes and enrollment budgets. */
 async function verifyWorkers(client: DatabaseClient): Promise<void> {
   const registry = createPostgresWorkerRegistry({ client });
   const tokens = createPostgresApiTokenStore({ client });
@@ -194,7 +193,7 @@ async function verifyWorkers(client: DatabaseClient): Promise<void> {
   );
 }
 
-it("workers", async () => {
+it("enforces single-use worker credentials, project grants, and revocation", async () => {
   const client = testDatabase();
   await verifyWorkers(client);
 });

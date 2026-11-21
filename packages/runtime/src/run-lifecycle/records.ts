@@ -9,7 +9,6 @@ import { AutomationRuntimeError, getErrorMessage } from "../errors.js";
 import type { PlatformRunRecord } from "../platform-types.js";
 import type { AutomationRunFailure } from "../run-result.js";
 
-/** A step of the running execution started or finished; the server publishes it for the dashboard. */
 export interface RunStepEvent {
   readonly attempt: number;
   readonly executionNumber: number;
@@ -38,13 +37,8 @@ export async function getRunOrThrow(
   return run;
 }
 
-/** A lease on a run execution, as the execution service holds it. */
 export type RunLease = ExecutionLease & { readonly runId: string };
 
-/**
- * An attempt that failed on the platform's side: the error as its failure, with the output the
- * attempt streamed before it ended.
- */
 export function createPlatformRunFailure(
   error: unknown,
   run: PlatformRunRecord,
@@ -76,7 +70,6 @@ export function createPlatformRunFailure(
   };
 }
 
-/** The execution a run lease runs: its claim created the row with the lease. */
 export function executionOf<T extends Pick<StoredRunExecution, "executionNumber">>(
   run: { readonly executions: readonly T[]; readonly runId: string },
   lease: Pick<ExecutionLease, "executionNumber">,

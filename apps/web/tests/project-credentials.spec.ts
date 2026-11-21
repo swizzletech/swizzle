@@ -3,10 +3,6 @@ import { expect, test } from "@playwright/test";
 import type { CredentialShare, Project, SharedCredential } from "../src/lib/api";
 import { mockDashboardApi, PROJECT_ID, seededState } from "./dashboard-mock";
 
-// A project's Credentials tab: its admin accepts a credential another project offers it, and offers
-// a credential of its own to one more project and withdraws it from another, through the share
-// routes of the API.
-
 const FINANCE_ID = "00000000-0000-4000-8000-0000000000f1";
 const LEGAL_ID = "00000000-0000-4000-8000-0000000000f2";
 
@@ -56,7 +52,6 @@ test("a project admin accepts an offer, offers a credential and withdraws it", a
   const shared: SharedCredential[] = [
     { credential: { ...outgoing.credential, projectId: DEFAULT.id }, shares: [outgoing] },
   ];
-  // Each change the page sends: method, path, and the credential's project.
   const sent: (string | null)[][] = [];
   await page.route(
     (url) =>
@@ -89,7 +84,6 @@ test("a project admin accepts an offer, offers a credential and withdraws it", a
   await expect(offer.getByRole("button", { name: "End share" })).toBeVisible();
 
   const row = page.getByTestId("shared-credential").filter({ hasText: "CRM_TOKEN" });
-  // Finance holds an offer already; only Legal is left to offer it to.
   const target = row.getByRole("combobox", { name: "Project to offer CRM_TOKEN to" });
   await expect(target.locator("option")).toHaveText(["Offer to…", "Legal"]);
   await target.selectOption({ label: "Legal" });

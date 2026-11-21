@@ -4,7 +4,6 @@ import { mockDashboardApi, OK_RUN_ID, seededState } from "./dashboard-mock";
 
 const CANCELLED_RUN_ID = "9d2f7a10-aaaa-4bbb-8ccc-000000000009";
 
-/** The seeded instance, plus a run a person cancelled as verify-probe's latest. */
 async function seeded(page: Page, path: string) {
   const state = seededState();
   const ok = state.runs.find((run) => run.runId === OK_RUN_ID);
@@ -43,8 +42,6 @@ test("the Overview counts a cancelled run in Runs alone and draws it neutral", a
   await expect(stats.locator(".stats > div", { hasText: "Failed" })).toContainText("1");
   await expect(stats.locator(".stats > div", { hasText: "Runs" })).toContainText("5");
 
-  // Every hour that names the cancelled run names it apart from the one failure, which alone
-  // draws an hour full.
   const strip = page.getByTestId("automation-row").first().locator(".hour-cells");
   await expect(strip.locator("i.full")).toHaveCount(1);
   await expect(strip.locator("i.full")).toHaveAttribute("data-tip", /1 failed/u);

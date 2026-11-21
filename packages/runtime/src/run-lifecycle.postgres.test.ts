@@ -10,7 +10,6 @@ import { NO_SIGNALS } from "./api-signals.js";
 import { createOutputRedactor } from "./output-redaction.js";
 import { applyRunEvents, finishRunExecution, type RunStepEvent } from "./run-lifecycle.js";
 
-// Automations report step results as JSON lines on stderr; everything else on stderr is a log.
 describe("structured stderr step events", () => {
   it("persists a valid step_result event", async () => {
     const run = await createRun();
@@ -78,7 +77,6 @@ describe("structured stderr step events", () => {
 
   it("lets a result bring the run's total exactly to the limit, also after its own start", async () => {
     const run = await createRun();
-    // 80 results of 64 KiB each are exactly 5 MiB; the 80th follows its start, whose row is replaced.
     const value = "x".repeat(64 * 1024 - 2);
     for (let i = 1; i < 80; i += 1) run.consume(stepLine(`step-${i}`, value));
     run.consume(startLine("step-80"));
@@ -168,7 +166,6 @@ async function createRun() {
     failure: null as unknown,
     pending,
     reported: [] as RunStepEvent[],
-    /** Resolves to the unfinished line, which the next chunk passes back as `buffer`. */
     consume(chunk: string, options: { executionNumber?: number; buffer?: string } = {}) {
       const applied = last.then(async () => {
         const executionNumber = options.executionNumber ?? 1;
@@ -217,8 +214,6 @@ it("skips child creation when cancellation wins during the waiting transition", 
   const update = store.updateRunState.bind(store);
   const waiting = vi.spyOn(store, "updateRunState").mockImplementation(async (change) => {
     if (change.status === "waiting") {
-      // The suspended execution already exists. A separate committed cancellation wins before
-      // the waiting UPDATE, whose terminal guard must prevent child creation.
       expect((await store.getRun(runId))?.executions[0]?.status).toBe("suspended");
       await store.cancelRun({ runId, finishedAt: new Date().toISOString() });
     }

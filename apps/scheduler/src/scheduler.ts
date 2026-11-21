@@ -17,7 +17,6 @@ interface SchedulerLogger {
 export interface CreateSchedulerServiceOptions {
   readonly batchSize?: number;
   readonly enableLeaderLock?: boolean;
-  /** Discovers the instance namespaces on each pass, including environments added after startup. */
   readonly listEnvironments: () => Promise<readonly string[]>;
   readonly instanceId?: string;
   readonly intervalMs?: number;
@@ -66,8 +65,6 @@ export async function createSchedulerService(
         instanceId: options.instanceId ?? `scheduler-${process.pid}`,
         key: options.leaderKey ?? "swizzle:scheduler:leader",
         ...(options.logger ? { logger: options.logger } : {}),
-        // A new leader reconciles at once instead of waiting for its next tick: leadership
-        // changes on boot and after a Valkey restart, which is when queue jobs go missing.
         onLeaderAcquired: () => {
           void reconcileRunsOnce().catch((error) => {
             options.logger?.error(error, "Run reconciliation failed.");
@@ -78,8 +75,7 @@ export async function createSchedulerService(
       })
     : null;
 
-  // Wait for every namespace even if one pass fails.
-  const acrossEnvironments = async <T>(
+  const settleAcrossEnvironments = async <T>(
     operation: (environment: string) => Promise<T>,
   ): Promise<T[]> => {
     const results = await Promise.allSettled(
@@ -109,7 +105,7 @@ export async function createSchedulerService(
     }
 
     const runs = (
-      await acrossEnvironments(async (environment) => {
+      await settleAcrossEnvironments(async (environment) => {
         if (polling.has(environment)) {
           options.logger?.debug(
             { environment },
@@ -125,7 +121,6 @@ export async function createSchedulerService(
             limit: options.batchSize ?? DEFAULT_BATCH_SIZE,
             now,
           });
-          // A failing check query must not hold up cron runs; the next tick tries again.
           try {
             const checks = await platform.enqueueDueApiChecks({ environment, now });
             if (checks > 0)
@@ -155,7 +150,6 @@ export async function createSchedulerService(
     return runs;
   };
 
-  // Reconstructs queued jobs lost with Valkey. Execution leases are reconciled by the API.
   const reconcileRunsOnce = async (): Promise<void> => {
     if (reconciling) {
       options.logger?.debug(
@@ -171,7 +165,7 @@ export async function createSchedulerService(
 
     reconciling = true;
     try {
-      await acrossEnvironments(async (environment) => {
+      await settleAcrossEnvironments(async (environment) => {
         const queued = await platform.reconcileQueuedRuns({ environment });
         if (queued.requeuedCount > 0) {
           options.logger?.warn(
@@ -204,7 +198,7 @@ export async function createSchedulerService(
 
     maintaining = true;
     try {
-      await acrossEnvironments(async (environment) => {
+      await settleAcrossEnvironments(async (environment) => {
         const result = await platform.runMaintenance({ environment, now });
         options.logger?.debug(
           {
@@ -237,7 +231,7 @@ export async function createSchedulerService(
 
     resumingWaitingRuns = true;
     try {
-      const counts = await acrossEnvironments(async (environment) => {
+      const counts = await settleAcrossEnvironments(async (environment) => {
         const result = await platform.resumeDueWaitingRuns({
           environment,
           limit: options.batchSize ?? DEFAULT_BATCH_SIZE,

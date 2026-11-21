@@ -1,10 +1,6 @@
-// Audit events in words: what an event did and who did it.
-
 import type { AuditEvent, AuditedRoute } from "../api";
 import { versionInWords } from "./runs";
 
-// The contract lists every route the audit records, so a new one fails the type check here until
-// it has words.
 const ROUTE_WORDS: Readonly<Record<AuditedRoute, string>> = {
   "POST /approvals/:token": "Decided an approval through its link",
   "POST /events/:token": "Reported an event through its link",
@@ -84,10 +80,6 @@ function isAuditedRoute(action: string): action is AuditedRoute {
   return Object.hasOwn(ROUTE_WORDS, action);
 }
 
-/**
- * What an audit event did. A request's route names it, a deployment adds its version, and an event
- * outside a request (a webhook delivery, a schedule, `just recover-owner`) is named by its change.
- */
 export function auditActionInWords(
   event: Pick<AuditEvent, "action" | "status"> & Partial<Pick<AuditEvent, "change">>,
 ): string {
@@ -99,7 +91,6 @@ export function auditActionInWords(
   return done;
 }
 
-/** In order: a deployment's version, the route, the change outside a request, a host command. */
 function doneInWords(action: string, change: AuditEvent["change"] | null): string {
   if (change?.kind === "deployment") return auditChangeInWords(change);
   if (isAuditedRoute(action)) return ROUTE_WORDS[action];
@@ -144,7 +135,6 @@ function auditChangeInWords(change: NonNullable<AuditEvent["change"]>): string {
   }
 }
 
-/** The identity as it was when the change happened. */
 export function auditActorInWords(actor: AuditEvent["actor"]): string {
   switch (actor.kind) {
     case "person":

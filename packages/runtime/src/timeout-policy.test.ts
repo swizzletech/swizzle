@@ -10,7 +10,6 @@ const HOUR = 3_600_000;
 const MINUTE = 60_000;
 const GLOBAL_1H = { SWIZZLE_MAX_RUN_TIMEOUT: "1h" } satisfies NodeJS.ProcessEnv;
 
-// The effective ceiling is max(global ceiling, timeout grant): a grant only ever raises it.
 describe("resolveEffectiveRunTimeoutCeiling", () => {
   it("uses the global ceiling when there is no grant", () => {
     expect(resolveEffectiveRunTimeoutCeiling({ environment: GLOBAL_1H })).toMatchObject({
@@ -61,7 +60,6 @@ describe("assertRuntimeTimeoutWithinPlatformCeiling", () => {
   });
 });
 
-// The reconciler cuts off runs at this value.
 describe("resolveEffectiveRuntimeTimeoutMs", () => {
   it("clamps to the global ceiling without a grant and to the grant with one", () => {
     expect(resolveEffectiveRuntimeTimeoutMs("3h", { environment: GLOBAL_1H })).toBe(HOUR);

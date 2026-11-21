@@ -1,10 +1,3 @@
-/**
- * Who holds access to a project, or to one of its credentials, and what the policy in access.ts
- * gives each holder. Both lists come from one load of the project's grants: each holder's
- * AccessGrants are built here in memory, not read per holder. The API's Access tab
- * (apps/api/src/access-routes.ts) and a credential's access list (credential-routes.ts) answer
- * with them; the dashboard shows each holder with one row component.
- */
 import {
   type AccessGrants,
   type CredentialGrant,
@@ -27,74 +20,46 @@ import type {
   StoredTeam,
 } from "./access-store.js";
 
-/** Who a holder is, as every holder list shows them. */
 export interface Holder {
   readonly subject: Subject;
-  /** The person's, team's or service account's name. */
   readonly name: string;
-  /** The person's email; null for a team or a service account. */
   readonly email: string | null;
-  /**
-   * The instance role by which a person reaches every project, which a holder list shows as the
-   * reason for their access. Null for a member, a team or a service account: grants alone explain
-   * their access, so a list does not disclose their instance role.
-   */
   readonly instanceRole: Exclude<InstanceRole, "member"> | null;
-  /** A suspended person keeps their grants but may do nothing until reactivated. */
   readonly suspended: boolean;
-  /** How many people a team has; null for a person or a service account. */
   readonly members: number | null;
 }
 
-/** What a holder may do in one environment. */
 export interface EnvironmentHold {
-  /** The role the policy gives them there, after a protected environment caps it. */
   readonly role: ProjectRole | null;
-  /**
-   * In a protected environment, the most their grants of it let a project role do there; null
-   * elsewhere or without such a grant. A team's grant caps every member's role.
-   */
   readonly cap: ProjectRole | null;
 }
 
-/** A grant that reaches a person through one of their teams. */
 export interface TeamGrant {
   readonly grant: Grant & { readonly subject: Subject };
   readonly teamName: string;
 }
 
-/** A holder of access to a project, with what the policy gives them there. */
 export interface ProjectHolder extends Holder {
-  /** The role in the project as such; null when only shares or nothing reach it. */
   readonly role: ProjectRole | null;
-  /** What they may do in each environment asked about. */
   readonly environments: Readonly<Record<string, EnvironmentHold>>;
-  /** The grants that reach a person through their teams; empty for a team or service account. */
   readonly teamGrants: readonly TeamGrant[];
 }
 
-/** Where a holder's right on a credential comes from. */
 export type CredentialRightSource =
-  /** A grant that names the holder itself. */
   | { readonly kind: "grant"; readonly right: CredentialRight }
-  /** A grant to a team the person is in. */
   | {
       readonly kind: "team";
       readonly right: CredentialRight;
       readonly teamId: string;
       readonly teamName: string;
     }
-  /** Instance owners and admins, and admins of the owning project, hold it by role. */
   | { readonly kind: "role"; readonly role: "owner" | "admin" | "project-admin" };
 
-/** A person, team or service account with a right on a credential, and every source of it. */
 export interface CredentialHolder extends Holder {
-  /** What the policy gives them; for a team, what its grant names. */
   readonly right: CredentialRight;
   readonly sources: readonly CredentialRightSource[];
 }
 
-/** A person as the holder lists need them. */
 export interface HolderPerson {
   readonly id: string;
   readonly name: string;
@@ -103,16 +68,13 @@ export interface HolderPerson {
   readonly suspended: boolean;
 }
 
-/** Everything both lists read: one project's grants and the people, teams and accounts. */
 export interface HolderDirectory {
   readonly access: ProjectAccess;
   readonly people: readonly HolderPerson[];
   readonly teams: readonly StoredTeam[];
-  /** The project's own service accounts. */
   readonly serviceAccounts: readonly StoredServiceAccount[];
 }
 
-/** Reads a project's directory once: its grants, every person and team, and its accounts. */
 export async function loadHolderDirectory(
   stores: {
     readonly accessStore: Pick<AccessStore, "listServiceAccounts" | "listTeams" | "projectAccess">;
@@ -129,11 +91,6 @@ export async function loadHolderDirectory(
   return access === null ? null : { access, people, serviceAccounts, teams };
 }
 
-/**
- * Everyone a project's Access tab lists: the people who reach it by instance role, grant or team,
- * the teams with a grant in it and its service accounts, each with their role in the project and
- * in each of `environments`.
- */
 export function projectHolders(
   directory: HolderDirectory,
   environments: readonly string[],
@@ -172,7 +129,6 @@ export function projectHolders(
     ...reaching(people, named, grantedTeams).map((person) =>
       holding(personHolder(person), personGrants(directory, person), throughTeams(person)),
     ),
-    // A team is no actor: its roles are what its own grants give any member.
     ...grantedTeams.map((team) =>
       holding(teamHolder(team), grantsOf(access, "member", [teamSubject(team)])),
     ),
@@ -182,10 +138,6 @@ export function projectHolders(
   ];
 }
 
-/**
- * Everyone with a right on a credential of the directory's project: each person and service
- * account the policy gives one, and each team a grant names, with every source of the right.
- */
 export function credentialHolders(
   directory: HolderDirectory,
   credential: CredentialTarget,
@@ -213,7 +165,6 @@ export function credentialHolders(
     ...reaching(people, named, namedTeams).flatMap((person) =>
       holding(personHolder(person), personGrants(directory, person)),
     ),
-    // A team is no actor: it holds what its own grant names, and each member as their role allows.
     ...teams.flatMap((team): CredentialHolder[] => {
       const grant = grants.find((candidate) => sameSubject(candidate.subject, teamSubject(team)));
       return grant === undefined
@@ -234,7 +185,6 @@ export function credentialHolders(
   ];
 }
 
-/** A person's grants in the project, their own and their teams', as loadGrants would read them. */
 function personGrants(directory: HolderDirectory, person: HolderPerson): AccessGrants {
   return grantsOf(directory.access, person.role, [
     personSubject(person),
@@ -263,7 +213,6 @@ function grantsOf(
   };
 }
 
-/** The people a list shows: instance owners and admins, and members a grant names or a team's reaches. */
 function reaching(
   people: readonly HolderPerson[],
   named: (subject: Subject) => boolean,
@@ -320,7 +269,6 @@ const teamSubject = (team: { readonly id: string }) => ({ kind: "team", teamId: 
 const accountSubject = (account: { readonly id: string }) =>
   ({ kind: "service-account", serviceAccountId: account.id }) as const;
 
-/** The access response, built from the same directory as its holder policy. */
 export function projectAccessView(directory: HolderDirectory, environments: readonly string[]) {
   return { ...directory.access, environments, holders: projectHolders(directory, environments) };
 }

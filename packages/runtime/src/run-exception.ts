@@ -1,4 +1,3 @@
-/** The last Python traceback or Node exception in stderr, with its innermost source location. */
 export interface RunException {
   readonly message: string;
   readonly location: string | null;
@@ -59,7 +58,6 @@ export function findRunException(stderr: string): RunException | null {
       context = { kind: "node", location: context.location, phase: "value" };
       continue;
     }
-    // Node's first stack frame is the point that threw, subsequent frames are its callers.
     const nodeFrame = /^\s+at (.+):(\d+):\d+\)?\s*$/u.exec(line);
     if (exception && exception.location === null && nodeFrame) {
       const frame = nodeFrame[1] ?? "";

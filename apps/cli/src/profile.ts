@@ -10,7 +10,6 @@ export interface StoredProfile {
   readonly token?: string;
   readonly tokenEnv?: string;
   readonly environment?: string;
-  /** The project, by slug or id, that commands with a `--project` option default to. */
   readonly project?: string;
 }
 
@@ -19,22 +18,15 @@ export interface ProfileConfig {
   readonly profiles: Record<string, StoredProfile>;
 }
 
-/**
- * A token the CLI may send as `Authorization: Bearer <token>`. Only this module makes one, so
- * every header the API client builds carries a checked value: fetch refuses a header with a line
- * break and quotes the whole value in its error, which would print the token.
- */
 export type BearerToken = string & { readonly __brand: "BearerToken" };
 
-// The b64token grammar of RFC 6750, which every Swizzle token (`swz_` and base64url) satisfies.
-const BEARER_TOKEN = /^[A-Za-z0-9._~+/-]+=*$/u;
+const RFC_6750_BEARER_TOKEN = /^[A-Za-z0-9._~+/-]+=*$/u;
 const BEARER_TOKEN_RULE = "a bearer token holds only letters, digits and - . _ ~ + /";
 
 function isBearerToken(value: string): value is BearerToken {
-  return BEARER_TOKEN.test(value);
+  return RFC_6750_BEARER_TOKEN.test(value);
 }
 
-/** Refuses a `--token` value before it is stored, without echoing it. */
 export function assertBearerTokenFlag(value: string): void {
   if (isBearerToken(value)) return;
   throw new AgentError({
@@ -50,16 +42,11 @@ export interface ResolvedProfile {
   readonly source: "flag" | "env" | "default";
   readonly url: string;
   readonly token: BearerToken | null;
-  // The environment declared on the profile (if any). Consumers feed this into
-  // `resolveEnvironment` — it is not the final environment, only the profile's
-  // contribution to the precedence chain.
   readonly environment: string | null;
   readonly project: string | null;
 }
 
 export interface ResolveEnvironmentInput {
-  // Explicit `-e/--environment` value, or `undefined` when the flag was not
-  // passed (i.e. commander is sitting on its default).
   readonly flag?: string;
   readonly profileEnvironment?: string | null;
   readonly profileName?: string;
@@ -68,20 +55,8 @@ export interface ResolveEnvironmentInput {
 
 export type ResolvedEnvironment =
   | { readonly environment: string; readonly source: "flag" | "profile" | "env" }
-  // A named profile pins nothing: the caller must surface an error rather than proceed.
   | { readonly environment: null; readonly source: "unpinned"; readonly profileName?: string };
 
-/**
- * Single source of truth for which environment a CLI command targets.
- *
- * Precedence: explicit `-e/--environment` flag > the resolved profile's
- * `environment` > the `SWIZZLE_ENVIRONMENT` env var. The profile outranks the
- * env var on purpose: a profile is a deliberate statement about a specific
- * instance, whereas the env var is ambient shell state that quietly leaks
- * across targets.
- *
- * With no environment pinned, callers report an error instead of guessing a namespace.
- */
 export function resolveEnvironment(input: ResolveEnvironmentInput = {}): ResolvedEnvironment {
   const env = input.env ?? process.env;
 
@@ -219,7 +194,6 @@ function finalize(
   };
 }
 
-/** The profile's token, refused by name, never by value, when it cannot be sent as a header. */
 function resolveToken(profile: StoredProfile, env: NodeJS.ProcessEnv): BearerToken | null {
   const token = storedToken(profile, env);
   if (token === null) return null;
@@ -243,7 +217,6 @@ function resolveToken(profile: StoredProfile, env: NodeJS.ProcessEnv): BearerTok
   );
 }
 
-/** The inline token, else the value of the profile's token variable, which it names. */
 function storedToken(
   profile: StoredProfile,
   env: NodeJS.ProcessEnv,

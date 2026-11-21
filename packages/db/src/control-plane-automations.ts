@@ -1,16 +1,3 @@
-/**
- * Deleting and moving an automation, and deleting the project that holds automations (ADR 0014,
- * ADR 0015). Deleting an automation deletes its runs with it; only audit events, which have no
- * foreign key, stay. Moving keeps runs in the project they were written in. Both refuse while a
- * trigger is active, so nothing starts in the middle; delete also refuses while a run is
- * unfinished, since its rows would vanish under the worker. Each locks the automation rows for
- * update; run creation and trigger status changes hold them shared (`shareLiveAutomation`), so
- * neither lands between a check here and its commit.
- *
- * Deleting a project moves its automations, credentials and runs to another project or deletes
- * them, in one transaction with the project row (`deleteProject`). It locks the automations
- * before the project rows, the order in which run creation reaches them.
- */
 import { and, count, eq, inArray, ne, or, type SQL, sql } from "drizzle-orm";
 import { DEFAULT_PROJECT_ID } from "./access.js";
 import type { DatabaseClient } from "./client.js";
@@ -48,10 +35,6 @@ import {
 
 type Transaction = Parameters<Parameters<DatabaseClient["db"]["transaction"]>[0]>[0];
 
-/**
- * The automation `match` names, share-locked until `tx` ends; null once it is deleted. A move or
- * delete in flight makes this wait, and it then reads the row as they left it.
- */
 export async function shareLiveAutomation(
   tx: Transaction,
   match: SQL,
@@ -157,16 +140,12 @@ export async function deleteProject(
     throw new CodedError("REQUEST_INVALID", "Move the contents to another project.");
   }
   return await client.db.transaction(async (tx) => {
-    // Automations before projects: run creation holds its automation shared and then needs the
-    // project for the run's foreign key, so taking the project first deadlocks with it.
     await lockAutomationsOf(tx, projectId);
-    // Both projects of a move in id order, so two moves in opposite directions wait in turn.
     const locks: [string, "share" | "update"][] = [[projectId, "update"]];
     if (contents?.kind === "move") locks.push([contents.projectId, "share"]);
     for (const [id, strength] of locks.sort(([left], [right]) => left.localeCompare(right))) {
       await lockProject(tx, id, strength);
     }
-    // The project lock stops new automations; this takes any created before it.
     const automationIds = await lockAutomationsOf(tx, projectId);
     const counts = await countContents(tx, projectId);
     const empty = counts.automations + counts.credentials + counts.runs === 0;
@@ -195,7 +174,6 @@ export async function deleteProject(
       }
       result.deletedAutomations = await artifactReferencesOf(tx, automationIds);
       await removeAutomations(tx, automationIds);
-      // Runs written here by an automation that has since moved to another project.
       await tx.delete(runs).where(eq(runs.projectId, projectId));
       result.deletedConnections = await deleteConnectionsWhere(
         tx,
@@ -203,21 +181,11 @@ export async function deleteProject(
       );
     }
 
-    // Secrets, folders, grants, service accounts, protected environments and credential shares
-    // the project accepted go with its row.
     await tx.delete(projects).where(eq(projects.id, projectId));
     return { ...result, contents: contents === null ? "empty" : contents.kind };
   });
 }
 
-/**
- * Moves what a project holds to `to`: automations (without their folder), secrets, connections,
- * the rules that name a moved automation, and the runs written in the project. A credential
- * whose name `to` already uses in that environment refuses the move. A share between the two
- * projects becomes pointless once the credential lives where it was accepted, so the deployments
- * that bound through it keep the credential directly; shares from third projects end with the
- * project that accepted them.
- */
 async function moveProjectContents(
   tx: Transaction,
   from: string,
@@ -378,12 +346,6 @@ async function artifactReferencesOf(
   }));
 }
 
-/**
- * Deletes the automations with everything that cascades from them: versions, deployments,
- * triggers, state, checks, grants, rules and runs with their attempts, steps and logs. A chain
- * trigger of another automation that names one of them stays invalid, so its owner can see why
- * it cannot fire, and a join never fires on fewer sources than it declared.
- */
 async function removeAutomations(
   tx: Transaction,
   automationIds: readonly string[],
@@ -406,7 +368,6 @@ async function removeAutomations(
     await tx
       .update(automationTriggers)
       .set({
-        // Clear the single-source FK before deleting its target, or its cascade removes the trigger.
         chainSourceAutomationId: null,
         status: "invalid",
         errorCode: "TRIGGER_CHAIN_SOURCE_DELETED",
@@ -482,7 +443,6 @@ export async function moveAutomation(
         connections.map((connection) => connection.automationSlug),
       );
     await refuseActiveTriggers(tx, automation);
-    // A share was given in the old project; the new project's admins decide who sees it there.
     await tx.delete(grants).where(eq(grants.automationId, automation.id));
     await tx
       .update(automations)

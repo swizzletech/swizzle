@@ -130,7 +130,6 @@ describe("runMaintenanceCycle", () => {
         .replace("path: /hooks/hello", "path: /gpu")
         .replace("profile: host-default", "profile: gpu"),
     );
-    // Maintenance reads only the stored profiles, so the deploys skip host capability probes.
     await platform.deployAutomationToPlatform({
       environment: "production",
       automationDirectory: helloWebhook,

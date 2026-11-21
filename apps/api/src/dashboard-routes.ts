@@ -34,7 +34,6 @@ import {
 } from "./http-shared.js";
 import { objectSchema, queryBoolean, queryInteger, urlText, uuid } from "./request-validation.js";
 
-/** `status=failed,dead-lettered` names the states a run list keeps. */
 function parseRunStatuses(raw: string): DashboardRunListItem["status"][] {
   return raw.split(",").map((value) => {
     const status = RUN_STATUSES.find((known) => known === value.trim());
@@ -45,10 +44,6 @@ function parseRunStatuses(raw: string): DashboardRunListItem["status"][] {
   });
 }
 
-/**
- * `utcOffset=60` places the viewer's clock 60 minutes east of UTC, as clocks run from UTC−12 to
- * UTC+14; absent reads as UTC.
- */
 function parseUtcOffset(raw: string | undefined): number {
   const minutes = raw === undefined ? 0 : Number(raw);
   if (minutes < -720 || minutes > 840) {
@@ -251,7 +246,6 @@ export function registerDashboardRoutes(
     const query = request.query as DashboardRunsQuery | undefined;
     const environment = getEnvironment(request);
     const approvalOnly = query?.approvalOnly === "true";
-    // "Needs you" means the viewer: approvals for nobody in particular, them, or their teams.
     const subjects = approvalOnly ? await request.access.subjects() : null;
     return await dashboard.listRuns({
       ...(query?.approvalOnly !== undefined ? { approvalOnly } : {}),
@@ -281,8 +275,6 @@ export function registerDashboardRoutes(
     const params = request.params as { runId: string };
     const run = await request.access.run(params.runId, "read");
     const approval = getRunApproval(run);
-    // A run stays in its project when its automation moves; Run again starts it where it is now,
-    // and the agent it is handed to changes and deploys it there.
     const automation = (await platform.findAutomation(run.automationSlug)) ?? run;
     const need = { action: "run", environment: run.environment } as const;
     const [cancel, edit, runAgain] = await Promise.all([

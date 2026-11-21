@@ -1,4 +1,3 @@
-/** Typed account persistence. Better Auth's adapter is reserved for its plugin transactions. */
 import { and, asc, count, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import type { DatabaseClient } from "./client.js";
 import {
@@ -62,7 +61,6 @@ export function createPostgresPeopleStore(db: DatabaseClient["db"]): PeopleStore
   return {
     async transaction(change) {
       return await db.transaction(async (tx) => {
-        // Every account-management transaction takes this lock, even when no owner row exists.
         await tx.execute(sql`SELECT pg_advisory_xact_lock(193720, 1)`);
         return await change(createPostgresPeopleStore(tx));
       });

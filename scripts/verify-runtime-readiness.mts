@@ -1,4 +1,3 @@
-// Drives validation and custom-image readiness on a private packaged stack, including its broker.
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -286,7 +285,6 @@ export async function verifyRuntimeReadiness(evidenceDirectory: string): Promise
     await save("A2-unknown-version-refused.txt", unknownVersion);
 
     await writeFile(path.join(automation, "config.yaml"), config("image-only", ">=7", true));
-    // Local authoring does not need the platform signing secret to print its summary.
     const { runCli } = await import("@swizzle/cli");
     process.env.SWIZZLE_CONFIG_HOME = path.join(directory, "local-cli");
     delete process.env.SWIZZLE_PROFILE;
@@ -298,7 +296,6 @@ export async function verifyRuntimeReadiness(evidenceDirectory: string): Promise
       stderr: () => {},
     });
     await save("A1-validation.json", { exitCode: code, output: JSON.parse(stdout) });
-    // Missing runtime binary locally affects readiness, not the authoring summary.
     assert.equal(JSON.parse(stdout).automation.requirements, "image-only >=7");
     assert.equal(JSON.parse(stdout).automation.secrets, "GREETER_SIGNING_SECRET");
     log("A1: validation lists binaries and signing secrets");

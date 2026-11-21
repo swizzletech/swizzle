@@ -60,8 +60,6 @@ describe("API check handoffs", () => {
     expect(apiCheckHandoff(credentials)).toContain(
       "Fix the check's credentials or connection, then rerun the check.",
     );
-    // The streak began with drift; the latest check is a credential failure. The handoff keeps the
-    // two apart instead of saying credentials failed since the drift began.
     expect(apiCheckHandoff(credentials).split("\n")[0]).toBe(
       "crm-export's API check has failed since 2026-10-22 08:00 UTC (2 checks in a row); the latest check, 2026-10-23 08:00 UTC, failed on credentials. Its last run succeeded at 2026-10-21 06:00 UTC, before the check started failing; no run finished since.",
     );

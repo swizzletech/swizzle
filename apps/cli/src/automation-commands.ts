@@ -58,11 +58,8 @@ async function targeted<T extends ApiCommandOptions>(
   return { ...options, environment: await resolveCommandEnvironment(options) };
 }
 
-// ---------- list ----------
-
 const LIST_FIELDS = ["name", "trigger", "status", "lastRun"] as const;
 
-/** One automation as `list` shows it; `--fields` picks from every key. */
 function automationRow(automation: AutomationSummaryRecord) {
   const readiness = automation.activeDeployment.readiness;
   const notReady = readiness.status === "not-ready";
@@ -112,8 +109,6 @@ function registerList(program: Command, io: CliIO, runHandler: RunHandler): void
   });
 }
 
-// ---------- inspect ----------
-
 function registerInspect(program: Command, io: CliIO, runHandler: RunHandler): void {
   const command = program
     .command("inspect")
@@ -139,8 +134,6 @@ function registerInspect(program: Command, io: CliIO, runHandler: RunHandler): v
         const detail = await apiRequest<AutomationDetailRecord>(
           buildApiUrl(`/dashboard/automations/${resolved.slug}`, options),
         );
-        // A 404 means no grant; genuine failures (auth, 5xx, unreachable) still surface, so
-        // inspect never hides an active grant.
         const timeoutGrantResponse = await apiRequest<TimeoutGrantResponse>(
           buildApiUrl(`/automations/${resolved.slug}/timeout-grant`, options),
           { acceptNotFound: true },
@@ -229,7 +222,6 @@ function automationDetail(
   };
 }
 
-/** "nightly-fetch", "a, b and 1 automation you cannot see"; "?" for a source that is gone. */
 function chainSourcesText(trigger: {
   readonly chainHiddenSourceCount: number;
   readonly chainSourceAutomationNames: readonly string[];
@@ -247,7 +239,6 @@ function readinessText(readiness: ReadinessRecord): string {
   return `no: ${readiness.errors.map((issue) => issue.message).join("; ")}`;
 }
 
-/** "5 recent: 4 succeeded, 1 failed", the aggregate an agent checks before reading runs. */
 function runSummary(runs: readonly { readonly status: string }[]): string {
   if (runs.length === 0) return "none";
   const counts = new Map<string, number>();
@@ -269,8 +260,6 @@ function inspectHelp(detail: AutomationDetailRecord): string[] {
   help.push(`Run \`swizzle trigger ${detail.automationSlug}\` to start a run`);
   return help;
 }
-
-// ---------- resolve ----------
 
 function registerResolve(program: Command, io: CliIO, runHandler: RunHandler): void {
   const command = program
@@ -297,8 +286,6 @@ function registerResolve(program: Command, io: CliIO, runHandler: RunHandler): v
     });
   });
 }
-
-// ---------- state ----------
 
 function registerState(program: Command, io: CliIO, runHandler: RunHandler): void {
   const state = program
@@ -444,8 +431,6 @@ function registerState(program: Command, io: CliIO, runHandler: RunHandler): voi
     });
   });
 }
-
-// ---------- trigger ----------
 
 function registerTrigger(program: Command, io: CliIO, runHandler: RunHandler): void {
   const trigger = program

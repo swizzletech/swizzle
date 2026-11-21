@@ -79,8 +79,6 @@ describe("buildAttention", () => {
     ).toEqual([]);
   });
 
-  // The Overview passes only the automations its reader may edit, so a viewer's list can be empty
-  // while an approval assigned to them waits.
   it("keeps an approval when no automation raises a row of its own", () => {
     const approval = {
       assignee: null,
@@ -287,7 +285,6 @@ describe("buildAttention", () => {
         workers: [],
       },
     });
-    // A run stays in its project when its automation moves, so its project lists no automation.
     const items = buildAttention({
       ...base,
       automations: [],
@@ -308,8 +305,6 @@ describe("buildAttention", () => {
     ]);
   });
 
-  // A stack's one scheduler serves the environment in its .env; one in another environment is
-  // running, but not for this one.
   it("names the environment no scheduler serves, and the ones a scheduler does", () => {
     const items = buildAttention({
       ...base,

@@ -1,19 +1,8 @@
 import { type ApiErrorCode, isApiErrorCode } from "@swizzle/core";
-/**
- * The CLI's one output boundary, by the AXI contract. A command answers with an `Output` object,
- * and `respond` prints it on stdout as TOON, or as one line of JSON under the global `--json`. An
- * error takes the same path as `{ error, code, help }`: what went wrong, a stable code, and the
- * next step. Logs, progress and debug lines go to stderr. `swizzle logs` prints the run's streams
- * as text blocks on stdout unless `--json` is set; `--follow` streams log lines before its answer.
- */
 import { encode } from "@toon-format/toon";
 
 export type OutputFormat = "json" | "toon";
 
-/**
- * Exit codes by failure class: 0 success (no-ops included), 2 usage, the rest refine AXI's 1.
- * `swizzle schema exit-codes` prints them.
- */
 export const EXIT_CODES = {
   ok: 0,
   generic: 1,
@@ -57,7 +46,6 @@ const LOCAL_EXIT_CODES = new Map<string, number>([
   ["API_UNREACHABLE", EXIT_CODES.backend],
 ]);
 
-/** Classify an error code (and optional HTTP status) into a typed exit code. */
 export function exitCodeForError(code: string, status?: number): number {
   if (status !== undefined) {
     if (status === 401 || status === 403) return EXIT_CODES.auth;
@@ -74,7 +62,6 @@ export function exitCodeForError(code: string, status?: number): number {
   return EXIT_CODES.generic;
 }
 
-/** What a command prints. Its keys are the command's own; `warnings` and `help` follow them. */
 export type Output = { readonly [key: string]: unknown };
 
 export interface CliIO {
@@ -82,7 +69,6 @@ export interface CliIO {
   readonly stdout: (message: string) => void;
 }
 
-/** An error names its next step: a hint, a command that fixes it, or both. */
 type NextStep =
   | { readonly hint: string; readonly fixCommand?: string }
   | { readonly fixCommand: string; readonly hint?: string };
@@ -114,7 +100,6 @@ export class AgentError extends Error {
     this.exitCode = init.exitCode ?? exitCodeForError(init.code);
   }
 
-  /** `help` lists the fixing command first, then the hint. */
   toOutput(): Output {
     const help = [
       ...(this.fixCommand !== undefined ? [`Run \`${this.fixCommand}\``] : []),
@@ -132,7 +117,6 @@ export class AgentError extends Error {
   }
 }
 
-/** Thrown after an error was printed; carries only the exit code up to `runCli`. */
 export class HandledCliError extends Error {
   readonly exitCode: number;
 
@@ -150,7 +134,6 @@ const encoders: Record<OutputFormat, (output: Output) => string> = {
 let format: OutputFormat = "toon";
 let warnings: string[] = [];
 
-/** Chosen once per invocation from argv, before commander parses it; also clears warnings. */
 export function setOutputFormat(next: OutputFormat): void {
   format = next;
   warnings = [];
@@ -160,12 +143,10 @@ export function outputFormat(): OutputFormat {
   return format;
 }
 
-/** A note the next `respond` prints under `warnings`, such as a fuzzy name match. */
 export function warn(message: string): void {
   warnings.push(message);
 }
 
-/** Prints `output`, then the collected warnings, then `help`: the next steps worth suggesting. */
 export function respond(io: CliIO, output: Output, help: readonly string[] = []): void {
   io.stdout(`${encoders[format](withNotes(output, help))}\n`);
 }
@@ -185,10 +166,6 @@ function withNotes(output: Output, help: readonly string[]): Output {
   };
 }
 
-/**
- * The default columns of a list, plus those `--fields a,b` asks for. A field no record has is a
- * usage error that names the ones it could have asked for.
- */
 export function selectFields<T extends object>(
   records: readonly T[],
   defaults: readonly (keyof T & string)[],

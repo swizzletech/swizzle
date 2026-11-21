@@ -62,7 +62,6 @@ describe("platform process", () => {
     });
 
     expect(processedRun?.status).toBe("succeeded");
-    // The run read its secret; the platform stores the printed value redacted.
     expect(processedRun?.result).toMatchObject({
       database_url: null,
       declared_secret: "[REDACTED]",
@@ -110,7 +109,6 @@ describe("platform process", () => {
       artifactsDirectory: path.join(stateDirectory, "artifacts"),
     });
 
-    // A version deploys once its connection exists, and runs once the connection is active.
     const automationDirectory = path.join(
       packageRoot,
       "test-fixtures/platform-connection-snapshot",
@@ -119,8 +117,6 @@ describe("platform process", () => {
       platform.deployAutomationToPlatform({ automationDirectory, environment: "local" }),
     ).rejects.toMatchObject({ code: "PLATFORM_REQUIRED_CONNECTIONS_MISSING" });
 
-    // Authorize the connection: begin with the client credentials inline, then
-    // complete the callback with a mocked provider token response.
     const authorization = await platform.beginConnectionAuthorization({
       place: { environment: "local", projectId: DEFAULT_PROJECT_ID },
       clientId: "client-id",
@@ -174,7 +170,6 @@ describe("platform process", () => {
     });
 
     expect(processedRun?.status).toBe("succeeded");
-    // The short-lived access token reaches user code, stored redacted; the refresh token does not.
     expect(processedRun?.result).toMatchObject({
       connection_token: "[REDACTED]",
       leaked_refresh_token: null,
@@ -231,7 +226,6 @@ describe("platform process", () => {
       mainJs: [
         "const secret = process.env.API_KEY, token = process.env.SWIZZLE_CONNECTION_TEST_GOOGLE;",
         "console.error('token ' + token);",
-        // Two writes apart in time reach the platform as two chunks, splitting the value.
         "process.stderr.write('secret ' + secret.slice(0, 9));",
         "setTimeout(() => {",
         "  process.stderr.write(secret.slice(9) + '\\n');",
@@ -468,8 +462,6 @@ describe("platform process", () => {
 
   it("appends run output before the attempt reaches a terminal state", async ({ signal }) => {
     const stateDirectory = await temporaryDirectory("swizzle-platform-");
-    // The child holds after phase-one until the test creates the gate file, so the
-    // mid-run read never races the child's exit.
     const gatePath = path.join(stateDirectory, "gate");
 
     const platform = await testPlatform({
@@ -506,7 +498,6 @@ describe("platform process", () => {
     const processing = platform.processNextPlatformRun().finally(() => {
       settled = true;
     });
-    // Settled in finally; this handler keeps an early rejection from going unhandled while the test polls.
     processing.catch(() => undefined);
     try {
       await waitFor(
@@ -519,8 +510,6 @@ describe("platform process", () => {
       expect(midRun.status).toBe("running");
       expect(midRun.stderr).not.toContain("phase-two");
     } finally {
-      // Released and settled on every path, so a failed or timed-out test never leaves the
-      // child running while its temporary directories are removed.
       await writeFile(gatePath, "");
       await Promise.allSettled([processing]);
     }

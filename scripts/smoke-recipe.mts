@@ -1,7 +1,3 @@
-// The PDF recipe of the shipped skill, deployed on the smoke's packaged stack exactly as the skill
-// writes its config.yaml: it must validate and apply, and its run must render a page with pdftoppm in
-// the runner image. The entrypoint is the smoke's, since the recipe shows none.
-
 import assert from "node:assert/strict";
 import { createHmac, randomBytes } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -24,7 +20,6 @@ pages = {page.name: page.stat().st_size for page in scratch.glob("page*.png")}
 print(json.dumps({"pages": pages}))
 `;
 
-/** A one-page PDF that shows `text` in Helvetica. */
 function pdf(text: string): Buffer {
   const content = `BT /F1 18 Tf 20 40 Td (${text}) Tj ET`;
   const objects = [

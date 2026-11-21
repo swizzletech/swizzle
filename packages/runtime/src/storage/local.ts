@@ -149,7 +149,6 @@ export function createLocalArtifactStorage(options: {
     },
 
     async importStore(sourceDirectory) {
-      // Empty the directory instead of replacing it: in the stack it is a volume mount point.
       await mkdir(artifactsDirectory, { recursive: true });
       for (const entry of await readdir(artifactsDirectory)) {
         await rm(path.join(artifactsDirectory, entry), { force: true, recursive: true });

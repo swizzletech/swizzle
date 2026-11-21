@@ -9,13 +9,6 @@ import type { PlatformServices } from "@swizzle/runtime/platform";
 
 import { type ApiServer, getEnvironment, requestValidationError } from "./http-shared.js";
 
-/**
- * Operator-authenticated CRUD for per-automation run-timeout grants. A grant
- * raises the effective `runtime.timeout` ceiling for a single automation +
- * environment above the global `SWIZZLE_MAX_RUN_TIMEOUT`. Setting or reading a
- * grant for an unknown automation is a 404 (the facade resolves the automation
- * first).
- */
 export function registerTimeoutGrantRoutes(app: ApiServer, platform: PlatformServices): void {
   app.get<{ Reply: TimeoutGrantsResponse }>("/timeout-grants", async (request) => {
     const environment = getEnvironment(request);

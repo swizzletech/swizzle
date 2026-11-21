@@ -16,7 +16,6 @@ import {
 
 import { runCli } from "./main.js";
 
-// Commands that talk to an API instance, run against a real in-process API server with PostgreSQL stores.
 useCliTestEnvironment();
 
 describe("trigger commands", () => {

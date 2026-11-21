@@ -1,4 +1,3 @@
-// Disk accounting and retention of this stack's run images. Active and fresh images always stay.
 import { RUN_IMAGE_DISK_DETAILS_LIMIT, type RunImageDisk } from "@swizzle/db";
 import {
   CONTROL_TIMEOUT_MS,
@@ -20,19 +19,11 @@ export const PRUNE_DEADLINES: PruneDeadlines = {
 
 const DEFAULT_IMAGE_RETENTION_HOURS = 24;
 const DEFAULT_IMAGE_DISK_MB = 20_480;
-/** How often a worker prunes images that no live worker's active deployment keeps. */
 export const RUN_IMAGE_PRUNE_INTERVAL_MS = 15 * 60 * 1_000;
-/** Gives an assembly time to start its sandbox, after which Docker refuses to remove its image. */
 const FRESH_IMAGE_MS = 10 * 60 * 1_000;
 const RUN_TAG = /^swizzle-run:([0-9a-f]{24})$/u;
 const IMAGE_FORMAT = `[{{json .Id}},{{json .Created}},{{json .RepoTags}},{{json .RootFS.Layers}}]`;
 
-/**
- * Keeps tags selected from durable ownership and images within the assembly grace period.
- * Removes other stack images by age and disk budget, newest first. Docker refuses removal
- * while a container uses the image, so that image stays until a later pass. Resolves the count
- * removed and the bytes the keep set holds, which no budget bounds.
- */
 export async function pruneRunImages(input: {
   readonly keep: ReadonlySet<string>;
   readonly logger?: ImagePruneLogger;
@@ -141,7 +132,6 @@ export function planPrune(
       }
       continue;
     }
-    // The run tag goes last: an image a container uses keeps it when its removal fails.
     removals.push({ id, references: tags.length === 0 ? [id] : [...tags].sort(runTagLast) });
   }
   return {
@@ -172,7 +162,6 @@ async function withPassOwner<T>(
   }
 }
 
-/** This stack's images, as Docker lists and inspects them. */
 async function listStackRunImages(docker: DockerCall): Promise<InspectedRunImage[]> {
   const listed = await docker([
     "image",
@@ -185,7 +174,6 @@ async function listStackRunImages(docker: DockerCall): Promise<InspectedRunImage
   ]);
   const ids = [...new Set(listed.stdout.split("\n").map((id) => id.trim()))].filter(Boolean);
   if (ids.length === 0) return [];
-  // The CLI inspects its arguments sequentially. Bound parallel batches to fit the pass deadline.
   const batchSize = Math.max(16, Math.ceil(ids.length / 8));
   const batches: string[][] = [];
   for (let offset = 0; offset < ids.length; offset += batchSize) {
@@ -197,14 +185,12 @@ async function listStackRunImages(docker: DockerCall): Promise<InspectedRunImage
   return inspected.flatMap(({ stdout }) => stdout.split("\n").flatMap(parseRunImage));
 }
 
-/** History reports unpacked layer bytes on both Docker image stores, without packed blobs. */
 async function measureImageFootprints(
   images: readonly InspectedRunImage[],
   owner: DockerScope,
   logger: ImagePruneLogger | undefined,
 ): Promise<RunImage[]> {
   const measured: { image: InspectedRunImage; sizes: number[] | null }[] = [];
-  // Bound CLI processes while keeping a large inventory inside the prune pass deadline.
   for (let offset = 0; offset < images.length; offset += 8) {
     measured.push(
       ...(await Promise.all(
@@ -257,7 +243,6 @@ async function measureImageFootprints(
         : history === undefined
           ? sizes.filter((size) => size > 0)
           : sizes.filter((_, index) => history[index]);
-    // All unreadable footprints meet the same conservative retention policy here.
     if (
       filesystem === null ||
       (history !== undefined && history.length !== sizes?.length) ||
@@ -294,7 +279,6 @@ interface InspectedRunImage {
   readonly tags: readonly string[];
 }
 
-/** One line of IMAGE_FORMAT output; none when the line is not one. */
 function parseRunImage(line: string): InspectedRunImage[] {
   if (line.trim() === "") return [];
   const parsed: unknown = JSON.parse(line);

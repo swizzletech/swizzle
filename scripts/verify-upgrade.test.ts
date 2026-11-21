@@ -30,8 +30,6 @@ it("starts the upgrade proof from the latest stable Git tag", async () => {
   await git("commit", "-m", "Upgrade target");
   const bin = path.join(directory, "bin");
   await mkdir(bin);
-  // Stop at stack startup: selection and the release checkout use real Git, and this test
-  // cannot start or remove a container belonging to another test on the shared daemon.
   await writeFile(
     path.join(bin, "docker"),
     `#!/bin/sh

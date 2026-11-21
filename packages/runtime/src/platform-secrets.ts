@@ -182,7 +182,6 @@ export async function ensureTriggerSecretsPresent(options: {
   });
 }
 
-/** The allowlisted variables of the executing machine that a deployed run's process inherits. */
 export function platformBaseEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const base: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(environment))
@@ -190,14 +189,8 @@ export function platformBaseEnvironment(environment: NodeJS.ProcessEnv): NodeJS.
   return base;
 }
 
-/**
- * The values the server injects into one execution, and nothing of its own environment: the
- * executing machine adds its base (platformBaseEnvironment), so a remote worker never receives
- * the API's PATH or HOME.
- */
 export function buildPlatformChildEnvironment(options: {
   readonly connections?: readonly ResolvedConnectionToken[];
-  /** `SWIZZLE_LINK_URL` and `SWIZZLE_LINK_KEY`, with which the run signs its approval and event links. */
   readonly links?: Readonly<Record<string, string>>;
   readonly secrets: readonly ResolvedSecret[];
 }): NodeJS.ProcessEnv {
@@ -209,8 +202,6 @@ export function buildPlatformChildEnvironment(options: {
 
   Object.assign(childEnvironment, options.links);
 
-  // Connections inject only the short-lived access token; refresh tokens and
-  // client credentials never reach user code.
   for (const connection of options.connections ?? []) {
     const envVarName = connectionEnvVarName(connection.name);
     childEnvironment[envVarName] = connection.accessToken;
@@ -222,7 +213,6 @@ export function buildPlatformChildEnvironment(options: {
   return childEnvironment;
 }
 
-/** The named secrets a deployment bound, decrypted; throws PLATFORM_REQUIRED_SECRETS_MISSING for a lost one. */
 export async function resolveRequiredSecrets(options: {
   readonly automationName: string;
   readonly environment: string;
@@ -238,7 +228,6 @@ export async function resolveRequiredSecrets(options: {
   } catch (error) {
     throw mapSecretStoreError(error);
   }
-  // A secret deleted after the binding check resolves to nothing; the run must not start without it.
   const found = new Set(resolved.map((secret) => secret.id));
   const lost = bound.filter((secret) => !found.has(secret.id)).map((secret) => secret.name);
   if (lost.length > 0) throw secretsLost(options, lost);

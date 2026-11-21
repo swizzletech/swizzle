@@ -1,15 +1,3 @@
-// Sandbox containers: the hardened, single-use container each deployed run executes in (ADR 0006),
-// and the standby a worker keeps started for the next run of a deployment.
-//
-// A sandbox is created and started with a hold process before anything runs in it. The run then
-// stages its inputs and starts the automation with one `docker exec`, which also carries every
-// run-specific value: secrets, run metadata and the egress settings. So nothing in a sandbox
-// depends on the run until a run claims it, and a standby made before the run is as fresh as one
-// made for it. One run uses a sandbox, then it is removed. Its tmpfs mounts go with it.
-//
-// Every sandbox is created with --rm and a hold process that ends after its lifetime, so the
-// daemon removes it even when the worker that made it is gone. Its worker label lets the next
-// start of that worker remove it sooner (`removeLeftoverContainers`).
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
@@ -23,25 +11,19 @@ import type { AutomationDefinition } from "./validation.js";
 const DEFAULT_RUNNER_NETWORK = "swizzle-runner-egress";
 const DEFAULT_EGRESS_PROXY = "http://runner-egress-proxy:3128";
 export const SANDBOX_USER = "65532:65532";
-/** How long a standby waits for a run before it is removed. */
 const STANDBY_IDLE_MS = 10 * 60 * 1_000;
 
-/** What every sandbox of one deployment shares: the image and the run-independent create arguments. */
 export interface SandboxSpec {
-  /** Identifies equal specs, so a standby serves only runs it was made for. */
   readonly key: string;
   readonly image: string;
   readonly createArguments: readonly string[];
   readonly language: "node" | "python" | "typescript";
 }
 
-/** A started container that no run has used, until the one run that claims it. */
 export interface Sandbox {
   readonly name: string;
   readonly docker: DockerScope;
-  /** When its hold process ends and the daemon removes it. */
   readonly expiresAt: number;
-  /** Whether it was made before the run asked for it. */
   readonly standby: boolean;
 }
 
@@ -86,27 +68,16 @@ export function sandboxSpec(definition: AutomationDefinition, image: string): Sa
   return { createArguments, image, key: JSON.stringify([image, createArguments]), language };
 }
 
-/**
- * A sandbox that lives at least `lifetimeMs`: the spec's standby when one is ready or starting,
- * otherwise a new one. With `replace`, a new standby starts for the next run once this one has
- * its sandbox.
- */
 export async function claimSandbox(
   spec: SandboxSpec,
   input: { readonly lifetimeMs: number; readonly replace: boolean },
 ): Promise<Sandbox> {
   const standby = await takeStandby(spec, input.lifetimeMs);
   const sandbox = standby ?? (await startSandbox(spec, input.lifetimeMs, false));
-  // A replacement that fails to start costs only the next run, which then starts its own sandbox.
   if (input.replace) prewarmSandbox(spec, input.lifetimeMs).catch(() => undefined);
   return sandbox;
 }
 
-/**
- * Starts the spec's standby unless it has one, and resolves once it has started. It waits
- * STANDBY_IDLE_MS for a run, and lives long enough to serve a run of `runLifetimeMs` claimed at the
- * end of that wait.
- */
 export async function prewarmSandbox(spec: SandboxSpec, runLifetimeMs: number): Promise<void> {
   if (closed) return;
   const existing = standbys.get(spec.key);
@@ -132,14 +103,12 @@ export async function prewarmSandbox(spec: SandboxSpec, runLifetimeMs: number): 
   await sandbox;
 }
 
-/** Removes a used sandbox in the background; closeSandboxes waits for it. */
 export function discardSandbox(sandbox: Sandbox): void {
   const removal = sandbox.docker.close();
   removals.add(removal);
   void removal.finally(() => removals.delete(removal));
 }
 
-/** Removes every standby, waits for pending removals, and makes no new standby after. */
 export async function closeSandboxes(): Promise<void> {
   closed = true;
   const pending = [...standbys.values()];
@@ -149,17 +118,14 @@ export async function closeSandboxes(): Promise<void> {
   await sandboxRemovals();
 }
 
-/** Resolves once every sandbox removal started so far has ended, retries included. */
 export async function sandboxRemovals(): Promise<void> {
   await Promise.all(removals);
 }
 
-/** The run network sandboxes and image assembly join; its only way out is the egress proxy. */
 export function resolveRunnerNetwork(): string {
   return process.env.SWIZZLE_RUNNER_NETWORK?.trim() || DEFAULT_RUNNER_NETWORK;
 }
 
-/** HTTP proxy variables for tools that honour them, such as npm and pip during installs. */
 export function egressProxyEnvironment(): Record<string, string> {
   const proxy = process.env.SWIZZLE_RUNNER_EGRESS_PROXY?.trim() || DEFAULT_EGRESS_PROXY;
   return {
@@ -172,10 +138,6 @@ export function egressProxyEnvironment(): Record<string, string> {
   };
 }
 
-/**
- * The egress settings of a run. The managed runner's entrypoint routes every TCP connection
- * through the proxy and needs only its address; a custom base image gets the HTTP proxy variables.
- */
 export function runEgressEnvironment(definition: AutomationDefinition): Record<string, string> {
   if (!usesManagedRunner(definition)) return egressProxyEnvironment();
   let proxy: URL;
@@ -191,7 +153,6 @@ export function runEgressEnvironment(definition: AutomationDefinition): Record<s
   return { SWIZZLE_EGRESS_PROXY: `${proxy.hostname}:${proxy.port || "80"}` };
 }
 
-/** Whether the run image starts from the stack's managed runner base, with its entrypoint. */
 export function usesManagedRunner(definition: AutomationDefinition): boolean {
   return (
     definition.config.runtime.container?.base_image === undefined &&
@@ -242,20 +203,13 @@ async function startSandbox(
     );
     await docker.run(["start", name], { outputLimitBytes: 256 * 1_024 });
   } catch (error) {
-    // --rm removes a container once it stops, but not one that never started.
     await docker.close();
     throw error;
   }
   return { docker, expiresAt, name, standby };
 }
 
-/**
- * A process that keeps the sandbox up for `seconds` with the runtime the image already has. The run
- * is a `docker exec`, not its child, so on SIGTERM from `docker stop` it passes the signal on to
- * every other process in the sandbox, and the run gets its grace period before the stop kills it.
- */
 function holdCommand(language: SandboxSpec["language"], seconds: number): string[] {
-  // One Node timer waits at most 2^31 - 1 ms, so the hold waits in steps until its end.
   return language === "python"
     ? [
         "python3",

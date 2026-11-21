@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 import { createOutputRedactor, createRunOutputRedactor } from "./output-redaction.js";
 
 describe("output redaction", () => {
-  // "abc" begins "abcdef", and "cdefg" overlaps both. A link token is caught by its shape; one
-  // signature character short, it is no token.
   const redactor = createRunOutputRedactor(["abc", "abcdef", "cdefg"]);
   const link = `0b1e7c2a-5f3d-4c6b-9a8e-1d2f3a4b5c6d.Z2F0ZQ.${"s".repeat(43)}`;
   const output = `1 abcdef 2 abc 3 abcde 4 abcdefg 5 abcabc 6 /approvals/${link} 7 ${link.slice(0, -1)}\n`;

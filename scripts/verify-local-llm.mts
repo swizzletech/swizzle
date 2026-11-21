@@ -1,6 +1,3 @@
-// A live named-service proof against the verify-swizzle stack and an authenticated local model.
-// Run the skill's scripts/up, export its env plus SWIZZLE_LOCAL_LLM_{UPSTREAM,API_KEY,MODEL},
-// then just verify-local-llm. Docker builds the production broker, proxy, gateway and runner.
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -42,7 +39,6 @@ const dockerEnvironment = {
   COMPOSE_PROJECT_NAME: stack,
   SWIZZLE_LOCAL_LLM_CONTROL_TOKEN: controlToken,
 };
-// The production definitions, with no alternate policy for the verifier.
 await writeFile(
   composeFile,
   JSON.stringify({

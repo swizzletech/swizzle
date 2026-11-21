@@ -1,8 +1,3 @@
-// The one form that gives a person, team or service account a role in a project: on the whole
-// project, on one automation, or in one protected environment. It shows what the chosen holder already has
-// and where it comes from, and what the role means for the project's credentials. The project's
-// Access, Environments and Service accounts tabs all open it.
-
 import { type QueryClient, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
@@ -25,9 +20,7 @@ const ROLES: readonly ProjectRole[] = ["viewer", "operator", "editor", "admin"];
 
 export interface ShareFormProps {
   readonly access: ProjectAccess;
-  /** Fixed by the caller: Environments shares its row's environment. */
   readonly place?: GrantPlaceRef;
-  /** Preselected, when the form opens from a holder's row. */
   readonly subject?: Subject;
   readonly onDone: () => void;
 }
@@ -38,14 +31,12 @@ export function subjectKey(subject: Subject): string {
   return `service-account:${subject.serviceAccountId}`;
 }
 
-/** A holder a grant form offers: its option value, its words, and the subject the grant names. */
 export interface SubjectOption {
   readonly key: string;
   readonly label: string;
   readonly subject: Subject;
 }
 
-/** The directory's people, then its teams, then the given service accounts, as grant forms list them. */
 export function subjectOptions(
   directory: DirectoryResponse | undefined,
   serviceAccounts: readonly { readonly id: string; readonly name: string }[],
@@ -71,14 +62,12 @@ export function subjectOptions(
   ];
 }
 
-/** The body fields that name `subject` to the grant routes. */
 export function subjectRef(subject: Subject): SubjectRef {
   if (subject.kind === "user") return { user: subject.userId };
   if (subject.kind === "team") return { team: subject.teamId };
   return { serviceAccount: subject.serviceAccountId };
 }
 
-/** Where a stored grant applies, as the grant routes name it. */
 export function placeOf(
   grant: AccessGrant,
   slugOf: (automationId: string) => string,
@@ -89,7 +78,6 @@ export function placeOf(
   return { on: "project" };
 }
 
-/** After a grant or team change: who holds what, and the viewer's own role, may both differ. */
 export async function accessChanged(queryClient: QueryClient) {
   await Promise.all(
     ["project-access", "service-accounts", "projects", "own-access", "directory"].map((key) =>
@@ -98,7 +86,6 @@ export async function accessChanged(queryClient: QueryClient) {
   );
 }
 
-/** The place the form describes, or null while its automation or environment is unchosen. */
 function chosenPlace(
   kind: GrantPlaceRef["on"],
   automation: string,
@@ -136,8 +123,6 @@ export function ShareForm(props: ShareFormProps) {
   const [pickedEnvironment, setEnvironment] = useState(
     props.place?.on === "environment" ? props.place.environment : "",
   );
-  // Derived on every render: an access refresh may unprotect the picked environment, and only a
-  // protected one may be shared.
   const environment = access.protectedEnvironments.includes(pickedEnvironment)
     ? pickedEnvironment
     : (access.protectedEnvironments[0] ?? "");
@@ -147,13 +132,11 @@ export function ShareForm(props: ShareFormProps) {
   const subject = options.find((option) => option.key === chosen)?.subject;
   const place = chosenPlace(placeKind, automation, environment);
   const serviceAccount = subject?.kind === "service-account";
-  // Admin is a project role only, and never a service account's.
   const allowed = ROLES.filter(
     (option) => option !== "admin" || (placeKind === "project" && !serviceAccount),
   );
   const effectiveRole = allowed.includes(role) ? role : "viewer";
 
-  // What the chosen holder holds already: their own grants, then those through a team.
   const holder =
     subject === undefined
       ? undefined
@@ -256,7 +239,6 @@ export function ShareForm(props: ShareFormProps) {
           <label className="flex flex-wrap items-center gap-2">
             <input
               checked={placeKind === "environment"}
-              // An environment grant exists only where the environment is protected.
               disabled={access.protectedEnvironments.length === 0}
               name="place"
               onChange={() => setPlaceKind("environment")}

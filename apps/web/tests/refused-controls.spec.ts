@@ -8,9 +8,6 @@ import {
   seededState,
 } from "./dashboard-mock";
 
-// A control the viewer's role refuses is not offered; the page says once what it needs and where
-// the viewer's role comes from.
-
 const OPERATOR = {
   protectedEnvironment: null,
   required: "editor",

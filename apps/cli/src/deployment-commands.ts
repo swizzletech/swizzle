@@ -98,7 +98,6 @@ function runApply(
       const definition = await loadAutomationDefinition(dir);
       const note = hasDeclaredDependencies(definition) ? { note: DEPENDENCY_NOTE } : {};
 
-      // `--local-only` builds the artifact on disk and never calls the API.
       if (inputOptions.localOnly === true) {
         const deployment = await deployAutomation({
           automationDirectory: path.resolve(dir),

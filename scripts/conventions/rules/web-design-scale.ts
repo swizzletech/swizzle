@@ -1,3 +1,4 @@
+import { CssSyntaxError, parse, type Root } from "postcss";
 import type { Rule, Violation } from "../lint.js";
 import type { Repo } from "../repo.js";
 
@@ -13,7 +14,6 @@ interface Scale {
 
 type Kind = "font size" | "radius" | "spacing";
 
-/** One `property: value` line of the dashboard's CSS. */
 interface Declaration {
   readonly file: string;
   readonly line: number;
@@ -21,17 +21,13 @@ interface Declaration {
   readonly value: string;
 }
 
-/** What a value is measured as, whichever token it reached through. */
 interface Measure {
   readonly kind: Kind;
-  /** The font shorthand holds one size among its other numbers. */
   readonly shorthand: boolean;
 }
 
-/** The custom properties of the dashboard by name; a name set at two scopes has two declarations. */
 type Tokens = ReadonlyMap<string, readonly Declaration[]>;
 
-/** Tailwind's named sizes in px; each name not listed sets no size this rule reads. */
 const TEXT_SIZES: Readonly<Record<string, number>> = {
   "2xl": 24,
   "3xl": 30,
@@ -56,38 +52,32 @@ const RADII: Readonly<Record<string, number>> = {
 
 const SPACING_UTILITY = "(?:p[xytrbl]?|m[xytrbl]?|gap(?:-[xy])?|space-[xy])";
 const CLASS_START = "(?<![\\w-])-?";
+const SIZE_HINT = "(?:length|size|percentage|absolute-size|relative-size):";
 const ARBITRARY = new RegExp(
-  `${CLASS_START}(text|rounded(?:-[a-z]+)?|${SPACING_UTILITY})-\\[(-?[\\d.]+)(px|em|rem)?\\]`,
+  `${CLASS_START}(text|rounded(?:-[a-z]+)?|${SPACING_UTILITY})-\\[(?:${SIZE_HINT})?(-?[\\d.]+)(px|em|rem|%)?\\]`,
   "gu",
 );
 const NUMERIC = new RegExp(
   `${CLASS_START}(${SPACING_UTILITY})-(\\d+(?:\\.\\d+)?)(?![\\w.-])`,
   "gu",
 );
-// `text-[var(--x)]` may be a colour, so only a `length:` hint makes it a font size.
 const TOKEN_CLASS = new RegExp(
-  `${CLASS_START}(text(?=-[\\[(]length:)|rounded(?:-[a-z]+)?|${SPACING_UTILITY})-[\\[(](?:length:)?(?:var\\()?(--[\\w-]+)`,
+  `${CLASS_START}(text(?=-[\\[(]${SIZE_HINT})|rounded(?:-[a-z]+)?|${SPACING_UTILITY})-[\\[(](?:${SIZE_HINT})?(?:var\\()?(--[\\w-]+)`,
   "gu",
 );
 const NAMED_TEXT = /(?<![\w-])text-(xs|sm|base|lg|xl|[2-5]xl)(?![\w-])/gu;
 const NAMED_RADIUS = /(?<![\w-])rounded(?:-(xs|sm|md|lg|xl|2xl|3xl))?(?![\w-])/gu;
 const TOKEN_READ = /var\(\s*(--[\w-]+)/gu;
 
-// The dashboard takes every font size, radius and spacing from one scale, so a page cannot drift
-// from the others one value at a time. The Playwright spec design-foundation.spec.ts reads what a
-// page draws; this rule stops a value at the line that writes it. A token counts as what reads it:
-// the rule follows every `var()` of a measured property to the token's declarations, through tokens
-// that read tokens, so `--page-margin: 7px` fails on its own line under `padding: var(--page-margin)`.
 export const webDesignScale: Rule = {
   id: "web-design-scale",
   check(repo) {
     if (!repo.exists(SCALE)) return [];
     const scale = JSON.parse(repo.read(SCALE)) as Scale;
-    const declarations = repo.files
-      .filter((file) => CSS.test(file))
-      .flatMap((file) => declarationsIn(repo, file));
+    const { declarations, syntaxViolations } = readStylesheets(repo);
     const tokens = tokensOf(declarations);
     const violations = [
+      ...syntaxViolations,
       ...declarations.flatMap((declaration) => {
         const kind = kindOf(declaration.property);
         const shorthand = declaration.property === "font";
@@ -97,7 +87,6 @@ export const webDesignScale: Rule = {
         .filter((file) => TSX.test(file))
         .flatMap((file) => checkClasses(repo, file, tokens, scale)),
     ];
-    // Every reader of an off-scale token reaches the same line.
     return [...new Map(violations.map((one) => [JSON.stringify(one), one])).values()];
   },
 };
@@ -117,7 +106,6 @@ function outside(kind: Kind, value: string, file: string, line: number, scale: S
   };
 }
 
-/** The property a declaration sets, as what it measures; undefined for one the scale says nothing about. */
 function kindOf(property: string): Kind | undefined {
   if (property === "font-size" || property === "font" || property.startsWith("--text-")) {
     return "font size";
@@ -130,20 +118,33 @@ function kindOf(property: string): Kind | undefined {
     : undefined;
 }
 
-/** Blanks comments and keeps every line break, so a line number still names the source line. */
-function withoutComments(text: string): string {
-  return text.replace(/\/\*[\s\S]*?\*\//gu, (comment) => comment.replace(/[^\n]/gu, " "));
-}
-
-function declarationsIn(repo: Repo, file: string): Declaration[] {
-  return withoutComments(repo.read(file))
-    .split("\n")
-    .flatMap((text, index) => {
-      const found = /^\s*(--[\w-]+|[a-z-]+)\s*:\s*(.+?);?\s*$/u.exec(text);
-      if (found === null) return [];
-      const [, property = "", value = ""] = found;
-      return [{ file, line: index + 1, property, value }];
+function readStylesheets(repo: Repo): {
+  declarations: Declaration[];
+  syntaxViolations: Violation[];
+} {
+  const declarations: Declaration[] = [];
+  const syntaxViolations: Violation[] = [];
+  for (const file of repo.files.filter((file) => CSS.test(file))) {
+    let stylesheet: Root;
+    try {
+      stylesheet = parse(repo.read(file), { from: file, map: false });
+    } catch (error) {
+      if (!(error instanceof CssSyntaxError) || error.line === undefined) throw error;
+      syntaxViolations.push({ file, line: error.line, message: `Invalid CSS: ${error.reason}.` });
+      continue;
+    }
+    stylesheet.walkDecls(({ prop, value, source }) => {
+      const start = source?.start;
+      if (start === undefined) throw new Error(`Missing CSS declaration position in ${file}.`);
+      declarations.push({
+        file,
+        line: start.line,
+        property: prop.startsWith("--") ? prop : prop.toLowerCase(),
+        value,
+      });
     });
+  }
+  return { declarations, syntaxViolations };
 }
 
 function tokensOf(declarations: readonly Declaration[]): Tokens {
@@ -155,17 +156,14 @@ function tokensOf(declarations: readonly Declaration[]): Tokens {
   return tokens;
 }
 
-/** The lengths a value writes itself: a token's are read at its own declarations, a fallback's here. */
 function lengthsIn(value: string, shorthand: boolean): readonly string[] {
   const written = value.replace(/var\(\s*--[\w-]+\s*,?/gu, "");
-  // The font shorthand opens with its weight, and its size ends at a slash or a family.
   const lengths = shorthand
     ? written.match(/-?\d*\.?\d+(?:px|em|rem)/u)
     : written.match(/-?\d*\.?\d+(?:px|em|rem|%)?/gu);
   return lengths ?? [];
 }
 
-/** What a declaration sets outside the scale, itself and through every token it reads. */
 function measure(
   declaration: Declaration,
   as: Measure,
@@ -201,9 +199,7 @@ function onScale(kind: Kind, length: string, scale: Scale): boolean {
   const px = /^(-?[\d.]+)(px)?$/u.exec(length);
   if (px === null) return false;
   const value = Number(px[1]);
-  // A bare number other than zero is a unitless size no scale value means.
   if (px[2] === undefined && value !== 0) return false;
-  // A negative margin pulls by a step of the scale, as a Tailwind `-mt-1` does.
   return allowed(kind, scale).includes(Math.abs(value)) || (kind !== "font size" && value === 0);
 }
 

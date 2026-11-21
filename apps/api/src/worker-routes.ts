@@ -28,7 +28,6 @@ const noExtras = (properties: Readonly<Record<string, object>>, required: readon
   additionalProperties: false,
 });
 
-/** Enrollment and identity only. Dispatch consumes the registry's exact-scope session check. */
 export function registerWorkerRoutes(
   app: ApiServer,
   registry: WorkerRegistry,
@@ -40,7 +39,6 @@ export function registerWorkerRoutes(
       runImageDiskWarning: runImageDiskWarning(worker.name, worker.runImageDiskOverBudget),
     })),
   }));
-  // Discovery for anyone who reads the project: the groups an automation there can name.
   app.get<{ Reply: WorkerGroupsResponse }>("/projects/:project/worker-groups", async (request) => {
     const environment = getEnvironment(request);
     const { project } = request.params as { project: string };

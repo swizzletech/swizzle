@@ -1,8 +1,3 @@
-/**
- * Operating an instance: `status` and `doctor` read its health, `secret` manages write-only
- * secrets, `timeout-grant` raises one automation's run-timeout ceiling, and `notify` manages
- * Telegram notification rules. `doctor` exits 1 when a check fails.
- */
 import { formatRuntimeTimeoutMs, parseRuntimeTimeout } from "@swizzle/runtime";
 import type {
   AutomationsResponse,
@@ -48,14 +43,12 @@ interface ProjectOption {
 const projectFlag = (options: ProjectOption) =>
   options.project === undefined ? "" : ` --project ${options.project}`;
 
-/** The command's options with its environment settled: the flag, the profile, or the default. */
 async function inEnvironment<T extends ApiCommandOptions>(
   options: T,
 ): Promise<T & { readonly environment: string }> {
   return { ...options, environment: await resolveCommandEnvironment(options) };
 }
 
-/** The routes that take no environment, such as one notification rule by id. */
 function instanceUrl(pathname: string, options: ApiCommandOptions): string {
   const { environment: _environment, ...target } = options;
   return buildApiUrl(pathname, target);
@@ -114,8 +107,6 @@ interface DoctorCheck {
   readonly fixCommand?: string;
 }
 
-// Preflight: verifies the things that break a first run (API reachable, platform ready, auth
-// accepted, encryption key present) before the agent burns a deploy and trigger cycle on them.
 function registerDoctor(program: Command, io: CliIO, runHandler: RunHandler): void {
   const doctor = program
     .command("doctor")
@@ -127,7 +118,6 @@ function registerDoctor(program: Command, io: CliIO, runHandler: RunHandler): vo
     await runHandler(async () => {
       let options: ApiCommandOptions = inputOptions;
       const checks: DoctorCheck[] = [];
-      // Doctor keeps testing the instance when environment discovery fails.
       try {
         options = await inEnvironment(inputOptions);
       } catch (error) {
@@ -212,8 +202,6 @@ async function runDoctorCheck(
   }
 }
 
-// ---------- secret ----------
-
 function registerSecret(program: Command, io: CliIO, runHandler: RunHandler): void {
   const secret = program
     .command("secret")
@@ -254,7 +242,6 @@ function registerSecret(program: Command, io: CliIO, runHandler: RunHandler): vo
       respond(io, {
         environment: response.environment,
         count: response.secrets.length,
-        // A list can span projects, and names are unique only within one.
         secrets: response.secrets.map((entry) => ({
           name: entry.name,
           project: entry.project.slug,
@@ -348,9 +335,6 @@ function registerSecret(program: Command, io: CliIO, runHandler: RunHandler): vo
           });
         }
         const options = await inEnvironment(inputOptions);
-        // One atomic PUT; the server checks for an existing row under a lock. Without
-        // --overwrite the CLI asks for create-only, so an existing secret answers 409
-        // SECRET_ALREADY_EXISTS instead of being replaced.
         const response = await apiRequest<SetSecretResponse>(
           buildApiUrl(`/secrets/${encodeURIComponent(name)}`, options, {
             ...inProject(options),
@@ -416,8 +400,6 @@ function registerSecret(program: Command, io: CliIO, runHandler: RunHandler): vo
     },
   );
 }
-
-// ---------- timeout-grant ----------
 
 function registerTimeoutGrant(program: Command, io: CliIO, runHandler: RunHandler): void {
   const grant = program
@@ -515,7 +497,6 @@ function registerTimeoutGrant(program: Command, io: CliIO, runHandler: RunHandle
       inputOptions: ApiCommandOptions & ExactCommandOptions & { readonly note?: string },
     ) => {
       await runHandler(async () => {
-        // The parser runtime.timeout uses, so `3h` here means what it means in config.yaml.
         const maxTimeoutMs = parseRuntimeTimeout(duration, "duration");
         const options = await inEnvironment(inputOptions);
         const resolved = await resolveAutomationNameOrDie(name, options);
@@ -568,7 +549,6 @@ function registerTimeoutGrant(program: Command, io: CliIO, runHandler: RunHandle
     async (name: string, inputOptions: ApiCommandOptions & { readonly yes?: boolean }) => {
       await runHandler(async () => {
         const options = await inEnvironment(inputOptions);
-        // Removal acts on the exact name only, so a near miss cannot strip another automation's grant.
         const resolved = await resolveAutomationNameOrDie(name, options, { destructive: true });
         requireYes(
           options.yes,
@@ -591,11 +571,8 @@ function registerTimeoutGrant(program: Command, io: CliIO, runHandler: RunHandle
   );
 }
 
-// ---------- notify ----------
-
 const EVENT_TYPES = ["dead-lettered", "repeated-failures"] as const;
 
-/** Max rows the API returns per request; the CLI asks for one more to know whether more exist. */
 const API_DELIVERY_LIMIT = 200;
 
 interface RuleNumbers {

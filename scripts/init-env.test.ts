@@ -8,8 +8,6 @@ import { temporaryDirectory } from "../test/support.js";
 
 const repoRoot = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 
-// A checkout with the env template, and a `docker` on its PATH that answers `docker info` with
-// the CPU count in FAKE_DOCKER_CPUS, so a test chooses the Docker host's size.
 async function checkoutWithExampleEnv(): Promise<string> {
   const directory = await temporaryDirectory("swizzle-init-env-");
   await copyFile(path.join(repoRoot, ".env.example"), path.join(directory, ".env.example"));
@@ -20,7 +18,6 @@ async function checkoutWithExampleEnv(): Promise<string> {
   return directory;
 }
 
-// Runs the script as `just init-env` does: Node strips its types, so no loader starts with it.
 const initEnvCommand = [process.execPath, [path.join(repoRoot, "scripts/init-env.ts")]] as const;
 
 function dockerHost(cwd: string, cpus: number) {
@@ -163,7 +160,6 @@ describe("init-env", () => {
     const directory = await checkoutWithExampleEnv();
     expect(initEnv(directory).status).toBe(0);
     const target = path.join(directory, ".env");
-    // 1.0.2 wrote no SWIZZLE_WORKER_CPUS line, and SWIZZLE_MAX_RUN_CPUS=2 from its template.
     const released = (await readFile(target, "utf8"))
       .replace(/^SWIZZLE_WORKER_CPUS=.*\n/mu, "")
       .replace(/^SWIZZLE_MAX_RUN_CPUS=.*$/mu, "SWIZZLE_MAX_RUN_CPUS=2");

@@ -26,7 +26,6 @@ describe("swizzle credential", () => {
     const apiTokenStore = testApiTokenStore();
     const office = await accessStore.createProject({ name: "Office", slug: "office" });
     const finance = await accessStore.createProject({ name: "Finance", slug: "finance" });
-    /** A person with a role in one project, and a CLI profile acting as them. */
     const person = async (email: string, projectId: string, role: "admin" | "editor") => {
       const userId = await people.add(email);
       await accessStore.setGrant({ kind: "user", userId }, { on: "project", projectId, role });
@@ -39,7 +38,6 @@ describe("swizzle credential", () => {
       return { email, token, userId };
     };
     const olga = await person("olga@office.test", office.id, "admin");
-    // Offering a credential to a project needs sight of it: Olga views finance.
     await accessStore.setGrant(
       { kind: "user", userId: olga.userId },
       { on: "project", projectId: finance.id, role: "viewer" },
@@ -102,7 +100,6 @@ describe("swizzle credential", () => {
       ).toEqual([
         ["user", "use", "use granted"],
         ["user", "manage", "admin of its project; manage granted"],
-        // The owner the test harness signs the CLI in as.
         ["user", "manage", "instance owner"],
       ]);
       const selfPromoted = await cli(
@@ -111,7 +108,6 @@ describe("swizzle credential", () => {
       );
       expect(selfPromoted.exitCode).toBe(4);
       expect(selfPromoted.json.code).toBe("ACCESS_DENIED");
-      // Repeating a held grant is no way around manage either.
       expect(await cli(...grant, "--profile", "anna")).toMatchObject({
         exitCode: 4,
         json: { code: "ACCESS_DENIED" },
@@ -183,7 +179,6 @@ describe("swizzle credential", () => {
       accessStore,
       apiTokenStore,
       auth: people.auth,
-      // The stub's workers answer validate's readiness; nothing else here reads it.
       dashboard: createDashboardStub("unrelated"),
       platform: await testPlatform(),
     });
@@ -219,7 +214,6 @@ describe("swizzle credential", () => {
       ].join("\n"),
     );
     await writeFile(path.join(automation, "main.js"), "console.log('{}');\n");
-    // Both commands place the new automation in the profile's project.
     const asAnna = [automation, "--profile", "anna"];
 
     try {

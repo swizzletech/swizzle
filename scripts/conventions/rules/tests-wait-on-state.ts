@@ -1,16 +1,8 @@
 import ts from "typescript";
 import type { Rule, Violation } from "../lint.js";
 
-// A test waits on a state or an event, never on time: no sleep, no polling loop of its own, no
-// elapsed-time or duration assertion, no timeout, deadline or retry of its own. Each of these passes
-// on an idle machine and fails on a loaded runner. The runner configurations hold the only
-// ceilings, and a flaky test is fixed at its race, not retried. The check reads each file's syntax
-// tree, so code in a string, such as an automation a test writes to disk, is not the test's wait.
-
-/** Test files and the helpers only tests import. */
 const TEST_CODE =
   /\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)test\/[^/]+\.[cm]?[jt]sx?$|^apps\/web\/tests\/[^/]+\.[cm]?[jt]sx?$/u;
-/** The runner configurations, where a retry would rerun every failing test. */
 const RUNNER_CONFIG = /^(vitest|playwright)\.config\.[cm]?[jt]s$/u;
 
 const SLEEP =
@@ -43,13 +35,9 @@ const BUDGET_KEYS = new Set([
   "actionTimeout",
   "navigationTimeout",
 ]);
-/** Calls that set a ceiling for the rest of the test: `test.setTimeout(ms)`, `page.setDefaultTimeout(ms)`. */
 const BUDGET_SETTERS = new Set(["setTimeout", "setDefaultTimeout", "setDefaultNavigationTimeout"]);
-/** Matchers that put an upper bound on their subject. */
 const UPPER_BOUNDS = new Set(["toBeLessThan", "toBeLessThanOrEqual"]);
-/** A subject named for how long something took, such as `result.durationMs`. */
 const DURATION = /elapsed|duration|latency/iu;
-/** What `vi.useFakeTimers({ toFake })` names when it fakes the clock a test reads. */
 const CLOCK_FAKES = new Set(["Date", "performance", "hrtime"]);
 const CLOCKS = new Set(["Date.now", "performance.now", "process.hrtime", "process.hrtime.bigint"]);
 const ASSIGNMENTS = new Set([
@@ -57,7 +45,6 @@ const ASSIGNMENTS = new Set([
   ts.SyntaxKind.QuestionQuestionEqualsToken,
   ts.SyntaxKind.BarBarEqualsToken,
 ]);
-/** A difference or a comparison of two clock readings measures how long something took. */
 const MEASURES = new Set([
   ts.SyntaxKind.MinusToken,
   ts.SyntaxKind.LessThanToken,
@@ -81,8 +68,6 @@ function timeWaits(file: string, text: string): Violation[] {
   const violations: Violation[] = [];
   const report = (node: ts.Node, message: string) =>
     violations.push({ file, line: lineOf(source, node), message });
-  // Local names of the timer functions imported from Node's timer modules, by their exported name,
-  // and the names a whole timer module is imported under, such as `import * as timers`.
   const imported = new Map<string, string>();
   const modules = new Set<string>();
   const playwright = source.statements.some(
@@ -115,9 +100,6 @@ function timeWaits(file: string, text: string): Violation[] {
     return undefined;
   };
 
-  // Names that hold a clock reading, such as `const started = performance.now()`: two readings
-  // measure a duration, while one reading with a fixed offset only dates a fixture. In a file that
-  // sets the clock, a duration is the exact value the test set, so it measures no load.
   const clockNames = new Set<string>();
   let setsClock = false;
   const collect = (node: ts.Node): void => {
@@ -178,7 +160,6 @@ function timeWaits(file: string, text: string): Violation[] {
       readsClock(node.right)
     )
       report(node, ELAPSED);
-    // A callback in a loop runs on its own schedule, not the loop's.
     const loopBody = isLoop(node) ? true : ts.isFunctionLike(node) ? false : inLoop;
     ts.forEachChild(node, (child) => visit(child, loopBody));
   };
@@ -186,13 +167,6 @@ function timeWaits(file: string, text: string): Violation[] {
   return violations;
 }
 
-/**
- * `test.setTimeout(ms)` or `testInfo.setTimeout(ms)`, `test.slow()`, or the timeout after a test's
- * or a hook's body, such as `it(name, body, 10_000)` or `beforeAll(body, TIMEOUT)`. After an
- * options object, as in `test(name, { tag }, body)`, the third argument is the body. Options after
- * the body are object literals, which `budgetsIn` reads. A global `setTimeout` never gets here: it
- * is a sleep.
- */
 function budgetOf(node: ts.CallExpression, path: readonly string[]): ts.Node | undefined {
   const [root = "", ...members] = path;
   if (BUDGET_SETTERS.has(members.at(-1) ?? "")) return node;
@@ -208,10 +182,6 @@ function budgetOf(node: ts.CallExpression, path: readonly string[]): ts.Node | u
     : argument;
 }
 
-/**
- * `vi.setSystemTime(...)`, `vi.useFakeTimers()` that fakes the clock, or Playwright's
- * `page.clock.install()`, `setFixedTime()` or `setSystemTime()`.
- */
 function setsTheClock(node: ts.CallExpression): boolean {
   const path = memberPath(node.expression)?.join(".") ?? "";
   if (path === "vi.setSystemTime" || /\.clock\.(install|setFixedTime|setSystemTime)$/u.test(path))
@@ -230,11 +200,6 @@ function setsTheClock(node: ts.CallExpression): boolean {
   );
 }
 
-/**
- * A timeout or retry an option object sets to a number, however deep, such as
- * `{ timeout: 2_000 }`, `{ timeout: SHORT }` or `test.use({ expect: { timeout } })`. A string or an
- * object under the same key, such as an automation's `timeout: "60s"`, is data the test expects.
- */
 function budgetsIn(node: ts.Expression, found: (property: ts.Node) => void): void {
   if (!ts.isObjectLiteralExpression(node)) return;
   for (const property of node.properties) {
@@ -248,7 +213,6 @@ function budgetsIn(node: ts.Expression, found: (property: ts.Node) => void): voi
   }
 }
 
-/** `expect(result.durationMs).toBeLessThan(...)`: an upper bound on how long something took. */
 function isDurationBound(node: ts.CallExpression): boolean {
   const matcher = node.expression;
   if (!ts.isPropertyAccessExpression(matcher) || !UPPER_BOUNDS.has(matcher.name.text)) return false;
@@ -262,7 +226,6 @@ function isDurationBound(node: ts.CallExpression): boolean {
   return DURATION.test(name);
 }
 
-/** The subject of `expect(subject)`, also through `.not`, `.soft` or `.resolves`. */
 function expectedSubject(node: ts.Expression): ts.Expression | undefined {
   if (ts.isPropertyAccessExpression(node)) return expectedSubject(node.expression);
   if (!ts.isCallExpression(node)) return undefined;
@@ -282,7 +245,6 @@ function retrySettings(file: string, text: string): Violation[] {
   return violations;
 }
 
-/** `a.b.c` of a callee written as identifiers and property names, through calls such as `it.each(x)`. */
 function memberPath(node: ts.Expression): string[] | undefined {
   if (ts.isIdentifier(node)) return [node.text];
   if (ts.isPropertyAccessExpression(node)) {
@@ -293,7 +255,6 @@ function memberPath(node: ts.Expression): string[] | undefined {
   return undefined;
 }
 
-/** A number the source spells out, such as `30_000` or `11 * 60_000`. */
 function isConstantNumber(node: ts.Expression): boolean {
   if (ts.isNumericLiteral(node)) return true;
   if (ts.isParenthesizedExpression(node)) return isConstantNumber(node.expression);

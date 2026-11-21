@@ -22,7 +22,6 @@ function row(
   };
 }
 
-/** The counters of an event from execution `executionNumber`, which spends attempt 1. */
 const counters = (executionNumber: number) => ({ attempt: 1, executionNumber });
 
 describe("mergeStepEvents", () => {

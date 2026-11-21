@@ -1,8 +1,3 @@
-// Mermaid parses an automation's flow.mermaid; this module reduces its flowchart model to the
-// track's `FlowGraph`. Mermaid only parses here: dagre lays the graph out and `track.tsx` draws it,
-// so a station is a real element the owner can click and approve on. A diagram that is not a
-// flowchart parses to null, and the About tab then shows Mermaid's own drawing.
-
 import type { FlowGraph, FlowNode } from "./track";
 
 interface FlowVertexLike {
@@ -17,7 +12,6 @@ interface FlowEdgeLike {
   readonly text?: string;
 }
 
-/** The flowchart db methods the track reads; Mermaid types its db loosely. */
 interface FlowDbLike {
   getDirection(): string | undefined;
   getVertices(): Map<string, FlowVertexLike>;
@@ -43,7 +37,6 @@ function shapeOf(type: string | undefined): FlowNode["shape"] {
   return "box";
 }
 
-/** The flowchart in `code`, or null when the code is another diagram or does not parse. */
 export async function parseFlow(code: string): Promise<FlowGraph | null> {
   const instance = await mermaid();
   const diagram = await instance.mermaidAPI.getDiagramFromText(code).catch(() => null);

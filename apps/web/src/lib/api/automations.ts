@@ -1,5 +1,3 @@
-// Automations: the overview, details, flow, source and README, folders, triggers and rollback.
-
 import type {
   AssignAutomationFolderResponse,
   AutomationDetailResponse,
@@ -78,7 +76,6 @@ export function automationsCalls(environment: string) {
       );
     },
 
-    /** The flow.mermaid of the active deployment or the one named. */
     async getMermaidDiagram(automationSlug: string, deploymentId?: string) {
       const query = new URLSearchParams({ environment });
       if (deploymentId !== undefined) query.set("deployment", deploymentId);
@@ -88,7 +85,6 @@ export function automationsCalls(environment: string) {
       );
     },
 
-    /** The entrypoint and its step sites, of the active deployment or the one named. */
     async getAutomationSource(automationSlug: string, deploymentId?: string) {
       const query = new URLSearchParams({ environment });
       if (deploymentId !== undefined) query.set("deployment", deploymentId);
@@ -98,7 +94,6 @@ export function automationsCalls(environment: string) {
       );
     },
 
-    /** How many of the last 50 runs reached each step. */
     async getStepReach(automationSlug: string) {
       return await request<StepReachResponse>(
         `/dashboard/automations/${encodeURIComponent(automationSlug)}/step-reach?environment=${encodeURIComponent(environment)}`,
@@ -113,7 +108,6 @@ export function automationsCalls(environment: string) {
       );
     },
 
-    /** The timetable's hours start on the viewer's full hours, so it sends their clock's offset. */
     async getOverview() {
       const utcOffset = -new Date().getTimezoneOffset();
       return await request<OverviewResponse>(
@@ -121,7 +115,6 @@ export function automationsCalls(environment: string) {
       );
     },
 
-    /** Starts a manual run now; it gets a new id and reads as `manual`. */
     async startRun(automationSlug: string, payload: unknown) {
       return await request<TriggerRunResponse>(
         `/automations/${encodeURIComponent(automationSlug)}/runs?environment=${encodeURIComponent(environment)}`,

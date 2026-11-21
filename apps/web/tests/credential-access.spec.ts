@@ -9,10 +9,6 @@ import type {
 } from "../src/lib/api";
 import { mockDashboardApi, PROJECT_ID, seededState } from "./dashboard-mock";
 
-// Who may use and manage a secret or an account: the row's Access panel lists every holder with the
-// sources of their right, and only a manager gets the controls that change them. A new secret joins
-// the project in view, or the one its form picks.
-
 const MIA: Person = {
   email: "mia@example.com",
   id: "user-mia",
@@ -97,7 +93,6 @@ function access(right: CredentialRight, credential: Credential): CredentialAcces
   };
 }
 
-/** Answers the credential's access and grant routes; returns what the grant routes were sent. */
 async function serveAccess(page: Page, right: CredentialRight, credential = SECRET) {
   const sent: {
     readonly method: string;
@@ -158,7 +153,6 @@ test("a manager sees each holder's source, grants a person use and removes a tea
   expect(sent[0]).toMatchObject({ body: { right: "use", user: MIA.id }, method: "PUT" });
   expect(sent[1]).toMatchObject({ method: "DELETE" });
   expect(new URLSearchParams(sent[1]?.url).get("team")).toBe("team-billing");
-  // Olga holds it by role: there is no grant of hers to remove.
   await expect(panel.getByRole("button", { name: "Remove the grant of Olga" })).toHaveCount(0);
 });
 
@@ -255,7 +249,6 @@ test("a new secret joins the project in view, or the one the form picks", async 
   await page.goto("/credentials?project=finance");
   await page.getByTestId("page-head").getByRole("button", { name: "Add secret" }).click();
   const form = page.getByTestId("add-secret");
-  // Only the project the person edits is offered.
   await expect(
     form.getByRole("combobox", { name: "Project of the new secret" }).locator("option"),
   ).toHaveText(["Finance"]);

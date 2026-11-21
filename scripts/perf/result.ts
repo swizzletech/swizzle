@@ -1,17 +1,9 @@
-// The result of one `just perf` run and the comparison of two. A run measures every metric once
-// per round; a metric keeps the median of its rounds and their range, the run-to-run spread.
-// scripts/perf.mts writes a PerfResult as JSON, prints `summarize` or, given a base, `compare`.
-
-/** Which way a metric improves. */
 type Better = "lower" | "higher";
 
 type Unit = "ms" | "s" | "req/s" | "runs/s" | "cpu-s" | "MiB" | "KiB" | "count" | "score";
 
-/** One quantity measured once per round. `min` and `max` bound the rounds: the spread. */
 export interface Metric {
-  /** The row the summary prints it in, for example `GET /dashboard/runs` or `page /runs`. */
   readonly group: string;
-  /** The column, for example `p95`, `LCP` or `cpu`. */
   readonly name: string;
   readonly unit: Unit;
   readonly better: Better;
@@ -19,17 +11,11 @@ export interface Metric {
   readonly min: number;
   readonly max: number;
   readonly rounds: number;
-  /**
-   * The largest difference that can come from how the run started rather than from the commit,
-   * which the rounds of one run cannot show: for resident memory, what the kernel handed the
-   * service in huge pages. 0 for most metrics.
-   */
   readonly floor: number;
 }
 
 export type Target = "api" | "web" | "all";
 
-/** What a run measured on, so a number can be explained and two runs judged comparable. */
 export interface PerfResult {
   readonly startedAt: string;
   readonly target: Target;
@@ -42,28 +28,19 @@ export interface PerfResult {
     readonly os: string;
     readonly node: string;
     readonly docker: string;
-    /** 1, 5 and 15 minute load averages before the first and after the last round. */
     readonly loadBefore: readonly number[];
     readonly loadAfter: readonly number[];
-    /**
-     * Share of the measured time in which some task on the host waited for a CPU or for IO, from
-     * Linux pressure stall information. Absent where the kernel does not report it.
-     */
     readonly stallPercent?: { readonly cpu: number; readonly io: number };
   };
-  /** The fixed scenario: rounds, concurrency, throttling. Two runs compare only on equal profiles. */
   readonly profile: Readonly<Record<string, string | number>>;
-  /** Resolved nonsecret Compose settings for this side, rather than the caller's environment. */
   readonly scenario: Readonly<Record<string, string | number>> & {
     readonly workerReplicas: number;
     readonly workerConcurrency: number;
   };
-  /** A deliberate configuration experiment, still excluded from regression verdicts. */
   readonly experiment: string | null;
   readonly metrics: readonly Metric[];
 }
 
-/** Parses the current persisted format once, before any stack is started. */
 export function parseResult(json: string): PerfResult {
   const object = (value: unknown, field: string): Record<string, unknown> => {
     if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -188,42 +165,32 @@ export function parseResult(json: string): PerfResult {
   };
 }
 
-/** A metric of the head next to the same metric of the base. */
 interface Delta {
   readonly base: Metric;
   readonly head: Metric;
-  /** head.median - base.median */
   readonly delta: number;
-  /** The larger range or floor of the two, at least the unit's resolution: a delta inside it is no measured difference. */
   readonly spread: number;
   readonly verdict: Verdict;
 }
 
 type Verdict = "better" | "worse" | "same";
 
-/** A scenario entry base and head set differently, or only one of them sets. */
 interface ScenarioDifference {
   readonly name: string;
   readonly base: string | number | undefined;
   readonly head: string | number | undefined;
 }
 
-/**
- * What compare judged, and what it could not: metrics one side lacks or defines differently. Runs
- * of different scenarios are not judged at all, because the scenario moves every number.
- */
 type Comparison =
   | {
       readonly kind: "judged";
       readonly deltas: readonly Delta[];
       readonly onlyBase: readonly Metric[];
       readonly onlyHead: readonly Metric[];
-      /** Same group and name, another unit or direction: a delta between them would mean nothing. */
       readonly redefined: readonly { readonly base: Metric; readonly head: Metric }[];
     }
   | { readonly kind: "other scenario"; readonly differences: readonly ScenarioDifference[] };
 
-/** The value at quantile `q` (0..1) of `values`, by nearest rank. */
 export function quantile(values: readonly number[], q: number): number {
   if (values.length === 0) throw new Error("quantile of no values");
   const sorted = [...values].sort((a, b) => a - b);
@@ -231,7 +198,6 @@ export function quantile(values: readonly number[], q: number): number {
   return sorted[rank - 1] as number;
 }
 
-/** Folds the per-round values of one metric into its median and range. */
 function metric(
   group: string,
   name: string,
@@ -259,10 +225,6 @@ function metric(
   };
 }
 
-/**
- * Collects one value per metric per round and folds them into metrics in the order they were
- * first recorded, which is the order the summary prints.
- */
 export class Rounds {
   readonly #values = new Map<
     string,
@@ -273,10 +235,6 @@ export class Rounds {
     }
   >();
 
-  /**
-   * `floor` is this round's share of `value` that the start of the run decides, see Metric. Throws
-   * on a value that is not a finite number: JSON would store it as null and spoil a later compare.
-   */
   record(group: string, name: string, unit: Unit, better: Better, value: number, floor = 0): void {
     if (!Number.isFinite(value) || !Number.isFinite(floor)) {
       throw new Error(
@@ -300,10 +258,6 @@ export class Rounds {
   }
 }
 
-/**
- * The smallest difference a unit resolves. Memory of an idle service drifts by KiB and a count
- * moves in whole steps, so a delta this small is no difference even when every round agreed.
- */
 const RESOLUTION: Readonly<Record<Unit, number>> = {
   count: 1,
   "cpu-s": 0.01,
@@ -339,11 +293,6 @@ function scenarioDifferences(base: PerfResult, head: PerfResult): ScenarioDiffer
     .map((name) => ({ base: before[name], head: after[name], name }));
 }
 
-/**
- * Pairs the metrics both results hold with the same unit and direction and judges each delta
- * against the spread: the larger range or floor of the two, at least the unit's resolution.
- * Judges nothing when the two ran different scenarios.
- */
 export function compare(base: PerfResult, head: PerfResult): Comparison {
   const differences = scenarioDifferences(base, head);
   if (differences.length > 0) return { differences, kind: "other scenario" };
@@ -396,7 +345,6 @@ function format(value: number, unit: Unit): string {
   }
 }
 
-/** Left-aligns the first column and right-aligns the rest. */
 function table(rows: readonly (readonly string[])[]): string {
   const widths = rows[0]?.map((_, column) =>
     Math.max(...rows.map((row) => row[column]?.length ?? 0)),
@@ -413,7 +361,6 @@ function table(rows: readonly (readonly string[])[]): string {
     .join("\n");
 }
 
-/** Groups with the same columns share one table; groups and tables keep the order measured. */
 function sections(metrics: readonly Metric[]): Metric[][][] {
   const groups = new Map<string, Metric[]>();
   for (const entry of metrics) {
@@ -446,7 +393,6 @@ function header(result: PerfResult): string {
   ].join("\n");
 }
 
-/** The tables a person reads after a run: each cell is the median and the range of the rounds. */
 export function summarize(result: PerfResult): string {
   const rounds = Math.max(...result.metrics.map((entry) => entry.rounds));
   const tables = sections(result.metrics).map((section) => {
@@ -468,19 +414,16 @@ export function summarize(result: PerfResult): string {
   ].join("\n");
 }
 
-/** A warning when base and head ran on different machines, whose numbers differ for that alone. */
 function otherMachine(base: PerfResult, head: PerfResult): string[] {
   return base.machine.host !== head.machine.host || base.machine.cpu !== head.machine.cpu
     ? [`warning: base ran on ${base.machine.host}, head on ${head.machine.host}`]
     : [];
 }
 
-/** The groups of `metrics` in the order measured, for a line that names what was not compared. */
 function groupsOf(metrics: readonly Metric[]): string {
   return [...new Set(metrics.map((entry) => entry.group))].join(", ");
 }
 
-/** The compare table: base and head medians, the delta, the spread it is judged against, the verdict. */
 export function formatComparison(base: PerfResult, head: PerfResult): string {
   const headers = [
     `base ${header(base).replaceAll("\n", "\n     ")}`,

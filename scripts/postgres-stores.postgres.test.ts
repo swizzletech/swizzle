@@ -3,7 +3,6 @@ import { type DatabaseClient, spendBudget } from "@swizzle/db/postgres";
 import { it } from "vitest";
 import { testDatabase } from "../test/postgres.js";
 
-/** Schema and budget constraints against the migrated database. */
 async function verifyPostgresStores(client: DatabaseClient): Promise<void> {
   const tables = ["grants", "auth_budgets", "worker_grants", "credential_grants"];
   const present = await client.pool.query<{ name: string }>(
@@ -46,7 +45,7 @@ async function verifyPostgresStores(client: DatabaseClient): Promise<void> {
   );
 }
 
-it("postgres stores", async () => {
+it("uses the migrated grant stores and enforces a shared budget under contention", async () => {
   const client = testDatabase();
   await verifyPostgresStores(client);
 });

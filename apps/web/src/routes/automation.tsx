@@ -1,16 +1,11 @@
-import { AuditHistory } from "../components/audit-history";
-import { useConfirm } from "../components/confirm";
-// One automation `/automations/:slug`: health, description and trigger in words, then its runs
-// under the live track and beside the selected run, About (README, flow, trigger, what it needs,
-// API check, vars), Play (the deployed code with a run moving through it) and Versions.
-
 import { stepFamily } from "@swizzle/config/browser";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
-
 import { ActionError, ConnectLink, SecretField } from "../components/actions";
+import { AuditHistory } from "../components/audit-history";
 import { AutomationPlay } from "../components/automation-play";
+import { useConfirm } from "../components/confirm";
 import { FlowDiagram } from "../components/flow-diagram";
 import { FlowTrack, useTrackFolded } from "../components/flow-track";
 import { MarkdownDocument } from "../components/markdown-document";
@@ -133,7 +128,6 @@ function LoadedAutomation(props: {
   );
 }
 
-/** What the trigger does and where the deployment stands, in the page head under the title. */
 function HeadFacts({ automation }: { readonly automation: AutomationDetail }) {
   const now = useNow();
   const trigger = automation.trigger;
@@ -216,7 +210,6 @@ function HeadActions({ automation }: { readonly automation: AutomationDetail }) 
   );
 }
 
-/** Run now, with an optional JSON payload; the new run opens in the Runs tab. */
 function RunNow(props: {
   readonly automation: AutomationDetail;
   readonly trigger: TriggerSummary;
@@ -267,11 +260,9 @@ function parsePayload(text: string): unknown {
   }
 }
 
-/** The "⋯" menu: Move to folder. Delete stays in the CLI. */
 function MoreMenu({ automation }: { readonly automation: AutomationDetail }) {
   const { api } = useDashboardClient();
   const queryClient = useQueryClient();
-  // Only folders of the automation's own project take it.
   const folders = useFolders().data?.folders.filter(
     (folder) => folder.projectId === automation.projectId,
   );
@@ -311,8 +302,6 @@ function RunsTab(props: {
   const navigate = useNavigate({ from: "/automations/$automationSlug" });
   const slug = props.automation.automationSlug;
   const pages = useRunPages({ automation: slug });
-  // As on Runs. On a phone the chosen run comes first and its track below it, since a phone draws
-  // the track a screen tall.
   const view = useRunSplit(props.selected, pages.runs?.[0]?.runId);
   const { selected } = view;
   const select = (runId: string, options?: { readonly replace: boolean }) =>
@@ -320,21 +309,16 @@ function RunsTab(props: {
   const runQuery = useQuery({
     enabled: selected !== undefined,
     queryFn: () => api.getRunDetail(selected ?? ""),
-    // The run panel reads the same key, so the run is fetched once.
     queryKey: ["run", selected, ...queryScope],
     refetchInterval: (query) =>
       query.state.data !== undefined && isOpenRun(query.state.data.status) ? 3_000 : false,
   });
   const run = selected === undefined ? null : (runQuery.data ?? null);
-  // The track and the code of the deployment the run ran on, not of whatever is active now.
   const flow = useAutomationFlow(
     slug,
     run?.deploymentId ?? props.automation.activeDeployment.deploymentId,
   );
   const [folded, setFolded] = useTrackFolded();
-  // The station decides the approval only when it is on screen above the panel; on a phone with a
-  // run chosen the track sits below the panel, so the panel decides. Track and panel read this one
-  // answer, so exactly one of them shows Approve and Reject.
   const approvalOnTrack = (stepKey: string) =>
     view.list &&
     !folded &&
@@ -385,7 +369,6 @@ function AboutTab({ automation }: { readonly automation: AutomationDetail }) {
   const vars = Object.entries(automation.activeDeployment.vars);
   return (
     <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-      {/* A one-column track that may shrink, so a long README line scrolls instead of spilling. */}
       <div className="grid grid-cols-[minmax(0,1fr)] gap-6">
         <div className="card p-6">
           <MarkdownDocument
@@ -395,7 +378,6 @@ function AboutTab({ automation }: { readonly automation: AutomationDetail }) {
             loading={readme.isLoading}
           />
         </div>
-        {/* A flowchart is drawn as the track with reach counts; any other diagram by Mermaid. */}
         {flow.graph !== null ? (
           <AboutCard title="Flow">
             <Track testId="track" track={staticTrack(flow.graph, flow.families, flow.reach)} />
@@ -490,10 +472,6 @@ function TriggerFacts({ trigger }: { readonly trigger: TriggerSummary | null }) 
   );
 }
 
-/**
- * How config.yaml's `api_check` watches the automation's API: the level, an active check's latest
- * and last green output with the calls it says it made, and what its runs saw of each host.
- */
 function ApiCheckFacts({ automation }: { readonly automation: AutomationDetail }) {
   const now = useNow();
   const { apiCheck, apiContacts } = automation;
@@ -585,10 +563,8 @@ function ApiCheckFacts({ automation }: { readonly automation: AutomationDetail }
   );
 }
 
-/** A secret set since the deploy reaches the runs only once a deploy binds it. */
 const SECRET_CHIP = { bound: "Set", missing: "Missing", unbound: "Deploy again" } as const;
 
-/** The secrets and accounts config.yaml declares, each with its state and the field to fix it. */
 function Needs({ automation }: { readonly automation: AutomationDetail }) {
   if (automation.requiredSecrets.length === 0 && automation.requiredConnections.length === 0) {
     return <p className="t-meta">It needs no secrets or accounts</p>;
@@ -623,7 +599,6 @@ function Needs({ automation }: { readonly automation: AutomationDetail }) {
   );
 }
 
-/** A connected account reaches the runs only once a deploy binds it. */
 function ConnectionState(props: {
   readonly connection: AutomationDetail["requiredConnections"][number];
   readonly projectId: string;
@@ -640,7 +615,6 @@ function ConnectionState(props: {
   );
 }
 
-/** "Rolled back to v1.2.0", "Deployed v1.1.0 → v1.2.0" or "Deployed v1.0.0". */
 function deploymentInWords(
   version: string,
   event: AutomationDetail["deploymentAudit"][number] | undefined,
@@ -653,10 +627,6 @@ function deploymentInWords(
   return `Deployed ${shown}`;
 }
 
-/**
- * One timeline of deploys and rollbacks, newest first, with Roll back on every older entry unless
- * the viewer's role refuses it; then it says why once.
- */
 function VersionsTab({ automation }: { readonly automation: AutomationDetail }) {
   const confirm = useConfirm();
   const now = useNow();

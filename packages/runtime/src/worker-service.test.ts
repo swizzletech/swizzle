@@ -20,20 +20,11 @@ const lease: ExecutionLease = {
 };
 
 interface Faults {
-  /** Use a file credential and stall its candidate probe after the clock enters renewal time. */
   readonly stalledTokenRenewal?: boolean;
-  /** The lease lasts 500 ms, and renewals after the first get no reply while the test runs. */
   readonly heldRenewal?: boolean;
-  /** The first source reply stops halfway through its body. */
   readonly cutSource?: boolean;
-  /**
-   * The first renewal after the attempt starts answers 503, as during a network change. The
-   * automation's request to `GATE` gets its reply once a later renewal succeeded.
-   */
   readonly refusedRenewal?: boolean;
-  /** From the first lease renewal on, replies carry a Date ten minutes later, as after host sleep. */
   readonly hostSlept?: boolean;
-  /** Called as the pull hands out the assignment. */
   readonly onAssignment?: () => void;
 }
 
@@ -62,7 +53,6 @@ async function api(script: string, faults: Faults = {}, expiresAt = lease.expire
   const renewedAfterRefusal = new Promise<void>((resolve) => {
     renewalSucceeded = resolve;
   });
-  // The first time the worker gives up an execution or a pull, as it logs it.
   let failed = (_error: Error) => {};
   const failure = new Promise<Error>((resolve) => {
     failed = resolve;
@@ -194,7 +184,6 @@ it.for(["1970-01-01T00:00:00.000Z", "2099-01-01T00:00:00.000Z"])(
     await waitFor(signal, client.accepted);
     expect(client.outputs).toHaveLength(2);
     expect(client.outputs[1]).toBe(client.outputs[0]);
-    // A request names its attempt by task and generation; the server reads the rest from its row.
     expect(JSON.parse(client.outputs[0] ?? "{}").lease).toEqual({
       taskId: lease.taskId,
       generation: lease.generation,
@@ -205,7 +194,6 @@ it.for(["1970-01-01T00:00:00.000Z", "2099-01-01T00:00:00.000Z"])(
 );
 
 it("stops before server expiry when a renewal acknowledgement is delayed", async () => {
-  // The automation never ends by itself, so only the worker's local deadline stops it.
   const client = await api("setInterval(() => {}, 60_000);", { heldRenewal: true });
   expect((await client.failure).message).toBe("Execution lease was lost.");
   expect(client.renewals()).toBeGreaterThan(1);
@@ -241,11 +229,9 @@ it("closes the worker while shared token renewal is stalled", async () => {
     vi.restoreAllMocks();
   });
   await client.tokenProbe;
-  // The probe is still held, so close returns only when it stops waiting for it.
   await client.close();
 });
 
-// wake-gate.test.ts proves how long the worker then stays closed.
 it("takes no work after the host slept until it has stayed awake", async () => {
   const client = await api("console.log('{}');", { hostSlept: true });
   expect((await client.failure).message).toBe("Host was asleep; leaving the assignment unstarted.");

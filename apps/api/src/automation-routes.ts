@@ -81,7 +81,6 @@ export function registerAutomationRoutes(app: ApiServer, platform: PlatformServi
   const rollbackBody = {
     schema: {
       body: objectSchema(
-        // A deployment id or its number in the history, with or without `#`.
         { targetDeploymentId: { anyOf: [uuid, { pattern: "^#?\\d+$", type: "string" }] } },
         ["targetDeploymentId"],
       ),
@@ -151,7 +150,6 @@ export function registerAutomationRoutes(app: ApiServer, platform: PlatformServi
     },
   );
 
-  // Moving changes who may touch the automation in both projects, so it needs both admins.
   const projectBody = { schema: { body: objectSchema({ project: nonEmptyText }, ["project"]) } };
   app.put<{ Reply: MoveAutomationResponse }>(
     "/automations/:automationName/project",
@@ -329,7 +327,6 @@ export function registerAutomationRoutes(app: ApiServer, platform: PlatformServi
     },
   );
 
-  // A run started by hand reads as `manual`, so the caller's headers never pose as a sender's.
   app.post<{ Reply: TriggerRunResponse }>("/automations/:automationName/runs", async (request) => {
     const params = request.params as { automationName: string };
     await request.access.automation(params.automationName, {

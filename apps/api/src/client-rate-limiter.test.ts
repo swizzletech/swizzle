@@ -22,7 +22,6 @@ describe("client rate limiter", () => {
     vi.setSystemTime(1_100);
     limiter.check("c");
 
-    // `a`'s request has expired and `b`'s has not, so `c` must displace `a`.
     expect(limiter.check("b").allowed).toBe(false);
   });
 
@@ -37,7 +36,6 @@ describe("client rate limiter", () => {
     limiter.check("b");
     limiter.check("c");
 
-    // A third client pushed `a` out, so `a` starts over while `c` keeps its spent budget.
     expect(limiter.check("a").allowed).toBe(true);
     expect(limiter.check("c").allowed).toBe(false);
   });

@@ -39,7 +39,6 @@ export async function startWorkerHealthServer(
     }
   });
 
-  // Only the container healthcheck on 127.0.0.1 asks, so nothing else may reach it.
   await app.listen({ host: "127.0.0.1", port: options.port ?? 19828 });
   return { close: async () => await app.close() };
 }

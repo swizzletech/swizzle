@@ -8,7 +8,6 @@ import { registerDispatchRoutes } from "./dispatch-routes.js";
 import type { ApiServer } from "./http-shared.js";
 import { registerErrorHandler } from "./server.js";
 
-/** Bound only to the private worker network. Public ingress rejects the local identity. */
 export function buildLocalWorkerServer(
   dispatch: ServerDispatch,
   registry: WorkerRegistry,

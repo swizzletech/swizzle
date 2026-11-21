@@ -1,0 +1,12 @@
+ARG RUNNER_BASE=scratch
+ARG WORKER_BASE=scratch
+FROM ${RUNNER_BASE} AS runner
+ARG SWIZZLE_RUNNER_APT_PACKAGES
+RUN test "$SWIZZLE_RUNNER_APT_PACKAGES" = jq \
+  && set -- /usr/local/bin/runner-* \
+  && test "$#" = 1 && test -x "$1" \
+  && mkdir -p /etc/swizzle \
+  && printf '{"binaries":[{"name":"%s","version":null}]}\n' "${1##*/}" > /etc/swizzle/runner-tools.json
+
+FROM ${WORKER_BASE} AS worker
+COPY --from=runner /etc/swizzle/runner-tools.json /etc/swizzle/runner-tools.json

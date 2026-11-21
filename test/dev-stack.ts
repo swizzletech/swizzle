@@ -21,7 +21,6 @@ export async function fixture() {
   ]) {
     await cp(path.join(source, "scripts", file), path.join(root, "scripts", file));
   }
-  // dev-stack.mts runs the stack's mail server from here.
   await mkdir(path.join(root, "test"));
   await cp(path.join(source, "test", "mail-sink.ts"), path.join(root, "test", "mail-sink.ts"));
   execFileSync("git", ["init", "--quiet", root]);
@@ -41,12 +40,12 @@ export async function fixture() {
   return { root, env, state };
 }
 
-export async function ownedProcess(root: string) {
-  const child = spawn(
-    process.execPath,
-    ["-e", "setInterval(() => {}, 1000)", "scripts/dev-stack.mts", root],
-    { cwd: root, detached: true, stdio: "ignore" },
-  );
+export async function ownedProcess(root: string, script = "setInterval(() => {}, 1000)") {
+  const child = spawn(process.execPath, ["-e", script, "scripts/dev-stack.mts", root], {
+    cwd: root,
+    detached: true,
+    stdio: "ignore",
+  });
   await once(child, "spawn");
   const pid = child.pid;
   if (pid === undefined) throw new Error("Expected a running process");

@@ -15,7 +15,6 @@ export const googleProviderAdapter: ConnectionProviderAdapter = {
   ...oauth2,
   createAuthorizationUrl(input) {
     const url = oauth2.createAuthorizationUrl(input);
-    // Google only issues refresh tokens for offline access, and only on consent.
     url.searchParams.set("access_type", "offline");
     if (input.forceConsent) {
       url.searchParams.set("prompt", "consent");

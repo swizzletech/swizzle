@@ -80,4 +80,10 @@ describe("untestedThresholdMs", () => {
     ).toBe(62 * DAY);
     expect(untestedThresholdMs("30d", null, from)).toBe(30 * DAY);
   });
+
+  it("uses untested_after when the cron schedule cannot be parsed", () => {
+    expect(
+      untestedThresholdMs("30d", { cronIntervalMs: null, cronSchedule: "invalid cron" }, from),
+    ).toBe(30 * DAY);
+  });
 });

@@ -1,10 +1,3 @@
-// Deleting a project (ADR 0015): a dialog that shows what the project holds and asks what happens
-// to it. Its automations, credentials and runs move to another project the person administers,
-// or they are deleted with it, confirmed by typing the project's short name. An empty project
-// goes after a plain confirm. Audit events stay either way, as the dialog says. The delete in
-// flight belongs to the button, not the form: the dialog stays open while it runs, and reopening
-// it after a forced close shows it still running.
-
 import {
   type UseMutationResult,
   useMutation,
@@ -23,7 +16,6 @@ import "./project-delete.css";
 
 type Removal = UseMutationResult<unknown, Error, ProjectContentsChoice | null>;
 
-/** The button that opens the dialog, for a project's admins. */
 export function DeleteProject(props: {
   readonly project: Project;
   readonly projects: readonly Project[];
@@ -36,7 +28,6 @@ export function DeleteProject(props: {
   const remove = useMutation({
     mutationFn: (choice: ProjectContentsChoice | null) =>
       api.deleteProject(props.project.slug, choice),
-    // Leave the page first, so it never renders the project as missing.
     onSuccess: async () => {
       await navigate({ to: "/projects" });
       await queryClient.invalidateQueries();
@@ -131,7 +122,6 @@ function Choices(props: {
   );
   const [target, setTarget] = useState(targets[0]?.slug ?? "");
   const [typed, setTyped] = useState("");
-  // Each choice holds its own field, so its radio takes its name from the title alone.
   const ids = useId();
   const choice: ProjectContentsChoice | null = empty
     ? null

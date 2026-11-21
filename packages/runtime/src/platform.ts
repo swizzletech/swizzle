@@ -1,8 +1,3 @@
-// The runtime's platform services: the queue-backed API, scheduler and worker services, run logs,
-// leader election and maintenance. They hold Valkey clients and open Postgres stores, so only the
-// services load this entry. Request and response types are in @swizzle/runtime/http-contract;
-// runtime helpers use src/index.ts.
-
 export { connectionResponse, deploymentResponse, runResponse } from "./api-views.js";
 export {
   listRegisteredReadinessWorkers,

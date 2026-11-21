@@ -1,7 +1,3 @@
-/**
- * `swizzle workspace init <dir>`: a standalone automations workspace with AGENTS.md, README.md,
- * `automations/`, a toolkit update script and the packaged swizzle-builder skill.
- */
 import { chmod, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Command } from "commander";

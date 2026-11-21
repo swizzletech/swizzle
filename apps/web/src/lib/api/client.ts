@@ -1,6 +1,3 @@
-// The dashboard's API client: every resource's calls, bound to the environment in view.
-// dashboard-client.tsx creates one per environment; pages reach it through useDashboardClient.
-
 import { accountCalls } from "./account";
 import { automationsCalls } from "./automations";
 import { credentialsCalls } from "./credentials";

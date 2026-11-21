@@ -60,7 +60,6 @@ test("at phone width a long unbroken error, payload or log stays inside the run 
   }
 });
 
-// Runs and an automation's Runs tab both list runs beside the chosen one; a phone has no beside.
 for (const { page: name, path, parameter } of [
   { page: "Runs", parameter: "selected", path: "/runs" },
   { page: "an automation's Runs tab", parameter: "run", path: "/automations/verify-probe" },
@@ -74,7 +73,6 @@ for (const { page: name, path, parameter } of [
     const detail = state.runDetails.get(OK_RUN_ID);
     if (listed === undefined || detail === undefined)
       throw new Error("The seeded state lost its succeeded run.");
-    // A full page of runs, as the CLI's dashboardUrl opens it.
     for (let index = 0; index < 60; index += 1) {
       const runId = `9d0e5f11-aaaa-4bbb-8ccc-${String(index).padStart(12, "0")}`;
       state.runs.push({ ...listed, runId });

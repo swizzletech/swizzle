@@ -183,8 +183,6 @@ describe("artifact storage", () => {
       artifactsDirectory: restoredDirectory,
     });
     await writeFile(path.join(restoredDirectory, "stale.txt"), "stale", "utf8");
-    // In the stack the store is a volume mount point: import must empty it, not replace it.
-    // The open handle keeps the inode allocated, so a delete-and-recreate cannot reuse it.
     const handle = await open(restoredDirectory, "r");
     const before = await stat(restoredDirectory);
     try {

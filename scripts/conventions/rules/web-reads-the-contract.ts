@@ -7,9 +7,6 @@ const CONTRACT = "packages/runtime/src/http-contract.ts";
 const REQUEST = "apps/web/src/lib/api/request.ts";
 const CALLS = /^apps\/web\/src\/lib\/api\/[^/]+\.ts$/u;
 
-// The dashboard reads every API answer as the type its route declares in the HTTP contract, so a
-// changed response fails the dashboard's type check. A shape written in the dashboard instead
-// compiles against whatever the API stops sending.
 export const webReadsTheContract: Rule = {
   id: "web-reads-the-contract",
   check(repo) {
@@ -49,7 +46,6 @@ export const webReadsTheContract: Rule = {
             type !== undefined && ts.isTypeReferenceNode(type) && type.typeArguments === undefined
               ? origin(checker.getSymbolAtLocation(type.typeName))
               : undefined;
-          // `unknown` reads nothing of the answer, so it describes no shape.
           const allowed =
             node.typeArguments?.length === 1 &&
             (type?.kind === ts.SyntaxKind.UnknownKeyword ||
@@ -74,10 +70,7 @@ export const webReadsTheContract: Rule = {
   },
 };
 
-/** Resolves the rule's source graph from Repo, including workspace package exports. */
 function contractProgram(repo: Repo, files: readonly string[]): ts.Program {
-  // A virtual node_modules symlink lets TypeScript read each workspace package's own exports.
-  // Both the real checkout and planted fixtures resolve solely through Repo, never host files.
   const repoPath = (file: string): string => {
     const relative = path.posix.relative("/", file);
     if (relative === "node_modules" || relative === "node_modules/@swizzle") return "packages";

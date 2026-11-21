@@ -1,11 +1,6 @@
-// A browser in front of SwizzleAuth.handle for tests and verify scripts: it keeps the cookies Better
-// Auth sets and sends them back, from one client address and one page origin. A failure's body is
-// Swizzle's `{ error, message }`, as the API sends it.
-
 import type { AuthRoute, SwizzleAuth } from "../packages/db/src/auth.js";
 import { CLIENT_ADDRESS_HEADER } from "../packages/db/src/auth.js";
 
-/** The session cookie's name while cookies are not Secure. */
 export const SESSION_COOKIE = "swizzle.session_token";
 
 export class AuthBrowser {
@@ -21,7 +16,6 @@ export class AuthBrowser {
     return await this.auth.verifySession(new Headers(this.#cookieHeader()));
   }
 
-  /** The raw session token, without the signature the cookie adds. */
   sessionToken(): string | undefined {
     const cookie = this.#cookies.get(SESSION_COOKIE);
     return cookie === undefined ? undefined : decodeURIComponent(cookie).split(".")[0];

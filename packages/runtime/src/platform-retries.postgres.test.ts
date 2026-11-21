@@ -278,7 +278,6 @@ describe("platform retries", () => {
     const succeeded = await platform.processNextPlatformRun();
     expect(succeeded).toMatchObject({
       status: "succeeded",
-      // The resume spent no retry: the fourth execution is the segment's third attempt.
       result: {
         attempt: 3,
         execution: 4,
@@ -348,8 +347,6 @@ describe("platform retries", () => {
     });
   });
 
-  // NaN is no JSON number: the runtime cannot parse Python's `NaN` token, and JSON.stringify
-  // writes null, so a step result would be dropped or replayed changed on the next attempt.
   it.each([
     {
       entrypoint: "main.py",

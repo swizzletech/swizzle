@@ -2,10 +2,6 @@ import { expect, test } from "@playwright/test";
 
 import { mockDashboardApi, seededState } from "./dashboard-mock";
 
-// Browsers offer to save what is typed into a password field, whatever its autocomplete says, and
-// sync it to the owner's browser account. A secret value is a masked text field that password
-// managers are told to skip, so it stays write-only.
-
 test("secret value fields are masked text that password managers skip", async ({ page }) => {
   await mockDashboardApi(page, seededState());
   await page.goto("/credentials?connect=google&name=google-jan");
@@ -25,9 +21,6 @@ test("secret value fields are masked text that password managers skip", async ({
   }
 });
 
-// A text field puts its value in the accessibility tree, where a screen reader reads it aloud and
-// an agent driving the browser sees it. The field holds only mask characters; the value it sends
-// is what was typed, edited, pasted and composed through an input method, and Enter still submits.
 test("a typed secret value stays out of the accessibility tree", async ({ context, page }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   const state = seededState();
@@ -56,7 +49,6 @@ test("a typed secret value stays out of the accessibility tree", async ({ contex
     .toEqual({ value: "huntXYかr2" });
 });
 
-// One mask character stands for one Unicode character, so an edit never splits a surrogate pair.
 test("editing a secret value keeps whole characters", async ({ page }) => {
   const state = seededState();
   await mockDashboardApi(page, state);
@@ -79,8 +71,6 @@ test("editing a secret value keeps whole characters", async ({ page }) => {
     .toEqual({ value: "𝄞b" });
 });
 
-// Autofill and some keyboards change a field without a cancelable beforeinput. The field still
-// ends up masked and sends what the browser put there.
 test("a secret value set without an edit event is masked and sent", async ({ page }) => {
   const state = seededState();
   await mockDashboardApi(page, state);

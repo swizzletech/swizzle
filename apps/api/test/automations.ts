@@ -7,10 +7,6 @@ import type { InjectOptions } from "fastify";
 import { temporaryDirectory } from "../../../test/support.js";
 import type { ApiServer } from "../src/http-shared.js";
 
-/**
- * Deploy a fixture automation through the multipart /deployments endpoint, or with `dryRun` check
- * it through /deployment-checks, as `swizzle validate` does.
- */
 export async function deployFixture(
   app: ApiServer,
   automationDirectory: string,
@@ -57,12 +53,10 @@ export async function deployFixture(
   });
 }
 
-/** A JavaScript webhook automation in its own directory, ready for deployFixture. */
 export async function createAutomationFixture(input: {
   readonly mainJs: string;
   readonly name: string;
   readonly path: string;
-  /** The platform secrets the automation declares. */
   readonly secrets?: readonly string[];
 }): Promise<string> {
   const automationDirectory = await temporaryDirectory("swizzle-api-fixture-");

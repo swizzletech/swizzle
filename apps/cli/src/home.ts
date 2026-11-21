@@ -1,12 +1,3 @@
-/**
- * What `swizzle` with no arguments prints, and what the session hook (`swizzle hooks install`)
- * gives an agent at the start of every session: the binary, what Swizzle is, the target it would
- * act on, and the live state of the directory it runs in. It never fails: an unreachable API or a
- * broken profile is part of the answer, with the command that diagnoses it.
- *
- * In an automation folder it shows that automation; elsewhere the environment's automations and
- * what needs a person, as the dashboard's Overview lists it.
- */
 import os from "node:os";
 import path from "node:path";
 
@@ -34,10 +25,8 @@ type DashboardAttentionItem = DashboardOverview["needsYou"][number];
 export const DESCRIPTION =
   "Build, deploy and operate code automations on a self-hosted Swizzle instance";
 
-/** The bound on every API call the home view makes, so a session never waits on a dead target. */
 const HOME_TIMEOUT_MS = 3_000;
 
-/** Rows the home view lists before it points at `swizzle list`. */
 const HOME_ROWS = 10;
 
 export async function renderHome(io: CliIO, options: ApiCommandOptions): Promise<void> {
@@ -65,7 +54,6 @@ export async function renderHome(io: CliIO, options: ApiCommandOptions): Promise
   }
 }
 
-/** `~/…` for the executable this process runs, so the agent can tell which install answered. */
 function binPath(): string {
   const bin = process.argv[1] ?? "swizzle";
   const home = os.homedir();
@@ -115,10 +103,6 @@ async function resolveTarget(options: ApiCommandOptions): Promise<HomeTarget> {
   };
 }
 
-/**
- * Each Needs-you item as one row: what, for which automation, and the command that acts on it in
- * the target's environment. Secrets and connections belong to a project, so their fix names it.
- */
 function attentionRow(item: DashboardAttentionItem, env: string) {
   const inspect = (automation: { readonly automationSlug: string }) =>
     `swizzle inspect ${automation.automationSlug} ${env}`;

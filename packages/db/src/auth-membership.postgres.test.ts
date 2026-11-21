@@ -19,10 +19,6 @@ const ANNA = { email: "anna@example.test", name: "Anna", password: "anna's long 
 const BUERO = "00000000-0000-4000-8000-0000000000b1";
 const LAGER = "00000000-0000-4000-8000-0000000000b2";
 
-/**
- * An instance with its first account, a mailbox that keeps every mail, and recorded effects. The
- * grant calls numbered in `grantFails` (from 0) fail once each.
- */
 async function instance(options: { readonly grantFails?: readonly number[] } = {}) {
   const mails: MailMessage[] = [];
   const granted: { userId: string; grant: PendingGrant }[] = [];
@@ -49,7 +45,6 @@ async function instance(options: { readonly grantFails?: readonly number[] } = {
   return { auth, granted, mails, owner, ownerId, revoked };
 }
 
-/** The token at the end of the last mail's link, as the person who received it reads it. */
 function linkToken(mails: readonly MailMessage[], page: "invitation" | "reset-password"): string {
   const text = mails.at(-1)?.text ?? "";
   return new RegExp(`${ORIGIN}/${page}#(\\S+)`, "u").exec(text)?.[1] ?? fail();
@@ -72,7 +67,6 @@ async function accept(auth: SwizzleAuth, token: string, person = ANNA) {
   return { browser, response };
 }
 
-// Sign-ins hash with production-cost scrypt; see auth.test.ts.
 describe("membership", () => {
   it("refuses to mint links without a dashboard origin before storing them", async () => {
     const auth = testAuth({ links: null });
@@ -110,7 +104,6 @@ describe("membership", () => {
     const anna = (await joined.browser.person())?.user ?? fail();
     expect(anna).toMatchObject({ email: ANNA.email, role: "member", suspended: false });
     expect(granted).toEqual([{ grant: { projectId: BUERO, role: "editor" }, userId: anna.id }]);
-    // Only the first owner joins Release; an invited person is in no team until someone adds them.
     expect(
       (
         await testDatabase().pool.query(
@@ -124,8 +117,6 @@ describe("membership", () => {
   });
 
   it("gives a grant that failed at the next sign-in, and never one it gave already", async () => {
-    // The second grant fails at sign-up. Whatever an admin did to the first since, the next
-    // sign-in gives only the second.
     const { auth, granted, mails, ownerId } = await instance({ grantFails: [1] });
     await auth.invite({
       email: ANNA.email,
@@ -214,11 +205,9 @@ describe("membership", () => {
     const carlId = (await carl.browser.person())?.user.id ?? fail();
     const denied = { code: "ACCESS_DENIED" };
 
-    // An owner promotes Carl; the admin's change to him is refused from then on.
     await auth.setRole(ownerId, carlId, "owner");
     await expect(auth.setSuspended(bertId, carlId, true)).rejects.toMatchObject(denied);
     await expect(auth.resetTwoFactor(bertId, ownerId)).rejects.toMatchObject(denied);
-    // An owner demotes Carl and then the admin; the former admin can change nobody.
     await auth.setRole(ownerId, carlId, "member");
     await auth.setRole(ownerId, bertId, "member");
     await expect(auth.setSuspended(bertId, carlId, true)).rejects.toMatchObject(denied);

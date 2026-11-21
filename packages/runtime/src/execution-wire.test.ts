@@ -26,10 +26,8 @@ const lease: ExecutionLease = {
   remainingMs: 90_000,
 };
 
-/** The server's record of the attempt a report answers. */
 const attempt = { payload: {}, runId: "run" };
 
-/** The channel a worker would open over HTTP, served from the server's delivery. */
 const channel = (delivery: ExecutionDelivery, start = vi.fn()): ExecutionChannel => ({
   ready: async () => {},
   source: async () => delivery.source,
@@ -193,7 +191,6 @@ it("does not invoke an executor when staging loses ownership", async () => {
     environment: process.env,
     signal: abort.signal,
   });
-  // executeAssignment has entered asynchronous filesystem staging, before the executor.
   abort.abort(new Error("lease expired during staging"));
   await expect(executing).rejects.toThrow("lease expired during staging");
   expect(run).not.toHaveBeenCalled();

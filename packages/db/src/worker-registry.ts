@@ -55,7 +55,6 @@ const budgetExceeded = () =>
     "Worker enrollment budget exhausted. Retry after 60 seconds.",
   );
 
-/** All mutations lock the identity row, so enrollment, renewal and revocation cannot race. */
 export function createPostgresWorkerRegistry(
   options: { readonly client?: DatabaseClient } = {},
 ): WorkerRegistry {
@@ -137,7 +136,6 @@ export function createPostgresWorkerRegistry(
       });
     },
     async enroll(code, clientKey) {
-      // This transaction commits even when a code is wrong. A wrong code must consume budget.
       const budget = await spendBudget(
         db,
         `worker-enrollment:${clientKey}`,
@@ -195,7 +193,6 @@ export function createPostgresWorkerRegistry(
       ]);
       return rows.map((row): WorkerStatus => {
         const held = leases.filter((lease) => lease.workerId === row.id);
-        // API checks hold slots too; only runs carry an automation to name.
         const currentRuns = held.flatMap(({ workerId: _, runId, ...run }): WorkerRun[] =>
           runId === null ||
           run.automationName === null ||
@@ -330,7 +327,6 @@ export function createPostgresWorkerRegistry(
   };
 }
 
-/** The slots a worker's unexpired, unreleased leases hold. */
 export async function heldSlots(tx: Transaction, workerId: string): Promise<number> {
   const [held] = await tx
     .select({ count: sql<number>`count(*)::int` })
@@ -345,10 +341,6 @@ export async function heldSlots(tx: Transaction, workerId: string): Promise<numb
   return held?.count ?? 0;
 }
 
-/**
- * A worker row as placement reads it, for the registry's list and for claims under the row lock:
- * the local LLM's health counts only from a report within the last minute.
- */
 export function placementWorker(
   row: Row,
   slotsInUse: number,

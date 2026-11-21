@@ -2,7 +2,6 @@ import type { Logger } from "pino";
 
 import { installProcessGuards } from "./process-guards.js";
 
-/** Configuration failures carry the diagnostic code the operator can act on. */
 export class ConfigurationError extends Error {
   constructor(
     public readonly code: string,
@@ -14,7 +13,6 @@ export class ConfigurationError extends Error {
   }
 }
 
-/** Install guards before configuration and report expected boot failures without a stack trace. */
 export async function bootService<T>(logger: Logger, configure: () => Promise<T>): Promise<T> {
   installProcessGuards(logger);
   try {

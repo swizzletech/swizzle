@@ -31,7 +31,6 @@ beforeEach(async () => {
 
 const emptyRunFilters = { automationSlug: null, limit: 50, statuses: [], triggerType: null };
 
-// A read model with no data; each test overrides only the calls it observes.
 function createDashboardStub(overrides: Partial<DashboardDataProvider>): DashboardDataProvider {
   const unused = async (): Promise<never> => {
     throw new Error("Not used by this test.");
@@ -115,7 +114,6 @@ describe("run routes", () => {
       terminal: true,
     });
 
-    // The live log stream carries the headers every other answer carries.
     const stream = await app.inject({
       headers: owner,
       method: "GET",
@@ -134,7 +132,6 @@ describe("run routes", () => {
       "x-frame-options": "DENY",
     });
 
-    // A cross-origin client in SWIZZLE_CORS_ORIGINS may read the stream; any other origin may not.
     vi.stubEnv("SWIZZLE_CORS_ORIGINS", "https://tools.example.com");
     const streamFrom = (origin: string) =>
       app.inject({
@@ -184,7 +181,6 @@ describe("run routes", () => {
       });
       expect(response.headers.get("content-type")).toBe("text/event-stream");
       if (response.body === null) throw new Error("The log stream has no body.");
-      // Split delivery so the assertion cannot depend on the server's write boundaries.
       const reader = response.body
         .pipeThrough(
           new TransformStream<Uint8Array, Uint8Array>({
@@ -316,7 +312,6 @@ describe("run routes", () => {
       expect.objectContaining({ automationSlug: "hello-webhook", maxTimeoutMs: 10_800_000 }),
     ]);
 
-    // Invalid duration is a 400.
     const invalid = await app.inject({
       headers: owner,
       method: "PUT",
@@ -325,7 +320,6 @@ describe("run routes", () => {
     });
     expect(invalid.statusCode).toBe(400);
 
-    // Unknown automation is a 404.
     const unknown = await app.inject({
       headers: owner,
       method: "PUT",
@@ -342,7 +336,6 @@ describe("run routes", () => {
     expect(deleteResponse.statusCode).toBe(200);
     expect(deleteResponse.json()).toMatchObject({ deleted: true });
 
-    // Deleting an absent grant is a 404.
     const deleteAgain = await app.inject({
       headers: owner,
       method: "DELETE",

@@ -34,7 +34,6 @@ async function verifyDeploymentCommit(store: ControlPlaneStore): Promise<StoredD
   return deployment;
 }
 
-/** A join's display order comes from config, even when UUID order is the reverse. */
 async function verifyChainSourceOrder(
   client: DatabaseClient,
   store: ControlPlaneStore,
@@ -58,7 +57,6 @@ async function verifyChainSourceOrder(
   assert.deepEqual(detail?.trigger?.chainSourceAutomationSlugs, names);
 }
 
-/** Deploy and move protect the same project boundary, including paused join edges. */
 async function verifyChainProjects(
   client: DatabaseClient,
   store: ControlPlaneStore,
@@ -124,7 +122,7 @@ async function verifyChainProjects(
   );
 }
 
-it("deployment commit", async () => {
+it("activates a deployment and records its webhook trigger and audit event", async () => {
   const store = testControlPlaneStore();
   await verifyDeploymentCommit(store);
 });
@@ -137,7 +135,6 @@ it("returns the deployment-check conflict code when concurrent commits claim one
   const results = await (async () => {
     try {
       await blocker.query("BEGIN");
-      // Both prechecks must finish before either insert can claim the path.
       await blocker.query("LOCK TABLE automation_triggers IN SHARE MODE");
       const pending = Promise.allSettled(
         ["path-first", "path-second"].map((name) =>
@@ -169,13 +166,13 @@ it("returns the deployment-check conflict code when concurrent commits claim one
   );
 });
 
-it("chain source order", async () => {
+it("returns chain sources in configuration order regardless of their IDs", async () => {
   const client = testDatabase();
   const store = testControlPlaneStore();
   await verifyChainSourceOrder(client, store);
 });
 
-it("chain projects", async () => {
+it("rejects cross-project chains and moves connected automations together", async () => {
   const client = testDatabase();
   const store = testControlPlaneStore();
   await verifyChainProjects(client, store);

@@ -8,10 +8,6 @@ export function deploymentCheckOutput(check: DeploymentCheckResponse) {
   };
 }
 
-/**
- * What a dry run says changes. The API decides the action; an update with no source difference
- * redeploys because --force asked for it or because the credentials it binds changed.
- */
 export function deploymentChangesOutput(
   action: "update" | "noop",
   changes: readonly DeploymentChange[],
@@ -24,7 +20,6 @@ export function deploymentChangesOutput(
     : "none in the source: the credentials it binds changed";
 }
 
-/** Values as text, so every change has the same three columns. */
 export function changeRows(changes: readonly DeploymentChange[]) {
   return changes.map((change) => ({
     field: change.field,
@@ -33,7 +28,6 @@ export function changeRows(changes: readonly DeploymentChange[]) {
   }));
 }
 
-/** A changed field's value as text: a string as itself, anything else as JSON. */
 function changeValue(value: unknown): string {
   if (value === undefined) return "(unset)";
   return typeof value === "string" ? value : JSON.stringify(value);

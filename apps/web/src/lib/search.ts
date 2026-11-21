@@ -1,7 +1,3 @@
-// The search parameters each page reads from its URL, and the parsers the router validates them
-// with. They live apart from the pages, so the router's entry chunk does not pull a page in.
-// Agents print these links too, for example /credentials?connect=google&name=google-jan.
-
 export const AUTOMATION_TABS = ["runs", "about", "play", "versions"] as const;
 export type AutomationTab = (typeof AUTOMATION_TABS)[number];
 
@@ -20,25 +16,13 @@ export interface RunsSearch {
 }
 
 export interface CredentialsSearch {
-  /** Opens the connect form for this provider. */
   readonly connect?: string | undefined;
-  /** The connection name the connect form starts with; opens the form too. */
   readonly name?: string | undefined;
-  /**
-   * The project in view, by slug or id: the lists show only its credentials, and a new secret or
-   * connection joins it unless the form picks another.
-   */
   readonly project?: string | undefined;
-  /** Comma-separated scopes the connect form starts with. */
   readonly scopes?: string | undefined;
-  /** The secret name the add form starts with. */
   readonly secret?: string | undefined;
 }
 
-/**
- * A project's page: who may do what, its environments and their protection, its service accounts,
- * and the credentials it shares and is offered.
- */
 export const PROJECT_TABS = ["access", "environments", "service-accounts", "credentials"] as const;
 export type ProjectTab = (typeof PROJECT_TABS)[number];
 
@@ -46,10 +30,6 @@ export interface ProjectSearch {
   readonly tab?: ProjectTab | undefined;
 }
 
-/**
- * Settings' sections in the order the nav lists them, one page each at /settings/<section>. The
- * first four belong to every person; the rest run the instance, for its owners and admins.
- */
 export const SETTINGS_SECTIONS = [
   "agent-access",
   "notifications",
@@ -67,9 +47,6 @@ export function isSettingsSection(value: string): value is SettingsSection {
 }
 
 type RawSearch = Record<string, unknown>;
-
-// The router merges a route's parsed search over the raw URL search, so each parser returns every
-// key: an undefined value replaces a stale or mistyped one such as ?tab=readme. The URL omits it.
 
 export function parseAutomationSearch(search: RawSearch): AutomationSearch {
   return {

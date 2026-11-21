@@ -3,10 +3,6 @@ import { useDashboardClient } from "../lib/dashboard-client";
 import { auditActionInWords, auditActorInWords } from "../lib/words/audit";
 import { ErrorNote, Skeleton } from "./ui";
 
-/**
- * A resource's change history: every request that changed it or tried to. Reads and dry runs
- * change nothing, so they appear nowhere in the audit (ADR 0016).
- */
 export function AuditHistory(
   filters:
     | { readonly automation: string; readonly worker?: never }

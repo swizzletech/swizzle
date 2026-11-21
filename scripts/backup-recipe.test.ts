@@ -8,7 +8,6 @@ import { temporaryDirectory } from "../test/support.js";
 
 const execute = promisify(execFile);
 
-// Every file below a directory with its mode and contents, and every directory with its mode.
 async function snapshot(directory: string) {
   const entries: Record<string, string> = {};
   for (const name of (await readdir(directory, { recursive: true })).sort()) {
@@ -61,7 +60,6 @@ it.each(
       "Fixture",
     ]);
     const source = path.join(root, "source");
-    // A space in the directory must survive into the printed restore command.
     const output = path.join(root, "daily backup");
     const bin = path.join(root, "bin");
     const dockerLog = path.join(root, "docker.log");
@@ -94,8 +92,6 @@ it.each(
       await mkdir(output);
       await writeFile(path.join(output, "metadata.json"), "previous backup");
     }
-    // A shell script, not Node: Node reads the recipe's `--env-file .env` argument as its own
-    // option and exits when the checkout has no .env.
     await writeFile(
       path.join(bin, "docker"),
       `#!/bin/sh
@@ -117,7 +113,6 @@ esac
     const locate = async (command: string) =>
       (await execute("bash", ["-c", 'command -v "$1"', "fixture", command])).stdout.trim();
     const just = await locate("just");
-    // Keep every required tool even when the host installs it beside just.
     for (const command of [
       "mise",
       "git",
@@ -145,7 +140,6 @@ esac
       }),
     );
     vi.stubEnv("PATH", bin);
-    // The runner has no globally selected tools to mask a missing fixture toolchain.
     vi.stubEnv("MISE_GLOBAL_CONFIG_FILE", path.join(root, "global.toml"));
     vi.stubEnv("MISE_TRUSTED_CONFIG_PATHS", checkout);
 
@@ -165,7 +159,6 @@ esac
       expect(await readFile(dockerLog, "utf8")).not.toContain(" build ");
     }
     if (scenario === "complete") {
-      // The export inside the container names its own path, which the host cannot restore from.
       expect((await result).stdout).toBe(
         `Backup written to ${output}. Run \`just restore '${output}'\` to restore it.\n`,
       );

@@ -40,7 +40,6 @@ describe("outbound HTTP proxy configuration", () => {
         response.end("ok");
       }),
     );
-    // ProxyAgent sends a request for an http:// target to the proxy in absolute form.
     const proxied: string[] = [];
     const proxy = createServer((request, response) => {
       proxied.push(`${request.method} ${request.url}`);

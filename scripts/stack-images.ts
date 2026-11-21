@@ -1,4 +1,3 @@
-// Shared by install, backup and upgrade. Preparation never stops a service.
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
@@ -16,7 +15,6 @@ import path from "node:path";
 export interface StackSource {
   readonly root: string;
   readonly envFile: string;
-  /** Supplied for an archived release, which has no Git metadata of its own. */
   readonly version?: string;
 }
 
@@ -36,7 +34,6 @@ interface Compose extends Record<string, unknown> {
   services: Record<string, Service>;
 }
 export interface PreparedStack {
-  /** Resolved Compose file with local image references and no build instructions. */
   readonly file: string;
   readonly images: Readonly<Record<string, string>>;
 }
@@ -149,7 +146,6 @@ export function registryImage(service: string, version: string): string {
   return `${process.env.SWIZZLE_IMAGE_REGISTRY ?? "ghcr.io/swizzletech"}/swizzle-${service}:${version}`;
 }
 
-/** A conservative reserve covers unpacked images and leaves room for the backup. */
 function checkDisk(build: boolean): void {
   const root = capture("docker", ["info", "--format", "{{.DockerRootDir}}"]);
   let free: number;
@@ -197,7 +193,6 @@ export function preflight(source: StackSource): void {
       throw new Error(`Missing ${command}. Put it on PATH before retrying.`);
     }
   }
-  // Resolve the target's pinned tools now, including first-time downloads, before downtime.
   try {
     capture("mise", ["exec", "--", "node", "--version"], source.root);
   } catch {
@@ -209,11 +204,9 @@ export function preflight(source: StackSource): void {
 
 export function writeCompose(config: Compose, file: string): void {
   mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  // Compose's config output already escapes dollars for another Compose read.
   writeFileSync(file, JSON.stringify(config), { mode: 0o600 });
 }
 
-/** Pull a complete release or build one service at a time, then forbid builds at switch time. */
 export function prepareImages(
   source: StackSource,
   output: string,
@@ -258,15 +251,11 @@ export function prepareImages(
         process.stdout.write(`${capture("docker", ["pull", image])}\n`);
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error);
-        // Old releases without the publishing workflow build directly. A published release's
-        // authentication, network, or partial-publication failures must leave services running.
         if (index !== 0 || !/manifest unknown|not found|name unknown/iu.test(detail)) {
           throw new Error(
             `Cannot pull ${image}. Services are unchanged. Check registry access and publication.\n${detail}`,
           );
         }
-        // A first missing package may be a partial publication. Build only when the whole
-        // release is absent; otherwise leave the server running until publication is fixed.
         for (const [other] of builds.filter(([service]) => !fromSource.has(service)).slice(1)) {
           const reference = registryImage(other, version);
           try {
@@ -290,7 +279,6 @@ export function prepareImages(
   }
   if (fromSource.size > 0) {
     checkDisk(true);
-    // Upgrade preparations keep separate tags so installed images survive for rollback.
     const suffix =
       options.tag ??
       `${path.basename(path.dirname(output))}-${path.basename(output, ".json")}`.replaceAll(
@@ -300,8 +288,6 @@ export function prepareImages(
     for (const [name, service] of builds) {
       if (fromSource.has(name)) service.image = `${config.name}-${name}:${suffix}`;
     }
-    // Earlier 1.x Dockerfiles compile every workspace in parallel and have no concurrency arg.
-    // Stage their build recipe with the same cap, without editing the installed checkout.
     const dockerfiles = new Map<string, string>();
     mkdirSync(path.dirname(output), { recursive: true, mode: 0o700 });
     for (const [name, service] of builds.filter(([name]) => fromSource.has(name))) {
@@ -356,7 +342,6 @@ export function prepareImages(
         ]),
         build.context.replaceAll("$$", "$"),
       ]);
-      // The tag is shared by development builds; the ID file belongs to this preparation.
       service.image = readFileSync(imageFile, "utf8").trim();
     }
   }
@@ -365,7 +350,6 @@ export function prepareImages(
     if (!fromSource.has(name) && version !== undefined)
       service.image = registryImage(name, version);
     if (service.image === undefined) throw new Error(`No prepared image for ${name}.`);
-    // Pin the image ID so a tag moved during backup cannot change what starts.
     service.image = capture("docker", ["image", "inspect", "--format", "{{.Id}}", service.image]);
     images[name] = service.image;
     delete service.build;
@@ -380,7 +364,6 @@ export function prepareImages(
       for (const name of ["runner-base", "worker"]) {
         const image = images[name];
         if (image === undefined) throw new Error(`No prepared ${name} image for runner packages.`);
-        // BuildKit resolves FROM by name; each preparation owns its stock references.
         const tag = `${config.name}-${name}:stock-${randomUUID()}`;
         run("docker", ["tag", image, tag]);
         bases[name] = tag;
@@ -414,7 +397,6 @@ export function prepareImages(
           source.root,
         ]);
         const image = readFileSync(imageFile, "utf8").trim();
-        // Loading under a shared tag can remove another preparation's image record.
         run("docker", ["tag", image, `${config.name}-${name}:${suffix}-packages`]);
         const service = config.services[name];
         if (service === undefined) throw new Error(`No ${name} service.`);
@@ -438,7 +420,6 @@ export function prepareImages(
     const base = config.services["runner-base"];
     if (worker?.environment !== undefined && base?.image !== undefined)
       worker.environment.SWIZZLE_RUNNER_BASE_IMAGE = base.image;
-    // Dependency images also arrive before any writer stops.
     const dependencies = Object.values(config.services).filter(
       (service) => service.build === undefined && service.pull_policy !== "never",
     );

@@ -25,11 +25,6 @@ import {
   urlText,
 } from "./request-validation.js";
 
-/**
- * A notification rule belongs to the person who made it and reaches only them, for one automation
- * or every automation of one project they may read. The worker checks that read access again
- * before each send (packages/runtime/src/notifications.ts), so revoked access ends the messages.
- */
 export function registerNotificationRoutes(app: ApiServer, platform: PlatformServices): void {
   const ruleBody = {
     schema: {
@@ -75,8 +70,6 @@ export function registerNotificationRoutes(app: ApiServer, platform: PlatformSer
       }
       const environment = getEnvironment(request);
       const need = { action: "read", environment } as const;
-      // Without an automation the rule covers every automation of the project, by default the
-      // default project.
       const place =
         body.automationName !== undefined
           ? await request.access.automation(body.automationName, need)
@@ -154,15 +147,12 @@ export function registerNotificationRoutes(app: ApiServer, platform: PlatformSer
     },
   );
 
-  /** Whether the rule exists and belongs to the person asking; another's rule reads as missing. */
   async function ownRule(request: FastifyRequest, ruleId: string): Promise<boolean> {
     const userId = personOf(request);
     const rule = await platform.getNotificationRule(ruleId);
     return rule !== null && rule.userId === userId;
   }
 
-  // An instance owner or admin reads every delivery; anyone else the deliveries of their own rules
-  // for automations they still read.
   app.get<{ Reply: NotificationDeliveriesResponse }>(
     "/notifications/deliveries",
     deliveriesQuery,
@@ -194,7 +184,6 @@ export function registerNotificationRoutes(app: ApiServer, platform: PlatformSer
   );
 }
 
-/** The person a rule belongs to. A service account has none. */
 function personOf(request: FastifyRequest): string {
   const actor = request.actor;
   if (actor?.kind === "person") return actor.userId;

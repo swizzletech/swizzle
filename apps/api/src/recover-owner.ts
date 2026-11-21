@@ -1,12 +1,3 @@
-/**
- * `node dist/recover-owner.js <email>` in the API container: restores a locked-out owner's access
- * (HostAuth.recoverOwner). It runs only from a shell on the host (`just recover-owner <email>`),
- * no route calls it, and the instance audit records it with the actor `host` before it changes
- * anything. It prints the one reset link it mints and no other secret.
- *
- * stdout: `owner`, `reset-link` and `expires`, or `error` with the active owners' addresses.
- * Exit 0 recovered, 1 no active owner has the address or the recovery failed, 2 usage.
- */
 import { assertSecretEncryptionKeyIsConfigured, NO_AUDIT_TARGET } from "@swizzle/db";
 import { createPostgresAuditStore, createPostgresHostAuth } from "@swizzle/db/postgres";
 

@@ -19,11 +19,8 @@ await bootService(logger, async () => {
   if (process.env.SWIZZLE_WORKER_LOCAL_HTTP !== "true") await configureOutboundHttpProxy();
   await assertWorkerSecurityConfiguration();
 });
-// A sandboxed run calls only what the runner image has. A host worker, for local development only,
-// reports the runtimes it measures.
 const sandboxed = process.env.SWIZZLE_REQUIRE_SANDBOX?.trim().toLowerCase() === "true";
 const capabilities = await collectWorkerCapabilities(sandboxed ? await readRunnerTools() : []);
-// Remote credentials live in a private file. The local identity is configured by the stack.
 const credential =
   process.env.SWIZZLE_WORKER_CREDENTIAL_FILE === undefined
     ? process.env

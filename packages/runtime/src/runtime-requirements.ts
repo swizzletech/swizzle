@@ -39,7 +39,6 @@ export type BuildSnapshot = StoredBuildSnapshot;
 type Binaries = WorkerCapabilities["binaries"];
 type RunnerTools = Pick<WorkerCapabilities, "binaries" | "languages" | "dependencyPackaging">;
 
-/** What readiness reads of an automation: its runtime block and the folder its files are in. */
 export interface RuntimeDefinitionLike {
   readonly config: Pick<AutomationConfig, "runtime">;
   readonly directory: string;
@@ -47,10 +46,6 @@ export interface RuntimeDefinitionLike {
 
 export interface RuntimeReadinessOptions {
   readonly environment?: NodeJS.ProcessEnv;
-  /**
-   * Per-automation timeout grant (ms) for this automation + environment, if any.
-   * Raises the effective `runtime.timeout` ceiling above the global platform ceiling.
-   */
   readonly grantMaxTimeoutMs?: number | null;
 }
 
@@ -63,7 +58,6 @@ function createQueueProfileSegment(profile: string): string {
   return normalized.length > 0 ? normalized : AUTOMATION_RUNTIME_PROFILE_DEFAULT;
 }
 
-/** Whether a readiness worker serves a project; the stack's local worker serves every one. */
 export function servesProject(
   worker: { readonly projectIds: readonly string[] | "all" },
   projectId: string,
@@ -137,10 +131,6 @@ export async function evaluateLocalAutomationReadiness(
   );
 }
 
-/**
- * This machine as the one worker of a local check or a test platform: in the automation's
- * group, granted every service, with the capabilities it measures now.
- */
 export async function thisMachine(
   runtime: Pick<AutomationRuntimeConfig, "profile" | "requirements">,
   instanceId: string,
@@ -310,8 +300,6 @@ export function evaluateAutomationReadiness(
       subject: runtime.profile,
     });
   } else if (compatibleWorkers.length === 0) {
-    // No worker of the group can run it alone; each one's gaps say why. Grants come first: a
-    // worker missing a service never takes the run, whatever it reports.
     for (const { worker, gaps } of granted.length === 0 ? inGroup : matching) {
       for (const gap of gaps) errors.push(gapIssue(worker, gap));
     }
@@ -332,7 +320,6 @@ export function evaluateAutomationReadiness(
   };
 }
 
-/** One thing that keeps a worker from running an automation; see `workerGaps`. */
 export type WorkerGap =
   | { readonly kind: "image-unavailable"; readonly message: string }
   | { readonly kind: "group"; readonly profile: string }
@@ -344,18 +331,10 @@ export type WorkerGap =
   | {
       readonly kind: "binary-version";
       readonly name: string;
-      /** Null when the worker could not tell the version, which no rule accepts. */
       readonly version: string | null;
       readonly required: string;
     };
 
-/**
- * What keeps one worker from running an automation with this runtime; none when it can. A
- * deployment is ready when one worker has no gap, whatever the order of the workers, and the
- * readiness errors and the deploy gate's words both come from these gaps. Groups and services
- * are grants, as placement reads them (`workerFit`); an offline worker reports no capabilities,
- * so only its grants count.
- */
 export function workerGaps(
   runtime: AutomationRuntimeConfig,
   worker: ReadinessWorker,
@@ -408,7 +387,6 @@ export function workerGaps(
   return gaps;
 }
 
-/** "is not in group "gpu", does not run python and lacks the binary ffmpeg". */
 export function gapsInWords(gaps: readonly WorkerGap[]): string {
   if (gaps.length === 0) return "meets the group, services, language and binaries";
   const phrases: string[] = [];
@@ -484,11 +462,6 @@ function gapIssue(worker: ReadinessWorker, gap: WorkerGap): RuntimeRequirementIs
   }
 }
 
-/**
- * A deployed automation's readiness: its runtime readiness, not ready while a declared secret is
- * unset or a declared connection is not active in its environment, because then no run starts.
- * The deploy gate judges the runtime alone, so a deployment can go out before its credentials.
- */
 export function addCredentialIssues(
   readiness: RuntimeReadinessReport,
   credentials: {
@@ -563,7 +536,6 @@ export function buildRuntimeEnvironmentAdditions(input: {
   return additions;
 }
 
-/** Where runner image builds record execution capabilities, including package extension layers. */
 const RUNNER_TOOLS_FILE = "/etc/swizzle/runner-tools.json";
 
 const runnerTools = z.object({
@@ -581,7 +553,6 @@ const runnerTools = z.object({
   dependencyPackaging: z.object({ node: z.boolean(), python: z.boolean() }),
 }) satisfies z.ZodType<RunnerTools>;
 
-/** The runner image's build record; no executable in the worker substitutes for a missing tool. */
 export async function readRunnerTools(file = RUNNER_TOOLS_FILE): Promise<RunnerTools> {
   return parseRunnerTools(await readFile(file, "utf8"));
 }
@@ -590,7 +561,6 @@ export function parseRunnerTools(record: string): RunnerTools {
   return runnerTools.parse(JSON.parse(record));
 }
 
-/** A runner record is authoritative. An array of local declarations adds this host's measured tools. */
 export async function collectWorkerCapabilities(
   input: Binaries | RunnerTools,
 ): Promise<WorkerCapabilities> {
@@ -638,11 +608,6 @@ export async function collectWorkerCapabilities(
   };
 }
 
-/**
- * The declared binaries on this machine's PATH. A version is read only for a declaration with a
- * version rule, from the first of `--version`, `-v` and `-V` that prints one: pdftoppm, for one,
- * knows only `-v`.
- */
 async function findBinaries(
   declared: AutomationRuntimeConfig["requirements"]["binaries"],
 ): Promise<Binaries> {

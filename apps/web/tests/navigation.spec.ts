@@ -13,7 +13,6 @@ test("the sidebar has exactly five places", async ({ page }) => {
   await expect(links.nth(1)).toHaveAttribute("aria-current", "page");
 });
 
-// The pages the rebuild merged away answer like any unknown address.
 for (const path of ["/secrets", "/connections", "/alerting", "/settings/cli-access"]) {
   test(`${path} no longer exists`, async ({ page }) => {
     await mockDashboardApi(page, seededState());
@@ -22,7 +21,6 @@ for (const path of ["/secrets", "/connections", "/alerting", "/settings/cli-acce
   });
 }
 
-// Links from the old dashboard carry values the rebuild no longer knows; they open the default view.
 test("an old tab or status in a link opens the default view", async ({ page }) => {
   await mockDashboardApi(page, seededState());
 
@@ -63,8 +61,6 @@ test("a link the agent prints opens the connect form prefilled", async ({ page }
   await expect(form).toContainText("https://swizzle.example.com/oauth/callback/google");
 });
 
-// The Missing section sits on Credentials itself, so its Connect link changes only the search.
-// The account joins the project whose automation needs it, or that automation could not bind it.
 test("Connect in the Missing section opens the form for that account", async ({ page }) => {
   await page.addInitScript(() => {
     window.open = () => null;
@@ -108,8 +104,6 @@ test("Connect in the Missing section opens the form for that account", async ({ 
   ]);
 });
 
-// The sign-in window opens inside the click, before the API answers, so a popup blocker lets it
-// through; it goes to the provider's consent page once the API returns its address.
 test("Continue to sign-in reaches the consent page in one click", async ({ context, page }) => {
   await mockDashboardApi(page, seededState());
   let answer = () => {};
@@ -141,8 +135,6 @@ test("Continue to sign-in reaches the consent page in one click", async ({ conte
   await expect(page.getByText("Finish the sign-in in the window that opened.")).toBeVisible();
 });
 
-// Each sign-in keeps its own window, so a Reconnect started while a Connect waits for the API
-// sends neither window to the other account's consent page.
 test("overlapping sign-ins each reach their own consent page", async ({ context, page }) => {
   const state = seededState();
   state.connections.push({
@@ -235,7 +227,6 @@ test("at phone width the header shows every place without cutting one off", asyn
 test("at 320 px no page scrolls sideways", async ({ page }) => {
   await page.setViewportSize({ height: 700, width: 320 });
   await mockDashboardApi(page, seededState());
-  // Each page with a heading or element that shows only once its queries have answered.
   for (const [path, ready] of [
     ["/", page.getByRole("heading", { level: 1 })],
     ["/runs", page.getByRole("heading", { level: 1 })],
@@ -281,7 +272,6 @@ test("the dashboard serves its icon", async ({ page }) => {
   expect(icon.headers()["content-type"]).toContain("image/svg+xml");
 });
 
-// The API names the URL, path of SWIZZLE_PUBLIC_URL included (deployment-routes.postgres.test.ts).
 test("About shows the webhook URL the API names for the trigger", async ({ page }) => {
   await mockDashboardApi(page, seededState());
   await page.goto("/automations/verify-probe?tab=about");

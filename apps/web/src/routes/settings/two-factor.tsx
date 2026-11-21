@@ -1,6 +1,3 @@
-// Settings › Two-factor sign-in (`/settings/two-factor`): turning it on with an app, its recovery
-// codes, and turning it off.
-
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
@@ -21,8 +18,6 @@ export function TwoFactor() {
   const [recoveryCodes, setRecoveryCodes] = useState<readonly string[] | null>(null);
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
-  // The secret and the recovery codes are shown once, so a page the browser caches on leaving
-  // must not show them again on Back.
   useEffect(() => {
     const forget = () =>
       flushSync(() => {
@@ -38,7 +33,6 @@ export function TwoFactor() {
     await queryClient.invalidateQueries({ queryKey: ["two-factor"] });
     await queryClient.invalidateQueries({ queryKey: ["sessions"] });
   };
-  // The secret and the codes go straight into state, so no mutation result keeps a copy.
   const start = useMutation({
     mutationFn: async () => {
       const started = await sessionApi.enableTwoFactor({ password });

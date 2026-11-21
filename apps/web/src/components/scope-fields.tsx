@@ -1,19 +1,12 @@
-// The scope of a token about to be minted: the highest role it may act with, and the projects and
-// environments it is limited to. Settings › Agent access uses it for a person's token, a project's
-// Service accounts tab for an account's token, which has no project choice and no admin.
-
 import type { ProjectRef, ProjectRole, ScopeInput } from "../lib/api";
 import { useDashboardClient } from "../lib/dashboard-client";
 
 export interface Scope {
   readonly role: ProjectRole;
-  /** Project slugs; empty limits nothing. */
   readonly projects: ReadonlySet<string>;
-  /** Empty limits nothing. */
   readonly environments: ReadonlySet<string>;
 }
 
-/** The scope as the token routes take it; an empty choice is left out, so it limits nothing. */
 export function scopeInput(scope: Scope): ScopeInput {
   return {
     role: scope.role,
@@ -26,7 +19,6 @@ export function ScopeFields(props: {
   readonly value: Scope;
   readonly onChange: (scope: Scope) => void;
   readonly roles: readonly ProjectRole[];
-  /** The projects to choose from; without them the scope has no project choice. */
   readonly projects?: readonly ProjectRef[];
 }) {
   const { environments } = useDashboardClient();

@@ -174,9 +174,6 @@ describe("trigger routes", () => {
       status: "paused",
     });
 
-    // A paused trigger is indistinguishable from a nonexistent one on the public
-    // ingress: the external caller gets the opaque 404 and no run is created. The
-    // "paused" reason is only visible to operators via the trigger audit.
     const pausedTriggerResponse = await app.inject({
       headers: owner,
       method: "POST",
@@ -278,7 +275,6 @@ describe("trigger routes", () => {
     expect(hook.statusCode).toBe(200);
     expect(hook.json()).toMatchObject({ status: "queued" });
 
-    // Sign-in itself still answers: an empty body reaches the auth handler and is refused there.
     const signIn = await testBrowser(app).send("POST", "/auth/sign-in/email", {});
     expect(signIn.statusCode).toBe(400);
     expect(signIn.json()).toMatchObject({ error: "AUTH_REQUEST_INVALID" });

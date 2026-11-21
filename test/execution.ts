@@ -35,7 +35,6 @@ import { testDatabase } from "./postgres.js";
 const RENEWAL_MS = 2_000;
 
 export interface TestExecution {
-  /** Runs one execution of a queued run; false when the run could not be claimed. */
   run(
     runId: string,
     options: {
@@ -44,7 +43,6 @@ export interface TestExecution {
       readonly publish?: (event: RunLogEvent) => Promise<void>;
     },
   ): Promise<boolean>;
-  /** Runs a due check; null when it is no longer due at `dueAt`. */
   check(
     checkId: string,
     dueAt: string,
@@ -98,7 +96,6 @@ export async function createTestExecution(input: {
     await dispatch.drainNotifications(async (delivery, store) => {
       await deliverPendingNotification(delivery, store);
     });
-    // A failed attempt with retries left is queued again, as the API's dispatch loop does.
     await reconcileQueuedRunsWithStore(store, queue, {});
   };
   return {
@@ -119,7 +116,6 @@ export async function createTestExecution(input: {
   };
 }
 
-/** The worker's side of an assignment, as the worker service runs it, over direct calls. */
 export async function executeTestAssignment(
   WORKER: WorkerIdentity,
   executions: ExecutionService,
@@ -129,7 +125,6 @@ export async function executeTestAssignment(
 ): Promise<void> {
   const { lease } = assignment;
   const abort = new AbortController();
-  // A renewal is the worker's news of a cancel: the lease ends with the run.
   let unexpected: { readonly error: unknown } | undefined;
   const stopOnFailure = (error: unknown) => {
     if (!(error instanceof ExecutionLeaseError)) unexpected ??= { error };
@@ -153,7 +148,6 @@ export async function executeTestAssignment(
     output: (stream, chunk) => {
       const index = ++sequence;
       output = output.then(() => executions.output(WORKER, lease, index, stream, chunk));
-      // A refused chunk ended the execution on the server: stop the process, as a worker does.
       void output.catch(stopOnFailure);
       return output;
     },

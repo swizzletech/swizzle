@@ -1,9 +1,3 @@
-// A project's service accounts, for its admins: create one, give it roles on the project, an
-// automation or an environment (through the share form), mint tokens with a scope, rotate and
-// revoke them, and read what the account did in the audit. A token value shows once, and is
-// forgotten when the page is hidden, as Settings › Agent access does. Agent access links here for
-// every project the person administers, and this tab links back to it.
-
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
@@ -177,7 +171,6 @@ function Account(props: {
   );
 }
 
-/** The account's tokens, a form to mint one with a scope, and Rotate and Revoke per token. */
 function Tokens(props: {
   readonly account: ServiceAccount;
   readonly project: string;
@@ -195,7 +188,6 @@ function Tokens(props: {
   });
   const [days, setDays] = useState("90");
   const [shown, setShown] = useState<CreatedApiToken | null>(null);
-  // A page the browser keeps in its back/forward cache must not show the value again on Back.
   const pageHides = useRef(0);
   useEffect(() => {
     const forget = () => {
@@ -340,7 +332,6 @@ function Tokens(props: {
   );
 }
 
-/** The account's own events in the audit: what it did, where, with which token, and the result. */
 function AccountAudit({ account }: { readonly account: ServiceAccount }) {
   const { api, authRevision } = useDashboardClient();
   const now = useNow();

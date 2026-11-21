@@ -161,7 +161,6 @@ function registerScaffolds(program: Command, io: CliIO): void {
 }
 
 function registerValidate(program: Command, io: CliIO, runHandler: RunHandler): void {
-  // Local: it resolves the profile itself, and checks readiness locally when none is configured.
   const command = localCommand(
     program
       .command("validate")
@@ -321,10 +320,6 @@ function registerRun(program: Command, io: CliIO, runHandler: RunHandler): void 
   );
 }
 
-/**
- * `swizzle run --check`: the check script as a local host process, read by the check contract
- * (green, explicit drift, or an error such as an exception or failed login).
- */
 async function runApiCheck(
   dir: string,
   io: CliIO,
@@ -380,7 +375,6 @@ async function runApiCheck(
       message: `The API check failed: ${outcome.message}`,
     });
   }
-  // Green implies success; the stored output is bounded, so print the whole answer instead.
   respond(io, {
     check: { status: "green", durationMs: result.durationMs },
     result: result.success ? result.result : null,
@@ -447,10 +441,6 @@ async function runEnvReferenceValidation(
   };
 }
 
-/**
- * Warns where flow.mermaid and the entrypoint disagree on step names, so the dashboard's track can
- * light every station. Drift never fails validation: the flow is documentation.
- */
 async function runFlowDriftValidation(definition: AutomationDefinition): Promise<void> {
   const mermaid = await readFile(path.join(definition.directory, "flow.mermaid"), "utf8").catch(
     () => null,
@@ -542,7 +532,6 @@ async function resolveValidationReadiness(
     });
   }
 
-  // validate resolves its profile here, so the profile's project fills --project as it does for apply.
   let check: DeploymentCheckResponse;
   try {
     check = await postDeploymentCheck(await packAutomationOrThrow(definition.directory), {
@@ -627,9 +616,6 @@ async function runBundleValidation(
   };
 }
 
-// The module format Node runs the entrypoint in: CommonJS only when package.json says so. Without
-// a "type", Node runs a file that uses import, export or top-level await as an ES module, and
-// esbuild accepts a CommonJS file in ESM output, so the check assumes ESM.
 async function resolveBundleOutputFormat(directory: string): Promise<"cjs" | "esm"> {
   const packageJsonPath = path.join(directory, "package.json");
 
@@ -651,7 +637,6 @@ async function resolveBundleOutputFormat(directory: string): Promise<"cjs" | "es
   }
 }
 
-// Prints `line:column: message` to stderr for a syntax error, so no traceback reaches the caller.
 const PYTHON_SYNTAX_CHECK = [
   "import sys",
   "try: compile(open(sys.argv[1], 'rb').read(), sys.argv[1], 'exec')",
@@ -660,7 +645,6 @@ const PYTHON_SYNTAX_CHECK = [
 
 async function runPythonSyntaxValidation(entrypointPath: string): Promise<SyntaxValidationSummary> {
   try {
-    // Compile the raw bytes in memory, so Python applies its own BOM and `# coding:` handling: `-m py_compile` would write __pycache__ into the author's folder.
     await execFileAsync("python3", ["-c", PYTHON_SYNTAX_CHECK, entrypointPath]);
     return {
       mode: "compile",
@@ -707,7 +691,6 @@ async function resolveRunPayloadInput(
   return { label: "{} (none given)" };
 }
 
-/** Where the payload came from, as `run.payload` reports it. */
 interface ResolvedRunPayloadInput {
   readonly filePath?: string;
   readonly inlineJson?: string;
@@ -727,7 +710,6 @@ interface EnvReferenceValidationSummary {
   readonly undeclared: readonly string[];
 }
 
-/** A path as a command names it: relative inside the working directory, absolute outside it. */
 function displayPath(target: string): string {
   const relative = path.relative(process.cwd(), target);
   if (relative === "") return ".";

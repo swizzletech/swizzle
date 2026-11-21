@@ -1,14 +1,12 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { testPlatform } from "../../../test/platform.js";
 import { testApiTokenStore, testAuth } from "../../../test/stores.js";
 
 import { TEST_ENCRYPTION_KEY } from "../../../test/support.js";
+import { DASHBOARD_ORIGIN, testBrowser } from "../test/browser.js";
 import { ownerHeaders, testPeople } from "../test/people.js";
 import { buildTestServer } from "../test/server-harness.js";
 
-// Bearer tokens, token administration and the auth policy every route shares; sign-in.test.ts
-// covers browser sessions. Sign-ins hash with production-cost scrypt, about 180 ms per hash on an
-// idle core; 20 s leaves room for parallel worktrees on a loaded machine.
 describe("api auth", () => {
   it.each([
     { url: "/health", remoteAddress: "203.0.113.45", body: { service: "api", status: "ok" } },
@@ -349,7 +347,6 @@ describe("api auth", () => {
       const response = await app.inject({
         headers: { origin: "http://127.0.0.1:5173" },
         method: "POST",
-        // A singleton array must not pass as the string it holds.
         payload:
           attempt % 2 === 0
             ? { email: {}, password: [] }
@@ -360,7 +357,6 @@ describe("api auth", () => {
       statuses.push(response.statusCode);
     }
 
-    // No email is one account, so its password budget of five runs out first.
     expect(statuses).toEqual([400, 400, 400, 400, 400, 429]);
 
     await app.close();
@@ -386,6 +382,32 @@ describe("api auth", () => {
     expect(response.headers["cache-control"]).toBe("no-store");
 
     await app.close();
+  });
+
+  it("refuses a cookie-authenticated write without an Origin header", async () => {
+    vi.stubEnv("SWIZZLE_DASHBOARD_ORIGIN", DASHBOARD_ORIGIN);
+    const people = testPeople();
+    const app = await buildTestServer({ auth: people.auth });
+    onTestFinished(() => app.close());
+    const email = "owner@example.test";
+    const password = "a long enough test passphrase";
+    await people.add(email, { password, role: "owner" });
+    const browser = testBrowser(app);
+    expect((await browser.signIn(email, password)).statusCode).toBe(200);
+
+    const url = "/automation-folders";
+    const payload = { name: "Monthly reports" };
+    const response = await app.inject({
+      headers: {
+        cookie: [...browser.cookies].map(([name, value]) => `${name}=${value}`).join("; "),
+      },
+      method: "POST",
+      payload,
+      remoteAddress: "203.0.113.45",
+      url,
+    });
+    expect([response.statusCode, response.json().code]).toEqual([403, "AUTH_ORIGIN_FORBIDDEN"]);
+    expect((await browser.send("POST", url, payload)).statusCode).toBe(201);
   });
 
   it("refuses a foreign Origin on unsafe requests with a valid token, and serves the CLI", async () => {

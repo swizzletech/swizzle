@@ -29,7 +29,6 @@ declare module "pg" {
   }
 
   export class PoolClient extends Client {
-    /** Returns the connection to the pool; `true` or an error ends it instead. */
     release(destroy?: boolean | Error): void;
   }
 
@@ -37,9 +36,7 @@ declare module "pg" {
     constructor(config?: PoolConfig);
     connect(): Promise<PoolClient>;
     end(): Promise<void>;
-    /** "connect" fires for each new connection, "remove" once a connection's socket has closed. */
     on(event: "connect" | "remove", listener: (client: PoolClient) => void): this;
-    /** An idle connection failed; the pool has already dropped it. */
     on(event: "error", listener: (error: Error, client: PoolClient) => void): this;
     query<R extends QueryResultRow = QueryResultRow>(
       queryTextOrConfig: string | QueryConfig,

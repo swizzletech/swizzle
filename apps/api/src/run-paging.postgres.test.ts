@@ -8,11 +8,6 @@ import { testPeople } from "../test/people.js";
 import { buildTestServer } from "../test/server-harness.js";
 import { createDashboardDataProvider } from "./dashboard.js";
 
-/**
- * 450 copies of a run: three share one queue time exactly at each step, and the three steps of a
- * group sit microseconds apart, inside one millisecond, where a cursor held in a Date would lose
- * its place.
- */
 async function copyRun(runId: string): Promise<void> {
   await testDatabase().pool.query(
     `insert into runs
@@ -81,12 +76,10 @@ it("walks every run of a filter past the page cap without a gap or a repeat", as
   expect(pages.map((page) => page.length)).toEqual([200, 200, 51]);
   expect(pages.flat()).toEqual(stored.rows.map((row) => row.id));
 
-  // A filter walks its own runs: half the copies failed.
   const failed = await walk("limit=200&status=failed");
   expect(failed.map((page) => page.length)).toEqual([200, 25]);
   expect(new Set(failed.flat()).size).toBe(225);
 
-  // A run that arrives mid-walk lands above the cursor, so the walk neither repeats nor skips.
   const first = (await list("limit=100")).json();
   await app.inject({
     headers: { authorization: owner.authorization },

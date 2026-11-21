@@ -7,8 +7,6 @@ import { createAutomationFixture } from "../test/platform-harness.js";
 
 import { createWaitLinkToken } from "./wait-links.js";
 
-// Durable waits: sleeps, events and approvals, their timeouts and resolution guards.
-
 const ANNA = {
   kind: "user",
   label: "anna@example.com",
@@ -107,7 +105,6 @@ describe("platform waits and approvals", () => {
       runId: queued.runId,
       status: "succeeded",
     });
-    // The second execution resumes the run and spends no retry: it is still attempt 1.
     expect(resumed?.result).toEqual({
       attempt: 1,
       execution: 2,
@@ -209,7 +206,6 @@ describe("platform waits and approvals", () => {
       expect((await platform.processNextPlatformRun())?.status).toBe("waiting");
       await platform.resumeDueWaitingRuns({ environment: "local", now: new Date(until) });
     }
-    // The worker's start of the third execution, which the user cancels while it runs.
     const startedAt = new Date().toISOString();
     await platform.store.updateRunState({
       attemptsMade: 1,
@@ -339,7 +335,6 @@ describe("platform waits and approvals", () => {
       runId: approveRun.runId,
       stepKey: "manager-approval",
     };
-    // The link checks the wait is unassigned; Anna's decision checks it is still hers.
     expect(
       await platform.decideApproval({ ...decision, assignee: null, decidedBy: { kind: "link" } }),
     ).toMatchObject({ status: "not-waiting" });
@@ -367,7 +362,6 @@ describe("platform waits and approvals", () => {
       payload: {},
     });
     expect((await platform.processNextPlatformRun())?.status).toBe("waiting");
-    // Reassigned to Finance, Anna's decision no longer lands; a member of Finance decides.
     expect(
       await platform.reassignApproval({
         from: ANNA,
@@ -446,7 +440,6 @@ describe("platform waits and approvals", () => {
       artifactsDirectory: path.join(stateDirectory, "artifacts"),
     });
     const runId = await waitingForFinance(platform);
-    // The step already holds a result, as after a decision that landed on another path.
     await platform.store.setRunStepResult({ executionNumber: 1, runId, stepKey: "gate", value: 1 });
     const decide = (assignee: typeof FINANCE) =>
       platform.decideApproval({
@@ -657,7 +650,6 @@ describe("platform waits and approvals", () => {
       vi.useRealTimers();
     });
 
-    // Two approval steps in a row, then an event wait with a one-hour timeout.
     async function startLinkedRun() {
       vi.stubEnv("SWIZZLE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
       const stateDirectory = await temporaryDirectory("swizzle-platform-");
@@ -714,11 +706,9 @@ describe("platform waits and approvals", () => {
         status: "open",
         wait: { runId, stepKey: "first" },
       });
-      // A link for a later step of the same run does not open the current one.
       expect(await find("approval", token("approval", "second"))).toMatchObject({
         status: "closed",
       });
-      // An event link is no approval link, and a changed signature is no link at all.
       expect(await find("event", token("event", "first"))).toMatchObject({ status: "closed" });
       expect(await find("approval", `${token("approval", "first").slice(0, -2)}xx`)).toEqual({
         status: "not-found",
@@ -761,7 +751,6 @@ describe("platform waits and approvals", () => {
   });
 });
 
-/** A run of `raced-approval`, deployed on first use, waiting at the approval `gate` for Finance. */
 async function waitingForFinance(
   platform: Awaited<ReturnType<typeof testPlatform>>,
 ): Promise<string> {

@@ -1,6 +1,3 @@
-// Scoped Docker operations for the sandbox modules. Commands use the
-// CLI's daemon connection with only the environment it needs (DOCKER_HOST, the broker in Compose).
-
 import { AsyncLocalStorage } from "node:async_hooks";
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -16,20 +13,16 @@ export interface DockerOutcome {
   readonly stdout: string;
 }
 
-// The default deployment stack. Trusted local runs add their own namespace below.
 const DEFAULT_STACK = "local";
 const localStack = new AsyncLocalStorage<string>();
 
-/** Local cleanup cannot touch the deployed images of the configured stack. */
 export async function withLocalDockerStack<T>(run: () => Promise<T>): Promise<T> {
   return await localStack.run(`local-${process.env.SWIZZLE_STACK?.trim() || DEFAULT_STACK}`, run);
 }
 const REMOVE_ATTEMPTS = 3;
 const REMOVE_RETRY_MS = 1_000;
 
-/** Deadline for daemon metadata and sandbox control commands. */
 export const CONTROL_TIMEOUT_MS = 5_000;
-/** Allocating a container, copying source and exporting layers depend on daemon storage and load. */
 export const TRANSFER_TIMEOUT_MS = 60_000;
 export type DockerDeadlines = Readonly<{ control: number; transfer: number }>;
 export const DOCKER_DEADLINES: DockerDeadlines = {
@@ -42,7 +35,6 @@ const scopes = new Set<DockerScope>();
 const PROCESS_LABEL = "swizzle.sandbox-process";
 const processId = randomUUID();
 
-/** Sandboxes of this worker process, distinct even when local processes share a hostname. */
 export function sandboxProcessLabel(): string {
   return `${PROCESS_LABEL}=${processId}`;
 }
@@ -59,7 +51,6 @@ type DockerOutputOptions = {
     }
 );
 
-/** Owns Docker subprocesses and, when named, their container until close completes cleanup. */
 export class DockerScope {
   readonly signal: AbortSignal;
   private readonly deadlines: DockerDeadlines;
@@ -88,7 +79,6 @@ export class DockerScope {
     scopes.add(this);
   }
 
-  /** Waits for cleanup already started, without closing active scopes. */
   static async removals(): Promise<void> {
     await Promise.all([...scopes].map((scope) => scope.closing));
   }
@@ -106,17 +96,14 @@ export class DockerScope {
     );
   }
 
-  /** Protects a create that is still owned while reconciliation lists Created containers. */
   ownsContainer(name: string): boolean {
     return this.container === name;
   }
 
-  /** Attached installation is execution, bounded by the assembly owner's deadline. */
   attachInstall(name: string, options: DockerOutputOptions): Promise<DockerOutcome> {
     return this.command(["start", "--attach", name], options, this.signal);
   }
 
-  /** A committed image is rolled back unless tagging succeeds and the caller retains it. */
   ownImage(image: string): void {
     this.image = image;
   }
@@ -125,7 +112,6 @@ export class DockerScope {
     this.image = null;
   }
 
-  /** The named container turned out to be another process's: close leaves it in place. */
   releaseContainer(): void {
     this.container = null;
   }
@@ -173,13 +159,11 @@ export class DockerScope {
   }
 }
 
-/** Worker shutdown owns all remaining scopes, including shared image assembly and cleanup. */
 export async function closeDockerScopes(): Promise<void> {
   closed = true;
   await Promise.all([...scopes].map((scope) => scope.close()));
 }
 
-/** Owns the CLI group and output pipes, so descendants cannot hold a deadline open. */
 async function runDocker(
   args: readonly string[],
   options: DockerOutputOptions,
@@ -252,10 +236,6 @@ async function runDocker(
   });
 }
 
-/**
- * Kills a Docker CLI spawned with `detached` on POSIX, its whole process group, and closes its
- * pipes: a helper can leave the group and still inherit one. The CLI's `close` then follows.
- */
 export function killDockerProcess(child: ChildProcess): void {
   try {
     if (process.platform !== "win32" && child.pid !== undefined) {
@@ -281,7 +261,6 @@ function dockerAbortError(
   );
 }
 
-/** Cleanup has its own deadlines, independent of the expired or cancelled owner. */
 async function removeContainer(name: string): Promise<void> {
   for (let attempt = 1; ; attempt += 1) {
     try {
@@ -299,7 +278,6 @@ async function removeContainer(name: string): Promise<void> {
   }
 }
 
-/** Removes Created sandboxes this process no longer owns, including creates that finished late. */
 export async function removeAbandonedContainers(): Promise<void> {
   const listed = await runDocker(
     [
@@ -325,12 +303,6 @@ export async function removeAbandonedContainers(): Promise<void> {
   }
 }
 
-/**
- * The label on every container and runner image this process makes, naming its stack
- * (SWIZZLE_STACK, the compose project in the Compose stack). Stacks on one host share the Docker
- * daemon, so the label keeps each stack's prune to its own images and gives each stack its own
- * image tags. In the Compose stack the Docker broker acts only on containers and images with it.
- */
 export function stackLabel(): string {
   return `swizzle.stack=${stackName()}`;
 }
@@ -346,26 +318,13 @@ function stackName(): string {
   return stack;
 }
 
-/**
- * The label on every container this process makes, naming the worker that made it by its hostname:
- * in the Compose stack, Docker's short id of the worker container. A worker container that starts
- * again removes the containers it left and those of worker containers that no longer run, and
- * keeps a live replica's (`removeLeftoverContainers`).
- */
 export function workerLabel(): string {
   return `${WORKER_LABEL}=${hostname()}`;
 }
 
 const WORKER_LABEL = "swizzle.worker";
-/** Compose puts it on each worker container of the stack (infra/docker/execution.yml). */
 const WORKER_OF_LABEL = "swizzle.worker-of";
 
-/**
- * Removes the sandboxes and image assemblies of this stack that a stopped or killed worker left:
- * those this worker's container made before it restarted, and those of worker containers that no
- * longer run. A run's sandbox outlives a killed worker until its hold process ends, which can be
- * an hour. Call it at worker start, before the process makes a container. Resolves the count removed.
- */
 export async function removeLeftoverContainers(): Promise<number> {
   const list = async (label: string, format: string, all: boolean) =>
     (
@@ -377,8 +336,6 @@ export async function removeLeftoverContainers(): Promise<number> {
     ).stdout
       .split("\n")
       .filter((line) => line.trim() !== "");
-  // Containers first, live workers second: a replica that starts in between and makes a sandbox
-  // is then live in the second list, so its sandbox is never taken for a gone worker's.
   const made = await list(stackLabel(), `{{.ID}} {{.Label "${WORKER_LABEL}"}}`, true);
   const live = await list(`${WORKER_OF_LABEL}=${stackName()}`, "{{.ID}}", false);
   const containers = made.map((line) => {
@@ -390,12 +347,6 @@ export async function removeLeftoverContainers(): Promise<number> {
   return leftovers.length;
 }
 
-/**
- * Which of the stack's containers are left over: made by `self` before it restarted, made by a
- * worker that is not among the `live` ones, or made without an owner label. Only a worker that is
- * itself one of the `live` containers decides: worker processes on one host share a hostname and
- * tell no one whether they run, so a worker outside the Compose stack removes nothing.
- */
 export function leftoverContainers(
   containers: readonly { readonly id: string; readonly owner: string }[],
   live: ReadonlySet<string>,

@@ -37,10 +37,6 @@ describe("dependency preparation security", () => {
 });
 
 describe("python dependency cache", () => {
-  // One venv build is the slowest step in the unit tier, so this test builds it once and
-  // proves the worker reuses it through the cache root in its own process env. The build costs
-  // about 3 s of CPU (ensurepip and pip) and the test up to 5 s with both runs. The budget lets a
-  // loaded host give it a tenth of a core.
   it("installs once, then a worker run with a sanitized child env reuses the cached venv", async () => {
     const automationDirectory = await temporaryDirectory("swizzle-python-deps-");
     const cacheDirectory = await temporaryDirectory("swizzle-dep-cache-");
@@ -61,11 +57,9 @@ runtime:
     await writeFile(path.join(automationDirectory, "requirements.txt"), "");
     await writeFile(
       path.join(automationDirectory, "main.py"),
-      // sys.prefix names the interpreter's own environment, so it proves the venv runs, not only its env var.
       'import json, sys\njson.dump({"prefix": sys.prefix}, sys.stdout)\n',
     );
 
-    // The cache root is operator configuration, read from the process env for both modes.
     vi.stubEnv("SWIZZLE_DEP_CACHE_DIR", cacheDirectory);
     const local = await runAutomation({
       environmentName: "local",
@@ -87,7 +81,6 @@ runtime:
       success: true,
     });
     expect(worker).toMatchObject({
-      // The same interpreter: the worker run reused the venv the local run built.
       result: local.success ? local.result : null,
       stderr: expect.stringContaining("Python dependency cache hit"),
       success: true,

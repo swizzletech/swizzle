@@ -14,11 +14,6 @@ import type { DashboardDataProvider } from "../src/dashboard.js";
 import { dashboardOrigin, getAllowedOrigins } from "../src/http-shared.js";
 import { type BuildServerOptions, buildServer } from "../src/server.js";
 
-/**
- * API routes use the calling test's PostgreSQL stores. Dashboard reads require an explicit stub.
- * Every route but the public ones needs a session or a token; `ownerHeaders()` (people.ts) gives a
- * test that is not about access an owner's token.
- */
 export async function buildTestServer(
   options: Partial<BuildServerOptions> & {
     readonly links?: AccountLinks;

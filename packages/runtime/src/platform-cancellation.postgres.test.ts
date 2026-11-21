@@ -65,7 +65,6 @@ describe("platform cancellation", () => {
     });
 
     const processing = platform.processNextPlatformRun();
-    // Settled in finally, even when readiness or cancellation fails first.
     processing.catch(() => undefined);
     try {
       await waitFor(
@@ -175,13 +174,9 @@ describe("platform cancellation", () => {
     expect(cancelledParent.resumeCount).toBe(0);
   });
 
-  // The API that receives a cancel and the worker that runs the attempt are separate processes on
-  // the packaged stack (f-220). A fresh copy of the runtime's modules plays the API: it shares only
-  // the store with this worker.
   it("stops a running attempt at its next heartbeat when another process cancels its run", async ({
     signal,
   }) => {
-    // The heartbeat is the worker's only news of a cancel; the test fires it.
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     onTestFinished(() => {
       vi.useRealTimers();
@@ -227,7 +222,6 @@ describe("platform cancellation", () => {
     });
 
     await api.cancelPlatformRun(run.runId);
-    // The automation itself would end in 30 s; a missed cancel runs into the test's timeout.
     vi.advanceTimersToNextTimer();
     const processed = await processing;
 

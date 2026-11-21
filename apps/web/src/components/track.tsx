@@ -1,11 +1,3 @@
-// Draws a `TrackGraph`: dagre places the stations, an SVG underneath carries the lanes and their
-// labels, and each station is an HTML element on top, so its text wraps, its state is a class and
-// an approval station holds real buttons. A step is a card with a state symbol, its label and a
-// meta line (`StationFace`); a node that only narrates, such as the trigger, a decision or the end,
-// is a quiet text marker. Dagre loads on the first track drawn. A track runs left to right, top down
-// at phone width. Labels wrap to keep it short; `TrackView` scrolls what still does not fit, and its
-// type never shrinks.
-
 import { type ReactNode, useEffect, useState } from "react";
 
 import type { LaneState, StationState, TrackEdge, TrackGraph, TrackNode } from "../lib/track";
@@ -24,7 +16,6 @@ interface Placed {
 interface Routed {
   readonly edge: TrackEdge;
   readonly points: readonly { readonly x: number; readonly y: number }[];
-  /** Where dagre put the label, when the lane has one. */
   readonly label: { readonly x: number; readonly y: number } | null;
 }
 
@@ -46,13 +37,11 @@ function dagre(): Promise<Dagre> {
   dagreModule ??= Promise.all([
     import("dagre-d3-es/src/graphlib/index.js"),
     import("dagre-d3-es/src/dagre/index.js"),
-    // Labels are measured in these; if one never loads, the fallback that renders is what is measured.
     document.fonts.load(sansFont(CARD_TYPE)).catch(() => []),
     document.fonts.load(sansFont(MARK_TYPE)).catch(() => []),
   ])
     .then(([graphlib, layout]) => ({ Graph: graphlib.Graph, layout: layout.layout }))
     .catch((error: unknown) => {
-      // A failed chunk load is not final: the next mount tries again.
       dagreModule = null;
       throw error;
     });
@@ -67,25 +56,20 @@ function loadDagre(onLoaded: (lib: Dagre) => void, onError: (message: string) =>
 
 type TrackDirection = "LR" | "TB";
 
-/** Extra height a station needs for what sits under its label. */
 export interface StationExtra {
   readonly height: number;
   readonly width: number;
 }
 
-/** What a label may take: its lines, then a text column as narrow as those lines allow. */
 const LABEL_LINES = 3;
 const LABEL_STEP = 8;
-/** A card: its type, the text column, and the symbol, gap and padding beside it. */
 const CARD_TYPE = "500 13px";
 const CARD_TEXT_MIN = 84;
 const CARD_TEXT_MAX = 132;
 const CARD_CHROME = 52;
-/** A card's padding and border, a label line, and the meta line it always keeps room for. */
 const CARD_FRAME = 18;
 const CARD_LINE = 20;
 const CARD_META = 16;
-/** A narration marker: its type, text column, padding, and a decision's diamond. */
 const MARK_TYPE = "500 12px";
 const MARK_TEXT_MIN = 76;
 const MARK_TEXT_MAX = 124;
@@ -99,7 +83,6 @@ function sansFont(type: string): string {
   return `${type} ${getComputedStyle(document.documentElement).getPropertyValue("--font-sans")}`;
 }
 
-/** The lines words of these widths take in a column, breaking as the browser does. */
 function wrappedLines(words: readonly number[], space: number, column: number): number {
   let lines = 1;
   let used = 0;
@@ -108,18 +91,12 @@ function wrappedLines(words: readonly number[], space: number, column: number): 
       lines += 1;
       used = 0;
     }
-    // A word wider than the column, such as a run of CJK, breaks over the lines it needs.
     lines += Math.max(Math.ceil(word / column) - 1, 0);
     used += (used > 0 ? space : 0) + (word > column ? word % column : word);
   }
   return lines;
 }
 
-/**
- * The narrowest column that keeps a label to its lines without breaking a word, and how many it
- * takes there, measured in the type the label renders in. A track is as wide as its columns add
- * up to, so this is what keeps a long flow short.
- */
 function labelColumn(label: string, type: string, min: number, max: number) {
   if (ruler === null) return { column: max, lines: LABEL_LINES };
   ruler.font = sansFont(type);
@@ -132,11 +109,6 @@ function labelColumn(label: string, type: string, min: number, max: number) {
   return { column, lines: wrappedLines(words, space, column) };
 }
 
-/**
- * The box dagre reserves. A card's size follows its label alone and always keeps room for its
- * meta line, so the layout holds still while a live run changes the meta from step to item to
- * duration.
- */
 function stationSize(node: TrackNode, extra: StationExtra | null) {
   if (node.key === null) {
     const { column, lines } = labelColumn(node.label, MARK_TYPE, MARK_TEXT_MIN, MARK_TEXT_MAX);
@@ -204,7 +176,6 @@ function layoutTrack(
   return { height: size.height ?? 0, lanes, stations, width: size.width ?? 0 };
 }
 
-/** A lane as one path through dagre's points, with its corners softened. */
 function lanePath(points: readonly { readonly x: number; readonly y: number }[]): string {
   const [first, ...rest] = points;
   if (first === undefined) return "";
@@ -233,7 +204,6 @@ const STATE_WORDS: Record<StationState, string> = {
   waiting: "waiting",
 };
 
-/** What a card draws on its state ring; idle and untaken draw the ring alone. */
 const STATE_SYMBOL: Record<StationState, ReactNode> = {
   done: <path className="st-mark" d="M5 9.2 7.8 12 13 6.6" />,
   failed: <path className="st-mark" d="M6.2 6.2 11.8 11.8 M11.8 6.2 6.2 11.8" />,
@@ -243,10 +213,6 @@ const STATE_SYMBOL: Record<StationState, ReactNode> = {
   waiting: <path className="st-mark" d="M9 5.6V9l2.4 1.6" />,
 };
 
-/**
- * A step's face: the state symbol, the label and the meta line, which ellipsizes and keeps the
- * whole text in its title. The track's cards and the Play's phone cards both draw it.
- */
 export function StationFace(props: {
   readonly label: string;
   readonly meta: string | null;
@@ -277,13 +243,10 @@ const LANE_CLASS: Record<LaneState, string> = {
 
 export function Track(props: {
   readonly track: TrackGraph;
-  /** Overrides the direction for a view with its own shape, such as the Play's narrow rail. */
   readonly direction?: TrackDirection;
-  /** What a station holds under its label, such as the approval's buttons. */
   readonly extra?: (
     node: TrackNode,
   ) => { readonly content: ReactNode; readonly size: StationExtra } | null;
-  /** The station the Play tab shows the code of. */
   readonly focused?: string | null;
   readonly onSelect?: (node: TrackNode) => void;
   readonly testId?: string;

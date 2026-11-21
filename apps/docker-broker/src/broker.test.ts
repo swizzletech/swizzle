@@ -1,6 +1,3 @@
-// The broker in front of a fake Docker daemon on a Unix socket. cli-requests.json holds the bodies
-// the worker image's Docker CLI (29.9.2) sends for the sandbox and image assembly creates and for
-// a run's exec, captured with the arguments packages/runtime builds.
 import { execFile } from "node:child_process";
 import { once } from "node:events";
 import type { IncomingMessage } from "node:http";
@@ -28,13 +25,8 @@ interface Received {
   body: string;
 }
 
-/** The fake daemon never answers a lookup of this container, like a daemon that stopped answering. */
 const STALLED = "swizzle-run-stalled";
 
-/**
- * A broker for stack-a, the requests that reached the daemon behind it, and the `METHOD url` of
- * each daemon request whose connection closed before the daemon answered it in full.
- */
 async function startBroker(): Promise<{
   readonly url: string;
   readonly received: Received[];
@@ -53,7 +45,6 @@ async function startBroker(): Promise<{
     });
     req.on("end", () => {
       received.push({ body, method: req.method ?? "", url: req.url ?? "" });
-      // Like the daemon's wait: headers at once, the body when the container exits.
       if (req.url?.includes("/wait")) {
         res.writeHead(200, { "content-type": "application/json" });
         res.flushHeaders();
@@ -95,9 +86,6 @@ async function startBroker(): Promise<{
       else res.end(JSON.stringify({ Config: { Labels: {} }, Id: FOREIGN_ID }));
     });
   });
-  // Like the daemon on a call it does not hijack: an ordinary answer on a connection that stays
-  // open. The request body and every byte that reaches it after the request are recorded as the
-  // body; Node delivers the first on the request and the rest on the socket.
   const raw = new Set<Socket>();
   daemon.on("upgrade", (req: IncomingMessage, socket: Socket, head: Buffer) => {
     raw.add(socket);
@@ -108,8 +96,6 @@ async function startBroker(): Promise<{
     };
     req.on("data", record);
     record(head);
-    // stdin=1 marks a call the daemon switches, as for an attach: once the request body is in, it
-    // answers 101 and echoes the raw stream. Bytes before the switch stay in the recorded body.
     if (req.url?.includes("stdin=1") === true) {
       let switched = false;
       socket.on("data", (chunk: Buffer) => {
@@ -123,9 +109,7 @@ async function startBroker(): Promise<{
       return;
     }
     socket.on("data", record);
-    // stdout=1 marks an answer whose body never finishes.
     const unfinished = req.url?.includes("stdout=1") === true;
-    // The broker's end of this connection closing reaches the fake as its end.
     socket.once("end", () => {
       if (unfinished) abandoned.push(`${req.method} ${req.url}`);
     });
@@ -175,7 +159,6 @@ function without<T extends object>(value: T, key: keyof T): Omit<T, typeof key> 
   return rest;
 }
 
-/** Writes raw bytes to the broker and returns everything it answers until it closes. */
 async function rawExchange(url: string, bytes: string): Promise<string> {
   const socket = connect(Number(new URL(url).port), "127.0.0.1");
   await once(socket, "connect");
@@ -276,11 +259,13 @@ describe("docker-broker", () => {
       withHostConfig({ Devices: [{ PathInContainer: "/dev/sda", PathOnHost: "/dev/sda" }] }),
     ],
     ["an added capability", withHostConfig({ CapAdd: ["SYS_ADMIN"] })],
+    ["an oversized body", { ...requests.sandbox, Image: "a".repeat(1_048_576) }],
     ["the host pid namespace", withHostConfig({ PidMode: "host" })],
     ["the host network", withHostConfig({ NetworkMode: "host" })],
     ["another container's network", withHostConfig({ NetworkMode: "container:postgres" })],
     ["no seccomp profile", withHostConfig({ SecurityOpt: ["seccomp=unconfined"] })],
     ["unmasked /proc paths", withHostConfig({ MaskedPaths: [] })],
+    ["writable /proc paths", withHostConfig({ ReadonlyPaths: [] })],
     ["a field the worker never sets", withHostConfig({ Sysctls: { "kernel.shmmax": "1" } })],
     ["the root user", { ...requests.sandbox, User: "0:0" }],
     ["no stack label", { ...requests.sandbox, Labels: {} }],
@@ -299,8 +284,11 @@ describe("docker-broker", () => {
       "no network mode, so the bridge",
       { ...requests.sandbox, HostConfig: without(requests.sandbox.HostConfig, "NetworkMode") },
     ],
-    // f-232: a zero or missing limit is Docker's unlimited.
     ["no memory limit", withHostConfig({ Memory: 0, MemorySwap: 0 })],
+    [
+      "swap beyond the memory limit",
+      withHostConfig({ MemorySwap: 2 * requests.sandbox.HostConfig.Memory }),
+    ],
     ["no CPU limit", withHostConfig({ NanoCpus: 0 })],
     ["no PID limit", withHostConfig({ PidsLimit: 0 })],
     [
@@ -364,7 +352,6 @@ describe("docker-broker", () => {
     );
   });
 
-  // The broker holds a create to the limits packages/runtime sends, which the recording carries.
   it("expects the limits the runtime's container arguments ask for", () => {
     const limits = containerLimitArguments({});
     const host = requests.sandbox.HostConfig;
@@ -434,7 +421,6 @@ describe("docker-broker", () => {
   }) => {
     const broker = await startBroker();
 
-    // A broker that held the headers for the body would hold this fetch until the test timeout.
     const response = await fetch(`${broker.url}/v1.56/containers/swizzle-run-1/wait`, {
       method: "POST",
       signal,
@@ -456,6 +442,24 @@ describe("docker-broker", () => {
     expect(broker.received).toEqual([]);
   });
 
+  it("allows an owned container start over HTTP and refuses it as a raw stream", async () => {
+    const broker = await startBroker();
+    const target = "/v1.56/containers/swizzle-run-1/start";
+
+    const answer = await rawExchange(
+      broker.url,
+      `POST ${target} HTTP/1.1\r\nHost: docker\r\nConnection: Upgrade\r\nUpgrade: tcp\r\nContent-Length: 0\r\n\r\n`,
+    );
+
+    expect(answer).toMatch(/^HTTP\/1\.1 403 /u);
+    expect(broker.received).toEqual([]);
+    expect((await fetch(`${broker.url}${target}`, { method: "POST" })).status).toBe(201);
+    expect(broker.received).toEqual([
+      { body: "", method: "GET", url: "/containers/swizzle-run-1/json" },
+      { body: "", method: "POST", url: `/v1.56/containers/${OWNED_ID}/start` },
+    ]);
+  });
+
   it("passes nothing after an allowed raw-stream call that the daemon does not switch", async () => {
     const broker = await startBroker();
     const create = JSON.stringify(withHostConfig({ Privileged: true }));
@@ -473,7 +477,6 @@ describe("docker-broker", () => {
     ]);
   });
 
-  // The client may send its stream before the switch; the daemon must see it only after the switch.
   it("hands a switched raw stream its request body once, then bytes in both directions", async ({
     signal,
   }) => {
@@ -508,7 +511,6 @@ describe("docker-broker", () => {
     ]);
   });
 
-  // A worker CLI that times out or is killed disconnects; what it asked of the daemon must end too.
   it.for([
     {
       call: "POST /v1.56/containers/swizzle-run-1/wait",
@@ -579,4 +581,27 @@ describe("docker-broker", () => {
     expect(answer).toMatch(/^HTTP\/1\.1 400 /u);
     expect(ping.status).toBe(201);
   });
+
+  it("rejects a percent-encoded name before any Docker lookup", async () => {
+    const broker = await startBroker();
+
+    const result = await fetch(`${broker.url}/v1.56/containers/swizzle%2Drun%2D1/json`);
+
+    expect(result.status).toBe(403);
+    expect(broker.received).toEqual([]);
+  });
+
+  it.each(["team/image..name", "team//image"])(
+    "rejects the image path %s before forwarding it to Docker",
+    async (image) => {
+      const broker = await startBroker();
+
+      expect((await fetch(`${broker.url}/v1.56/images/${image}/json`)).status).toBe(403);
+      expect(broker.received).toEqual([]);
+      expect((await fetch(`${broker.url}/v1.56/images/team/image/json`)).status).toBe(201);
+      expect(broker.received).toEqual([
+        { body: "", method: "GET", url: "/v1.56/images/team/image/json" },
+      ]);
+    },
+  );
 });
