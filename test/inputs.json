@@ -1,4 +1,5 @@
 {
+  "packages/core/src/logger.test.ts": ["packages/core/src/logger*.ts"],
   "scripts/affected-tests.test.ts": [
     ".github/workflows/ci.yml",
     "justfile",
@@ -20,6 +21,10 @@
     "scripts/{dev-stack.mts,dev-stack-supervisor.mts,dev-stack-timeout.ts,env-file.ts,process-identity.ts}"
   ],
   "scripts/init-env.test.ts": ["scripts/{init-env,env-file}.ts"],
+  "scripts/conventions/conventions.test.ts": [
+    "scripts/conventions/comment-budget.json",
+    "{apps,packages,scripts,test}/**/*.{ts,mts,cts,tsx}"
+  ],
   "scripts/export-public.test.ts": [
     "scripts/{export-public.mts,private-paths.ts}",
     "knip.jsonc",
@@ -52,6 +57,10 @@
     "scripts/{stack,stack-images,init-env,env-file,upgrade}.ts",
     "infra/docker/{Dockerfile.runner,runner-tools.mjs}",
     "test/fixtures/runner-upgrade/**"
+  ],
+  "scripts/smoke-egress.test.ts": [
+    "packages/sdk-py/swizzle_sdk.py",
+    "packages/sdk-ts/src/index.ts"
   ],
   "scripts/upgrade.test.ts": [
     "scripts/{upgrade,stack,stack-images}.ts",

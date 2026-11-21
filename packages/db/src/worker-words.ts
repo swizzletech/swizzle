@@ -4,12 +4,14 @@
 // and the dashboard say the same thing.
 
 import { LOCAL_LLM_SERVICE } from "@swizzle/config";
-import type {
-  PlacementFix,
-  PlacementWords,
-  RunImageDisk,
-  RunPlacement,
-  WorkerWarning,
+import {
+  type PlacementFix,
+  type PlacementWords,
+  type RunImageDisk,
+  type RunImageDiskProblem,
+  type RunPlacement,
+  runImageDiskProblems,
+  type WorkerWarning,
 } from "./workers.js";
 
 /** Why a queued run has not started and what gets it going. */
@@ -96,25 +98,39 @@ export function unservedProjectMessage(input: {
 }
 
 /** The warning for active images whose measured bytes exceed the budget or whose usage is unknown. */
-export function runImageDiskWarning(worker: string, disk: RunImageDisk): WorkerWarning {
-  if (disk.unmeasuredActiveImages.length > 0 || disk.unmeasuredActiveImagesOmitted > 0) {
-    const images = [
-      ...disk.unmeasuredActiveImages.map(({ id, tags }) =>
-        tags.length === 0 ? id : `${id} (${tags.join(", ")})`,
-      ),
-      ...(disk.unmeasuredActiveImagesOmitted > 0
-        ? [`${disk.unmeasuredActiveImagesOmitted} more unmeasured active images`]
-        : []),
-    ].join(", ");
-    return {
-      title: `${worker} keeps unmeasured run images for active deployments: ${images}. Their disk usage is unknown. Swizzle keeps them so those deployments keep running.`,
-      todo: "Check this worker's Docker image history and prune logs, or remove the deployments that use these images.",
-    };
-  }
+export function runImageDiskWarning(
+  worker: string,
+  disk: RunImageDisk | null,
+): WorkerWarning | null {
+  if (disk === null) return null;
+  const warnings = runImageDiskProblems(disk).map((problem) => diskProblemInWords(problem, disk));
+  if (warnings.length === 0) return null;
   return {
-    title: `${worker} keeps ${bytesInWords(disk.activeBytes)} of run images for active deployments, more than its disk budget of ${bytesInWords(disk.budgetBytes)}. Swizzle keeps them so those deployments keep running.`,
-    todo: "Remove deployments this worker runs, or raise SWIZZLE_RUNNER_IMAGE_DISK_MB on it and restart it.",
+    title: `${worker} ${warnings.map(({ title }) => title).join(" It also ")} Swizzle keeps them so those deployments keep running.`,
+    todo: warnings.map(({ todo }) => todo).join(" "),
   };
+}
+
+function diskProblemInWords(problem: RunImageDiskProblem, disk: RunImageDisk): WorkerWarning {
+  switch (problem) {
+    case "over-budget":
+      return {
+        title: `keeps ${bytesInWords(disk.activeBytes)} of run images for active deployments, more than its disk budget of ${bytesInWords(disk.budgetBytes)}.`,
+        todo: "Remove deployments this worker runs, or raise SWIZZLE_RUNNER_IMAGE_DISK_MB on it and restart it.",
+      };
+    case "unmeasured": {
+      const images = disk.unmeasured.images.map(({ id, tag }) =>
+        tag === null ? id : `${id} (${tag})`,
+      );
+      const omitted = disk.unmeasured.total - images.length;
+      if (omitted > 0)
+        images.push(`${omitted} more unmeasured active image${omitted === 1 ? "" : "s"}`);
+      return {
+        title: `keeps unmeasured run images for active deployments: ${images.join(", ")}. Their disk usage is unknown.`,
+        todo: "Check this worker's Docker image history and prune logs, or remove the deployments that use these images.",
+      };
+    }
+  }
 }
 
 /** "512 MiB" or "3.3 GiB". */

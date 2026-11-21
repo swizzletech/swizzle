@@ -2,11 +2,13 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { temporaryDirectory, waitFor } from "../../../test/support.js";
 import { isRunning } from "../test/container-docker.js";
 import { createAutomationFixture } from "../test/platform-harness.js";
 import { runAutomation } from "./index.js";
+import { executeChildProcess } from "./runner.js";
+import { loadAutomationDefinition } from "./validation.js";
 
 const sourceRoot = fileURLToPath(new URL(".", import.meta.url));
 const packageRoot = path.resolve(sourceRoot, "..");
@@ -419,3 +421,59 @@ it("awaits output persistence before returning a completed execution", async ({ 
   });
   expect(failed).toMatchObject({ success: false, message: "output write failed" });
 });
+
+it.skipIf(process.platform === "win32")(
+  "kills a host child that ignores SIGTERM when an output callback fails",
+  async ({ signal }) => {
+    const scratchDirectory = await temporaryDirectory("swizzle-callback-stop-");
+    const termFile = path.join(scratchDirectory, "term");
+    const automationDirectory = await createAutomationFixture({
+      name: "callback-stop",
+      triggerLines: ["  type: webhook"],
+      mainJs: `const { writeFileSync } = require("node:fs");
+process.on("SIGTERM", () => writeFileSync(${JSON.stringify(termFile)}, "received"));
+console.log(process.pid);
+process.stdin.resume();
+setInterval(() => {}, 1_000);
+`,
+    });
+    const definition = await loadAutomationDefinition(automationDirectory);
+    const error = new Error("output write failed");
+    let pid = 0;
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const running = executeChildProcess({
+        command: {
+          command: process.execPath,
+          args: [definition.entrypointPath],
+          displayName: "Node",
+        },
+        environment: {},
+        onStdoutChunk: (chunk) => {
+          pid = Number(chunk);
+          throw error;
+        },
+        outputLimitBytes: 1024,
+        payload: {},
+        scratchDirectory,
+        timeoutMs: 60_000,
+      });
+      void running.catch(() => {});
+      await waitFor(
+        signal,
+        async () => (await readFile(termFile, "utf8").catch(() => "")) === "received",
+      );
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(await running).toMatchObject({
+        stoppedBy: "callback-failed",
+        error,
+        signal: "SIGKILL",
+      });
+      expect(pid).toBeGreaterThan(0);
+      expect(isRunning(pid)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+      if (pid > 0 && isRunning(pid)) process.kill(pid, "SIGKILL");
+    }
+  },
+);

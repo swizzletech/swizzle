@@ -25,21 +25,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: { fetch-depth: 0 }
 
       - name: Install the toolchain
         uses: ./.github/actions/toolchain
 
       - name: Static gate
-        run: just check
-
-      - name: Generated reference is current
-        run: just _reference-current
-
-      - name: Compose files are valid
-        run: just compose-check
-
-      - name: Scan tracked files for secrets
-        run: just secret-scan
+        run: just _verify-static
 
       - name: Audit dependencies
         run: just audit
@@ -111,11 +103,8 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('node_modules/.pnpm/playwright-core@*/node_modules/playwright-core/package.json') }}
 
-      - name: Set up
-        run: just setup
-
-      - name: Build and run the dashboard flows
-        run: just e2e
+      - name: Set up, build and run the dashboard flows
+        run: just _verify-e2e
 
   # Branch protection requires this job by its name, `Verify`, so adding, splitting or
   # resharding a job above needs no change to the protection rules: list it under `needs`.

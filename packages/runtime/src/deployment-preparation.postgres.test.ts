@@ -95,8 +95,7 @@ describe("a prune pass", () => {
       removed: 1,
       disk: {
         activeBytes: IMAGE_MIB * 1_048_576,
-        unmeasuredActiveImagesOmitted: 0,
-        unmeasuredActiveImages: [],
+        unmeasured: { images: [], total: 0 },
         budgetBytes: 100 * 1_048_576,
       },
     });

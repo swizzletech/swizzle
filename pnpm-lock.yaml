@@ -176,6 +176,9 @@ catalogs:
     bullmq:
       specifier: ^6.7.8
       version: 6.7.8
+    fast-check:
+      specifier: ^4.10.3
+      version: 4.10.3
     fastify:
       specifier: ^5.12.8
       version: 5.12.8
@@ -455,6 +458,10 @@ importers:
       zod:
         specifier: ^4.6.7
         version: 4.6.7
+    devDependencies:
+      fast-check:
+        specifier: 'catalog:'
+        version: 4.10.3
 
   packages/connections: {}
 
@@ -490,6 +497,9 @@ importers:
       pino-roll:
         specifier: ^4.0.0
         version: 4.0.0
+      thread-stream:
+        specifier: ^4.2.1
+        version: 4.2.1
       undici:
         specifier: ^8.12.4
         version: 8.12.4
@@ -3053,6 +3063,10 @@ packages:
   extend@3.0.2:
     resolution: {integrity: sha512-fjquC59cD7CyW6urNXK0FBufkZcoiGG80wTuPujX590cB5Ttln20E2UB4S/WARVqhXffZl2LNgS+gQdPIIim/g==}
 
+  fast-check@4.10.3:
+    resolution: {integrity: sha512-SBaU6nhh+sXxb05r2IHAKfxnR/1Pu6MqtHYaewM1BY6V5xzOxOk+4yoWO7WfeeyZG1iArFE6/DO/7iLYMUuOJg==}
+    engines: {node: '>=12.17.0'}
+
   fast-copy@4.3.2:
     resolution: {integrity: sha512-Ctcuv1tplX+8bX/VBu6DD8gZyDEtbP+jo+jnNCR9LVNSWR6DWauNol44WGQC2+uMCnFG7oRw/67ldmTIADdtgA==}
 
@@ -3596,6 +3610,9 @@ packages:
 
   pump@3.0.4:
     resolution: {integrity: sha512-VS7sjc6KR7e1ukRFhQSY5LM2uBWAUPiOPa/A3mkKmiMwSmRFUITt0xuj+/lesgnCv+dPIEYlkzrcyXgquIHMcA==}
+
+  pure-rand@8.4.2:
+    resolution: {integrity: sha512-vvuOGgcuPJAirlHvuQw1TrOiw7ptaIXXmIbNuiNOY6lNGJJH49PQ1Kj4nd783nPdQhQdicgOjVI2yI/9BD6/Ng==}
 
   quick-format-unescaped@4.0.4:
     resolution: {integrity: sha512-tYC1Q1hgyRuHgloV/YXs2w15unPVh8qfu/qCTfhTYamaw7fyhumKa2yGpdSo87vY32rIclj+4fWYQXUMs9EHvg==}
@@ -6316,6 +6333,10 @@ snapshots:
 
   extend@3.0.2: {}
 
+  fast-check@4.10.3:
+    dependencies:
+      pure-rand: 8.4.2
+
   fast-copy@4.3.2: {}
 
   fast-decode-uri-component@1.0.1: {}
@@ -6905,6 +6926,8 @@ snapshots:
     dependencies:
       end-of-stream: 1.4.5
       once: 1.4.0
+
+  pure-rand@8.4.2: {}
 
   quick-format-unescaped@4.0.4: {}
 

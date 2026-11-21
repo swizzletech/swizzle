@@ -160,22 +160,60 @@ export type PreparationBundle = PreparationSnapshot["deployments"][number];
 
 const accepted = z.strictObject({ accepted: z.literal(true) });
 const runImageTag = z.string().regex(RUN_IMAGE_TAG);
-const runImageDisk = z.strictObject({
+const runImageId = z.string().regex(/^sha256:[a-f0-9]{64}$/u);
+const diskBudget = {
   activeBytes: count,
+  budgetBytes: z.int().min(1),
+};
+const detailedLegacyDisk = z.strictObject({
+  ...diskBudget,
   unmeasuredActiveImagesOmitted: count,
   unmeasuredActiveImages: z
     .array(
       z
         .strictObject({
-          id: z.string().regex(/^sha256:[a-f0-9]{64}$/u),
+          id: runImageId,
           tags: z.array(runImageTag).max(1).readonly(),
         })
         .readonly(),
     )
     .max(RUN_IMAGE_DISK_DETAILS_LIMIT)
     .readonly(),
-  budgetBytes: z.int().min(1),
-}) satisfies z.ZodType<RunImageDisk>;
+});
+const legacyDisk = z
+  .union([detailedLegacyDisk, z.strictObject(diskBudget)])
+  .transform((disk): RunImageDisk => {
+    const { activeBytes, budgetBytes } = disk;
+    const unmeasured =
+      "unmeasuredActiveImages" in disk
+        ? {
+            images: disk.unmeasuredActiveImages.map(({ id, tags }) => ({
+              id,
+              tag: tags[0] ?? null,
+            })),
+            total: Math.min(
+              disk.unmeasuredActiveImages.length + disk.unmeasuredActiveImagesOmitted,
+              Number.MAX_SAFE_INTEGER,
+            ),
+          }
+        : { images: [], total: 0 };
+    return { activeBytes, budgetBytes, unmeasured };
+  });
+const runImageDisk = z.union([
+  z.strictObject({
+    ...diskBudget,
+    unmeasured: z
+      .strictObject({
+        images: z
+          .array(z.strictObject({ id: runImageId, tag: runImageTag.nullable() }).readonly())
+          .max(RUN_IMAGE_DISK_DETAILS_LIMIT)
+          .readonly(),
+        total: count,
+      })
+      .refine(({ images, total }) => total >= images.length),
+  }),
+  legacyDisk,
+]) satisfies z.ZodType<RunImageDisk>;
 
 const TOOL_FIELD_LENGTH = 80;
 const MAX_LANGUAGES = 8;

@@ -187,6 +187,8 @@ export function workflowCommands(yamlText: string): ShellCommand[] {
 /** A recipe of a justfile, as `just` reads it. */
 export interface Recipe {
   readonly name: string;
+  readonly dependencies: readonly string[];
+  readonly parameters: readonly string[];
   /** The doc comment `just --list` shows beside the recipe. */
   readonly doc: string | undefined;
   readonly private: boolean;
@@ -202,6 +204,8 @@ interface JustDump {
     string,
     {
       readonly name: string;
+      readonly dependencies: readonly { readonly recipe: string }[];
+      readonly parameters: readonly { readonly name: string }[];
       readonly doc: string | null;
       readonly private: boolean;
       readonly shebang: boolean;
@@ -246,6 +250,8 @@ export function justRecipes(justfilePath: string, text: string): Recipe[] {
     });
     return {
       name: recipe.name,
+      dependencies: recipe.dependencies.map((dependency) => dependency.recipe),
+      parameters: recipe.parameters.map((parameter) => parameter.name),
       doc: recipe.doc ?? undefined,
       private: recipe.private,
       line: header + 1,

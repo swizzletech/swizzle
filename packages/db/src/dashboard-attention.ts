@@ -205,14 +205,14 @@ export function buildAttention(input: BuildAttentionInput): readonly DashboardAt
     });
   }
   for (const worker of input.workers) {
-    const disk = worker.runImageDiskOverBudget;
-    if (disk !== null) {
+    const warning = runImageDiskWarning(worker.name, worker.runImageDiskOverBudget);
+    if (warning !== null) {
       items.push({
         kind: "platform",
         problem: {
           code: "run-image-disk",
           worker: worker.name,
-          warning: runImageDiskWarning(worker.name, disk),
+          warning,
         },
       });
     }

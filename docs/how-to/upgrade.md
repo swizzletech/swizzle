@@ -4,6 +4,8 @@ Upgrade any server from an earlier 1.x release with this procedure. The upgrade 
 
 ## Upgrade the server
 
+Upgrade the server before its remote workers. If you upgrade a remote worker first, the older server rejects its heartbeats once the worker sends a disk report. The worker then appears offline. See the [worker protocol](../reference/worker-protocol.md#run-image-disk-report).
+
 Keep your checkout clean. Commit any tracked configuration changes and remove untracked files before upgrading. `.env` is ignored by Git and stays with the installed stack. Keep a separate copy of it, especially `SWIZZLE_ENCRYPTION_KEY`.
 
 ```bash

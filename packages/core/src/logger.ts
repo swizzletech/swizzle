@@ -1,5 +1,7 @@
 import pino, { type Logger, type LoggerOptions } from "pino";
 
+import { createStdoutLogSink, fileLogSink } from "./logger-file.js";
+
 const PRODUCTION = process.env.NODE_ENV === "production";
 
 export interface CreateLoggerOptions {
@@ -94,29 +96,6 @@ export function createLogger(name: string, options: CreateLoggerOptions = {}): L
     }
   }
 
-  // Both production sinks write synchronously: a slow sink slows the request that logs, so a flood
-  // that outruns it cannot pile log lines up in memory.
   const logFile = process.env.SWIZZLE_LOG_FILE;
-  if (logFile) {
-    return pino(
-      base,
-      pino.transport({
-        // The worker thread drains a 4 MB ring. An async transport queues the lines the ring
-        // cannot take on the main thread, up to the maximum string length; sync waits for room
-        // instead. pino documents `sync` for transports but leaves it out of its types.
-        ...{ sync: true },
-        options: {
-          file: logFile,
-          frequency: process.env.SWIZZLE_LOG_FILE_FREQUENCY ?? "daily",
-          limit: { count: Number(process.env.SWIZZLE_LOG_FILE_COUNT ?? 10) },
-          mkdir: true,
-          size: process.env.SWIZZLE_LOG_FILE_SIZE ?? "20M",
-        },
-        target: "pino-roll",
-      }),
-    );
-  }
-
-  // pino's default async destination buffers without a bound behind a slow Docker log reader.
-  return pino(base, pino.destination({ dest: 1, sync: true }));
+  return pino(base, logFile ? fileLogSink(logFile) : createStdoutLogSink());
 }

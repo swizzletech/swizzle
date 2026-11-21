@@ -45,72 +45,109 @@ export async function pruneRunImages(input: {
       const now = Date.now();
       const budgetBytes = diskBudgetBytes();
       await removeAbandonedContainers();
-      const retained = new Set<string>();
-      const active: RunImage[] = [];
-      const fresh: RunImage[] = [];
-      const candidates: RunImage[] = [];
       const listed = await listStackRunImages(docker);
-      for (const image of await measureImageFootprints(listed, owner, input.logger)) {
-        if (image.tags.some((tag) => input.keep.has(tag))) active.push(image);
-        else if (now - image.createdAt < FRESH_IMAGE_MS) fresh.push(image);
-        else candidates.push(image);
-      }
-      let bytes = 0;
-      let hasUnmeasured = false;
-      const retain = (image: RunImage) => {
-        if (image.footprint.state === "unmeasured") {
-          hasUnmeasured = true;
-          return;
-        }
-        bytes += additionalImageBytes(image.footprint.layers, retained);
-        for (const layer of image.footprint.layers) retained.add(layer.chain);
-      };
-      for (const image of active) retain(image);
-      const activeBytes = bytes;
-      const unmeasured = active.filter((image) => image.footprint.state === "unmeasured");
-      const unmeasuredActiveImages = unmeasured
-        .slice(0, RUN_IMAGE_DISK_DETAILS_LIMIT)
-        .map(({ id, tags }) => ({
-          id,
-          tags: tags.filter((tag) => input.keep.has(tag)).slice(0, 1),
-        }));
-      const unmeasuredActiveImagesOmitted = unmeasured.length - unmeasuredActiveImages.length;
-      for (const image of fresh) retain(image);
+      const inventory = await measureImageFootprints(listed, owner, input.logger);
+      const remaining = new Map(inventory.map((image) => [image.id, image]));
+      const imageCount = remaining.size;
+      const refused = new Set<string>();
       const retentionMs =
         positiveInteger("SWIZZLE_RUNNER_IMAGE_RETENTION_HOURS", DEFAULT_IMAGE_RETENTION_HOURS) *
         3_600_000;
-      let removed = 0;
-      candidates.sort((left, right) => right.createdAt - left.createdAt);
-      for (const image of candidates) {
-        const { tags } = image;
-        if (
-          image.footprint.state === "measured" &&
-          !hasUnmeasured &&
-          now - image.createdAt < retentionMs &&
-          bytes + additionalImageBytes(image.footprint.layers, retained) <= budgetBytes
-        ) {
-          retain(image);
-          continue;
+      for (;;) {
+        const { removals, disk } = planPrune(
+          { images: [...remaining.values()], refused },
+          input.keep,
+          now,
+          budgetBytes,
+          retentionMs,
+        );
+        const refusedId = await executeRemovals(removals, remaining, docker);
+        if (refusedId === null) {
+          input.signal?.throwIfAborted();
+          return { removed: imageCount - remaining.size, disk };
         }
-        // The run tag goes last: an image a container uses keeps it when its removal fails.
-        const references = tags.length === 0 ? [image.id] : [...tags].sort(runTagLast);
-        try {
-          await docker(["image", "rm", ...references]);
-          removed += 1;
-        } catch (error) {
-          if (error instanceof AutomationRuntimeError) throw error;
-          retain(image);
-        }
+        refused.add(refusedId);
       }
-      input.signal?.throwIfAborted();
-      return {
-        removed,
-        disk: { activeBytes, budgetBytes, unmeasuredActiveImages, unmeasuredActiveImagesOmitted },
-      };
     },
     input.signal,
     input.deadlines,
   );
+}
+
+type ImageRemoval = { readonly id: string; readonly references: readonly string[] };
+
+async function executeRemovals(
+  removals: readonly ImageRemoval[],
+  remaining: Map<string, RunImage>,
+  docker: DockerCall,
+): Promise<string | null> {
+  for (const { id, references } of removals) {
+    try {
+      await docker(["image", "rm", ...references]);
+    } catch (error) {
+      if (error instanceof AutomationRuntimeError) throw error;
+      return id;
+    }
+    remaining.delete(id);
+  }
+  return null;
+}
+
+export function planPrune(
+  inventory: { readonly images: readonly RunImage[]; readonly refused: ReadonlySet<string> },
+  keep: ReadonlySet<string>,
+  now: number,
+  budgetBytes: number,
+  retentionMs: number,
+): {
+  readonly removals: readonly ImageRemoval[];
+  readonly disk: RunImageDisk;
+} {
+  const active: RunImage[] = [];
+  const fresh: RunImage[] = [];
+  const candidates: RunImage[] = [];
+  for (const image of inventory.images) {
+    if (image.tags.some((tag) => keep.has(tag))) active.push(image);
+    else if (now - image.createdAt < FRESH_IMAGE_MS) fresh.push(image);
+    else candidates.push(image);
+  }
+
+  const retained = new Set<string>();
+  const activeBytes = countRetainedBytes(active, retained);
+  const unmeasured = active.filter((image) => image.footprint.state === "unmeasured");
+  const images = unmeasured
+    .slice(0, RUN_IMAGE_DISK_DETAILS_LIMIT)
+    .map(({ id, tags }) => ({ id, tag: tags.find((tag) => keep.has(tag)) ?? null }));
+  let bytes = activeBytes + countRetainedBytes(fresh, retained);
+  let hasUnmeasured =
+    unmeasured.length > 0 || fresh.some((image) => image.footprint.state === "unmeasured");
+
+  const removals: ImageRemoval[] = [];
+  candidates.sort((left, right) => right.createdAt - left.createdAt);
+  for (const { id, tags, createdAt, footprint } of candidates) {
+    const additional =
+      footprint.state === "measured" ? unretainedLayers(footprint.layers, retained) : null;
+    if (
+      inventory.refused.has(id) ||
+      (additional !== null &&
+        !hasUnmeasured &&
+        now - createdAt < retentionMs &&
+        bytes + additional.bytes <= budgetBytes)
+    ) {
+      if (additional === null) hasUnmeasured = true;
+      else {
+        bytes += additional.bytes;
+        for (const chain of additional.chains) retained.add(chain);
+      }
+      continue;
+    }
+    // The run tag goes last: an image a container uses keeps it when its removal fails.
+    removals.push({ id, references: tags.length === 0 ? [id] : [...tags].sort(runTagLast) });
+  }
+  return {
+    removals,
+    disk: { activeBytes, budgetBytes, unmeasured: { images, total: unmeasured.length } },
+  };
 }
 
 type ImagePruneLogger = { warn(...args: readonly unknown[]): void };
@@ -172,10 +209,24 @@ async function measureImageFootprints(
     measured.push(
       ...(await Promise.all(
         images.slice(offset, offset + 8).map(async (image) => {
-          const { stdout } = await owner.run(
-            ["image", "history", "--human=false", "--no-trunc", "--format", "{{.Size}}", image.id],
-            { outputLimitBytes: 1_048_576 },
-          );
+          let stdout: string;
+          try {
+            ({ stdout } = await owner.run(
+              [
+                "image",
+                "history",
+                "--human=false",
+                "--no-trunc",
+                "--format",
+                "{{.Size}}",
+                image.id,
+              ],
+              { outputLimitBytes: 1_048_576 },
+            ));
+          } catch (error) {
+            if (owner.signal.aborted) throw error;
+            return { image, sizes: null };
+          }
           const sizes = stdout.trim() === "" ? [] : stdout.trim().split("\n").map(Number);
           return {
             image,
@@ -222,16 +273,13 @@ async function measureImageFootprints(
       ...image,
       footprint: {
         state: "measured",
-        layers: filesystem.map((bytes, index) => ({
-          chain: image.layers.slice(0, index + 1).join("/"),
-          bytes,
-        })),
+        layers: image.layers.map((id, index) => ({ id, bytes: filesystem[index] ?? 0 })),
       },
     };
   });
 }
 
-type ImageLayer = { readonly chain: string; readonly bytes: number };
+type ImageLayer = { readonly id: string; readonly bytes: number };
 type ImageFootprint =
   | { readonly state: "measured"; readonly layers: readonly ImageLayer[] }
   | { readonly state: "unmeasured" };
@@ -263,12 +311,31 @@ function parseRunImage(line: string): InspectedRunImage[] {
   ];
 }
 
-/** A diff ID shares storage only under the same sequence of parent layers. */
-function additionalImageBytes(
+function countRetainedBytes(images: readonly RunImage[], retained: Set<string>): number {
+  let bytes = 0;
+  for (const { footprint } of images) {
+    if (footprint.state === "unmeasured") continue;
+    const additional = unretainedLayers(footprint.layers, retained);
+    bytes += additional.bytes;
+    for (const chain of additional.chains) retained.add(chain);
+  }
+  return bytes;
+}
+
+function unretainedLayers(
   layers: readonly ImageLayer[],
   retained: ReadonlySet<string>,
-): number {
-  return layers.reduce((bytes, layer) => bytes + (retained.has(layer.chain) ? 0 : layer.bytes), 0);
+): { readonly chains: readonly string[]; readonly bytes: number } {
+  const chains: string[] = [];
+  let bytes = 0;
+  let layerChain: string | null = null;
+  for (const layer of layers) {
+    layerChain = layerChain === null ? layer.id : `${layerChain}/${layer.id}`;
+    if (retained.has(layerChain)) continue;
+    chains.push(layerChain);
+    bytes += layer.bytes;
+  }
+  return { chains, bytes };
 }
 
 function diskBudgetBytes(): number {

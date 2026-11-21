@@ -1,4 +1,3 @@
-import type { SpawnOptionsWithoutStdio } from "node:child_process";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -6,7 +5,6 @@ import os from "node:os";
 import path from "node:path";
 import { validateWebhookPayloadAgainstSchema } from "@swizzle/config";
 import { createDisplayName } from "@swizzle/core";
-import { contractChangeFailure } from "./api-signals.js";
 import { runContainerAutomation } from "./container-runner.js";
 import { prepareAutomationDependencies } from "./dependency-preparation.js";
 import {
@@ -21,7 +19,12 @@ import {
   type RunInputs,
   type ScriptPersistence,
 } from "./executed-script.js";
-import { OutputPump } from "./output-pump.js";
+import {
+  type ExecutionOutcome,
+  executeProcess,
+  parseProcessResult,
+  requireProcessExit,
+} from "./process-execution.js";
 import type { AutomationRunFailure, AutomationRunResult, RuntimeMetadata } from "./run-result.js";
 import { buildRuntimeEnvironmentAdditions } from "./runtime-requirements.js";
 import { assertRuntimeTimeoutWithinPlatformCeiling } from "./timeout-policy.js";
@@ -29,8 +32,6 @@ import { type AutomationDefinition, loadAutomationDefinition } from "./validatio
 import { SWIZZLE_LINK_KEY_ENV, SWIZZLE_LINK_URL_ENV } from "./wait-links.js";
 import { materializeWebhookRunContext } from "./webhook-context.js";
 
-const DEFAULT_KILL_GRACE_PERIOD_MS = 1_000;
-const DEFAULT_ABORT_KILL_GRACE_PERIOD_MS = 5_000;
 const DEFAULT_CHILD_OUTPUT_LIMIT_BYTES = 1_048_576;
 
 /** What every execution takes, whichever script it runs. */
@@ -65,17 +66,6 @@ interface ExecutionCommand {
   readonly args: string[];
   readonly command: string;
   readonly displayName: string;
-}
-
-interface ExecutionOutcome {
-  readonly aborted: boolean;
-  readonly exitCode: number | null;
-  readonly outputLimitBytes: number;
-  readonly outputLimitExceeded: "stderr" | "stdout" | null;
-  readonly signal: NodeJS.Signals | null;
-  readonly stderr: string;
-  readonly stdout: string;
-  readonly timedOut: boolean;
 }
 
 /** Runs the automation's entrypoint with a run's inputs. */
@@ -234,21 +224,23 @@ async function execute(
       triggerType: script.triggerType,
     });
 
+    const outputLimitBytes = normalizeOutputLimitBytes(options.outputLimitBytes);
     const execution = await Promise.resolve()
       .then(async () => {
         await options.onReady?.();
-        return await executeChildProcess({
-          ...(options.abortSignal !== undefined ? { abortSignal: options.abortSignal } : {}),
-          command: executionCommand,
-          definition,
-          environment: runtimeEnvironment,
-          ...(options.onStderrChunk !== undefined ? { onStderrChunk: options.onStderrChunk } : {}),
-          ...(options.onStdoutChunk !== undefined ? { onStdoutChunk: options.onStdoutChunk } : {}),
-          outputLimitBytes: normalizeOutputLimitBytes(options.outputLimitBytes),
-          payload,
-          scratchDirectory,
-          timeoutMs: timeoutPolicy.timeoutMs,
-        });
+        return requireProcessExit(
+          await executeChildProcess({
+            abortSignal: options.abortSignal,
+            command: executionCommand,
+            environment: runtimeEnvironment,
+            onStderrChunk: options.onStderrChunk,
+            onStdoutChunk: options.onStdoutChunk,
+            outputLimitBytes,
+            payload,
+            scratchDirectory,
+            timeoutMs: timeoutPolicy.timeoutMs,
+          }),
+        );
       })
       .finally(async () => {
         await Promise.all([
@@ -257,120 +249,23 @@ async function execute(
         ]);
       });
 
-    if (execution.aborted) {
-      return createFailure({
-        code: "RUN_CANCELLED",
-        durationMs: Date.now() - startedAt,
-        exitCode: execution.exitCode,
-        message: "Run cancelled by user.",
-        payload,
-        runId,
-        signal: execution.signal,
-        stderr: dependencyStderr + execution.stderr,
-        stdout: execution.stdout,
-      });
-    }
-
-    const durationMs = Date.now() - startedAt;
-    if (execution.timedOut) {
-      return createFailure({
-        code: "PROCESS_TIMEOUT",
-        durationMs,
-        exitCode: execution.exitCode,
-        message: `Automation exceeded timeout ${definition.config.runtime.timeout}.`,
-        payload,
-        runId,
-        signal: execution.signal,
-        stderr: dependencyStderr + execution.stderr,
-        stdout: execution.stdout,
-      });
-    }
-
-    if (execution.outputLimitExceeded !== null) {
-      return createFailure({
-        code: "PROCESS_OUTPUT_LIMIT_EXCEEDED",
-        durationMs,
-        exitCode: execution.exitCode,
-        message: `Automation ${execution.outputLimitExceeded} exceeded ${execution.outputLimitBytes} bytes.`,
-        payload,
-        runId,
-        signal: execution.signal,
-        stderr: dependencyStderr + execution.stderr,
-        stdout: execution.stdout,
-      });
-    }
-
-    if (execution.signal) {
-      return createFailure({
-        code: "PROCESS_SIGNAL",
-        durationMs,
-        exitCode: execution.exitCode,
-        message: `Automation terminated by signal ${execution.signal}.`,
-        payload,
-        runId,
-        signal: execution.signal,
-        stderr: dependencyStderr + execution.stderr,
-        stdout: execution.stdout,
-      });
-    }
-
-    if (execution.exitCode !== 0) {
-      return createFailure({
-        code: "PROCESS_EXIT_NON_ZERO",
-        durationMs,
-        exitCode: execution.exitCode,
-        message: `Automation exited with code ${execution.exitCode}.`,
-        ...contractChangeFailure(execution.stderr),
-        payload,
-        runId,
-        signal: execution.signal,
-        stderr: dependencyStderr + execution.stderr,
-        stdout: execution.stdout,
-      });
-    }
-
-    const trimmedStdout = execution.stdout.trim();
-    if (trimmedStdout.length === 0) {
-      return createFailure({
-        code: "PROCESS_STDOUT_EMPTY",
-        durationMs,
-        exitCode: execution.exitCode,
-        message:
-          "Automation exited successfully but stdout was empty. Successful runs must print JSON to stdout.",
-        payload,
-        runId,
-        signal: execution.signal,
-        stderr: dependencyStderr + execution.stderr,
-        stdout: execution.stdout,
-      });
-    }
-
-    let result: unknown;
-    try {
-      result = JSON.parse(trimmedStdout);
-    } catch (error) {
-      return createFailure({
-        code: "PROCESS_STDOUT_INVALID_JSON",
-        durationMs,
-        exitCode: execution.exitCode,
-        message: `Automation exited successfully but stdout was not valid JSON: ${getErrorMessage(error)}`,
-        payload,
-        runId,
-        signal: execution.signal,
-        stderr: dependencyStderr + execution.stderr,
-        stdout: execution.stdout,
-      });
-    }
-
     return {
-      durationMs,
-      exitCode: 0,
-      payload,
-      result,
-      runId,
+      ...parseProcessResult({
+        durationMs: Date.now() - startedAt,
+        execution,
+        messages: {
+          timeout: `Automation exceeded timeout ${definition.config.runtime.timeout}.`,
+          signalPrefix: "Automation terminated by signal",
+          exitSubject: "Automation",
+          emptyStdout:
+            "Automation exited successfully but stdout was empty. Successful runs must print JSON to stdout.",
+          invalidStdoutPrefix: "Automation exited successfully but stdout was not valid JSON",
+        },
+        outputLimitBytes,
+        payload,
+        runId,
+      }),
       stderr: dependencyStderr + execution.stderr,
-      stdout: execution.stdout,
-      success: true,
     };
   } catch (error) {
     return createFailure({
@@ -563,155 +458,45 @@ async function ensureCommandAvailable(
   }
 }
 
-async function executeChildProcess(input: {
-  readonly abortSignal?: AbortSignal;
+export async function executeChildProcess(input: {
+  readonly abortSignal?: AbortSignal | undefined;
   readonly command: ExecutionCommand;
-  readonly definition: AutomationDefinition;
   readonly environment: NodeJS.ProcessEnv;
-  readonly onStderrChunk?: (chunk: string) => void | Promise<void>;
-  readonly onStdoutChunk?: (chunk: string) => void | Promise<void>;
+  readonly onStderrChunk?: ((chunk: string) => void | Promise<void>) | undefined;
+  readonly onStdoutChunk?: ((chunk: string) => void | Promise<void>) | undefined;
   readonly outputLimitBytes: number;
   readonly payload: unknown;
   readonly scratchDirectory: string;
   readonly timeoutMs: number;
 }): Promise<ExecutionOutcome> {
-  const spawnOptions: SpawnOptionsWithoutStdio = {
-    cwd: input.scratchDirectory,
-    env: input.environment,
-    stdio: "pipe",
-  };
-
-  return await new Promise<ExecutionOutcome>((resolvePromise, rejectPromise) => {
-    if (input.abortSignal?.aborted)
-      throw new AutomationRuntimeError("RUN_CANCELLED", "Run cancelled by user.");
-    const child = spawn(input.command.command, input.command.args, spawnOptions);
-
-    let timedOut = false;
-    let aborted = false;
-    let killTimer: NodeJS.Timeout | undefined;
-    let settled = false;
-    let abortListener: (() => void) | undefined;
-
-    const detachAbortListener = () => {
-      if (abortListener && input.abortSignal) {
-        input.abortSignal.removeEventListener("abort", abortListener);
-        abortListener = undefined;
-      }
-    };
-
-    const settleWithFailure = (error: unknown) => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      clearTimeout(timeoutHandle);
-      if (killTimer) {
-        clearTimeout(killTimer);
-      }
-      detachAbortListener();
-      rejectPromise(error);
-    };
-
-    const settleWithSuccess = (outcome: ExecutionOutcome) => {
-      if (settled) {
-        return;
-      }
-
-      settled = true;
-      clearTimeout(timeoutHandle);
-      if (killTimer) {
-        clearTimeout(killTimer);
-      }
-      detachAbortListener();
-      resolvePromise(outcome);
-    };
-
-    const timeoutHandle = setTimeout(() => {
-      timedOut = true;
-      child.kill("SIGTERM");
-      killTimer = setTimeout(() => {
-        child.kill("SIGKILL");
-      }, DEFAULT_KILL_GRACE_PERIOD_MS);
-    }, input.timeoutMs);
-
-    if (input.abortSignal) {
-      const onAbort = () => {
-        if (aborted || settled) return;
-        aborted = true;
-        child.kill("SIGTERM");
-        killTimer = setTimeout(() => {
-          child.kill("SIGKILL");
-        }, DEFAULT_ABORT_KILL_GRACE_PERIOD_MS);
-      };
-      abortListener = onAbort;
-      if (input.abortSignal.aborted) {
-        onAbort();
-      } else {
-        input.abortSignal.addEventListener("abort", onAbort, { once: true });
-      }
-    }
-
-    const stopForOutputLimit = () => {
-      if (settled) {
-        return;
-      }
-
-      child.kill("SIGTERM");
-      killTimer = setTimeout(() => {
-        child.kill("SIGKILL");
-      }, DEFAULT_KILL_GRACE_PERIOD_MS);
-    };
-
-    const output = new OutputPump({
-      stdout: child.stdout,
-      stderr: child.stderr,
-      stdoutLimitBytes: input.outputLimitBytes,
-      stderrLimitBytes: input.outputLimitBytes,
-      onStdoutChunk: input.onStdoutChunk,
-      onStderrChunk: input.onStderrChunk,
-      limitPolicy: "stop",
-      onStop: (reason) => {
-        if (reason.kind === "limit") stopForOutputLimit();
-        else child.kill("SIGTERM");
+  return await executeProcess({
+    abortSignal: input.abortSignal,
+    onStderrChunk: input.onStderrChunk,
+    onStdoutChunk: input.onStdoutChunk,
+    outputLimitBytes: input.outputLimitBytes,
+    timeoutMs: input.timeoutMs,
+    start: () =>
+      spawn(input.command.command, input.command.args, {
+        cwd: input.scratchDirectory,
+        env: input.environment,
+        stdio: "pipe",
+      }),
+    startError: (error) =>
+      new AutomationRuntimeError(
+        "INTERPRETER_NOT_FOUND",
+        `Could not start ${input.command.displayName}: ${getErrorMessage(error)}`,
+        { cause: error },
+      ),
+    sendInput: (stdin) => stdin.end(JSON.stringify(input.payload)),
+    termination: {
+      kind: "host",
+      exitGraceMs: 1_000,
+      signals: {
+        graceful: "SIGTERM",
+        force: "SIGKILL",
+        abortGraceMs: 5_000,
       },
-    });
-
-    child.once("error", (error) => {
-      settleWithFailure(
-        new AutomationRuntimeError(
-          "INTERPRETER_NOT_FOUND",
-          `Could not start ${input.command.displayName}: ${getErrorMessage(error)}`,
-          { cause: error },
-        ),
-      );
-    });
-
-    child.once("close", (exitCode, signal) => {
-      void output.finished().then(() => {
-        settleWithSuccess({
-          aborted,
-          exitCode,
-          outputLimitBytes: input.outputLimitBytes,
-          outputLimitExceeded: output.exceeded,
-          signal,
-          stderr: output.stderr,
-          stdout: output.stdout,
-          timedOut,
-        });
-      }, settleWithFailure);
-    });
-
-    child.stdin.on("error", (error) => {
-      const maybeNodeError = error as NodeJS.ErrnoException;
-      if (maybeNodeError.code === "EPIPE") {
-        return;
-      }
-
-      settleWithFailure(error);
-    });
-
-    child.stdin.end(JSON.stringify(input.payload));
+    },
   });
 }
 

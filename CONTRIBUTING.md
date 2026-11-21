@@ -45,14 +45,20 @@ just test path/to/changed.test.ts
 just check
 ```
 
-Before opening a pull request, run the full verification and secret scan:
+Keep explanations in names, types, tests, or commit messages. Put a hazard comment marked `HAZARD:` on the line it guards or directly above it.
+When you remove comments that count toward the [comment budget](scripts/conventions/comment-budget.json), lower the file's count or remove its entry at zero.
+`just check` checks the budget against tracked TypeScript source files and refuses increases from the merge base with `main`.
+CI requires a committed baseline.
+Outside CI, if the checkout lacks a baseline, the check reports that it skipped the budget growth comparison.
+
+Before opening a pull request, run `just verify`.
 
 ```bash
 just verify
-just secret-scan
 ```
 
-`just verify` builds the packages, checks documentation and migrations, tests against a disposable PostgreSQL database, and exercises the dashboard.
+`just verify` checks documentation, migrations, Compose files, and tracked files for secrets. It tests against a disposable PostgreSQL database, builds the packages, and exercises the dashboard.
+CI runs the same verification lanes in parallel. `just check` checks that the required CI jobs cover every lane in `just verify`.
 Tests must own their files, processes, ports, and data. Update the documentation page that owns any behavior you change; [the documentation index](docs/README.md) names each owner.
 
 ## Propose a change

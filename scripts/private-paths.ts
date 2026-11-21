@@ -23,6 +23,7 @@ export function isPrivate(file: string): boolean {
 /** Configurations whose private path entries leave with the files they refer to. */
 export const PUBLIC_CONFIG_FILES: readonly string[] = [
   "knip.jsonc",
+  "scripts/conventions/comment-budget.json",
   "test/inputs.json",
   "tsconfig.test.json",
 ];

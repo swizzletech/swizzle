@@ -1,142 +1,361 @@
 import { access, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import {
-  RUN_IMAGE_DISK_DETAILS_LIMIT,
-  runImageDiskOverBudget,
-  runImageDiskWarning,
-} from "@swizzle/db";
+import { runImageDiskOverBudget, runImageDiskWarning } from "@swizzle/db";
 import { create as tarCreate } from "tar";
 import { expect, it, vi } from "vitest";
-import { temporaryDirectory, waitFor } from "../../../test/support.js";
-import { PRUNE_DEADLINES, pruneRunImages } from "./run-image-prune.js";
+import { heldDeadlines, temporaryDirectory, waitFor } from "../../../test/support.js";
+import { PRUNE_DEADLINES, planPrune, pruneRunImages } from "./run-image-prune.js";
 
-const TEST_PRUNE_DEADLINES = { ...PRUNE_DEADLINES, transfer: 1_000 };
-
-it("counts common ancestors of distinct custom bases once for disk warnings and pruning", async () => {
-  const tags = ["swizzle-run:aaaaaaaaaaaaaaaaaaaaaaaa", "swizzle-run:bbbbbbbbbbbbbbbbbbbbbbbb"];
-  // 200 MiB in common, 100/50 MiB custom base layers, and 1 MiB source per image.
-  await fakeDocker([
-    { tag: tags[0] ?? "", layers: { common: 200, "base-a": 100, "source-a": 1 } },
-    { tag: tags[1] ?? "", layers: { common: 200, "base-b": 50, "source-b": 1 } },
-  ]);
-  vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "400");
-  expect(await pruneRunImages({ deadlines: TEST_PRUNE_DEADLINES, keep: new Set(tags) })).toEqual({
-    removed: 0,
-    disk: {
-      activeBytes: 369098752,
-      unmeasuredActiveImagesOmitted: 0,
-      unmeasuredActiveImages: [],
-      budgetBytes: 419430400,
-    },
-  });
+it("keeps the newest cache within budget, counting shared parent chains once", () => {
   expect(
-    await pruneRunImages({ deadlines: TEST_PRUNE_DEADLINES, keep: new Set([tags[0] ?? ""]) }),
+    planPrune(
+      {
+        images: [
+          {
+            id: "other-base",
+            createdAt: 200,
+            tags: ["other-base"],
+            footprint: {
+              state: "measured",
+              layers: [
+                { id: "common", bytes: 200 },
+                { id: "other", bytes: 50 },
+                { id: "source-other", bytes: 1 },
+              ],
+            },
+          },
+          {
+            id: "active",
+            createdAt: 0,
+            tags: ["active"],
+            footprint: {
+              state: "measured",
+              layers: [
+                { id: "common", bytes: 200 },
+                { id: "base", bytes: 100 },
+                { id: "source-active", bytes: 1 },
+              ],
+            },
+          },
+          {
+            id: "newest",
+            createdAt: 300,
+            tags: ["newest"],
+            footprint: {
+              state: "measured",
+              layers: [
+                { id: "common", bytes: 200 },
+                { id: "base", bytes: 100 },
+                { id: "newest", bytes: 1 },
+              ],
+            },
+          },
+          {
+            id: "active-other",
+            createdAt: 0,
+            tags: ["active-other"],
+            footprint: {
+              state: "measured",
+              layers: [
+                { id: "common", bytes: 200 },
+                { id: "distinct", bytes: 10 },
+                { id: "source-active-other", bytes: 1 },
+              ],
+            },
+          },
+        ],
+        refused: new Set(),
+      },
+      new Set(["active", "active-other"]),
+      1_000_000,
+      313,
+      2_000_000,
+    ),
   ).toEqual({
-    removed: 0,
+    removals: [{ id: "other-base", references: ["other-base"] }],
     disk: {
-      activeBytes: 315621376,
-      unmeasuredActiveImagesOmitted: 0,
-      unmeasuredActiveImages: [],
-      budgetBytes: 419430400,
+      activeBytes: 312,
+      budgetBytes: 313,
+      unmeasured: { images: [], total: 0 },
     },
   });
 });
 
-it("counts a shared base once and retains images whose combined layers fit the budget", async () => {
-  const tags = Array.from(
-    { length: 11 },
-    (_, index) => `swizzle-run:${index.toString(16).padStart(24, "0")}`,
-  );
-  await fakeDocker(
-    tags.map((tag, index) => ({ tag, layers: { base: 300, [`source-${index}`]: 1 } })),
-  );
-  vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "320");
-  expect(await pruneRunImages({ deadlines: TEST_PRUNE_DEADLINES, keep: new Set(tags) })).toEqual({
-    removed: 0,
-    disk: {
-      activeBytes: 326107136,
-      unmeasuredActiveImagesOmitted: 0,
-      unmeasuredActiveImages: [],
-      budgetBytes: 335544320,
-    },
-  });
+it("counts the same layer diff under distinct parent chains separately", () => {
   expect(
-    await pruneRunImages({ deadlines: TEST_PRUNE_DEADLINES, keep: new Set([tags[0] ?? ""]) }),
+    planPrune(
+      {
+        images: [
+          {
+            id: "image-a",
+            createdAt: 0,
+            tags: ["tag-a"],
+            footprint: {
+              state: "measured",
+              layers: [
+                { id: "base-a", bytes: 100 },
+                { id: "shared-diff", bytes: 1 },
+              ],
+            },
+          },
+          {
+            id: "image-b",
+            createdAt: 0,
+            tags: ["tag-b"],
+            footprint: {
+              state: "measured",
+              layers: [
+                { id: "base-b", bytes: 50 },
+                { id: "shared-diff", bytes: 1 },
+              ],
+            },
+          },
+        ],
+        refused: new Set(),
+      },
+      new Set(["tag-a", "tag-b"]),
+      1_000_000,
+      152,
+      2_000_000,
+    ),
   ).toEqual({
-    removed: 0,
+    removals: [],
     disk: {
-      activeBytes: 315621376,
-      unmeasuredActiveImagesOmitted: 0,
-      unmeasuredActiveImages: [],
-      budgetBytes: 335544320,
+      activeBytes: 152,
+      budgetBytes: 152,
+      unmeasured: { images: [], total: 0 },
     },
   });
 });
 
-it("counts an ancestor shared by three images once and prunes only the excess", async () => {
-  const tags = Array.from({ length: 3 }, (_, i) => `swizzle-run:${String(i).repeat(24)}`);
-  await fakeDocker([
-    { tag: tags[0] ?? "", layers: { common: 200, branch: 100, a: 1 } },
-    { tag: tags[1] ?? "", layers: { common: 200, branch: 100, b: 1 } },
-    { tag: tags[2] ?? "", layers: { common: 200, other: 50, c: 1 } },
-  ]);
-  vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "400");
-  expect(await pruneRunImages({ deadlines: TEST_PRUNE_DEADLINES, keep: new Set(tags) })).toEqual({
-    removed: 0,
+it("counts the base shared by a fresh untagged image and a cached image once", () => {
+  expect(
+    planPrune(
+      {
+        images: [
+          {
+            id: "fresh",
+            createdAt: 400_001,
+            tags: [],
+            footprint: {
+              state: "measured",
+              layers: [
+                { id: "base", bytes: 10 },
+                { id: "fresh-layer", bytes: 1 },
+              ],
+            },
+          },
+          {
+            id: "cached",
+            createdAt: 300_000,
+            tags: ["cached"],
+            footprint: {
+              state: "measured",
+              layers: [
+                { id: "base", bytes: 10 },
+                { id: "cached-layer", bytes: 1 },
+              ],
+            },
+          },
+        ],
+        refused: new Set(),
+      },
+      new Set(),
+      1_000_000,
+      12,
+      2_000_000,
+    ),
+  ).toEqual({
+    removals: [],
     disk: {
-      activeBytes: 370147328,
-      unmeasuredActiveImagesOmitted: 0,
-      unmeasuredActiveImages: [],
-      budgetBytes: 419430400,
+      activeBytes: 0,
+      budgetBytes: 12,
+      unmeasured: { images: [], total: 0 },
     },
   });
-  vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "320");
+});
+
+it("keeps fresh untagged images even over budget and removes expired images newest first", () => {
   expect(
-    await pruneRunImages({ deadlines: TEST_PRUNE_DEADLINES, keep: new Set([tags[0] ?? ""]) }),
+    planPrune(
+      {
+        images: [
+          {
+            id: "oldest",
+            createdAt: 0,
+            tags: ["swizzle-run:aaaaaaaaaaaaaaaaaaaaaaaa", "alias"],
+            footprint: { state: "measured", layers: [] },
+          },
+          {
+            id: "fresh",
+            createdAt: 400_001,
+            tags: [],
+            footprint: { state: "measured", layers: [{ id: "large", bytes: 20 }] },
+          },
+          {
+            id: "expired",
+            createdAt: 300_000,
+            tags: [],
+            footprint: { state: "measured", layers: [] },
+          },
+          {
+            id: "boundary",
+            createdAt: 400_000,
+            tags: ["boundary"],
+            footprint: { state: "measured", layers: [{ id: "small", bytes: 1 }] },
+          },
+        ],
+        refused: new Set(),
+      },
+      new Set(),
+      1_000_000,
+      10,
+      700_000,
+    ),
   ).toEqual({
+    removals: [
+      { id: "boundary", references: ["boundary"] },
+      { id: "expired", references: ["expired"] },
+      { id: "oldest", references: ["alias", "swizzle-run:aaaaaaaaaaaaaaaaaaaaaaaa"] },
+    ],
+    disk: {
+      activeBytes: 0,
+      budgetBytes: 10,
+      unmeasured: { images: [], total: 0 },
+    },
+  });
+});
+
+it("removes expired cache even when the budget has room", () => {
+  expect(
+    planPrune(
+      {
+        images: [
+          {
+            id: "inside",
+            createdAt: 300_001,
+            tags: ["inside"],
+            footprint: { state: "measured", layers: [{ id: "inside", bytes: 1 }] },
+          },
+          {
+            id: "expired",
+            createdAt: 300_000,
+            tags: ["expired"],
+            footprint: { state: "measured", layers: [{ id: "expired", bytes: 1 }] },
+          },
+        ],
+        refused: new Set(),
+      },
+      new Set(),
+      1_000_000,
+      10,
+      700_000,
+    ),
+  ).toEqual({
+    removals: [{ id: "expired", references: ["expired"] }],
+    disk: {
+      activeBytes: 0,
+      budgetBytes: 10,
+      unmeasured: { images: [], total: 0 },
+    },
+  });
+});
+
+it.each([
+  { tags: ["active", "alias"], createdAt: 100, details: [{ id: "protected", tag: "active" }] },
+  { tags: [], createdAt: 400_001, details: [] },
+])(
+  "removes inactive cache when a protected image is unmeasured ($createdAt)",
+  ({ tags, createdAt, details }) => {
+    expect(
+      planPrune(
+        {
+          images: [
+            { id: "protected", createdAt, tags, footprint: { state: "unmeasured" } },
+            {
+              id: "measured-cache",
+              createdAt: 300,
+              tags: ["measured-cache"],
+              footprint: { state: "measured", layers: [{ id: "base", bytes: 5 }] },
+            },
+            {
+              id: "unmeasured-cache",
+              createdAt: 200,
+              tags: ["unmeasured-cache"],
+              footprint: { state: "unmeasured" },
+            },
+          ],
+          refused: new Set(),
+        },
+        new Set(["active"]),
+        1_000_000,
+        10,
+        2_000_000,
+      ),
+    ).toEqual({
+      removals: [
+        { id: "measured-cache", references: ["measured-cache"] },
+        { id: "unmeasured-cache", references: ["unmeasured-cache"] },
+      ],
+      disk: {
+        activeBytes: 0,
+        budgetBytes: 10,
+        unmeasured: { images: details, total: details.length },
+      },
+    });
+  },
+);
+
+it("replans after a refused removal and preserves the newer cache decisions", async () => {
+  const oversized = `swizzle-run:${"d".repeat(24)}`;
+  const newest = `swizzle-run:${"a".repeat(24)}`;
+  const refused = `swizzle-run:${"b".repeat(24)}`;
+  const oldest = `swizzle-run:${"c".repeat(24)}`;
+  const { removed } = await fakeDocker([
+    { tag: oversized, layers: { oversized: 5 } },
+    { tag: newest, layers: { newest: 2 } },
+    { tag: refused, layers: { refused: 3 }, fault: "refused-removal" },
+    { tag: oldest, layers: { oldest: 1 } },
+  ]);
+  vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "4");
+  expect(await pruneRunImages({ keep: new Set() })).toEqual({
+    removed: 2,
+    disk: {
+      activeBytes: 0,
+      budgetBytes: 4194304,
+      unmeasured: { images: [], total: 0 },
+    },
+  });
+  expect((await readFile(removed, "utf8")).trim().split("\n")).toEqual([
+    oversized,
+    refused,
+    oldest,
+  ]);
+});
+
+it("continues pruning other images after one image history exits nonzero", async () => {
+  const active = `swizzle-run:${"a".repeat(24)}`;
+  const inactive = `swizzle-run:${"b".repeat(24)}`;
+  const { removed } = await fakeDocker([
+    { tag: active, layers: { base: 300 }, fault: "history-unavailable" },
+    { tag: inactive, layers: { base: 300, source: 1 } },
+  ]);
+  const warn = vi.fn();
+  expect(await pruneRunImages({ keep: new Set([active]), logger: { warn } })).toEqual({
     removed: 1,
     disk: {
-      activeBytes: 315621376,
-      unmeasuredActiveImagesOmitted: 0,
-      unmeasuredActiveImages: [],
-      budgetBytes: 335544320,
+      activeBytes: 0,
+      budgetBytes: 21474836480,
+      unmeasured: { images: [{ id: `sha256:${"0".repeat(64)}`, tag: active }], total: 1 },
     },
   });
-});
-
-it("retains a cached image when a fresh untagged commit shares its base", async () => {
-  const active = `swizzle-run:${"a".repeat(24)}`;
-  const cached = `swizzle-run:${"b".repeat(24)}`;
-  await fakeDocker([
-    { tag: active, layers: { base: 300, active: 1 } },
-    { tag: cached, layers: { base: 300, cached: 1 } },
-    { tag: null, fresh: true, layers: { base: 300, untagged: 1 } },
-  ]);
-  vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "320");
-  expect(
-    await pruneRunImages({ deadlines: TEST_PRUNE_DEADLINES, keep: new Set([active]) }),
-  ).toEqual({
-    removed: 0,
-    disk: {
-      activeBytes: 315621376,
-      unmeasuredActiveImagesOmitted: 0,
-      unmeasuredActiveImages: [],
-      budgetBytes: 335544320,
-    },
-  });
-});
-
-it("fails the pass when Docker cannot measure layer sizes", async () => {
-  await fakeDocker(
+  expect((await readFile(removed, "utf8")).trim()).toBe(inactive);
+  expect(warn.mock.calls).toEqual([
     [
-      { tag: `swizzle-run:${"a".repeat(24)}`, layers: { base: 300, a: 1 } },
-      { tag: `swizzle-run:${"b".repeat(24)}`, layers: { base: 300, b: 1 } },
+      { imageId: `sha256:${"0".repeat(64)}`, tags: [active] },
+      "Cannot measure run image; disk usage is unknown.",
     ],
-    false,
-  );
-  await expect(
-    pruneRunImages({ deadlines: TEST_PRUNE_DEADLINES, keep: new Set() }),
-  ).rejects.toThrow("history unavailable");
+  ]);
 });
 
 it.each(["unmappable", "missing-config"] as const)(
@@ -154,7 +373,6 @@ it.each(["unmappable", "missing-config"] as const)(
     const warn = vi.fn();
     expect(
       await pruneRunImages({
-        deadlines: TEST_PRUNE_DEADLINES,
         keep: new Set([active]),
         logger: { warn },
       }),
@@ -162,8 +380,7 @@ it.each(["unmappable", "missing-config"] as const)(
       removed: 2,
       disk: {
         activeBytes: 315621376,
-        unmeasuredActiveImagesOmitted: 0,
-        unmeasuredActiveImages: [],
+        unmeasured: { images: [], total: 0 },
         budgetBytes: 315621376,
       },
     });
@@ -175,33 +392,36 @@ it.each(["unmappable", "missing-config"] as const)(
   },
 );
 
-it.each(["timeout", "broken-archive"] as const)(
+it.for(["timeout", "broken-archive"] as const)(
   "prunes inactive images and logs each unmeasured image after a %s export",
-  async (exportFault) => {
+  async (exportFault, { signal }) => {
     const active = `swizzle-run:${"a".repeat(24)}`;
     const inactive = `swizzle-run:${"b".repeat(24)}`;
-    const { removed } = await fakeDocker(
+    const { removed, saveStarted } = await fakeDocker(
       [
         { tag: active, layers: { base: 300, empty: 0, active: 1 } },
         { tag: inactive, layers: { base: 300, empty: 0, inactive: 1 } },
       ],
-      true,
       exportFault,
     );
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "301");
     const warn = vi.fn();
-    expect(
-      await pruneRunImages({
-        deadlines: TEST_PRUNE_DEADLINES,
-        keep: new Set([active]),
-        logger: { warn },
-      }),
-    ).toEqual({
+    const deadlines = heldDeadlines(PRUNE_DEADLINES.transfer);
+    const pruning = pruneRunImages({ keep: new Set([active]), logger: { warn } });
+    if (exportFault === "timeout") {
+      await waitFor(signal, () =>
+        access(saveStarted).then(
+          () => true,
+          () => false,
+        ),
+      );
+      deadlines.expire();
+    }
+    expect(await pruning).toEqual({
       removed: 1,
       disk: {
         activeBytes: 0,
-        unmeasuredActiveImagesOmitted: 0,
-        unmeasuredActiveImages: [{ id: `sha256:${"0".repeat(64)}`, tags: [active] }],
+        unmeasured: { images: [{ id: `sha256:${"0".repeat(64)}`, tag: active }], total: 1 },
         budgetBytes: 315621376,
       },
     });
@@ -224,12 +444,10 @@ it("rejects caller cancellation during history export without removing images", 
 }) => {
   const { removed, saveStarted } = await fakeDocker(
     [{ tag: `swizzle-run:${"a".repeat(24)}`, layers: { base: 300, empty: 0, inactive: 1 } }],
-    true,
     "timeout",
   );
   const controller = new AbortController();
   const pruning = pruneRunImages({
-    deadlines: TEST_PRUNE_DEADLINES,
     keep: new Set(),
     signal: controller.signal,
   });
@@ -248,24 +466,18 @@ it("rejects caller cancellation during history export without removing images", 
 it("propagates ordinary Docker export failures", async () => {
   await fakeDocker(
     [{ tag: `swizzle-run:${"a".repeat(24)}`, layers: { base: 300, empty: 0, inactive: 1 } }],
-    true,
     "runtime-failure",
   );
-  await expect(
-    pruneRunImages({ deadlines: TEST_PRUNE_DEADLINES, keep: new Set() }),
-  ).rejects.toThrow("export unavailable");
+  await expect(pruneRunImages({ keep: new Set() })).rejects.toThrow("export unavailable");
 });
 
 it("rejects an expired prune owner during export without removing images", async ({ signal }) => {
   const { removed, saveStarted } = await fakeDocker(
     [{ tag: `swizzle-run:${"a".repeat(24)}`, layers: { base: 300, empty: 0, inactive: 1 } }],
-    true,
     "timeout",
   );
-  const pruning = pruneRunImages({
-    keep: new Set(),
-    deadlines: { ...TEST_PRUNE_DEADLINES, pass: 1_000, transfer: 5_000 },
-  });
+  const deadline = heldDeadlines(PRUNE_DEADLINES.pass);
+  const pruning = pruneRunImages({ keep: new Set() });
   const rejected = expect(pruning).rejects.toMatchObject({ code: "DOCKER_TRANSFER_TIMEOUT" });
   await waitFor(signal, () =>
     access(saveStarted).then(
@@ -273,71 +485,41 @@ it("rejects an expired prune owner during export without removing images", async
       () => false,
     ),
   );
+  deadline.expire();
   await rejected;
   await expect(readFile(removed, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 });
 
-it.each(["active", "fresh"] as const)(
-  "keeps a protected %s image with unknown size and leaves no budget for cached images",
-  async (protection) => {
-    const protectedTag = `swizzle-run:${"a".repeat(24)}`;
-    await fakeDocker([
-      {
-        tag: protectedTag,
-        fresh: protection === "fresh",
-        layers: { base: 300, empty: 0, protected: 1 },
-        fault: "unmappable",
-      },
-      { tag: `swizzle-run:${"b".repeat(24)}`, layers: { base: 300, cached: 1 } },
+it.for(["abort", "pass deadline", "command deadline"] as const)(
+  "handles %s during one image history",
+  async (failure, { signal }) => {
+    const tag = `swizzle-run:${"a".repeat(24)}`;
+    const { removed, historyStarted } = await fakeDocker([
+      { tag, layers: { base: 1 }, fault: "history-stalled" },
     ]);
-    vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "400");
-    expect(
-      await pruneRunImages({
-        deadlines: TEST_PRUNE_DEADLINES,
-        keep: new Set(protection === "active" ? [protectedTag] : []),
-      }),
-    ).toEqual({
-      removed: 1,
-      disk: {
-        activeBytes: 0,
-        unmeasuredActiveImagesOmitted: 0,
-        unmeasuredActiveImages:
-          protection === "active" ? [{ id: `sha256:${"0".repeat(64)}`, tags: [protectedTag] }] : [],
-        budgetBytes: 419430400,
-      },
-    });
+    const deadlines = heldDeadlines();
+    const controller = new AbortController();
+    const pruning = pruneRunImages({ keep: new Set(), signal: controller.signal });
+    const outcome =
+      failure === "command deadline"
+        ? expect(pruning).resolves.toMatchObject({ removed: 1 })
+        : expect(pruning).rejects.toMatchObject({
+            code: failure === "abort" ? "CONTAINER_RUNTIME_UNAVAILABLE" : "DOCKER_CONTROL_TIMEOUT",
+          });
+    await waitFor(signal, () =>
+      access(historyStarted).then(
+        () => true,
+        () => false,
+      ),
+    );
+    if (failure === "abort") controller.abort(new Error("cancel image pruning"));
+    else if (failure === "pass deadline") deadlines.expire(0);
+    else deadlines.expireNewest();
+    await outcome;
+    if (failure === "command deadline") expect((await readFile(removed, "utf8")).trim()).toBe(tag);
+    else await expect(readFile(removed, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
   },
 );
-
-it("keeps a fresh unmeasured image and removes an inactive unmeasured image after grace", async () => {
-  const fresh = `swizzle-run:${"a".repeat(24)}`;
-  const inactive = `swizzle-run:${"b".repeat(24)}`;
-  const { removed } = await fakeDocker([
-    { tag: fresh, fresh: true, layers: { base: 300, empty: 0, fresh: 1 }, fault: "unmappable" },
-    { tag: inactive, layers: { base: 300, empty: 0, inactive: 1 }, fault: "unmappable" },
-  ]);
-  expect((await pruneRunImages({ deadlines: TEST_PRUNE_DEADLINES, keep: new Set() })).removed).toBe(
-    1,
-  );
-  expect((await readFile(removed, "utf8")).trim()).toBe(inactive);
-});
-
-it("warns about an active unmeasured image without inventing bytes or recommending a larger budget", async () => {
-  const tag = `swizzle-run:${"a".repeat(24)}`;
-  await fakeDocker([{ tag, layers: { base: 300, empty: 0, active: 1 }, fault: "unmappable" }]);
-  for (const budget of [400, 800]) {
-    vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", String(budget));
-    const { disk } = await pruneRunImages({
-      deadlines: TEST_PRUNE_DEADLINES,
-      keep: new Set([tag]),
-    });
-    expect(runImageDiskOverBudget({ state: "online", runImageDisk: disk })).toEqual(disk);
-    expect(runImageDiskWarning("home", disk)).toEqual({
-      title: `home keeps unmeasured run images for active deployments: sha256:${"0".repeat(64)} (${tag}). Their disk usage is unknown. Swizzle keeps them so those deployments keep running.`,
-      todo: "Check this worker's Docker image history and prune logs, or remove the deployments that use these images.",
-    });
-  }
-});
 
 it("treats invalid layer sizes as unmeasured and still removes an inactive image", async () => {
   const active = `swizzle-run:${"a".repeat(24)}`;
@@ -346,14 +528,13 @@ it("treats invalid layer sizes as unmeasured and still removes an inactive image
     { tag: active, layers: { base: 300 }, fault: "invalid-sizes" },
     { tag: inactive, layers: { base: 300 }, fault: "invalid-sizes" },
   ]);
-  const pass = await pruneRunImages({ keep: new Set([active]), deadlines: TEST_PRUNE_DEADLINES });
+  const pass = await pruneRunImages({ keep: new Set([active]) });
   expect(pass).toEqual({
     removed: 1,
     disk: {
       activeBytes: 0,
       budgetBytes: 21474836480,
-      unmeasuredActiveImagesOmitted: 0,
-      unmeasuredActiveImages: [{ id: `sha256:${"0".repeat(64)}`, tags: [active] }],
+      unmeasured: { images: [{ id: `sha256:${"0".repeat(64)}`, tag: active }], total: 1 },
     },
   });
   expect((await readFile(removed, "utf8")).trim()).toBe(inactive);
@@ -361,45 +542,53 @@ it("treats invalid layer sizes as unmeasured and still removes an inactive image
 
 it("stops after configs without requiring the remaining layer archive", async () => {
   const active = `swizzle-run:${"a".repeat(24)}`;
-  await fakeDocker(
-    [{ tag: active, layers: { base: 300, empty: 0, active: 1 } }],
-    true,
-    "trailing-layer",
-  );
-  expect(
-    await pruneRunImages({ keep: new Set([active]), deadlines: TEST_PRUNE_DEADLINES }),
-  ).toEqual({
+  await fakeDocker([{ tag: active, layers: { base: 300, empty: 0, active: 1 } }], "trailing-layer");
+  expect(await pruneRunImages({ keep: new Set([active]) })).toEqual({
     removed: 0,
     disk: {
       activeBytes: 315621376,
       budgetBytes: 21474836480,
-      unmeasuredActiveImagesOmitted: 0,
-      unmeasuredActiveImages: [],
+      unmeasured: { images: [], total: 0 },
     },
   });
 });
 
-it("bounds unknown image details without limiting retained images or hiding omitted usage", async () => {
-  const tags = Array.from(
-    { length: 20 },
-    (_, index) => `swizzle-run:${index.toString(16).padStart(24, "0")}`,
+it("bounds unmeasured active details without limiting retention", () => {
+  const images = Array.from({ length: 9 }, (_, index) => ({
+    id: `image-${index}`,
+    createdAt: 0,
+    tags: [`tag-${index}`],
+    footprint: { state: "unmeasured" as const },
+  }));
+  const plan = planPrune(
+    { images, refused: new Set() },
+    new Set(["tag-0", "tag-1", "tag-2", "tag-3", "tag-4", "tag-5", "tag-6", "tag-7", "tag-8"]),
+    1_000_000,
+    10,
+    2_000_000,
   );
-  await fakeDocker(tags.map((tag) => ({ tag, layers: { base: 1 }, fault: "invalid-sizes" })));
-  const { removed, disk } = await pruneRunImages({
-    keep: new Set(tags),
-    deadlines: TEST_PRUNE_DEADLINES,
+  expect(plan).toEqual({
+    removals: [],
+    disk: {
+      activeBytes: 0,
+      budgetBytes: 10,
+      unmeasured: {
+        images: [
+          { id: "image-0", tag: "tag-0" },
+          { id: "image-1", tag: "tag-1" },
+          { id: "image-2", tag: "tag-2" },
+          { id: "image-3", tag: "tag-3" },
+          { id: "image-4", tag: "tag-4" },
+          { id: "image-5", tag: "tag-5" },
+          { id: "image-6", tag: "tag-6" },
+          { id: "image-7", tag: "tag-7" },
+        ],
+        total: 9,
+      },
+    },
   });
-  expect(removed).toBe(0);
-  expect(disk.activeBytes).toBe(0);
-  expect(disk.unmeasuredActiveImages).toEqual(
-    tags.slice(0, RUN_IMAGE_DISK_DETAILS_LIMIT).map((tag, index) => ({
-      id: `sha256:${index.toString(16).padStart(64, "0")}`,
-      tags: [tag],
-    })),
-  );
-  expect(disk.unmeasuredActiveImagesOmitted).toBe(12);
-  expect(runImageDiskWarning("home", disk).title).toContain("12 more unmeasured active images");
-  expect(runImageDiskOverBudget({ state: "online", runImageDisk: disk })).toEqual(disk);
+  expect(runImageDiskWarning("home", plan.disk)?.title).toContain("1 more unmeasured active image");
+  expect(runImageDiskOverBudget({ state: "online", runImageDisk: plan.disk })).toEqual(plan.disk);
 });
 
 it("counts zero-byte filesystem layers separately from metadata and still prunes", async () => {
@@ -410,30 +599,12 @@ it("counts zero-byte filesystem layers separately from metadata and still prunes
     { tag: null, layers: { base: 300, empty: 0, orphan: 1 } },
   ]);
   vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "302");
-  expect(await pruneRunImages({ deadlines: TEST_PRUNE_DEADLINES, keep: new Set(tags) })).toEqual({
+  expect(await pruneRunImages({ keep: new Set(tags) })).toEqual({
     removed: 1,
     disk: {
       activeBytes: 316669952,
-      unmeasuredActiveImagesOmitted: 0,
-      unmeasuredActiveImages: [],
+      unmeasured: { images: [], total: 0 },
       budgetBytes: 316669952,
-    },
-  });
-});
-
-it("counts the same diff under distinct parent chains separately", async () => {
-  const tags = [`swizzle-run:${"a".repeat(24)}`, `swizzle-run:${"b".repeat(24)}`];
-  await fakeDocker([
-    { tag: tags[0] ?? "", layers: { "base-a": 100, source: 1 } },
-    { tag: tags[1] ?? "", layers: { "base-b": 50, source: 1 } },
-  ]);
-  expect(await pruneRunImages({ deadlines: TEST_PRUNE_DEADLINES, keep: new Set(tags) })).toEqual({
-    removed: 0,
-    disk: {
-      activeBytes: 159383552,
-      unmeasuredActiveImagesOmitted: 0,
-      unmeasuredActiveImages: [],
-      budgetBytes: 21474836480,
     },
   });
 });
@@ -444,9 +615,14 @@ async function fakeDocker(
     tag: string | null;
     fresh?: boolean;
     layers: Record<string, number>;
-    fault?: "unmappable" | "missing-config" | "invalid-sizes";
+    fault?:
+      | "unmappable"
+      | "missing-config"
+      | "invalid-sizes"
+      | "history-unavailable"
+      | "history-stalled"
+      | "refused-removal";
   }[],
-  historyAvailable = true,
   exportFault?: "timeout" | "broken-archive" | "runtime-failure" | "trailing-layer",
 ) {
   const directory = await temporaryDirectory("swizzle-image-layers-");
@@ -480,21 +656,23 @@ async function fakeDocker(
   ]);
 
   const removed = path.join(directory, "removed");
+  const historyStarted = path.join(directory, "history-started");
   const saveStarted = path.join(directory, "save-started");
   await writeFile(
     path.join(directory, "docker"),
     `#!${process.execPath}
 const args = process.argv.slice(2);
-const images = ${JSON.stringify(images)}.map((image, i) => ({ ...image, id: 'sha256:' + i.toString(16).padStart(64, '0') }));
-const created = new Date(Date.now() - 11 * 60_000).toISOString();
+const now = Date.now();
+const images = ${JSON.stringify(images)}.map((image, i) => ({ ...image, id: 'sha256:' + i.toString(16).padStart(64, '0'), created: new Date(now - 11 * 60_000 - i).toISOString() }));
 if (args[0] === 'ps') {}
 else if (args[1] === 'ls') console.log(images.map(i => i.id).join('\\n'));
 else if (args[1] === 'inspect') console.log(images.filter(i => args.slice(4).includes(i.id)).map(i => JSON.stringify([
-  i.id, i.fresh ? new Date().toISOString() : created, i.tag === null ? [] : [i.tag], Object.keys(i.layers),
+  i.id, i.fresh ? new Date().toISOString() : i.created, i.tag === null ? [] : [i.tag], Object.keys(i.layers),
 ])).join('\\n'));
 else if (args[1] === 'history') {
-  if (!${historyAvailable}) { console.error('history unavailable'); process.exit(1); }
   const image = images.find(i => i.id === args.at(-1));
+  if (image.fault === "history-unavailable") { console.error('history unavailable'); process.exit(1); }
+  if (image.fault === "history-stalled") { require("node:fs").writeFileSync(${JSON.stringify(historyStarted)}, "started"); setInterval(() => {}, 1000); return; }
   if (image.fault === "invalid-sizes") { console.log("not-a-size"); return; }
   console.log([0, ...Object.values(image.layers).reverse().flatMap(size => [size * 1048576, 0])].join('\\n'));
 }
@@ -509,14 +687,19 @@ else if (args[1] === 'save') {
   process.stdout.write(require('node:fs').readFileSync(${JSON.stringify(archive)}));
   if (!images.some(i => i.fault === 'missing-config')) setInterval(() => {}, 1000);
 }
-else if (args[1] === 'rm') { require('node:fs').appendFileSync(${JSON.stringify(removed)}, args.slice(2).join('\\n') + '\\n'); console.log(args.slice(2).join('\\n')); }
+else if (args[1] === 'rm') {
+  const references = args.slice(2);
+  require('node:fs').appendFileSync(${JSON.stringify(removed)}, references.join('\\n') + '\\n');
+  if (images.some(i => i.fault === "refused-removal" && references.includes(i.tag))) { console.error("image in use"); process.exit(1); }
+  console.log(references.join('\\n'));
+}
 else { console.error('Unexpected Docker call: ' + args.join(' ')); process.exit(1); }
 `,
     { mode: 0o755 },
   );
   vi.stubEnv("PATH", `${directory}:${process.env.PATH}`);
   vi.stubEnv("SWIZZLE_STACK", "layer-budget");
-  return { removed, saveStarted };
+  return { removed, saveStarted, historyStarted };
 }
 
 // Closing preparation closes the process-wide Docker scopes, so give it fresh module state.
@@ -527,15 +710,15 @@ for (const fault of ["unmappable", "timeout", "broken-archive"] as const) {
     const active = `swizzle-run:${"a".repeat(24)}`;
     const broken = `swizzle-run:${"b".repeat(24)}`;
     const cached = `swizzle-run:${"c".repeat(24)}`;
-    const { removed } = await fakeDocker(
+    const { removed, saveStarted } = await fakeDocker(
       [
         { tag: active, layers: { base: 300, active: 1 } },
         { tag: broken, layers: { base: 300, empty: 0, broken: 1 }, fault: "unmappable" },
         { tag: cached, layers: { base: 300, cached: 1 } },
       ],
-      true,
       fault === "unmappable" ? undefined : fault,
     );
+    const deadlines = heldDeadlines(PRUNE_DEADLINES.transfer);
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "301");
     vi.resetModules();
     const { startDeploymentPreparation } = await import("./deployment-preparation.js");
@@ -545,14 +728,21 @@ for (const fault of ["unmappable", "timeout", "broken-archive"] as const) {
       recordImage: async () => {},
       keptImages: async () => [active],
       logger: { debug() {}, error() {}, info() {}, warn },
-      pruneDeadlines: TEST_PRUNE_DEADLINES,
     });
     try {
+      if (fault === "timeout") {
+        await waitFor(signal, () =>
+          access(saveStarted).then(
+            () => true,
+            () => false,
+          ),
+        );
+        deadlines.expire();
+      }
       await waitFor(signal, () => preparation.runImageDisk() !== null);
       expect(preparation.runImageDisk()).toEqual({
         activeBytes: 315621376,
-        unmeasuredActiveImagesOmitted: 0,
-        unmeasuredActiveImages: [],
+        unmeasured: { images: [], total: 0 },
         budgetBytes: 315621376,
       });
       expect((await readFile(removed, "utf8")).trim().split("\n")).toEqual([broken, cached]);
