@@ -1,34 +1,20 @@
-// Each worktree has separate Compose projects for persistent, fresh, and verification data.
-// The API, scheduler, worker and web run on the host under turbo.
-//   node scripts/dev-stack.mts dev            keep this worktree's data across runs (`just dev`)
-//   node scripts/dev-stack.mts fresh          start from the seed, delete the data on stop (`just dev-fresh`)
-//   node scripts/dev-stack.mts down [mode]    stop one project or all three
-//   node scripts/dev-stack.mts status <mode>  check the recorded orchestrator, exit 1 when stopped
-//   node scripts/dev-stack.mts run -- <cmd>   run <cmd> against the databases of `just dev` (the db-* recipes)
-//   node scripts/dev-stack.mts verify -- <cmd> run <cmd> against this worktree's verification databases
-// Plain Node runs this file, so it is the one process the recipe signals: on SIGTERM, SIGINT or
-// SIGHUP it stops every process group it started and the containers, then exits. It also runs
-// the stack's mail server, which keeps every invitation and reset mail in `mailbox` and prints it.
-
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { createServer, type Server } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { startMailSink } from "../test/mail-sink.ts";
+import { choosePorts } from "./dev-stack-ports.ts";
 import type { CommandExit } from "./dev-stack-supervisor.mts";
 import { composeTeardownTimeoutMs, stopTimeoutMs } from "./dev-stack-timeout.ts";
 import { ensureEnvFile, secret } from "./env-file.ts";
 import { processOwnerState, readProcessIdentity } from "./process-identity.ts";
 
-/** `dev` keeps its data across runs; `fresh` starts from the seed and deletes its data on stop. */
 type Mode = "dev" | "fresh";
 type ProjectMode = Mode | "verify";
 
-/** What the recipe asked for. */
 type Command =
   | { readonly kind: "start"; readonly mode: Mode }
   | { readonly kind: "down"; readonly modes: readonly ProjectMode[] }
@@ -39,63 +25,44 @@ type Command =
       readonly argv: readonly [string, ...string[]];
     };
 
-/**
- * Where one worktree keeps the stack of one mode. Derived from the checkout path and the mode, so
- * it differs per worktree and per mode, and never matches the packaged stack's `swizzle-<hex>`.
- */
 interface Worktree {
   readonly root: string;
-  /** `git rev-parse --git-path <name>`: inside this worktree's own git directory. */
   readonly stateDirectory: string;
-  /** The compose project name, `<name>-<dir>-<hash of the path>`. */
   readonly project: string;
 }
 
-/**
- * The per-user dev secrets, created once with fresh values in
- * `${XDG_CONFIG_HOME:-~/.config}/swizzle/dev.env` and shared by every worktree. Every other
- * variable in that file reaches the stack's processes too.
- */
 type DevEnv = Readonly<Record<(typeof SECRET_NAMES)[number], string>> &
   Readonly<Record<string, string>>;
 
 interface DatabasePorts {
-  /** Assigned by Docker when the container starts, read back with `docker compose port`. */
   readonly postgres: number;
   readonly valkey: number;
 }
 
 interface Ports extends DatabasePorts {
   readonly api: number;
-  /** The API's private listener for the local worker, as `local-worker-api` in the packaged stack. */
   readonly localWorker: number;
   readonly web: number;
 }
 
-/** A detached group's supervisor and OS start identity, checked before signalling the group. */
 interface ProcessGroup {
   readonly pid: number;
   readonly incarnation: string;
 }
 
-/** `<stateDirectory>/stack.json`: what a driver reads to reach this worktree's stack. */
 interface StackRecord {
   readonly project: string;
   readonly url: string;
-  /** The dashboard on the tailnet, `https://<this host's tailnet name>:<web port>`, when published. */
   readonly tailnetUrl?: string;
   readonly apiUrl: string;
   readonly ports: Ports;
-  /** Every mail the stack sent, appended as it goes out; invitation and reset links are in it. */
   readonly mailbox: string;
   readonly smtpUrl: string;
-  /** The owner's login; `memberEmail` signs in with the same password and holds no grant. */
   readonly login: {
     readonly email: string;
     readonly memberEmail: string;
     readonly password: string;
   };
-  /** The orchestrator and its process groups; `down` stops whichever is still alive. */
   readonly pid: number;
   readonly root: string;
   readonly incarnation: string;
@@ -110,7 +77,6 @@ const SECRET_NAMES = [
 ] as const;
 const OWNER_EMAIL = "owner@swizzle.test";
 const MEMBER_EMAIL = "member@swizzle.test";
-/** The dev API's default environment; the scheduler serves every namespace. */
 const ENVIRONMENT = "staging";
 const COMPOSE_FILE = "infra/docker/compose.dev.yml";
 const READY_TIMEOUT_MS = 180_000;
@@ -145,7 +111,6 @@ function git(...args: string[]): string {
   return execFileSync("git", args, { encoding: "utf8" }).trim();
 }
 
-/** The name of each mode's project and state directory; both begin `swizzle-dev`. */
 const NAMES = {
   dev: "swizzle-dev",
   fresh: "swizzle-dev-fresh",
@@ -166,7 +131,6 @@ function resolveWorktree(mode: ProjectMode): Worktree {
   };
 }
 
-/** Creates the per-user dev.env once, then reads its required secrets without changing them. */
 async function loadDevEnv(): Promise<DevEnv> {
   const configHome = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
   const file = path.join(configHome, "swizzle", "dev.env");
@@ -237,7 +201,6 @@ function assertProjectRemoved(worktree: Worktree, env: DevEnv): void {
   }
 }
 
-/** Starts the containers, from empty volumes when fresh, and returns their host ports. */
 function startDatabases(worktree: Worktree, env: DevEnv, fresh: boolean): DatabasePorts {
   if (fresh) compose(worktree, env, ["down", "--volumes", "--remove-orphans"]);
   compose(worktree, env, ["up", "--detach", "--wait", "--quiet-pull"]);
@@ -246,27 +209,6 @@ function startDatabases(worktree: Worktree, env: DevEnv, fresh: boolean): Databa
     return Number(published.slice(published.lastIndexOf(":") + 1));
   };
   return { postgres: port("postgres", 5432), valkey: port("valkey", 6379) };
-}
-
-function listen(port: number): Promise<Server> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once("error", reject);
-    server.listen({ host: "0.0.0.0", port }, () => resolve(server));
-  });
-}
-
-/**
- * One free port per entry: the recorded one when it is still free, else one the OS assigns. All
- * are held open together, so no two entries get the same port.
- */
-async function choosePorts(recorded: readonly (number | undefined)[]): Promise<number[]> {
-  const servers = await Promise.all(
-    recorded.map((port) => listen(port ?? 0).catch(() => listen(0))),
-  );
-  const ports = servers.map((server) => (server.address() as { port: number }).port);
-  await Promise.all(servers.map((server) => new Promise((resolve) => server.close(resolve))));
-  return ports;
 }
 
 function databaseEnvironment(worktree: Worktree, env: DevEnv, ports: DatabasePorts) {
@@ -285,22 +227,17 @@ function serviceEnvironment(record: StackRecord) {
   return {
     API_HOST: "127.0.0.1",
     API_PORT: String(record.ports.api),
-    // The links in mails open the dashboard where its person reaches it.
     SWIZZLE_DASHBOARD_ORIGIN: tailnet?.origin ?? record.url,
-    // Webhook URLs and OAuth callbacks go through the dashboard's /api proxy, so they work where
-    // the dashboard does.
     SWIZZLE_API_ORIGIN: `${tailnet?.origin ?? record.url}/api`,
     SWIZZLE_PUBLIC_URL: `${tailnet?.origin ?? record.url}/api`,
     SWIZZLE_MAIL_FROM: "Swizzle dev <swizzle@swizzle.test>",
     SWIZZLE_SMTP_URL: record.smtpUrl,
-    // Every origin the dashboard is reached at; the api refuses sign-in from any other.
     SWIZZLE_CORS_ORIGINS: [record.url, `http://localhost:${record.ports.web}`, tailnet?.origin]
       .filter((origin) => origin !== undefined)
       .join(","),
     SWIZZLE_DEV_MEMBER_EMAIL: record.login.memberEmail,
     SWIZZLE_DEV_OWNER_EMAIL: record.login.email,
     SWIZZLE_SHUTDOWN_TIMEOUT_MS: "5000",
-    // Labels the runner images the worker builds, so it prunes only this stack's images.
     SWIZZLE_STACK: record.project,
     SCHEDULER_HEALTH_PORT: "0",
     VITE_API_PROXY_TARGET: record.apiUrl,
@@ -310,10 +247,6 @@ function serviceEnvironment(record: StackRecord) {
   };
 }
 
-/**
- * This host's tailnet name, such as `host.tailnet.ts.net`, when Tailscale runs here. The stack then
- * publishes the dashboard on the tailnet, so a browser on another device of the tailnet signs in.
- */
 function tailnetName(): string | undefined {
   try {
     const status = JSON.parse(
@@ -329,10 +262,6 @@ function tailnetName(): string | undefined {
   }
 }
 
-/**
- * Publishes the dashboard's loopback port on the same port of the tailnet address over HTTPS, or
- * takes that down. Returns whether `tailscale serve` did it; its output stays out of the log.
- */
 function tailscaleServe(port: number, state: "on" | "off"): boolean {
   const args =
     state === "on"
@@ -367,7 +296,6 @@ function isAlive(pid: number): boolean {
   }
 }
 
-/** A stale record grants no authority over the process that inherited its PID. */
 function ownedOrchestrator(worktree: Worktree, record: StackRecord): number | undefined {
   const identity = processOwnerState(record);
   if (identity.kind === "stopped") return undefined;
@@ -383,7 +311,6 @@ function ownedOrchestrator(worktree: Worktree, record: StackRecord): number | un
   return record.pid;
 }
 
-/** A worktree match alone cannot authorize a process that reused a recorded group leader PID. */
 function survivingGroups(worktree: Worktree, record: StackRecord): ProcessGroup[] {
   return record.groups.filter((group) => {
     const identity = processOwnerState(group);
@@ -436,10 +363,6 @@ async function stopOrchestrator(worktree: Worktree, record: StackRecord): Promis
   }
 }
 
-/**
- * Asks each group's leader, its supervisor, to stop the command, and kills the whole group once
- * the grace period ends. Signals a group only while its leader matches.
- */
 async function stopGroups(groups: readonly ProcessGroup[]): Promise<void> {
   const signal = (group: ProcessGroup, name: NodeJS.Signals, pid: number) => {
     if (processOwnerState(group).kind !== "running") return;
@@ -447,14 +370,12 @@ async function stopGroups(groups: readonly ProcessGroup[]): Promise<void> {
       process.kill(pid, name);
     } catch {}
   };
-  // The supervisor passes SIGTERM on once; a group-wide one would reach the command twice.
   for (const group of groups) signal(group, "SIGTERM", group.pid);
   const deadline = Date.now() + stopTimeoutMs;
   while (groups.some((group) => isAlive(-group.pid)) && Date.now() < deadline) await delay(100);
   for (const group of groups) signal(group, "SIGKILL", -group.pid);
 }
 
-/** Spawns in a process group of its own, so a stop reaches every descendant. */
 function spawnGroup(
   worktree: Worktree,
   argv: readonly [string, ...string[]],
@@ -502,8 +423,6 @@ async function start(worktree: Worktree, mode: Mode): Promise<number> {
   if (recipe !== undefined) {
     throw new Error(`This worktree's stack already runs (pid ${recipe}) at ${previous?.url}`);
   }
-  // A recipe killed with SIGKILL leaves its services and its tailnet publication behind; stop
-  // them before starting anew.
   if (previous !== undefined) await stopGroups(survivingGroups(worktree, previous));
   if (previous?.tailnetUrl !== undefined) tailscaleServe(previous.ports.web, "off");
   if (previous !== undefined) await rm(shutdownMarker(worktree, previous), { force: true });
@@ -519,7 +438,6 @@ async function start(worktree: Worktree, mode: Mode): Promise<number> {
   const groups: ProcessGroup[] = [];
   let published: number | undefined;
   let stopping = false;
-  // The stop path for a signal, a failed step and a service that exits on its own.
   const stop = async (code: number): Promise<never> => {
     if (stopping) return new Promise<never>(() => {});
     stopping = true;
@@ -541,8 +459,6 @@ async function start(worktree: Worktree, mode: Mode): Promise<number> {
       previous?.ports.web,
       previous?.ports.localWorker,
     ]);
-    // The stack's own worker, as in the packaged stack: it serves every project and environment.
-    // The token stays with the worktree, so a restart keeps the same identity and its revocation.
     const { values: local } = await ensureEnvFile(
       path.join(worktree.stateDirectory, "local-worker.env"),
       "# The local worker token of this worktree's dev stack (scripts/dev-stack.mts).\nSWIZZLE_LOCAL_WORKER_TOKEN=\n",
@@ -582,7 +498,6 @@ async function start(worktree: Worktree, mode: Mode): Promise<number> {
       ...process.env,
       ...databaseEnvironment(worktree, env, databasePorts),
       ...serviceEnvironment(record),
-      // The local identity's admission budget matches the worker's execution slots.
       WORKER_CONCURRENCY: workerConcurrency,
       SWIZZLE_LOCAL_WORKER_TOKEN: local.SWIZZLE_LOCAL_WORKER_TOKEN,
       SWIZZLE_LOCAL_WORKER_API_HOST: "127.0.0.1",
@@ -646,10 +561,14 @@ async function start(worktree: Worktree, mode: Mode): Promise<number> {
   }
 }
 
-/**
- * Stops this worktree's stack of each mode, also after its recipe was killed: its processes and
- * containers. The fresh and verification projects lose their data; the data of `just dev` stays.
- */
+function assertStackOwnershipBeforeShutdown(
+  stacks: readonly { worktree: Worktree; record: StackRecord | undefined }[],
+): void {
+  for (const { worktree, record } of stacks) {
+    if (record !== undefined) ownedOrchestrator(worktree, record);
+  }
+}
+
 async function down(modes: readonly ProjectMode[]): Promise<number> {
   const stacks = await Promise.all(
     modes.map(async (mode) => {
@@ -657,10 +576,7 @@ async function down(modes: readonly ProjectMode[]): Promise<number> {
       return { mode, worktree, record: await readRecord(worktree) };
     }),
   );
-  // Preflight every selected record before touching any stack.
-  for (const { worktree, record } of stacks) {
-    if (record !== undefined) ownedOrchestrator(worktree, record);
-  }
+  assertStackOwnershipBeforeShutdown(stacks);
   const env = await loadDevEnv();
   for (const { worktree, record } of stacks) {
     if (record !== undefined) await stopOrchestrator(worktree, record);

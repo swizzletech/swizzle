@@ -1,7 +1,7 @@
 import type { ExecutionWait, RunWait } from "@swizzle/db";
 import { placementInWords } from "@swizzle/runtime";
 
-import type { RunDetailRecord as ApiRun } from "./run-records.js";
+import { type RunDetailRecord as ApiRun, runOutcome } from "./run-records.js";
 
 type RunDetailRecord = Pick<
   ApiRun,
@@ -10,6 +10,7 @@ type RunDetailRecord = Pick<
   | "automationSlug"
   | "automationName"
   | "environment"
+  | "state"
   | "status"
   | "triggerType"
   | "attemptsMade"
@@ -140,7 +141,7 @@ export function runView(run: RunDetailRecord, full: boolean) {
     payload: run.payload,
     automation: run.automationSlug ?? run.automationName ?? null,
     ...(run.environment !== undefined ? { environment: run.environment } : {}),
-    status: run.status,
+    ...runOutcome(run),
     trigger: run.triggerType,
     attempts: `${run.attemptsMade}/${run.attemptsMax}`,
     ...(history.length > 0 ? { worker: history[history.length - 1]?.workerName } : {}),
@@ -151,7 +152,7 @@ export function runView(run: RunDetailRecord, full: boolean) {
       ? { error: `${run.errorCode}: ${run.errorMessage ?? ""}`.trim() }
       : {}),
     ...(run.deadLetterReason != null ? { deadLetterReason: run.deadLetterReason } : {}),
-    ...(run.status === "waiting" && run.wait != null ? { waitingFor: waitText(run.wait) } : {}),
+    ...(run.state === "waiting" && run.wait != null ? { waitingFor: waitText(run.wait) } : {}),
     ...(run.placement !== null
       ? {
           waitingForWorker: `${placementInWords(run.placement, run).reason} Fails at ${run.placement.deadline}.`,

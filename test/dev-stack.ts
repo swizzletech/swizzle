@@ -14,6 +14,7 @@ export async function fixture() {
   await mkdir(path.join(root, "scripts"));
   for (const file of [
     "dev-stack.mts",
+    "dev-stack-ports.ts",
     "dev-stack-supervisor.mts",
     "dev-stack-timeout.ts",
     "env-file.ts",

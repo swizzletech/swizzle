@@ -14,6 +14,7 @@ import {
   buildTestServer,
   createBufferIO,
   createDashboardStub,
+  dashboardWithStoredRuns,
   repoRoot,
   useCliTestEnvironment,
   withoutProfile,
@@ -24,6 +25,131 @@ import { runCli } from "./main.js";
 useCliTestEnvironment();
 
 describe("run commands", () => {
+  it("shows cancellation state consistently and preserves the stored status contract", async () => {
+    const automationName = "hello-webhook";
+    const platform = await testPlatform();
+    await platform.deployAutomationToPlatform({
+      automationDirectory: path.join(repoRoot, "infra/examples/hello-webhook"),
+      environment: "local",
+    });
+    const start = async () =>
+      await platform.enqueuePlatformRun({ automationName, environment: "local" });
+
+    const succeeded = await start();
+    await platform.store.updateRunState({
+      finishedAt: new Date().toISOString(),
+      runId: succeeded.runId,
+      status: "succeeded",
+    });
+    const failed = await start();
+    await platform.store.updateRunState({
+      deadLetterReason: "retries-exhausted",
+      errorCode: "PROCESS_EXIT_NON_ZERO",
+      finishedAt: new Date().toISOString(),
+      runId: failed.runId,
+      status: "dead-lettered",
+    });
+    const direct = await start();
+    await platform.cancelPlatformRun(direct.runId);
+    const child = await start();
+    await platform.store.updateRunState({
+      deadLetterReason: "parent-cancelled",
+      errorCode: "RUN_CANCELLED",
+      finishedAt: new Date().toISOString(),
+      runId: child.runId,
+      status: "dead-lettered",
+    });
+
+    const app = await buildTestServer({
+      dashboard: dashboardWithStoredRuns(platform),
+      platform,
+    });
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    try {
+      const cli = async (...args: string[]) => {
+        const io = createBufferIO();
+        const code = await runCli([...args, "--json", "--api-url", address], io);
+        expect(code, io.stdoutText).toBe(0);
+        return JSON.parse(io.stdoutText);
+      };
+      expect((await cli("list")).automations).toEqual([
+        expect.objectContaining({ name: automationName, lastRun: "cancelled" }),
+      ]);
+      const home = await cli();
+      expect(home.automations).toEqual([
+        expect.objectContaining({ name: automationName, lastRun: "cancelled" }),
+      ]);
+      const automation = await cli("inspect", automationName);
+      expect(automation.automation.recentRuns).toBe(
+        "4 recent: 2 cancelled, 1 dead-lettered, 1 succeeded",
+      );
+      expect(automation.automation.lastRun).toMatch(/^cancelled /u);
+
+      const cancelledRun = { state: "cancelled", status: "dead-lettered" };
+      expect(await cli("runs", "cancel", direct.runId)).toMatchObject({
+        run: { id: direct.runId, ...cancelledRun },
+        state: "already cancelled (no-op)",
+      });
+      expect(await cli("diagnose", child.runId)).toMatchObject({
+        ...cancelledRun,
+        likelyCause: { code: "RUN_CANCELLED" },
+        fixes: "none suggested",
+      });
+      expect(await cli("stats", automationName)).toMatchObject({
+        cancelled: 2,
+        deadLettered: 1,
+        failed: 0,
+        lastFailure: { runId: failed.runId, errorCode: "PROCESS_EXIT_NON_ZERO" },
+        succeeded: 1,
+        successRate: "50.0%",
+        topErrors: [{ code: "PROCESS_EXIT_NON_ZERO", count: 1 }],
+        total: 4,
+      });
+
+      for (const { runId } of [direct, child]) {
+        const inspected = await cli("runs", "inspect", runId);
+        expect(inspected.run).toMatchObject(cancelledRun);
+        expect(inspected.help ?? []).not.toContain(
+          `Run \`swizzle diagnose ${runId}\` for the likely cause and a fix`,
+        );
+        expect((await cli("logs", "--run", runId)).run).toMatchObject(cancelledRun);
+      }
+      const inspectedFailure = await cli("runs", "inspect", failed.runId);
+      expect(inspectedFailure.help).toContain(
+        `Run \`swizzle diagnose ${failed.runId}\` for the likely cause and a fix`,
+      );
+
+      const failures = await cli("runs", "list", "--state", "failed,dead-lettered", "--limit", "1");
+      expect(failures.runs).toEqual([
+        expect.objectContaining({
+          id: failed.runId,
+          state: "dead-lettered",
+          status: "dead-lettered",
+        }),
+      ]);
+      const cancellations = await cli("runs", "list", "--state", "cancelled");
+      const expected = [
+        expect.objectContaining({ id: direct.runId, ...cancelledRun }),
+        expect.objectContaining({ id: child.runId, ...cancelledRun }),
+      ];
+      expect(cancellations.runs).toHaveLength(2);
+      expect(cancellations.runs).toEqual(expect.arrayContaining(expected));
+      const stored = await cli("runs", "list", "-s", "dead-lettered");
+      expect(stored.runs).toHaveLength(3);
+      expect(stored.runs).toEqual(expect.arrayContaining(expected));
+      const text = createBufferIO();
+      expect(await runCli(["runs", "inspect", direct.runId, "--api-url", address], text)).toBe(0);
+      expect(text.stdoutText).toContain("  state: cancelled\n");
+      expect(text.stdoutText).not.toContain("  status: dead-lettered\n");
+      const enums = await cli("schema", "enums");
+      const statuses = ["queued", "running", "waiting", "succeeded", "failed", "dead-lettered"];
+      expect(enums).toMatchObject({ runStatuses: statuses, runStates: [...statuses, "cancelled"] });
+    } finally {
+      await app.close();
+      await platform.close();
+    }
+  });
+
   it("manages durable automation state through the API", async () => {
     const stateDirectory = await temporaryDirectory("swizzle-cli-state-");
 
@@ -199,6 +325,7 @@ describe("run commands", () => {
             queuedAt: "2026-07-07T10:00:00Z",
             runId: "a3c1e5f0-0b2d-4c7e-9f11-2d3e4f5a6b7c",
             startedAt: "2026-07-07T10:00:01Z",
+            state: "succeeded",
             status: "succeeded",
             stderr: "very long debug output",
             stdout: '{"voucherId":"21f40af2"}',
@@ -234,7 +361,7 @@ describe("run commands", () => {
           "  payload:",
           "    order: 42",
           "  automation: invoice-sync",
-          "  status: succeeded",
+          "  state: succeeded",
           "  trigger: webhook",
           "  attempts: 1/3",
           "  worker: local",

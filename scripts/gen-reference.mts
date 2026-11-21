@@ -211,7 +211,9 @@ function renderCliReference(): string {
 
 ${generatedNote(repoLink("`createProgram`", "apps/cli/src/main.ts"))} \`swizzle commands --json\` prints the same tree as JSON, and \`swizzle <command> --help\` prints one command.
 
-Commands print TOON on stdout, and \`--json\` prints the same data as one line of JSON. A failing command prints \`error\`, a stable \`code\` and \`help\`, its next steps, and exits non-zero (${repoLink("`AgentError`", "apps/cli/src/output.ts")}). \`swizzle schema error\` and \`swizzle schema exit-codes\` print that contract.
+Commands print TOON on stdout. \`--json\` prints one line of JSON. A failing command prints \`error\`, a stable \`code\` and \`help\`, its next steps, and exits non-zero (${repoLink("`AgentError`", "apps/cli/src/output.ts")}). \`swizzle schema error\` and \`swizzle schema exit-codes\` print that contract.
+
+Platform run records in CLI JSON include the stored \`status\` and the derived \`state\`. A direct or parent cancellation has status \`dead-lettered\` and state \`cancelled\`. The default TOON output shows the state. Use \`runs list --status\` for stored values or \`runs list --state\` for derived outcomes. \`swizzle schema enums\` lists both sets as \`runStatuses\` and \`runStates\`.
 
 \`INVALID_API_RESPONSE\` (exit 5) can occur when the configured URL serves the dashboard. If a successful response has a non-empty body, the CLI expects a JSON object or array. If it receives anything else, the error names the configured URL and suggests the dashboard URL ending in \`/api\`. Check the profile with \`swizzle profile list\` and set \`--api-url\` to the API URL.
 
@@ -345,7 +347,9 @@ Public error codes and their HTTP statuses come from ${repoLink("`API_ERROR_STAT
 
 Access writes report their outcome. A grant returns its role and \`previousRole\`, which is null for a new grant. Grant removal, protection and team membership return \`changed\`; removing protection also returns \`grantsRemoved\`. Project and service-account creation return \`changed\` beside the created or existing record. The CLI renders these results, including no-ops, without reading access state first. Deleting a project or removing protection with \`confirm=false\` requests confirmation before making a change.
 
-\`GET /dashboard/overview\` returns \`timetable\`, the last 24 hours of each automation the caller may read that ran or deployed in them. The hours follow the caller's clock: \`utcOffset\` gives its offset in minutes east of UTC, from -720 to 840, and UTC when absent. \`timetable.from\` is the start of the first hour, the one 23 hours before the hour that holds now. Each row has \`hours\`, 24 run counts by state with the oldest hour first and the current one last, and \`deployments\`, each deploy inside the window with its time and version, oldest first. A run counts in the hour it was queued, a run another run invoked not at all, and a run a person cancelled as \`cancelled\`.
+\`GET /dashboard/overview\` returns \`timetable\` rows for readable automations with runs or deployment changes in the last 24 hours. The hours follow the caller's clock. Set \`utcOffset\` to the offset in minutes east of UTC, from -720 to 840. The default is UTC. \`timetable.from\` is the start of the first hour, 23 hours before the current hour. Each row has \`hours\`, 24 run counts by state from oldest to newest. A run counts in the hour it was queued. Invoked runs are excluded. A run cancelled directly or with its parent counts as \`cancelled\`. Each row's \`deployments\` lists up to the 24 most recent deployment changes inside the window, with times and versions in oldest-first order.
+
+Run records in the dashboard and run endpoints return the stored \`status\` and the derived \`state\`. A run cancelled directly or with its parent has status \`dead-lettered\` and state \`cancelled\`. On \`GET /dashboard/runs\`, use \`state\` for one or more comma-separated outcomes and \`status\` for stored values. The response always returns \`filters.states\` and \`filters.statuses\` as arrays.
 
 Resource history routes return the same audit event envelope as \`GET /audit\`. Resource details are under \`change\`, and the common event id is \`id\`. Run responses use \`chainOriginRunId\` for chain grouping and deduplication and \`chainSourceRunIds\` for the immediate source runs.
 

@@ -1,5 +1,3 @@
-/* Play: the code beside the track. It follows track.css, since its phone station card
-   overrides a station's state rules. */
 @layer components {
   .play {
     display: grid;
@@ -41,7 +39,6 @@
     border-radius: var(--radius-card);
     background: var(--surface);
   }
-  /* The window less what stands above and below the track, so the rail stays on screen whole. */
   .play-rail .track-scroll {
     max-height: calc(100vh - 320px);
   }
@@ -75,7 +72,6 @@
     white-space: pre;
     min-height: 20px;
   }
-  /* A long tag, such as the item a step failed at, is cut; its title holds it whole. */
   .pl .tag {
     flex: none;
     max-width: 26ch;
@@ -104,7 +100,6 @@
     background: var(--tint-fail);
     color: var(--fail-text);
   }
-  /* The bracket: every line of a step carries the state's colour in the gutter. */
   .pl.in-step {
     border-left-color: var(--idle);
   }
@@ -126,7 +121,6 @@
   .pl.last {
     margin-bottom: 4px;
   }
-  /* The lines around the focus recede to the dim ink, which still reads. */
   .play-code.has-active .pl:not(.focus) {
     color: var(--screen-dim);
   }
@@ -138,7 +132,6 @@
   .play-bars {
     display: none;
   }
-  /* Without a flowchart there is no rail; the replay transport then sits under the code. */
   .play-transport-row {
     grid-column: 1 / -1;
     padding: 8px 16px;
@@ -153,8 +146,6 @@
     gap: 4px 8px;
     width: 100%;
   }
-  /* The item counter of a run that looped, and the line of a run that did no step, take a row of
-     their own under the scrubber; a long item id is cut, its title holds it whole. */
   .play-transport > .t-meta {
     display: flex;
     flex: 1 0 100%;
@@ -175,8 +166,6 @@
   }
 
   @media (max-width: 900px) {
-    /* The phone reads every track top-down and the Play as one column: each station sits above
-       the first line of its code, the current step pins to the top, the bars to the bottom. */
     .play-body {
       grid-template-columns: minmax(0, 1fr);
     }
@@ -194,8 +183,7 @@
       display: block;
       padding: 8px 12px 4px;
     }
-    /* In the code's flow rather than placed by the track; relative, so a running card's halo
-       rings the card. */
+    /* HAZARD: Load this sheet after track.css so the phone card overrides the station states. */
     .station.st-card {
       position: relative;
       display: flex;
@@ -221,7 +209,6 @@
       font-size: 13px;
       line-height: 20px;
     }
-    /* One line: the label keeps what it needs, and a long meta such as an item id is cut. */
     .play-pin b,
     .play-pin .t-meta {
       min-width: 0;
@@ -232,7 +219,6 @@
     .play-pin .t-meta {
       flex: 1 1 0;
     }
-    /* The transport or live item counter and the Approve and Reject bar stack at the bottom. */
     .play-bars {
       position: sticky;
       bottom: 0;

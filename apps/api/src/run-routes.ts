@@ -1,6 +1,6 @@
 import { PassThrough } from "node:stream";
 import type { ApprovalAssignee } from "@swizzle/db";
-import { CodedError, isFinishedRun } from "@swizzle/db";
+import { CodedError, isFinishedRun, runState } from "@swizzle/db";
 import { AutomationRuntimeError, buildDiagnosis } from "@swizzle/runtime";
 import type {
   ApprovalAssigneeResponse,
@@ -17,6 +17,7 @@ import {
   type RunLogEvent,
   runResponse,
   subscribeRunLogEvents,
+  triggerRunResponse,
 } from "@swizzle/runtime/platform";
 
 import { type ApiServer, dashboardOrigin, requestValidationError } from "./http-shared.js";
@@ -85,19 +86,14 @@ export function registerRunRoutes(app: ApiServer, platform: PlatformServices): v
       correlationId: request.id,
       payload: source.payload,
     });
-    return {
-      deploymentId: run.deploymentId,
-      queuedAt: run.queuedAt,
-      runId: run.runId,
-      status: run.status,
-      ...(run.warning === undefined ? {} : { warning: run.warning }),
-    };
+    return triggerRunResponse(run);
   });
 
   app.post<{ Reply: CancelRunResponse }>("/runs/:runId/cancel", async (request) => {
     const params = request.params as { runId: string };
     await request.access.run(params.runId, "run");
-    return await platform.cancelPlatformRun(params.runId);
+    const result = await platform.cancelPlatformRun(params.runId);
+    return { ...result, run: { ...result.run, state: runState(result.run) } };
   });
 
   app.post<{ Reply: ResumeRunResponse }>("/runs/:runId/events/:stepKey", async (request) => {

@@ -8,6 +8,7 @@ import {
   isNull,
   lte,
   max,
+  not,
   notInArray,
   or,
   sql,
@@ -39,12 +40,12 @@ import type {
 } from "./control-plane-types.js";
 import type { ApprovalAssignee } from "./run-approval.js";
 import {
-  CANCELLED_RUN_REASONS,
   FINISHED_RUN_STATUSES,
   isFinishedRun,
   OPEN_RUN_STATUSES,
   USER_CANCELLED,
 } from "./run-status.js";
+import { isCancelledRunSql } from "./run-status-query.js";
 import {
   automations,
   automationVersions,
@@ -114,10 +115,7 @@ export async function countDeadLetteredFailuresSince(
         eq(runs.automationId, automationId),
         eq(deployments.environment, environment),
         eq(runs.status, "dead-lettered"),
-        or(
-          isNull(runs.deadLetterReason),
-          notInArray(runs.deadLetterReason, [...CANCELLED_RUN_REASONS]),
-        ),
+        not(isCancelledRunSql()),
         gte(runs.finishedAt, new Date(since)),
       ),
     );

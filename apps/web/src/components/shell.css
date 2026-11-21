@@ -1,7 +1,3 @@
-/* The frame: a light sidebar with the five places at the top and, at its foot, the environment and
-   the person. The frame fills the window, and each page scrolls inside it. At phone width the
-   sidebar becomes a header: the logo (the head alone on a phone), the environment and Sign out on
-   one row, every place on the row below. */
 @layer components {
   .app {
     display: grid;
@@ -72,9 +68,6 @@
     gap: 8px;
     margin-top: auto;
   }
-  /* The environment reads as one more nav item: the same height and inset, its dot on the icons'
-     axis. A native select lies over the whole row, so the browser's own chooser opens and the
-     keyboard works; the row draws what it shows. */
   .envrow {
     position: relative;
     display: flex;
@@ -184,7 +177,6 @@
   }
 
   @media (max-width: 900px) {
-    /* The header row keeps its height; the page row takes what the screen has left. */
     .app {
       grid-template-columns: minmax(0, 1fr);
       grid-template-rows: auto minmax(0, 1fr);
@@ -245,9 +237,8 @@
       margin-left: 0;
     }
   }
-  /* Below this the full logo would push into the environment, so the header keeps only the head:
-     in the 28px logo the head ends at 25.2px and the word starts at 32.9px. */
   @media (max-width: 420px) {
+    /* HAZARD: At 28px logo height, the head ends at 25.2px and the wordmark starts at 32.9px. */
     .side-brand {
       width: 26px;
       overflow: hidden;

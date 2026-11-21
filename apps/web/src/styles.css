@@ -1,23 +1,5 @@
 @import "tailwindcss";
 
-/* The dashboard's foundation: the tokens and shared components every page builds on. A neutral
-   surface: zinc greys in light, near black in dark, hairlines instead of fills, one accent (coral)
-   for counts, focus and the selected row, and status colours only where a state needs them. Light
-   and dark follow the operating system; components use only the semantic roles below. Classes that
-   one component alone draws live in a stylesheet beside that component, which imports it; main.tsx
-   imports this file first.
-
-   Every value comes from a fixed scale, listed in apps/web/design-scale.json:
-     type     32/40 600 page title, 32/40 500 stat, 20/28 600 document heading, 16/24 600 section,
-              14/20 400 body, 13/20 400 and 500 controls and lists, 12/16 400 and 500 captions;
-              Geist Mono 13/20 for code, logs and secret names.
-     spacing  4 8 12 16 24 32 40 48; page margin 32, card inset 16, stat tile 24, section gap 40.
-     radii    6 badge, 8 control, 12 card, full.
-     lines    1 px; 2 px only for the active marker.
-     controls 32 default, 28 dense, 40 at phone width.
-   `just check` refuses a written value off the scale, and apps/web/tests/design-foundation.spec.ts
-   refuses a drawn one, along with any text below 4.5:1. */
-
 @font-face {
   font-family: "Geist";
   font-style: normal;
@@ -60,11 +42,8 @@
 
 :root {
   color-scheme: light dark;
-  /* The brand accent, kept from the landing page. Coral marks; it never fills an area behind
-     text. */
   --coral: #ff8b61;
 
-  /* Light: a near-white canvas, white cards, zinc lines and text */
   --bg: #fcfcfc;
   --sidebar: #fafafa;
   --surface: #ffffff;
@@ -78,14 +57,12 @@
   --primary: #18181b;
   --primary-ink: #fafafa;
   --accent-text: #c2410c;
-  /* A state colour marks (dot, bar, border); its -text twin is the one readable as text. */
   --ok: #10b981;
   --ok-text: #047857;
   --fail: #ef4444;
   --fail-text: #b91c1c;
   --warn: #f59e0b;
   --warn-text: #92400e;
-  /* A badge's text on its tint, darker than plain state text so it holds 4.5:1 there. */
   --badge-ok-text: #065f46;
   --run: var(--warn);
   --idle: #a1a1aa;
@@ -101,7 +78,6 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  /* Dark: neutral black, cards a step lighter, white hairlines; no tinted greys */
   :root {
     --bg: #0a0a0a;
     --sidebar: #0a0a0a;
@@ -134,7 +110,6 @@
 }
 
 :root {
-  /* Opaque, so a tinted station or sticky bar hides what passes beneath it. */
   --tint-ok: color-mix(in srgb, var(--ok) var(--tint), var(--surface));
   --tint-fail: color-mix(in srgb, var(--fail) var(--tint), var(--surface));
   --tint-warn: color-mix(in srgb, var(--warn) var(--tint), var(--surface));
@@ -149,7 +124,6 @@
 }
 
 @theme inline {
-  /* Bundled, so every device draws the same type. */
   --font-sans: "Geist", system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, monospace;
   --color-bg: var(--bg);
@@ -165,8 +139,6 @@
   --color-ok: var(--ok-text);
 }
 
-/* Frosted glass for what floats over content: menus, dialogs and the sticky phone header. Only
-   where content shows through; behind an opaque fill the blur costs a redraw and shows nothing. */
 @utility surface-glass {
   background: color-mix(in srgb, var(--raised) var(--glass-opacity), transparent);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
@@ -208,9 +180,7 @@
   }
 }
 
-/* A layer, so a utility on the element (`h-8`, `w-60`) overrides its component class. */
 @layer components {
-  /* ---------- type: the six sizes of the scale ---------- */
   .t-stat {
     font-weight: 500;
     font-size: 32px;
@@ -256,7 +226,6 @@
     font-size: 13px;
   }
 
-  /* ---------- brand: the logo from logo.tsx, in the sidebar and above the sign-in screens */
   .brand {
     display: inline-flex;
     align-items: center;
@@ -276,14 +245,12 @@
     }
   }
 
-  /* ---------- icons: drawn at 24, shown at 16, stroked in currentColor ---------- */
   .icon {
     width: 16px;
     height: 16px;
     flex: none;
   }
 
-  /* ---------- buttons: 32 px, 28 in dense rows; near-black primary, outline secondary ---------- */
   .btn {
     display: inline-flex;
     align-items: center;
@@ -327,7 +294,6 @@
     height: 28px;
     padding: 0 8px;
   }
-  /* A button that shows only a symbol is square. */
   .btn.square {
     width: 32px;
     padding: 0;
@@ -351,7 +317,6 @@
     text-decoration-color: currentColor;
   }
 
-  /* ---------- inputs ---------- */
   .field {
     box-sizing: border-box;
     height: 32px;
@@ -410,7 +375,6 @@
     color: var(--ink);
   }
 
-  /* ---------- status: dot, chip, health strip ---------- */
   .dot {
     display: inline-block;
     width: 8px;
@@ -433,7 +397,6 @@
   }
   .dot.run {
     background: var(--run);
-    /* Duty-cycled: the dot holds still most of the cycle, so the page can go idle between blinks. */
     animation: blink-duty 2.4s steps(1, end) infinite;
   }
   @keyframes blink-duty {
@@ -478,7 +441,6 @@
     color: var(--ink-2);
   }
 
-  /* ---------- surfaces: a group is a card of hairline-ruled rows ---------- */
   .card {
     background: var(--surface);
     border: 1px solid var(--line);
@@ -487,7 +449,6 @@
   .rows > * + * {
     border-top: 1px solid var(--line);
   }
-  /* A modal <dialog> over the page: the confirmation in components/confirm.tsx and Delete project. */
   .sheet {
     width: min(560px, calc(100vw - 24px));
     margin: auto;
@@ -546,8 +507,6 @@
     line-height: 20px;
   }
 
-  /* ---------- tabs: a segmented switch for filters, an underline for a page's views ---------- */
-  /* The switch is one 32 px control: 4 px of track around 24 px segments. */
   .tabs {
     display: inline-flex;
     flex-wrap: wrap;
@@ -588,8 +547,6 @@
     color: var(--ink-3);
     font-variant-numeric: tabular-nums;
   }
-  /* The bar's line is drawn inside its box and the selected tab's underline covers it, so no tab
-     reaches past the bar: a bar that only scrolls sideways when tabs overflow it, never up and down. */
   .dtabs {
     display: flex;
     flex: none;
@@ -619,7 +576,6 @@
     border-color: var(--ink);
   }
 
-  /* ---------- loading ---------- */
   .skeleton {
     border-radius: var(--radius-badge);
     background: var(--surface-2);
@@ -636,8 +592,6 @@
     }
   }
 
-  /* ---------- rows and sections inside a page ---------- */
-  /* A section heading stands flush with its card, 8 px above it. */
   .sec-head {
     display: flex;
     align-items: center;
@@ -648,13 +602,11 @@
   .sec-head > .t-faint:last-child {
     margin-left: auto;
   }
-  /* A section's intro sits under its title. */
   .sec-head > p {
     flex: 0 0 100%;
     max-width: 680px;
     margin: 0;
   }
-  /* Blocks of a page or a section, a section gap apart. */
   .stack > * + * {
     margin-top: var(--section-gap);
   }
@@ -702,7 +654,6 @@
     font-size: 16px;
     line-height: 24px;
   }
-  /* A setting row: what it is on the left, the control on the right. */
   .setting {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -710,8 +661,6 @@
     align-items: center;
     padding: 12px 16px;
   }
-  /* A setting that is a form: the button shares the row of the inputs it submits, bottoms aligned,
-     at the row's right end. Notes and errors take full rows of their own. */
   .setting-form {
     display: flex;
     flex-wrap: wrap;
@@ -753,7 +702,6 @@
     transform: translateX(14px);
   }
 
-  /* At phone width every control is 40 px, a size a thumb hits. */
   @media (max-width: 900px) {
     .btn,
     .btn.small,
@@ -789,8 +737,6 @@
   }
 }
 
-/* One rule stops every animation and transition when the owner asks for less motion. The running
-   dot and the skeleton then rest at full colour, which reads right without a still state. */
 @media (prefers-reduced-motion: reduce) {
   *,
   ::before,

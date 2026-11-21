@@ -249,7 +249,7 @@ function ReplayPlay(props: {
       ? null
       : trackForRun(
           props.flow.graph,
-          atEnd ? props.run : { startedAt: props.run.startedAt, status: "running" },
+          atEnd ? props.run : { startedAt: props.run.startedAt, state: "running" },
           position,
           props.flow.families,
           pass,
@@ -340,19 +340,20 @@ function ItemCounter(props: { readonly items: number | null; readonly pass: Item
 }
 
 function realTimeAt(replay: Replay, playMs: number): number {
-  let real = 0;
+  let elapsed = 0;
   for (const span of replay.spans) {
+    const end = Math.max(span.recordedFrom, span.recordedTo);
     if (playMs >= span.playTo) {
-      real = span.to;
+      elapsed = Math.max(elapsed, end);
       continue;
     }
     if (playMs >= span.playFrom) {
-      const share = (playMs - span.playFrom) / Math.max(1, span.playTo - span.playFrom);
-      return span.from + share * (span.to - span.from);
+      const share = (playMs - span.playFrom) / (span.playTo - span.playFrom);
+      return Math.max(elapsed, span.recordedFrom + share * (end - span.recordedFrom));
     }
     break;
   }
-  return real;
+  return elapsed;
 }
 
 const KIND_WORDS: Record<StepKind, string> = {
@@ -460,6 +461,7 @@ function scrollToStep(key: string): void {
 }
 
 const PIN_TONE: Record<TrackNode["state"], string> = {
+  cancelled: "idle",
   done: "ok",
   failed: "fail",
   idle: "idle",

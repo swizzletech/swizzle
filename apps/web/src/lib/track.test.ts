@@ -56,11 +56,12 @@ function step(key: string, startedMs: number | null, finishedMs: number | null):
 
 function run(
   overrides: Partial<RunDetail>,
-): Pick<RunDetail, "approval" | "finishedAt" | "startedAt" | "status" | "wait"> {
+): Pick<RunDetail, "approval" | "finishedAt" | "startedAt" | "state" | "status" | "wait"> {
   return {
     approval: null,
     finishedAt: null,
     startedAt: at(0),
+    state: overrides.status ?? "running",
     status: "running",
     wait: null,
 
@@ -74,6 +75,17 @@ const lanes = (edges: readonly { from: string; to: string; state: string }[]) =>
   Object.fromEntries(edges.map((edge) => [`${edge.from}>${edge.to}`, edge.state]));
 
 describe("trackForRun", () => {
+  it("marks an unfinished step cancelled in a cancelled run", () => {
+    const cancelled = {
+      ...run({ finishedAt: at(1_000), status: "dead-lettered" }),
+      state: "cancelled",
+    } as const;
+    const steps = new Map([["fetch", step("fetch", 100, null)]]);
+    const track = trackForRun(FLOW, cancelled, { steps, waiting: null }, KEYS);
+    expect(states(track.nodes)).toMatchObject({ fetch: "cancelled", done: "idle" });
+    expect(activeStep(track)).toBe("fetch");
+  });
+
   it("lights the running step, marks done steps with their duration and lights narration behind them", () => {
     const steps = new Map([
       ["fetch", step("fetch", 100, 500)],
@@ -457,6 +469,15 @@ describe("step families", () => {
       { index: 2, item: "b", of: 3 },
       { index: 3, item: "c", of: 3 },
     ]);
+    const secondPass = replay.spans[2];
+    if (secondPass === undefined) throw new Error("Expected the second item pass");
+    const position = positionAt(replay, secondPass.playFrom, LOOP_SITES);
+    const track = trackForRun(LOOP, run({}), position, LOOP_FAMILIES, {
+      index: 1,
+      item: "a",
+      of: 3,
+    });
+    expect(track.nodes.find((node) => node.id === "upload")?.meta).toBe("2.0 s");
     const live = new Map(overlapping.map((one) => [one.stepKey, one]));
     live.set("upload:a", step("upload:a", 1_000, null));
     expect(runPass({ steps: live, waiting: null }, LOOP_FAMILIES)).toEqual({

@@ -1,5 +1,5 @@
-import type { CredentialState, RunPlacement, RunWait } from "@swizzle/db";
-import { placementInWords } from "@swizzle/db";
+import type { CredentialState, PlatformRunStatus, RunPlacement, RunWait } from "@swizzle/db";
+import { placementInWords, runState } from "@swizzle/db";
 import type { Diagnosis, DiagnosisEvidence, DiagnosisFix } from "./platform-records.js";
 import { exceptionSummary, findRunException } from "./run-exception.js";
 
@@ -20,7 +20,7 @@ export interface DiagnosableRun {
   readonly placement?: RunPlacement | null;
   readonly projectId?: string;
   readonly runId: string;
-  readonly status: string;
+  readonly status: PlatformRunStatus;
   readonly stderr?: string | null;
   readonly triggerType: string;
   readonly wait?: RunWait | null;
@@ -96,9 +96,22 @@ export function buildDiagnosis(
   const evidence: DiagnosisEvidence[] = [];
   const fixes: DiagnosisFix[] = [];
   const errorCode = run.errorCode ?? null;
-  const lostSecrets = (secretHealth ?? []).filter((s) => s.state !== "bound");
-  const missingSecrets = lostSecrets.map((s) => s.name);
   const stderrTail = run.stderr ? run.stderr.split("\n").slice(-20).join("\n") : null;
+  const state = runState({ deadLetterReason: run.deadLetterReason ?? null, status: run.status });
+  const record = {
+    attempts: { made: run.attemptsMade, max: run.attemptsMax },
+    automation: run.automationName ?? run.automationSlug ?? null,
+    deadLetterReason: run.deadLetterReason ?? null,
+    errorCode,
+    errorMessage: run.errorMessage ?? null,
+    evidence,
+    runId: run.runId,
+    state,
+    status: run.status,
+    stderrTail,
+    suggestedFixes: fixes,
+    triggerType: run.triggerType,
+  };
 
   if (errorCode) {
     evidence.push({ detail: run.errorMessage ?? "(no message)", kind: `error:${errorCode}` });
@@ -106,6 +119,14 @@ export function buildDiagnosis(
   if (run.deadLetterReason) {
     evidence.push({ detail: run.deadLetterReason, kind: "dead_letter_reason" });
   }
+  if (state === "cancelled") {
+    return {
+      ...record,
+      likelyCause: { code: "RUN_CANCELLED", summary: run.errorMessage ?? "Run was cancelled." },
+    };
+  }
+  const lostSecrets = (secretHealth ?? []).filter((s) => s.state !== "bound");
+  const missingSecrets = lostSecrets.map((s) => s.name);
   if (missingSecrets.length > 0) {
     evidence.push({
       detail: `${missingSecrets.length} secret(s) missing: ${missingSecrets.join(", ")}`,
@@ -294,20 +315,7 @@ export function buildDiagnosis(
         }
     }
 
-  return {
-    attempts: { made: run.attemptsMade, max: run.attemptsMax },
-    automation: run.automationName ?? run.automationSlug ?? null,
-    deadLetterReason: run.deadLetterReason ?? null,
-    errorCode,
-    errorMessage: run.errorMessage ?? null,
-    evidence,
-    likelyCause: { code: likelyCode, summary },
-    runId: run.runId,
-    status: run.status,
-    stderrTail,
-    suggestedFixes: fixes,
-    triggerType: run.triggerType,
-  };
+  return { ...record, likelyCause: { code: likelyCode, summary } };
 }
 
 function applyStderrHeuristics(

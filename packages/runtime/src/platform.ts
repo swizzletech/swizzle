@@ -1,4 +1,9 @@
-export { connectionResponse, deploymentResponse, runResponse } from "./api-views.js";
+export {
+  connectionResponse,
+  deploymentResponse,
+  runResponse,
+  triggerRunResponse,
+} from "./api-views.js";
 export {
   listRegisteredReadinessWorkers,
   type RegisteredReadinessWorker,

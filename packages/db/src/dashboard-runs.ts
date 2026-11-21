@@ -1,5 +1,17 @@
 import type { WorkerService } from "@swizzle/config";
-import { and, count, desc, eq, gte, inArray, isNull, or, type SQLWrapper, sql } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  not,
+  or,
+  type SQLWrapper,
+  sql,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { ReadScope } from "./access.js";
 import type { DatabaseClient } from "./client.js";
@@ -20,7 +32,8 @@ import type {
 } from "./dashboard-types.js";
 import { getRunApproval } from "./run-approval.js";
 import { encodeRunCursor } from "./run-cursor.js";
-import { type RunState, runState, USER_CANCELLED } from "./run-status.js";
+import { type RunState, runState } from "./run-status.js";
+import { isCancelledRunSql, runStateSql } from "./run-status-query.js";
 import { automations, automationVersions, deployments, runs } from "./schema.js";
 
 export async function listObservedInvocations(
@@ -68,9 +81,13 @@ export async function listRuns(
     filters.push(inArray(runs.status, [...query.statuses]));
   }
 
+  if (query.states !== undefined && query.states.length > 0) {
+    filters.push(inArray(runStateSql(), query.states));
+  }
+
   if (query.failedOnly === true) {
     filters.push(inArray(runs.status, ["failed", "dead-lettered"]));
-    filters.push(sql`${runs.deadLetterReason} is distinct from ${USER_CANCELLED}`);
+    filters.push(not(isCancelledRunSql()));
   }
 
   if (query.triggerType !== undefined) {
@@ -162,6 +179,7 @@ export async function listRuns(
     filters: {
       automationSlug: query.automationSlug ?? null,
       limit,
+      states: query.states ?? [],
       statuses: query.statuses ?? [],
       triggerType: query.triggerType ?? null,
     },

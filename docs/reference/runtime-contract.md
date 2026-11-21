@@ -34,7 +34,7 @@ If the runtime cannot deliver process output, it stops collecting output and shu
 | `PROCESS_TIMEOUT` | The run exceeded `runtime.timeout`. The worker sends `SIGTERM`, then `SIGKILL`. |
 | `PROCESS_SIGNAL` | A signal terminated the process. |
 | `PROCESS_OUTPUT_LIMIT_EXCEEDED` | stdout or stderr exceeded 1 MiB. |
-| `RUN_CANCELLED` | Someone cancelled the run (`swizzle runs cancel`, the API or the dashboard). The API refuses further lease renewals and output after cancellation. The worker stops on its next renewal, normally within two seconds, or before its last acknowledged expiry if the network is unavailable. |
+| `RUN_CANCELLED` | Someone cancelled the run (`swizzle runs cancel`, the API or the dashboard). The API refuses further lease renewals and output after cancellation. The worker stops when a renewal or output request is refused, normally within two seconds, or before its last acknowledged expiry if the network is unavailable. |
 | `AUTOMATION_STATE_LIMIT_EXCEEDED` | A state event broke a state limit. |
 | `AUTOMATION_STEP_LIMIT_EXCEEDED` | A step event broke a step limit. |
 | `UPSTREAM_CONTRACT_CHANGED` | The process exited with a code other than `0` after a `contract_changed` event. The message names the API and the field. The run is not retried, because the next attempt meets the same answer. |

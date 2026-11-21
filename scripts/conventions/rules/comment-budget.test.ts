@@ -12,6 +12,94 @@ import { reported } from "../test-support.js";
 
 const COMMENT_BUDGET = "scripts/conventions/comment-budget.json";
 
+it("comment-budget counts prose with obsolete lint directive prefixes", async () => {
+  expect(
+    await reported("comment-budget", {
+      [COMMENT_BUDGET]: "{}",
+      "test/globals.ts": "// globals only through vi.stubEnv",
+      "test/global.ts": "/* global state belongs to the caller */",
+      "test/exported.ts": "// exported for tests",
+      "test/eslint.ts": "/* eslint-disable no-console */",
+    }),
+  ).toEqual(["test/eslint.ts:1", "test/exported.ts:1", "test/global.ts:1", "test/globals.ts:1"]);
+});
+
+it("comment-budget counts CSS and HTML comments and ignores quoted text", async () => {
+  expect(
+    await reported("comment-budget", {
+      [COMMENT_BUDGET]: "{}",
+      "apps/web/src/example.css": [
+        'p { content: "/* literal text */"; background: url(/icons/*); }',
+        "",
+        "p { color: /* prose in a value */ red; }",
+      ].join("\r\n"),
+      "apps/web/index.html": [
+        '<p title="<!-- literal text -->"></p>',
+        '<script>const text = "<!-- literal text -->";</script>',
+        "<!-- prose",
+        "  on two lines -->",
+      ].join("\n"),
+    }),
+  ).toEqual(["apps/web/index.html:3", "apps/web/src/example.css:3"]);
+});
+
+it.each([
+  ["style", 'p { content: "/* literal */"; }', "p { color: /* prose */ red; }"],
+  ["script", 'const url = "https://example.test";', "const value = /* prose */ 1;"],
+])("comment-budget counts prose inside inline <%s>", async (tag, literal, prose) => {
+  const file = "apps/web/inline.html";
+  const html = [
+    "<!doctype html>",
+    "<head>",
+    `<${tag}>`,
+    literal,
+    prose,
+    `</${tag}>`,
+    "<!-- last -->",
+    "</head>",
+  ].join("\r\n");
+  expect(await reported("comment-budget", { [COMMENT_BUDGET]: "{}", [file]: html })).toEqual([
+    "apps/web/inline.html:5",
+  ]);
+  expect(
+    await reported("comment-budget", {
+      [COMMENT_BUDGET]: '{"apps/web/inline.html":1}',
+      [file]: html,
+    }),
+  ).toEqual(["apps/web/inline.html:7"]);
+});
+
+it("comment-budget exempts leading Vitest directives without exempting prose", async () => {
+  expect(
+    await reported("comment-budget", {
+      [COMMENT_BUDGET]: "{}",
+      "test/environment.test.ts": "// @vitest-environment node\nconst value = 1;",
+      "test/docblock.test.ts": "/**\n * @vitest-environment jsdom\n */\nconst value = 1;",
+      "test/pool.test.ts": "/**\n * @vitest-pool threads\n */\nconst value = 1;",
+      "test/late.test.ts": "const value = 1;\n// @vitest-environment node",
+      "test/explained.test.ts": "// @vitest-environment node for this fixture\nconst value = 1;",
+      "test/mixed.test.ts": "/**\n * The test owns its data.\n * @vitest-environment node\n */",
+    }),
+  ).toEqual([
+    "test/explained.test.ts:1",
+    "test/late.test.ts:2",
+    "test/mixed.test.ts:1",
+    "test/pool.test.ts:1",
+  ]);
+});
+
+it("comment-budget exempts bare TypeScript check pragmas and counts trailing prose", async () => {
+  expect(
+    await reported("comment-budget", {
+      [COMMENT_BUDGET]: "{}",
+      "test/bare-check.ts": "// @ts-check\nconst value = 1;",
+      "test/bare-nocheck.ts": "// @ts-nocheck\nconst value = 1;",
+      "test/check.ts": "// @ts-check this file is strict\nconst value = 1;",
+      "test/nocheck.ts": "// @ts-nocheck: legacy file\nconst value = 1;",
+    }),
+  ).toEqual(["test/check.ts:1", "test/nocheck.ts:1"]);
+});
+
 it("comment-budget measures comments in every source root and ignores literal text", async () => {
   const tree = {
     [COMMENT_BUDGET]: '{"apps/web/src/page.tsx":1}',
@@ -73,11 +161,18 @@ it("comment-budget allows tool directives, guarded hazards and JSDoc on exported
     [COMMENT_BUDGET]: "{}",
     "packages/sdk-ts/src/index.ts": sdk,
     "apps/cli/assets/sdk/swizzle-sdk.ts": sdk,
+    "apps/web/src/reset.css": [
+      "p {",
+      "  /* biome-ignore lint/complexity/noImportantStyles: reset any animation */",
+      "  animation: none !important;",
+      "}",
+    ].join("\n"),
+    "apps/web/index.html": "<!-- HAZARD: layers must precede imports -->\n<style></style>",
     "scripts/tools.mts": [
       "#!/usr/bin/env node",
       "// SPDX-License-Identifier: Apache-2.0",
       '/// <reference lib="dom" />',
-      "/* eslint-disable no-console */",
+      "// @ts-check",
       "// biome-ignore lint/suspicious/noExplicitAny: called by an untyped library",
       "const entry: any = null; // HAZARD: register before dispatch",
       "// HAZARD: stop before clearing the queue",
@@ -90,6 +185,8 @@ it("comment-budget allows tool directives, guarded hazards and JSDoc on exported
   expect(
     await reported("comment-budget", {
       ...tree,
+      "apps/web/src/reset.css": "/* @ts-ignore */\np { color: red; }",
+      "apps/web/index.html": "<!-- HAZARD: detached -->\n\n<style></style>",
       "packages/sdk-ts/src/index.ts": [
         "export class Public {",
         "  /** Private state */",
@@ -103,6 +200,8 @@ it("comment-budget allows tool directives, guarded hazards and JSDoc on exported
     }),
   ).toEqual([
     "apps/api/private.ts:1",
+    "apps/web/index.html:1",
+    "apps/web/src/reset.css:1",
     "packages/sdk-ts/src/index.ts:2",
     "scripts/detached.ts:1",
     "scripts/tools.mts:1",

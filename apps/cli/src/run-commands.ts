@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { isFinishedRun, RUN_STATUSES } from "@swizzle/db";
+import { isFailedState, isFinishedRun, RUN_STATES, RUN_STATUSES } from "@swizzle/db";
 import type {
   CancelRunResponse,
   ResumeRunResponse,
@@ -43,7 +43,7 @@ import {
   windowLog,
 } from "./run-log-formatting.js";
 import { followRunLogs } from "./run-log-stream.js";
-import type { RunDetailRecord, RunSummaryRecord } from "./run-records.js";
+import { type RunDetailRecord, type RunSummaryRecord, runOutcome } from "./run-records.js";
 import { aggregateRunStats, filterRunsByTimeRange } from "./run-stats.js";
 
 export function registerRunCommands(program: Command, io: CliIO, runHandler: RunHandler): void {
@@ -134,7 +134,7 @@ function registerLogs(program: Command, io: CliIO, runHandler: RunHandler): void
             run: {
               id: run.runId,
               automation: run.automationSlug ?? run.automationName ?? null,
-              status: run.status,
+              ...runOutcome(run),
               ...(run.errorCode != null
                 ? { error: `${run.errorCode}: ${run.errorMessage ?? ""}`.trim() }
                 : {}),
@@ -169,9 +169,9 @@ async function latestRunId(
   const resolved = await resolveAutomationNameOrDie(automationName, options);
   const { runs } = await fetchRuns(options, { automation: resolved.slug }, 10);
   const latest =
-    runs.find((run) => run.status === "running") ??
-    runs.find((run) => run.status === "waiting") ??
-    runs.find((run) => run.status === "queued") ??
+    runs.find((run) => run.state === "running") ??
+    runs.find((run) => run.state === "waiting") ??
+    runs.find((run) => run.state === "queued") ??
     runs[0];
   if (latest === undefined && resolved.match === "unlisted") {
     throw new AgentError({
@@ -190,7 +190,8 @@ async function latestRunId(
   return latest.runId;
 }
 
-const RUN_FIELDS = ["id", "automation", "status", "queuedAt"] as const;
+const RUN_FIELDS = ["id", "automation", "state", "queuedAt"] as const;
+const RUN_JSON_FIELDS = ["id", "automation", "status", "state", "queuedAt"] as const;
 
 function runRow(run: RunSummaryRecord) {
   return {
@@ -199,8 +200,9 @@ function runRow(run: RunSummaryRecord) {
     id: run.runId,
     queuedAt: run.queuedAt,
     status: run.status,
+    state: run.state,
     trigger: run.triggerType,
-    waitingFor: run.status === "waiting" ? waitText(run.wait) : null,
+    waitingFor: run.state === "waiting" ? waitText(run.wait) : null,
   };
 }
 
@@ -209,7 +211,7 @@ function registerRuns(program: Command, io: CliIO, runHandler: RunHandler): void
     .command("runs")
     .description("List runs, newest first, or inspect, cancel or resume one");
   withExamples(runs, [
-    "swizzle runs hello-webhook --status failed --since 1d",
+    "swizzle runs hello-webhook --state failed --since 1d",
     "swizzle runs inspect 0193b1d2-7f0c-7e55-9d5a-3c1f0b2a9e41",
   ]);
 
@@ -220,7 +222,11 @@ function registerRuns(program: Command, io: CliIO, runHandler: RunHandler): void
       .argument("[automationName]", "Only this automation's runs")
       .option(
         "-s, --status <status>",
-        `Only runs in this status (${RUN_STATUSES.join(", ")}); comma-separated for several`,
+        `Only runs with this stored status (${RUN_STATUSES.join(", ")}). Separate multiple statuses with commas`,
+      )
+      .option(
+        "--state <states>",
+        `Only runs in this derived state (${RUN_STATES.join(", ")}). Separate multiple states with commas`,
       )
       .option("-t, --trigger <type>", "Only runs started this way (webhook, cron, chain, manual)")
       .option("--since <value>", "Only runs queued at/after this time (ISO or 1h/2d/1w)")
@@ -231,7 +237,7 @@ function registerRuns(program: Command, io: CliIO, runHandler: RunHandler): void
   );
   withExamples(list, [
     "swizzle runs list hello-webhook --limit 10",
-    "swizzle runs list --status failed,dead-lettered --since 1d --fields trigger,attempts",
+    "swizzle runs list --state failed,dead-lettered --since 1d --fields trigger,attempts",
   ]);
   list.action(
     async (
@@ -240,7 +246,11 @@ function registerRuns(program: Command, io: CliIO, runHandler: RunHandler): void
         ExactCommandOptions &
         FieldsCommandOptions &
         PaginationCommandOptions &
-        TimeRangeCommandOptions & { readonly status?: string; readonly trigger?: string },
+        TimeRangeCommandOptions & {
+          readonly state?: string;
+          readonly status?: string;
+          readonly trigger?: string;
+        },
     ) => {
       await runHandler(async () => {
         const options = await targeted(inputOptions);
@@ -255,6 +265,7 @@ function registerRuns(program: Command, io: CliIO, runHandler: RunHandler): void
           options,
           {
             ...(slug !== undefined ? { automation: slug } : {}),
+            ...(options.state !== undefined ? { state: options.state } : {}),
             ...(options.status !== undefined ? { status: options.status } : {}),
             ...(options.trigger !== undefined ? { triggerType: options.trigger } : {}),
           },
@@ -262,7 +273,7 @@ function registerRuns(program: Command, io: CliIO, runHandler: RunHandler): void
         );
         const rows = selectFields(
           filterRunsByTimeRange(page.runs, range).map(runRow),
-          RUN_FIELDS,
+          outputFormat() === "json" ? RUN_JSON_FIELDS : RUN_FIELDS,
           options.fields,
         );
         respond(
@@ -272,7 +283,7 @@ function registerRuns(program: Command, io: CliIO, runHandler: RunHandler): void
             ...(slug !== undefined ? { automation: slug } : {}),
             ...(rows.length === 0
               ? {
-                  runs: `0 runs${options.status !== undefined ? ` with status ${options.status}` : ""}${options.since !== undefined ? ` since ${options.since}` : ""}${resolved?.match === "unlisted" ? `; you see no automation named ${slug} in ${options.environment}` : ""}`,
+                  runs: `0 runs${options.state !== undefined ? ` in state ${options.state}` : ""}${options.status !== undefined ? ` with status ${options.status}` : ""}${options.since !== undefined ? ` since ${options.since}` : ""}${resolved?.match === "unlisted" ? `; you see no automation named ${slug} in ${options.environment}` : ""}`,
                 }
               : {
                   count: page.more ? `${rows.length} shown, more exist` : rows.length,
@@ -291,9 +302,9 @@ function registerRuns(program: Command, io: CliIO, runHandler: RunHandler): void
                 ...(slug !== undefined ? ["Run `swizzle list` for the deployed automations"] : []),
               ]
             : [
-                "Run `swizzle runs inspect <id>` for a run's status, result and log tail",
+                "Run `swizzle runs inspect <id>` for a run's state, result and log tail",
                 ...(page.more
-                  ? ["Narrow with --since, --status or an automation name, or raise --limit"]
+                  ? ["Narrow with --since, --state or an automation name, or raise --limit"]
                   : []),
               ],
         );
@@ -303,7 +314,7 @@ function registerRuns(program: Command, io: CliIO, runHandler: RunHandler): void
 
   const inspect = runs
     .command("inspect")
-    .description("Show one run: status, result, error, what it waits for, and its log tail")
+    .description("Show one run's state, result, error, wait details and log tail")
     .argument("<runId>", "Run ID", parseRunId)
     .option("--full", "Print stdout, stderr and every attempt whole");
   withExamples(inspect, [
@@ -340,7 +351,7 @@ function registerRuns(program: Command, io: CliIO, runHandler: RunHandler): void
       respond(
         io,
         {
-          run: { id: started.runId, status: started.status, deployment: started.deploymentId },
+          run: { id: started.runId, ...runOutcome(started), deployment: started.deploymentId },
           replayedFrom: runId,
           ...(started.warning === undefined ? {} : { warning: started.warning }),
         },
@@ -364,11 +375,12 @@ function registerRuns(program: Command, io: CliIO, runHandler: RunHandler): void
         buildApiUrl(`/runs/${encodeURIComponent(runId)}/cancel`, options),
         { method: "POST" },
       );
+      const run = response.run;
       respond(io, {
-        run: { id: response.run.runId, status: response.run.status },
+        run: { id: run.runId, ...runOutcome(run) },
         state: response.alreadyTerminal
-          ? `already ${response.run.status} (no-op)`
-          : `cancelled (${response.run.deadLetterReason ?? "user-cancelled"})`,
+          ? `already ${run.state} (no-op)`
+          : `${run.state} (${run.deadLetterReason})`,
       });
     });
   });
@@ -417,12 +429,12 @@ function registerRuns(program: Command, io: CliIO, runHandler: RunHandler): void
 
 function inspectHelp(run: RunDetailRecord, full: boolean | undefined): string[] {
   const help: string[] = [];
-  if (run.status === "waiting" && run.wait?.reason === "approval") {
+  if (run.state === "waiting" && run.wait?.reason === "approval") {
     const who = run.wait.assignee?.label ?? "A person who may run it here";
     const where = run.dashboardUrl ?? "the run's panel in the dashboard";
     help.push(`${who} decides this approval signed in at ${where}; a token cannot`);
   }
-  if (run.status === "waiting" && run.wait?.reason === "event") {
+  if (run.state === "waiting" && run.wait?.reason === "event") {
     help.push(
       `Run \`swizzle runs resolve-event ${run.runId} ${run.wait.stepKey} --payload '<json>'\` to resume it`,
     );
@@ -430,7 +442,7 @@ function inspectHelp(run: RunDetailRecord, full: boolean | undefined): string[] 
   if (run.placement !== null) {
     help.push(`Run \`swizzle diagnose ${run.runId}\` to see which worker it waits for`);
   }
-  if (run.status === "failed" || run.status === "dead-lettered") {
+  if (isFailedState(run.state)) {
     help.push(`Run \`swizzle diagnose ${run.runId}\` for the likely cause and a fix`);
   }
   if (full !== true && runViewTruncated(run)) {
@@ -576,7 +588,7 @@ function registerDiagnose(program: Command, io: CliIO, runHandler: RunHandler): 
         {
           run: diagnosis.runId,
           automation: diagnosis.automation,
-          status: diagnosis.status,
+          ...runOutcome(diagnosis),
           attempts: `${diagnosis.attempts.made}/${diagnosis.attempts.max}`,
           likelyCause: diagnosis.likelyCause,
           evidence: diagnosis.evidence.map(({ kind, detail }) => ({ kind, detail })),
@@ -602,7 +614,9 @@ function registerDiagnose(program: Command, io: CliIO, runHandler: RunHandler): 
 function registerStats(program: Command, io: CliIO, runHandler: RunHandler): void {
   const command = program
     .command("stats")
-    .description("Count an automation's runs by status, with its success rate and top errors")
+    .description(
+      "Count an automation's runs by state. Cancelled runs count toward the total and are excluded from the success rate and top errors",
+    )
     .argument("[automationName]", "Automation name (default: detected from cwd)")
     .option("--since <value>", "Count runs queued at/after this time", "24h")
     .option("--until <value>", "Count runs queued before this time")
@@ -625,7 +639,7 @@ function registerStats(program: Command, io: CliIO, runHandler: RunHandler): voi
         const counted = filterRunsByTimeRange(page.runs, range);
         const failures = await Promise.all(
           counted
-            .filter((run) => run.status === "failed" || run.status === "dead-lettered")
+            .filter((run) => isFailedState(run.state))
             .slice(0, 20)
             .map((run) =>
               apiRequest<RunDetailRecord>(buildApiUrl(`/runs/${run.runId}`, options)).catch(

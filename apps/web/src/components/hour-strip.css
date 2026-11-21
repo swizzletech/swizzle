@@ -1,12 +1,8 @@
-/* The Overview's hour strips: 24 cells per automation, deploy marks above them, the hour axis in
-   the list's header and the hover that names an hour. */
 @layer components {
-  /* The gap between hour columns; hour-strip.tsx places deploy marks by it. */
   .hour-strip,
   .hour-axis {
     --hour-gap: 4px;
   }
-  /* The mark lane (16 px of text, a 4 px tick) above the 28 px cells. */
   .hour-strip {
     position: relative;
     z-index: 1;
@@ -60,7 +56,6 @@
     border-radius: var(--radius-badge);
     background: var(--primary);
     color: var(--primary-ink);
-    /* A cell is an <i>; its label reads upright. */
     font-style: normal;
     font-size: 12px;
     line-height: 16px;
@@ -76,7 +71,6 @@
     left: auto;
     transform: none;
   }
-  /* A deploy: its version above the hour it happened in, a tick pointing down at its time. */
   .hour-mark {
     position: absolute;
     bottom: 32px;
@@ -95,7 +89,6 @@
     height: 4px;
     background: var(--ink-3);
   }
-  /* The axis takes the strip's columns: a label every six hours, "now" at the right edge. */
   .hour-axis {
     position: relative;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -105,7 +98,6 @@
     right: 0;
   }
 
-  /* Below the name at narrow widths the strip leaves out the marks and their lane. */
   @media (max-width: 900px) {
     .hour-strip {
       height: 28px;

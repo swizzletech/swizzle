@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { createQueueNameForProfile } from "@swizzle/runtime";
@@ -20,7 +22,29 @@ export async function verifyRetryRecovery(
     },
   });
   const directory = await mkdtemp(path.join(os.tmpdir(), "swizzle-worker-retry-"));
+  const pauseGate = createServer((_request, response) => {
+    void queue.pause().then(
+      () => response.writeHead(204).end(),
+      () => response.writeHead(500).end(),
+    );
+  });
   try {
+    pauseGate.listen(0, "127.0.0.1");
+    await once(pauseGate, "listening");
+    const address = pauseGate.address();
+    assert.ok(address && typeof address !== "string");
+    const pauseOnFirstAttempt = `
+      void (async () => {
+        if (process.env.SWIZZLE_ATTEMPT === "1") {
+          let input = "";
+          for await (const chunk of process.stdin) input += chunk;
+          const { pausePort } = JSON.parse(input);
+          const response = await fetch("http://127.0.0.1:" + pausePort);
+          if (!response.ok) throw new Error("Could not pause the verification queue.");
+        }
+        process.exit(1);
+      })();
+    `;
     for (const resumed of [false, true]) {
       const name = `retry-recovery-${resumed ? "resumed" : "initial"}`;
       await writeFile(
@@ -45,15 +69,20 @@ export async function verifyRetryRecovery(
         resumed
           ? `if (process.env.SWIZZLE_EXECUTION === "1") {
           console.log(JSON.stringify({ $swizzle: { suspend: { reason: "sleep", stepKey: "nap", until: "2000-01-01T00:00:00.000Z" } } }));
-        } else { process.exit(1); }`
-          : "process.exit(1);",
+        } else { ${pauseOnFirstAttempt} }`
+          : pauseOnFirstAttempt,
       );
       await platform.deployAutomationToPlatform({
         environment: "local",
         automationDirectory: directory,
       });
       const runId = randomUUID();
-      await platform.enqueuePlatformRun({ environment: "local", automationName: name, runId });
+      await platform.enqueuePlatformRun({
+        environment: "local",
+        automationName: name,
+        payload: { pausePort: address.port },
+        runId,
+      });
       if (resumed) {
         await waitForStatus(platform, runId, "waiting");
         await platform.resumeDueWaitingRuns({ environment: "local" });
@@ -61,26 +90,35 @@ export async function verifyRetryRecovery(
       const jobId = resumed ? `${runId}--s1` : runId;
       const deadline = Date.now() + 10_000;
       for (;;) {
-        const job = await queue.getJob(jobId);
         const run = await platform.getPlatformRun(runId);
+        const job = await queue.getJob(jobId);
+        const state = await job?.getState();
         if (
           job &&
-          (await job.getState()) === "delayed" &&
+          (state === "delayed" || state === "waiting") &&
           run.status === "queued" &&
           run.executions.at(-1)?.status === "retrying"
         ) {
           assert.equal(run.attemptsMade, 1);
+          assert.ok(
+            await queue.isPaused(),
+            `The first attempt of ${name} did not pause the queue.`,
+          );
           await job.remove();
           break;
         }
-        assert.ok(Date.now() < deadline, `Did not find delayed retry for ${name}`);
+        assert.ok(Date.now() < deadline, `Did not find queued retry for ${name}`);
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
       const recovery = await platform.reconcileQueuedRuns({ environment: "local" });
-      assert.ok(recovery.requeuedRunIds.includes(runId), `${name} was not re-enqueued`);
+      assert.ok(
+        recovery.requeuedRunIds.includes(runId) || recovery.skippedExistingJobIds.includes(jobId),
+        `${name} was neither re-enqueued nor already rebuilt by the dispatch loop`,
+      );
       const recoveredJob = await queue.getJob(jobId);
       assert.equal(recoveredJob?.attemptsMade, 0);
       assert.equal(recoveredJob?.opts.attempts, 2);
+      await queue.resume();
       await waitForStatus(platform, runId, "dead-lettered");
       const terminal = await platform.getPlatformRun(runId);
       assert.equal(terminal.attemptsMade, 3);
@@ -110,8 +148,12 @@ export async function verifyRetryRecovery(
       );
     }
   } finally {
-    await queue.close();
-    await rm(directory, { recursive: true, force: true });
+    try {
+      await pauseGate[Symbol.asyncDispose]();
+      await queue.resume();
+    } finally {
+      await Promise.all([queue.close(), rm(directory, { recursive: true, force: true })]);
+    }
   }
 }
 

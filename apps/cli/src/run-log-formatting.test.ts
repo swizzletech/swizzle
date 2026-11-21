@@ -24,6 +24,7 @@ function baseRun(overrides: Partial<RunDetailRecord> = {}): RunDetailRecord {
     queuedAt: "2026-07-07T10:00:00Z",
     runId: "run-123",
     startedAt: "2026-07-07T10:00:01Z",
+    state: "succeeded",
     status: "succeeded",
     triggerType: "webhook",
     ...overrides,
@@ -90,6 +91,7 @@ describe("windowLog", () => {
 describe("runView", () => {
   it("says why a queued run waits in the words swizzle diagnose and the dashboard use", () => {
     const run = baseRun({
+      state: "queued",
       status: "queued",
       placement: {
         group: "gpu-home",
@@ -177,13 +179,14 @@ describe("runView", () => {
         deadLetterReason: "retries-exhausted",
         errorCode: "PROCESS_EXIT_NON_ZERO",
         errorMessage: "Automation exited with code 1.",
+        state: "dead-lettered",
         status: "dead-lettered",
       }),
       false,
     );
 
     expect(view).toMatchObject({
-      status: "dead-lettered",
+      state: "dead-lettered",
       error: "PROCESS_EXIT_NON_ZERO: Automation exited with code 1.",
       deadLetterReason: "retries-exhausted",
     });

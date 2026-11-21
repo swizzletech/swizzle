@@ -28,7 +28,9 @@ export function runState(run: {
   readonly deadLetterReason: string | null;
   readonly status: PlatformRunStatus;
 }): RunState {
-  return run.deadLetterReason === USER_CANCELLED ? "cancelled" : run.status;
+  return CANCELLED_RUN_REASONS.some((reason) => reason === run.deadLetterReason)
+    ? "cancelled"
+    : run.status;
 }
 
 export function isFailedState(state: RunState): boolean {
@@ -38,5 +40,6 @@ export function isFailedState(state: RunState): boolean {
 export const RUN_STATUSES = Object.keys(RUN_STATUS_PHASE).filter(
   (status): status is PlatformRunStatus => status in RUN_STATUS_PHASE,
 );
+export const RUN_STATES: readonly RunState[] = [...RUN_STATUSES, "cancelled"];
 export const OPEN_RUN_STATUSES = RUN_STATUSES.filter(isOpenRun);
 export const FINISHED_RUN_STATUSES = RUN_STATUSES.filter(isFinishedRun);

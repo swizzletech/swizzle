@@ -1,5 +1,3 @@
-/* The Overview: the status row and its counts, the automation timetable with its pipeline steps, the recent changes
-   and the first steps of an empty instance. */
 @layer components {
   .state {
     display: flex;
@@ -15,7 +13,6 @@
   .state p {
     margin: 0;
   }
-  /* Four counts in one card, each cell split by a hairline. */
   .stats {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -33,8 +30,6 @@
     align-items: center;
     gap: 8px;
   }
-  /* A row of the timetable: the automation, its 24 hours, its next run. At phone width the name
-     and the next run share a line and the hours take the full width below. */
   .arow {
     display: grid;
     grid-template-columns: minmax(0, 240px) minmax(0, 1fr) 112px;
@@ -68,8 +63,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* The card does not clip, so an hour's hover can rise over the row above; the last row keeps
-     the card's corners. */
   .timetable > .arow:last-child {
     border-radius: 0 0 var(--radius-card) var(--radius-card);
   }

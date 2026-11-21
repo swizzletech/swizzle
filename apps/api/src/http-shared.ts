@@ -28,6 +28,7 @@ export interface DashboardRunsQuery extends EnvironmentQuery {
   readonly cursor?: string;
   readonly limit?: string;
   readonly parentRunId?: string;
+  readonly state?: string;
   readonly status?: string;
   readonly topLevelOnly?: "false" | "true";
   readonly triggerType?: string;

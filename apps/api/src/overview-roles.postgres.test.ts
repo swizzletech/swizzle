@@ -112,6 +112,19 @@ it("shows a viewer neither the first-deploy steps nor a failing automation to fi
   expect(scoped.needsYou.map((item: { kind: string }) => item.kind)).toEqual(["failing"]);
 
   await send(owner, "POST", "/projects", { name: "Office", slug: "office" });
+  const moved = await createAutomationFixture({ mainJs: "", name: "moved", path: "/moved" });
+  expect((await deployFixture(app, moved, {}, { headers: owner })).statusCode).toBe(200);
+  await send(owner, "POST", "/automations/moved/trigger/pause");
+  await send(owner, "PUT", "/automations/moved/project", { project: "office" });
+  const markerRows = async (who: { readonly authorization: string }) =>
+    (await overview(who)).timetable.rows as { automationSlug: string; deployments: unknown[] }[];
+  expect(
+    (await markerRows(owner)).find((row) => row.automationSlug === "moved")?.deployments,
+  ).toHaveLength(1);
+  expect((await markerRows(viewer)).map((row) => row.automationSlug).sort()).toEqual([
+    "render",
+    "report",
+  ]);
   await send(owner, "PUT", "/projects/office/grants", { role: "editor", user: viewer.userId });
   expect(await overview(viewer)).toEqual(
     expect.objectContaining({

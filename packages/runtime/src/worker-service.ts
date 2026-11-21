@@ -146,6 +146,7 @@ export async function startPlatformWorkerService(
     let lease = assignment.lease;
     const owned = () => ({ lease: { taskId: lease.taskId, generation: lease.generation } });
     const abort = new AbortController();
+    const loseLease = () => abort.abort(new Error("Execution lease was lost."));
     let sequence = 0;
     let output: Promise<unknown> = Promise.resolve();
     let renewing = false;
@@ -153,15 +154,15 @@ export async function startPlatformWorkerService(
     let deadline = 0;
     const stopAtExpiry = () => {
       clearTimeout(expiration);
-      expiration = setTimeout(() => abort.abort(), Math.max(0, deadline - performance.now()));
+      expiration = setTimeout(loseLease, Math.max(0, deadline - performance.now()));
     };
     const callOwned = async <Request, Reply>(
       route: WorkerRoute<Request, Reply>,
       body: () => Request,
     ): Promise<Reply> => {
       for (let attempt = 0; ; attempt++) {
+        if (performance.now() >= deadline) loseLease();
         abort.signal.throwIfAborted();
-        if (performance.now() >= deadline) throw new Error("Execution lease was lost.");
         try {
           return await call(route, body(), abort.signal);
         } catch (error) {
@@ -185,7 +186,7 @@ export async function startPlatformWorkerService(
         deadline = startedAt + lease.remainingMs - 100;
         stopAtExpiry();
       } catch (error) {
-        if (refused(error)) abort.abort();
+        if (refused(error)) loseLease();
         throw error;
       } finally {
         renewing = false;
@@ -234,7 +235,7 @@ export async function startPlatformWorkerService(
               chunk: part,
             })),
           );
-          void output.catch(() => abort.abort());
+          void output.catch((error: unknown) => abort.abort(error));
         }
         return output.then(() => {});
       },
@@ -261,9 +262,10 @@ export async function startPlatformWorkerService(
         signal: abort.signal,
       });
       await output;
-      if (abort.signal.aborted || performance.now() >= deadline)
-        throw new Error("Execution lease was lost.");
       await callOwned(WORKER_ROUTES.complete, () => ({ ...owned(), report }));
+    } catch (error) {
+      abort.signal.throwIfAborted();
+      throw error;
     } finally {
       clearInterval(timer);
       clearTimeout(expiration);

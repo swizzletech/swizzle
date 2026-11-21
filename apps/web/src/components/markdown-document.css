@@ -1,7 +1,4 @@
-/* A README rendered from Markdown. */
 @layer components {
-  /* Paint containment clips whatever a README draws to its own box, fixed positioning included;
-     a table wider than the box scrolls instead of being cut off. */
   .markdown-document {
     contain: paint;
     overflow-x: auto;
@@ -9,7 +6,6 @@
     line-height: 24px;
     overflow-wrap: anywhere;
   }
-  /* Text keeps its reading measure in a wide card; a table or code block may use the width. */
   .markdown-document > :not(table, pre) {
     max-width: 720px;
   }
@@ -51,7 +47,6 @@
   .markdown-document ol {
     padding-left: 24px;
   }
-  /* Preflight removes list markers; a README list keeps them. */
   .markdown-document ul {
     list-style: disc;
   }

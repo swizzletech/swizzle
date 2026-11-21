@@ -118,6 +118,136 @@ test("Load older runs reaches every run of the filter, and only then says all", 
   expect(new Set(ids).size).toBe(total);
 });
 
+test("the live refresh leaves 30 loaded pages in place and requests only the newest page", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await page.clock.pauseAt(Date.now() + 60_000);
+  const state = seededState();
+  addOlderRuns(state, 3_100);
+  await mockDashboardApi(page, state);
+  await page.goto("/runs");
+
+  const rows = page.getByTestId("run-row");
+  const older = page.getByRole("button", { name: "Load older runs" });
+  const expectLoaded = async (count: number) => {
+    await expect
+      .poll(async () => {
+        await page.clock.runFor(1);
+        return await rows.count();
+      })
+      .toBe(count);
+  };
+  await expectLoaded(100);
+  for (let loaded = 200; loaded <= 3_000; loaded += 100) {
+    await older.evaluate((button: HTMLButtonElement) => button.click());
+    await expectLoaded(loaded);
+  }
+  const lastLoaded = await rows.last().getAttribute("data-run-id");
+  const first = state.runs[0];
+  if (first === undefined) throw new Error("Expected a newest run");
+  state.runs[0] = { ...first, automationName: "refreshed-automation" };
+  const refreshStart = state.requests.length;
+
+  await page.clock.runFor(5_000);
+  await expect
+    .poll(async () => {
+      await page.clock.runFor(1);
+      return await rows.first().textContent();
+    })
+    .toContain("refreshed-automation");
+  expect(
+    state.requests
+      .slice(refreshStart)
+      .filter(
+        (request) => request.pathname === "/dashboard/runs" && !request.search.has("parentRunId"),
+      )
+      .map((request) => request.search.get("cursor")),
+  ).toEqual([null]);
+  await expect(rows).toHaveCount(3_000);
+  await expect(rows.last()).toHaveAttribute("data-run-id", lastLoaded ?? "");
+
+  await older.evaluate((button: HTMLButtonElement) => button.click());
+  await expectLoaded(3_100);
+  await page.clock.resume();
+  await rows.nth(2_999).click();
+  await expect(rows.nth(2_999)).toHaveAttribute("aria-current", "true");
+});
+
+test("Load older runs can reach every run after a burst moves the newest page past history", async ({
+  page,
+}) => {
+  const state = seededState();
+  state.runs.length = 0;
+  addOlderRuns(state, 250);
+  await mockDashboardApi(page, state);
+  await page.goto("/runs");
+
+  const rows = page.getByTestId("run-row");
+  const older = page.getByRole("button", { name: "Load older runs" });
+  await expect(rows).toHaveCount(100);
+  await older.click();
+  await expect(rows).toHaveCount(200);
+
+  const obsoletePage = (url: URL) =>
+    url.pathname === "/api/dashboard/runs" && url.searchParams.get("cursor") === "200";
+  let releaseObsoleteReply = () => {};
+  const obsoleteReply = new Promise<void>((resolve) => {
+    releaseObsoleteReply = resolve;
+  });
+  await page.route(
+    obsoletePage,
+    async (route) => {
+      await obsoleteReply;
+      await route.fallback();
+    },
+    { times: 1 },
+  );
+  try {
+    const obsoleteRequest = page.waitForRequest((request) => obsoletePage(new URL(request.url())));
+    await older.click();
+    await obsoleteRequest;
+
+    const first = state.runs[0];
+    if (first === undefined) throw new Error("Expected a newest run");
+    const now = Date.now();
+    const burst = Array.from({ length: 150 }, (_, index) => ({
+      ...first,
+      queuedAt: new Date(now - index * 1_000).toISOString(),
+      runId: `80000000-aaaa-4bbb-8ccc-${String(index).padStart(12, "0")}`,
+    }));
+    state.runs.unshift(...burst);
+
+    await expect(rows.first()).toHaveAttribute(
+      "data-run-id",
+      "80000000-aaaa-4bbb-8ccc-000000000000",
+    );
+    await expect(rows).toHaveCount(100);
+    const repageStart = state.requests.length;
+    await older.evaluate((button: HTMLButtonElement) => {
+      button.click();
+      button.click();
+    });
+    await expect(rows).toHaveCount(200);
+    expect(
+      state.requests
+        .slice(repageStart)
+        .filter((request) => request.pathname === "/dashboard/runs" && request.search.has("cursor"))
+        .map((request) => request.search.get("cursor")),
+    ).toEqual(["100"]);
+  } finally {
+    releaseObsoleteReply();
+  }
+  for (const loaded of [300, 400]) {
+    await older.click();
+    await expect(rows).toHaveCount(loaded);
+  }
+  await expect(page.getByTestId("run-count")).toHaveText("400 runs, that is all of them");
+  expect(
+    await rows.evaluateAll((elements) => elements.map((row) => row.getAttribute("data-run-id"))),
+  ).toEqual(state.runs.map((run) => run.runId));
+});
+
 test("the arrow keys walk the list and keep the selected row in view", async ({ page }) => {
   await seeded(page, "/runs");
   const rows = page.getByTestId("run-row");

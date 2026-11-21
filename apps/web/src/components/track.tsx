@@ -196,6 +196,7 @@ function lanePath(points: readonly { readonly x: number; readonly y: number }[])
 }
 
 const STATE_WORDS: Record<StationState, string> = {
+  cancelled: "cancelled",
   done: "done",
   failed: "failed",
   idle: "",
@@ -205,6 +206,7 @@ const STATE_WORDS: Record<StationState, string> = {
 };
 
 const STATE_SYMBOL: Record<StationState, ReactNode> = {
+  cancelled: null,
   done: <path className="st-mark" d="M5 9.2 7.8 12 13 6.6" />,
   failed: <path className="st-mark" d="M6.2 6.2 11.8 11.8 M11.8 6.2 6.2 11.8" />,
   idle: null,

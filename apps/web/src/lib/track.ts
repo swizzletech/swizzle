@@ -1,6 +1,6 @@
 import { type StepKind, type StepSite, stepFamily, stepItem } from "@swizzle/config/browser";
 
-import { isOpenRun, type RunDetail, type RunStep } from "./api";
+import { isOpenRun, type RunDetail, type RunState, type RunStep } from "./api";
 import { durationInWords } from "./words/time";
 
 export type TrackStep = RunStep;
@@ -22,7 +22,14 @@ interface FlowEdge {
   readonly label: string | null;
 }
 
-export type StationState = "idle" | "done" | "running" | "waiting" | "failed" | "untaken";
+export type StationState =
+  | "idle"
+  | "done"
+  | "running"
+  | "waiting"
+  | "failed"
+  | "cancelled"
+  | "untaken";
 
 export type LaneState = "idle" | "done" | "active" | "untaken";
 
@@ -105,14 +112,14 @@ export function runPass(position: RunPosition, families: ReadonlySet<string>): I
 
 export function trackForRun(
   flow: FlowGraph,
-  run: Pick<RunDetail, "startedAt" | "status">,
+  run: Pick<RunDetail, "startedAt" | "state">,
   recorded: RunPosition,
   families: ReadonlySet<string>,
   pass: ItemPass | null = runPass(recorded, families),
 ): TrackGraph {
-  const shown = run.status === "succeeded" ? null : pass;
+  const shown = run.state === "succeeded" ? null : pass;
   const position = onePass(recorded, families, shown);
-  const finished = !isOpenRun(run.status);
+  const finished = run.state === "cancelled" || !isOpenRun(run.state);
   const states = new Map<string, TrackNode>();
   const startOf = waitStarts(run, position);
   const byFamily = groupBy([...position.steps.values()], (step) => stepFamily(step.stepKey));
@@ -121,7 +128,7 @@ export function trackForRun(
       node.id,
       stationFor(
         node,
-        run,
+        run.state,
         byFamily.get(node.id) ?? [],
         position.waiting,
         families,
@@ -277,7 +284,7 @@ function waitStarts(
 
 function stationFor(
   node: FlowNode,
-  run: Pick<RunDetail, "status">,
+  runState: RunState,
   steps: readonly TrackStep[],
   runWaiting: WaitingStep | null,
   families: ReadonlySet<string>,
@@ -309,8 +316,15 @@ function stationFor(
       pass !== null && stepItem(open.stepKey) === pass.item
         ? `${itemInWords(pass)} · ${pass.item}`
         : null;
-    if (run.status === "running")
-      return { ...base, at, key, meta: item ?? items, state: "running" };
+    if (runState === "running") return { ...base, at, key, meta: item ?? items, state: "running" };
+    if (runState === "cancelled")
+      return {
+        ...base,
+        at,
+        key,
+        meta: item === null ? "cancelled" : `cancelled at ${item}`,
+        state: "cancelled",
+      };
     const meta = item === null ? "did not finish" : `failed at ${item}`;
     return { ...base, at, key, meta, state: "failed" };
   }
@@ -338,7 +352,7 @@ function waitingInWords(waiting: WaitingStep): string {
   return "waiting for an event";
 }
 
-const REACHED = new Set<StationState>(["done", "running", "waiting", "failed"]);
+const REACHED = new Set<StationState>(["done", "running", "waiting", "failed", "cancelled"]);
 
 function lanesFor(
   edges: readonly FlowEdge[],
@@ -399,7 +413,7 @@ export function staticTrack(
 
 export function activeStep(track: TrackGraph): string | null {
   const stations = track.nodes.filter((node) => node.key !== null);
-  for (const state of ["running", "waiting", "failed"] as const) {
+  for (const state of ["running", "waiting", "failed", "cancelled"] as const) {
     const station = stations.find((node) => node.state === state);
     if (station !== undefined) return station.key;
   }
@@ -415,8 +429,8 @@ interface ReplaySpan {
   readonly kind: "step" | "wait";
   readonly key: string;
   readonly item: string | null;
-  readonly from: number;
-  readonly to: number;
+  readonly recordedFrom: number;
+  readonly recordedTo: number;
   readonly playFrom: number;
   readonly playTo: number;
 }
@@ -453,16 +467,14 @@ export function buildReplay(
   const real: RealSpan[] = [];
   let finishedCursor = 0;
   for (const step of finishedSteps) {
-    const to = Date.parse(step.finishedAt ?? "") - startedAt;
+    const recordedTo = Date.parse(step.finishedAt ?? "") - startedAt;
     const kind = WAIT_KINDS.has(kinds.get(stepFamily(step.stepKey)) ?? "step") ? "wait" : "step";
-    const from =
-      step.startedAt === null || kind === "wait"
-        ? finishedCursor
-        : Math.max(finishedCursor, Date.parse(step.startedAt) - startedAt);
+    const recordedFrom =
+      step.startedAt === null ? finishedCursor : Date.parse(step.startedAt) - startedAt;
     const item = kinds.has(stepFamily(step.stepKey)) ? stepItem(step.stepKey) : null;
     const started = Date.parse(step.startedAt ?? step.createdAt) - startedAt;
-    real.push({ from, item, key: step.stepKey, kind, started, to });
-    finishedCursor = Math.max(finishedCursor, to);
+    real.push({ item, key: step.stepKey, kind, recordedFrom, recordedTo, started });
+    finishedCursor = Math.max(finishedCursor, recordedTo);
   }
   const ordered = byItemPass(real);
   const spans: ReplaySpan[] = [];
@@ -470,15 +482,15 @@ export function buildReplay(
   let playCursor = 0;
   let compressed = false;
   for (const { started: _, ...span } of ordered) {
-    const gap = Math.max(0, span.from - realCursor);
+    const gap = Math.max(0, span.recordedFrom - realCursor);
     if (gap > GAP_PLAY_MS) compressed = true;
     playCursor += Math.min(gap, GAP_PLAY_MS);
-    const realMs = Math.max(0, span.to - span.from);
+    const realMs = Math.max(0, span.recordedTo - span.recordedFrom);
     const play = Math.min(Math.max(realMs, SPAN_PLAY_MIN_MS), SPAN_PLAY_MS);
     if (realMs > SPAN_PLAY_MS) compressed = true;
     spans.push({ ...span, playFrom: playCursor, playTo: playCursor + play });
     playCursor += play;
-    realCursor = Math.max(realCursor, span.to);
+    realCursor = Math.max(realCursor, span.recordedTo);
   }
   const end = run.finishedAt === null ? realCursor : Date.parse(run.finishedAt) - startedAt;
   const tail = Math.max(0, end - realCursor);
@@ -543,16 +555,16 @@ export function positionAt(
   const kinds = kindsByFamily(sites);
   for (const span of replay.spans) {
     if (span.playFrom > playMs) break;
-    const startedAt = new Date(replay.startedAt + span.from).toISOString();
+    const startedAt = new Date(replay.startedAt + span.recordedFrom).toISOString();
     const open = span.playTo > playMs;
-    const finishedAt = open ? null : new Date(replay.startedAt + span.to).toISOString();
+    const finishedAt = open ? null : new Date(replay.startedAt + span.recordedTo).toISOString();
     steps.set(span.key, {
       approval: null,
       attempt: 1,
       executionNumber: 1,
       createdAt: startedAt,
       finishedAt,
-      startedAt: span.kind === "wait" ? null : startedAt,
+      startedAt,
       stepKey: span.key,
       updatedAt: finishedAt ?? startedAt,
       value: null,

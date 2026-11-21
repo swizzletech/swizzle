@@ -2,7 +2,7 @@ import ts from "typescript";
 import type { Rule, Violation } from "../lint.js";
 
 const BUDGET = "scripts/conventions/comment-budget.json";
-const SOURCE = /^(?:apps|packages|scripts|test|\.agents\/checks)\/.*\.(?:[cm]?ts|tsx)$/u;
+const SOURCE = /^(?:apps|packages|scripts|test|\.agents\/checks)\/.*\.(?:[cm]?ts|tsx|css|html)$/u;
 const GENERATED_FILES: Readonly<Record<string, string>> = {};
 const PUBLIC_API: Readonly<Record<string, string>> = {
   "packages/sdk-ts/src/index.ts": "The TypeScript SDK copied into automations",
@@ -11,10 +11,20 @@ const PUBLIC_API: Readonly<Record<string, string>> = {
 const LICENSE =
   /^(?:Copyright\s+(?:\(c\)\s+|©\s*)?\d{4}|SPDX-License-Identifier:\s*\S|@license\b|Licensed under\b)/iu;
 const BIOME_IGNORE = /^biome-ignore(?:-all|-start|-end)?\s+[^:\s]+(?:\s+[^:\s]+)*:\s*\S/u;
-const TOOL_DIRECTIVE =
-  /^(?:@ts-(?:check|nocheck|ignore|expect-error)|eslint(?:-disable(?:-next-line|-line)?|-enable|-env)?|globals?|exported)(?:\s|:|$)/u;
-const REFERENCE = /^\/\s*<reference\s+(?:path|types|lib|no-default-lib)\s*=/u;
+const TS_CHECK_DIRECTIVE = /^\/?\s*@ts-(?:check|nocheck)$/iu;
+const TS_ERROR_DIRECTIVE = /^@ts-(?:ignore|expect-error)(?:\s|:|$)/u;
+const VITEST_DIRECTIVE = /^@vitest-environment[ \t]+[\w-]+$/u;
+const REFERENCE =
+  /^\/\s*<reference\s[^>]*\b(?:path|types|lib|no-default-lib)\s*=\s*(?:"[^"]*"|'[^']*')[^>]*\/>/iu;
 const HAZARD = /^HAZARD:\s*\S/u;
+const CSS_TOKENS =
+  /\\[^\r\n\f]|"(?:\\[\s\S]|[^"\\\r\n\f])*"|'(?:\\[\s\S]|[^'\\\r\n\f])*'|(?<![\w-])url\((?!\s*["'])(?:\\[\s\S]|[^\\)])*(?:\)|$)|\/\*(?<comment>[\s\S]*?)(?:\*\/|$)/giu;
+const HTML_TAG_END = `(?:[^"'<>]|"[^"]*"|'[^']*')*>`;
+const HTML_TOKENS = new RegExp(
+  String.raw`<!--(?<comment>[\s\S]*?)(?:--!?>|$)|<(?<rawTag>script|style|textarea|title|iframe|xmp|noembed|noframes)(?=[\s/>])${HTML_TAG_END}(?<rawBody>[\s\S]*?)(?:<\/\k<rawTag>\s*>|$)|<\/?[a-z]${HTML_TAG_END}`,
+  "dgiu",
+);
+const NEWLINE = /\r\n?|\n/u;
 const EXPLAIN =
   "Carry the meaning in a name, a type, a test, or the commit message. Put a hazard behind `HAZARD:` on the line it guards.";
 
@@ -100,6 +110,32 @@ function readBudget(text: string): Map<string, number> | undefined {
 }
 
 function countedComments(file: string, text: string): number[] {
+  if (file.endsWith(".css")) return cssComments(text);
+  if (file.endsWith(".html")) return htmlComments(file, text);
+  return typescriptComments(file, text);
+}
+
+function cssComments(text: string): number[] {
+  return delimitedComments(text, [...text.matchAll(CSS_TOKENS)]);
+}
+
+function htmlComments(file: string, text: string): number[] {
+  const tokens = [...text.matchAll(HTML_TOKENS)];
+  const lines = delimitedComments(text, tokens);
+  for (const token of tokens) {
+    const tag = token.groups?.rawTag?.toLowerCase();
+    if (tag !== "style" && tag !== "script") continue;
+    const body = token.groups?.rawBody;
+    const start = token.indices?.groups?.rawBody?.[0];
+    if (body === undefined || start === undefined) continue;
+    const embedded = tag === "style" ? cssComments(body) : typescriptComments(`${file}.js`, body);
+    const precedingLines = text.slice(0, start).split(NEWLINE).length - 1;
+    for (const line of embedded) lines.push(precedingLines + line);
+  }
+  return lines.sort((a, b) => a - b);
+}
+
+function typescriptComments(file: string, text: string): number[] {
   if (!text.includes("//") && !text.includes("/*")) return [];
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
   const literals: ts.TextRange[] = [];
@@ -154,13 +190,47 @@ function countedComments(file: string, text: string): number[] {
     if (BIOME_IGNORE.test(body)) continue;
     while ((jsxComments[jsxIndex]?.end ?? Infinity) <= pos) jsxIndex += 1;
     if ((jsxComments[jsxIndex]?.pos ?? Infinity) > pos) {
-      if (apiDocs.has(pos) || TOOL_DIRECTIVE.test(body)) continue;
-      if (lastTokenEnd === 0 && (REFERENCE.test(body) || LICENSE.test(body))) continue;
+      if (apiDocs.has(pos) || TS_ERROR_DIRECTIVE.test(body)) continue;
+      if (
+        lastTokenEnd === 0 &&
+        (LICENSE.test(body) ||
+          (file.endsWith(".test.ts") && isVitestDocblock(body)) ||
+          (kind === ts.SyntaxKind.SingleLineCommentTrivia &&
+            (REFERENCE.test(body) || TS_CHECK_DIRECTIVE.test(body))))
+      )
+        continue;
       if (HAZARD.test(body) && guardsCodeLine(source, { pos, end }, lastTokenEnd)) continue;
     }
     comments.push(lineOf(source, pos) + 1);
   }
   return comments;
+}
+
+function isVitestDocblock(body: string): boolean {
+  return body
+    .split(NEWLINE)
+    .every((line) => VITEST_DIRECTIVE.test(line.trim().replace(/^\*\s*/u, "")));
+}
+
+function delimitedComments(text: string, tokens: readonly RegExpExecArray[]): number[] {
+  const comments = tokens.flatMap((match) => {
+    const body = match.groups?.comment;
+    return body === undefined
+      ? []
+      : [{ pos: match.index, end: match.index + match[0].length, body: body.trim() }];
+  });
+  return comments.flatMap(({ pos, end, body }, index) => {
+    if (BIOME_IGNORE.test(body) || (LICENSE.test(body) && !text.slice(0, pos).trim())) return [];
+    if (HAZARD.test(body)) {
+      const before = text
+        .slice(comments[index - 1]?.end ?? 0, pos)
+        .split(NEWLINE)
+        .at(-1);
+      const [sameLine, nextLine] = text.slice(end, comments[index + 1]?.pos).split(NEWLINE, 2);
+      if (before?.trim() || sameLine?.trim() || nextLine?.trim()) return [];
+    }
+    return [text.slice(0, pos).split(NEWLINE).length];
+  });
 }
 
 function lineOf(source: ts.SourceFile, pos: number): number {

@@ -12,15 +12,12 @@ import { readProcessIdentity } from "./process-identity.ts";
 
 const source = fileURLToPath(new URL("..", import.meta.url));
 
-/**
- * A git worktree with the dev stack's scripts, stubs for docker, pnpm and tailscale on `bin`, and
- * `turboScript` as node_modules/.bin/turbo, the command the stack runs its services with.
- */
 async function stackRoot(turboScript: string) {
   const root = await temporaryDirectory("swizzle-descendants-");
   await mkdir(path.join(root, "scripts"));
   for (const file of [
     "dev-stack.mts",
+    "dev-stack-ports.ts",
     "dev-stack-supervisor.mts",
     "dev-stack-timeout.ts",
     "env-file.ts",
@@ -28,7 +25,6 @@ async function stackRoot(turboScript: string) {
   ]) {
     await cp(path.join(source, "scripts", file), path.join(root, "scripts", file));
   }
-  // dev-stack.mts runs the stack's mail server from here.
   await mkdir(path.join(root, "test"));
   await cp(path.join(source, "test", "mail-sink.ts"), path.join(root, "test", "mail-sink.ts"));
   execFileSync("git", ["init", "--quiet", root]);
@@ -121,8 +117,6 @@ esac
   },
 );
 
-// turbo's npm shim forwards SIGTERM to the turbo binary, which force-kills its tasks on a second
-// signal, so the services stop gracefully only when the binary gets exactly one.
 test.skipIf(process.platform !== "linux")(
   "just dev-down signals the services command once, so a forwarding command stops gracefully",
   async ({ signal }) => {
@@ -214,7 +208,6 @@ exec /usr/bin/ps "$@"
           const down = spawn("just", ["dev-down"], { cwd: root, env, stdio: "ignore" });
           await once(down, "close");
         } finally {
-          // Startup can fail before the test reads either fixture record.
           const record: { groups: { pid: number; incarnation: string }[] } | null = await readFile(
             path.join(root, ".git/swizzle-dev-fresh/stack.json"),
             "utf8",
@@ -259,7 +252,6 @@ exec /usr/bin/ps "$@"
               ([pid, incarnation]) => readProcessIdentity(pid)?.incarnation !== incarnation,
             ),
           );
-          // A supervisor killed mid-scan leaves its detached ps behind, which ends on its own.
           await waitFor(cleanupSignal, () => processesNaming(new Set([root])).length === 0);
         }
       };
@@ -323,7 +315,6 @@ exec /usr/bin/ps "$@"
       });
       const [code] = await once(down, "close");
       expect(code, output).toBe(0);
-      // dev-down has exited, so a planted child it killed is gone once the kernel reaps it.
       await waitFor(signal, () => readProcessIdentity(planted.child) === undefined);
       expect(readProcessIdentity(planted.leader)).toBeUndefined();
       expect(readProcessIdentity(group?.pid ?? 0)).toBeUndefined();

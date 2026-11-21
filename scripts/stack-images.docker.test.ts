@@ -549,7 +549,6 @@ CMD ["cat", "/turbo-args"]
     "Earlier release build recipe",
   ]);
   try {
-    // The prepared Dockerfile lives outside the source context, as an archived upgrade does.
     const prepared = prepareImages(
       { root, envFile },
       path.join(directory, "prepared/compose.json"),
