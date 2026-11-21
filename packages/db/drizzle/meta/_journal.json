@@ -316,6 +316,13 @@
       "when": 1793049294992,
       "tag": "0044_execution-phase",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1795232848720,
+      "tag": "0045_run_image_disk_details",
+      "breakpoints": true
     }
   ]
 }

@@ -20,6 +20,9 @@ test("exports the selected commit without private files, dirty changes or source
     "biome.jsonc": await readFile(new URL("../biome.jsonc", import.meta.url), "utf8"),
     "pnpm-lock.yaml": await readFile(new URL("../pnpm-lock.yaml", import.meta.url), "utf8"),
     "knip.jsonc": await readFile(new URL("../knip.jsonc", import.meta.url), "utf8"),
+    "scripts/conventions/comment-budget.json":
+      '{"scripts/check.ts":1,".agents/checks/private.ts":2}',
+    "scripts/check.ts": "// one public comment",
     "test/inputs.json": await readFile(new URL("../test/inputs.json", import.meta.url), "utf8"),
     "tsconfig.test.json": await readFile(new URL("../tsconfig.test.json", import.meta.url), "utf8"),
     "README.md": "Public documentation\n",
@@ -62,9 +65,12 @@ test("exports the selected commit without private files, dirty changes or source
   expect(await readFile(path.join(destination, "README.md"), "utf8")).toBe(
     "Public documentation\n",
   );
+  expect(
+    await readFile(path.join(destination, "scripts/conventions/comment-budget.json"), "utf8"),
+  ).toBe('{\n  "scripts/check.ts": 1\n}\n');
   const exported = execFileSync("git", ["-C", destination, "ls-files"], { encoding: "utf8" });
   expect(exported).toBe(
-    "README.md\napps/cli/assets/skills/swizzle-builder/SKILL.md\nbiome.jsonc\nknip.jsonc\npnpm-lock.yaml\ntest/inputs.json\ntsconfig.test.json\n",
+    "README.md\napps/cli/assets/skills/swizzle-builder/SKILL.md\nbiome.jsonc\nknip.jsonc\npnpm-lock.yaml\nscripts/check.ts\nscripts/conventions/comment-budget.json\ntest/inputs.json\ntsconfig.test.json\n",
   );
   // The no-private-paths convention reads the same list, so it agrees with the archive.
   expect(

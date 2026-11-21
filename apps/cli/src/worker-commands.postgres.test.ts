@@ -108,14 +108,12 @@ it("prints the API's disk warning for a worker whose active run images pass its 
     currentRuns: [],
     runImageDisk: {
       activeBytes: 3 * 1024 * 1_048_576,
-      unmeasuredActiveImagesOmitted: 0,
-      unmeasuredActiveImages: [],
+      unmeasured: { images: [], total: 0 },
       budgetBytes: 1024 * 1_048_576,
     },
     runImageDiskOverBudget: {
       activeBytes: 3 * 1024 * 1_048_576,
-      unmeasuredActiveImagesOmitted: 0,
-      unmeasuredActiveImages: [],
+      unmeasured: { images: [], total: 0 },
       budgetBytes: 1024 * 1_048_576,
     },
     runImageDiskWarning: { title: "gpu-home keeps 3.0 GiB.", todo: "Remove deployments." },

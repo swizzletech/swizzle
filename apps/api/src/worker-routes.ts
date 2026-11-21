@@ -37,10 +37,7 @@ export function registerWorkerRoutes(
   app.get<{ Reply: WorkersResponse }>("/workers", async () => ({
     workers: (await registry.list()).map((worker) => ({
       ...worker,
-      runImageDiskWarning:
-        worker.runImageDiskOverBudget === null
-          ? null
-          : runImageDiskWarning(worker.name, worker.runImageDiskOverBudget),
+      runImageDiskWarning: runImageDiskWarning(worker.name, worker.runImageDiskOverBudget),
     })),
   }));
   // Discovery for anyone who reads the project: the groups an automation there can name.

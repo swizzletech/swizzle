@@ -32,16 +32,40 @@ export async function startVerificationApi(environment: NodeJS.ProcessEnv = proc
       detached: true,
     },
   );
-  let spawnError: Error | undefined;
-  child.once("error", (error) => {
-    spawnError = error;
-  });
-  let log = "";
-  const append = (chunk: Buffer) => {
-    log = (log + chunk.toString()).slice(-64 * 1024);
+  const killOnExit = () => {
+    if (child.pid === undefined) return;
+    try {
+      process.kill(-child.pid, "SIGKILL");
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error;
+    }
   };
-  child.stdout.on("data", append);
-  child.stderr.on("data", append);
+  process.once("exit", killOnExit);
+  child.once("close", () => process.off("exit", killOnExit));
+  const ready = new Promise<{ url: string; localUrl: string | null }>((resolve, reject) => {
+    child.once("error", (error) => {
+      reject(new Error("API process could not start.", { cause: error }));
+    });
+    let log = "";
+    let listening = false;
+    child.once("close", () => {
+      reject(new Error(`API did not start:\n${log}`));
+    });
+    const append = (chunk: Buffer) => {
+      if (listening) return;
+      log = (log + chunk.toString()).slice(-64 * 1024);
+      const addresses = new Map(
+        [...log.matchAll(LISTENING)].map((match) => [match[1] === LOCAL_LISTENER, match[2]]),
+      );
+      const url = addresses.get(false);
+      const localUrl = addresses.get(true);
+      if (url === undefined || (local && localUrl === undefined)) return;
+      listening = true;
+      resolve({ url, localUrl: localUrl ?? null });
+    };
+    child.stdout.on("data", append);
+    child.stderr.on("data", append);
+  });
   const close = async () => {
     if (child.exitCode !== null || child.signalCode !== null || child.pid === undefined) return;
     const exited = once(child, "exit");
@@ -50,22 +74,8 @@ export async function startVerificationApi(environment: NodeJS.ProcessEnv = proc
     process.kill(-child.pid, "SIGKILL");
     await exited;
   };
-  const deadline = Date.now() + 20_000;
   try {
-    for (;;) {
-      if (spawnError !== undefined)
-        throw new Error("API process could not start.", { cause: spawnError });
-      const listening = new Map(
-        [...log.matchAll(LISTENING)].map((match) => [match[1] === LOCAL_LISTENER, match[2]]),
-      );
-      const url = listening.get(false);
-      const localUrl = listening.get(true);
-      if (url !== undefined && (!local || localUrl !== undefined))
-        return { url, localUrl: localUrl ?? null, close };
-      if (child.exitCode !== null || child.signalCode !== null || Date.now() >= deadline)
-        throw new Error(`API did not start:\n${log}`);
-      await delay(50);
-    }
+    return { ...(await ready), close };
   } catch (error) {
     await close();
     throw error;

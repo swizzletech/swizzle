@@ -10,7 +10,8 @@ export interface Violation {
 /** One repository convention. */
 export interface Rule {
   readonly id: string;
-  check(repo: Repo): Violation[];
+  readonly allowInlineException?: false;
+  check(repo: Repo, notice: (message: string) => void): Violation[];
 }
 
 export type Finding = Violation & { readonly rule: string };
@@ -21,12 +22,16 @@ const HATCH = /conventions-allow ([\w-]+): *[A-Za-z]/u;
  * Runs the rules and drops each violation that `conventions-allow <rule-id>: <reason>` covers,
  * on the violation's line or the line above it.
  */
-export function lint(repo: Repo, rules: readonly Rule[]): Finding[] {
+export function lint(
+  repo: Repo,
+  rules: readonly Rule[],
+  notice: (message: string) => void = () => {},
+): Finding[] {
   return rules.flatMap((rule) =>
     rule
-      .check(repo)
+      .check(repo, notice)
       .filter(({ file, line }) => {
-        if (!repo.exists(file)) return true;
+        if (rule.allowInlineException === false || !repo.exists(file)) return true;
         const text = repo.read(file).split("\n");
         return ![text[line - 1], text[line - 2]].some(
           (near) => near?.match(HATCH)?.[1] === rule.id,

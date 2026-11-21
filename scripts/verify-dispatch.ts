@@ -1,12 +1,19 @@
 import assert from "node:assert/strict";
 import { randomBytes, randomUUID } from "node:crypto";
+import { writeSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { mock } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { LOCAL_LLM_SERVICE } from "@swizzle/config";
-import { DEFAULT_PROJECT_ID, type WorkerCredential } from "@swizzle/db";
+import {
+  DEFAULT_PROJECT_ID,
+  isFinishedRun,
+  type PlatformRunStatus,
+  type WorkerCredential,
+} from "@swizzle/db";
 import {
   createDashboardStore,
   createPostgresAccessStore,
@@ -29,6 +36,7 @@ import {
   WORKER_ROUTES,
 } from "@swizzle/runtime/platform";
 import { Queue } from "bullmq";
+import type { PoolClient } from "pg";
 import { withVerificationDatabase } from "./verification-database.js";
 import { startVerificationApi } from "./verify-api-process.js";
 import { verifyRunImages } from "./verify-run-images.js";
@@ -43,13 +51,30 @@ async function freePort(): Promise<number> {
   return address.port;
 }
 
+async function waitFor(predicate: () => Promise<boolean>, signal?: AbortSignal) {
+  while (!(await predicate())) {
+    await delay(30, undefined, signal === undefined ? undefined : { signal });
+  }
+}
+
+async function waitForLockWaiter(holder: PoolClient, signal?: AbortSignal) {
+  await waitFor(async () => {
+    const result = await holder.query<{ waiting: boolean }>(
+      "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE pg_backend_pid() = ANY(pg_blocking_pids(pid))) AS waiting",
+    );
+    return result.rows[0]?.waiting === true;
+  }, signal);
+}
+
 /** The real HTTP worker protocol, real subprocesses, PostgreSQL and BullMQ. No test endpoints. */
-async function main(client: DatabaseClient) {
+async function main(client: DatabaseClient, setScenario: (scenario: string) => void) {
+  setScenario("API startup");
   process.env.SWIZZLE_ENCRYPTION_KEY ??= "12345678901234567890123456789012";
   const id = randomUUID().slice(0, 8);
   const profile = `dispatch-${id}`;
   const directory = await mkdtemp(path.join(os.tmpdir(), "swizzle-dispatch-proof-"));
   const registry = createPostgresWorkerRegistry({ client });
+  const direct = createPostgresDispatchStore({ client });
   const platform = await createPlatformServices({
     store: createPostgresControlPlaneStore({ client }),
     dashboardStore: createDashboardStore({ client }),
@@ -75,7 +100,6 @@ async function main(client: DatabaseClient) {
   const localToken = `swz_${randomBytes(32).toString("base64url")}`;
   let api = await startVerificationApi({
     ...process.env,
-    SWIZZLE_WORKER_LEASE_MS: "3000",
     SWIZZLE_LOCAL_WORKER_TOKEN: localToken,
   });
   const request = async (
@@ -89,7 +113,7 @@ async function main(client: DatabaseClient) {
       method: "POST",
       headers: { authorization: `Bearer ${worker.token}`, "content-type": "application/json" },
       body: JSON.stringify(body),
-      signal: signal ?? AbortSignal.timeout(20_000),
+      signal: signal ?? null,
     });
     const value: unknown = await response.json();
     return { status: response.status, value };
@@ -99,6 +123,13 @@ async function main(client: DatabaseClient) {
     taskId: lease.taskId,
     generation: lease.generation,
   });
+  const expireLease = async ({ lease }: ExecutionAssignment) => {
+    const expired = await client.pool.query(
+      "UPDATE execution_leases SET expires_at = CURRENT_TIMESTAMP WHERE task_id = $1 AND generation = $2 AND NOT released",
+      [lease.taskId, lease.generation],
+    );
+    assert.equal(expired.rowCount, 1);
+  };
   const pull = async (worker: WorkerCredential, signal?: AbortSignal) => {
     const response = await request(worker, "pull", {}, signal);
     assert.equal(response.status, 200);
@@ -124,7 +155,7 @@ async function main(client: DatabaseClient) {
     );
     await writeFile(
       path.join(directory, "main.js"),
-      `let raw = ''; for await (const part of process.stdin) raw += part; const input = JSON.parse(raw); await new Promise(resolve => setTimeout(resolve, input.delayMs ?? 0)); console.log(JSON.stringify({ message: input.message, db: !!process.env.DATABASE_URL, queue: !!process.env.VALKEY_URL, masterKey: !!process.env.SWIZZLE_ENCRYPTION_KEY }));`,
+      `let raw = ''; for await (const part of process.stdin) raw += part; const input = JSON.parse(raw); if (input.holdFirst && process.env.SWIZZLE_ATTEMPT === '1') { console.error('holding first attempt'); setInterval(() => {}, 60_000); await new Promise(() => {}); } console.log(JSON.stringify({ message: input.message, db: !!process.env.DATABASE_URL, queue: !!process.env.VALKEY_URL, masterKey: !!process.env.SWIZZLE_ENCRYPTION_KEY }));`,
     );
     await platform.deployAutomationToPlatform({
       automationDirectory: directory,
@@ -132,14 +163,14 @@ async function main(client: DatabaseClient) {
     });
   };
   /** Deploys an automation whose first attempt invokes `child` and whose resume returns its envelope. */
-  const deployParent = async (name: string, child: string) => {
+  const deployParent = async (name: string, child: string, resumeDelayMs?: number) => {
     await writeFile(
       path.join(directory, "config.yaml"),
       `name: ${name}\nversion: 1.0.0\nentrypoint: main.js\ntrigger:\n  type: webhook\n  path: /${name}\nruntime:\n  profile: ${profile}\n`,
     );
     await writeFile(
       path.join(directory, "main.js"),
-      `import fs from 'node:fs';const steps=JSON.parse(fs.readFileSync(process.env.SWIZZLE_STEPS_FILE,'utf8'));console.log(JSON.stringify(steps.child??{$swizzle:{suspend:{reason:'child',stepKey:'child',automation:'${child}',payload:{}}}}));`,
+      `import fs from 'node:fs';const steps=JSON.parse(fs.readFileSync(process.env.SWIZZLE_STEPS_FILE,'utf8'));console.log(JSON.stringify(steps.child??{$swizzle:{suspend:{reason:'child',stepKey:'child',automation:'${child}',payload:{}}}}));${resumeDelayMs === undefined ? "" : `if (steps.child) await new Promise(resolve => setTimeout(resolve, ${resumeDelayMs}));`}`,
     );
     await platform.deployAutomationToPlatform({
       automationDirectory: directory,
@@ -149,21 +180,25 @@ async function main(client: DatabaseClient) {
   const enqueue = async (name: string, payload: unknown) =>
     (await platform.enqueuePlatformRun({ automationName: name, environment: "local", payload }))
       .runId;
-  const wait = async (runId: string, status: string) => {
-    const deadline = Date.now() + 15_000;
+  const wait = async (runId: string, status: PlatformRunStatus) => {
     for (;;) {
       const run = await platform.getPlatformRun(runId);
       if (run.status === status) return run;
       assert.ok(
-        Date.now() < deadline,
+        !isFinishedRun(run.status),
         `run ${runId}: wanted ${status}, got ${run.status}, ${run.errorCode}: ${run.errorMessage}`,
       );
       await delay(30);
     }
   };
   const capabilities = await collectWorkerCapabilities([]);
-  const ok = async (worker: WorkerCredential, route: string, body: unknown) => {
-    const response = await request(worker, route, body);
+  const ok = async (
+    worker: WorkerCredential,
+    route: string,
+    body: unknown,
+    signal?: AbortSignal,
+  ) => {
+    const response = await request(worker, route, body, signal);
     assert.equal(response.status, 200, `${route}: ${JSON.stringify(response.value)}`);
     return response.value;
   };
@@ -171,8 +206,7 @@ async function main(client: DatabaseClient) {
     worker: WorkerCredential,
     assignment: ExecutionAssignment,
     abort = new AbortController(),
-    /** Called once the server handed out the secrets: the process is about to start. */
-    started?: () => void,
+    outputPublished?: () => void,
   ) => {
     let sequence = 0;
     let output = Promise.resolve();
@@ -188,7 +222,6 @@ async function main(client: DatabaseClient) {
             WORKER_ROUTES.start,
             await ok(worker, "start", { lease: ref(lease) }),
           );
-          started?.();
           return secrets;
         },
         ready: async () => {
@@ -201,6 +234,7 @@ async function main(client: DatabaseClient) {
         output: (stream, chunk) => {
           output = output.then(async () => {
             await ok(worker, "output", { lease: ref(lease), sequence: ++sequence, stream, chunk });
+            outputPublished?.();
           });
           return output;
         },
@@ -222,18 +256,23 @@ async function main(client: DatabaseClient) {
       200,
     );
   };
+  const dispatchQueue = new Queue(createQueueNameForProfile(profile), {
+    connection: createBullMqConnection(process.env.VALKEY_URL ?? "redis://localhost:6379"),
+  });
   try {
+    setScenario("offline placement");
     const a = await issue("worker-a");
     const b = await issue("worker-b");
     const name = `dispatch-proof-${id}`;
     await deploy(name);
     const runId = await enqueue(name, { message: "one owner" });
-    await delay(1_100);
+    await waitFor(async () => (await dispatchQueue.getJobState(runId)) === "delayed");
     const queued = await platform.getPlatformRun(runId);
     assert.equal(queued.status, "queued");
     assert.equal(queued.executions.length, 0);
     assert.equal(queued.config.runtime.queue_timeout, "24h");
     console.log(`A1 offline: ${runId} queued, zero executions, default wait 24h.`);
+    setScenario("competing claims and completion receipts");
     const stopA = new AbortController();
     const stopB = new AbortController();
     const resultA = pull(a, stopA.signal).then((assignment) => ({
@@ -273,6 +312,7 @@ async function main(client: DatabaseClient) {
     );
 
     // Source and secrets answer only the attempt a worker owns now.
+    setScenario("source and secret scope");
     const scopedName = `secret-scope-${id}`;
     await platform.upsertSecret("SCOPED_KEY", `scoped-value-${id}`, {
       environment: "local",
@@ -310,6 +350,7 @@ async function main(client: DatabaseClient) {
 
     // Output and renewals take no lock on the worker row, which a claim holds while it counts the
     // worker's slots, so a worker's running attempts do not queue behind its claims.
+    setScenario("output and renewal under a claim lock");
     const unlockedId = await enqueue(name, { message: "unlocked" });
     const unlocked = await pullRun(a, unlockedId);
     await ok(a, "source", { lease: ref(unlocked.lease) });
@@ -323,13 +364,17 @@ async function main(client: DatabaseClient) {
         ["lease/renew", {}],
       ] as const;
       for (const [route, body] of calls) {
-        const answered: { readonly status: number | string } = await request(
-          a,
-          route,
-          { lease: ref(unlocked.lease), ...body },
-          AbortSignal.timeout(3_000),
-        ).catch((error: unknown) => ({ status: String(error), value: null }));
-        assert.equal(answered.status, 200, `${route} waited for the claim's worker row lock`);
+        const done = new AbortController();
+        const answer = ok(a, route, { lease: ref(unlocked.lease), ...body }, done.signal);
+        const blocked = waitForLockWaiter(claimLock, done.signal).then(() =>
+          assert.fail(`${route} waited for the claim's worker row lock`),
+        );
+        try {
+          await Promise.race([answer, blocked]);
+        } finally {
+          done.abort();
+          await Promise.allSettled([answer, blocked]);
+        }
       }
     } finally {
       await claimLock.query("ROLLBACK");
@@ -348,31 +393,21 @@ async function main(client: DatabaseClient) {
     );
 
     // A delivery lost before start spends no attempt, even on the run's only attempt.
+    setScenario("one free redelivery before start");
     const onceName = `unstarted-${id}`;
     await deploy(onceName, profile, undefined, "  retry:\n    max_attempts: 1\n");
     const unstartedId = await enqueue(onceName, { message: "delivered twice" });
     const abandoned = await pullRun(a, unstartedId);
+    await expireLease(abandoned);
     const requeued = await wait(unstartedId, "queued");
     assert.equal(requeued.attemptsMade, 0);
     // Its job goes back on the queue with the whole budget, the attempt it did not spend included.
-    const unstartedQueue = new Queue(createQueueNameForProfile(profile), {
-      connection: createBullMqConnection(process.env.VALKEY_URL ?? "redis://localhost:6379"),
-    });
-    try {
-      const deadline = Date.now() + 15_000;
-      let job = await unstartedQueue.getJob(requeued.queueJobId);
-      while (job === undefined && Date.now() < deadline) {
-        await delay(30);
-        job = await unstartedQueue.getJob(requeued.queueJobId);
-      }
-      assert.equal(
-        job?.opts.attempts,
-        1,
-        "the requeued job counts the delivery lost before start as a spent attempt",
-      );
-    } finally {
-      await unstartedQueue.close();
-    }
+    await waitFor(async () => (await dispatchQueue.getJob(requeued.queueJobId)) !== undefined);
+    assert.equal(
+      (await dispatchQueue.getJob(requeued.queueJobId))?.opts.attempts,
+      1,
+      "the requeued job counts the delivery lost before start as a spent attempt",
+    );
     const redelivered = await pullRun(b, unstartedId);
     assert.equal(redelivered.lease.generation, abandoned.lease.generation + 1);
     await finish(b, redelivered, await execute(b, redelivered));
@@ -393,9 +428,10 @@ async function main(client: DatabaseClient) {
       `A3 unstarted: ${unstartedId} lost its first delivery, went back on the queue with its single attempt and succeeded on worker b.`,
     );
     // Only one delivery per attempt is free: a worker that never starts still spends the attempt.
+    setScenario("bounded loss before start");
     const neverStartedId = await enqueue(onceName, { message: "never started" });
-    for (const status of ["queued", "dead-lettered"]) {
-      await pullRun(a, neverStartedId);
+    for (const status of ["queued", "dead-lettered"] as const) {
+      await expireLease(await pullRun(a, neverStartedId));
       await wait(neverStartedId, status);
     }
     assert.deepEqual(
@@ -414,6 +450,7 @@ async function main(client: DatabaseClient) {
 
     // The local worker serves a project created after it was provisioned, without a grant; an
     // enrolled worker with the same group keeps to its grant.
+    setScenario("local worker project access");
     const localCredential = await createPostgresApiTokenStore({ client }).verifyToken(localToken);
     assert.ok(localCredential?.holder.kind === "worker");
     const local = {
@@ -454,7 +491,8 @@ async function main(client: DatabaseClient) {
       project: async () => later.id,
     });
     const laterId = await enqueue(laterName, {});
-    await assert.rejects(pull(remote, AbortSignal.timeout(1_500)), { name: "TimeoutError" });
+    assert.equal(await pull(remote), null);
+    assert.equal(await direct.claim(remote.worker, laterId), null);
     assert.equal((await platform.getPlatformRun(laterId)).status, "queued");
     const served = await pullRun(local, laterId);
     await finish(local, served, await execute(local, served));
@@ -463,6 +501,7 @@ async function main(client: DatabaseClient) {
       `Local reach: ${laterId} in project ${later.slug}, created after the API started, ran on the local worker; the Default-only worker never received it.`,
     );
 
+    setScenario("offline placement timeout");
     const offlineProfile = `offline-${id}`;
     await issue("never-online", [offlineProfile]);
     const timeoutName = `placement-timeout-${id}`;
@@ -479,7 +518,8 @@ async function main(client: DatabaseClient) {
       `A1 placement: ${timedOutId} dead-lettered with PLACEMENT_TIMEOUT naming its project and how to grant a worker, zero executions, no fallback.`,
     );
 
-    const lostId = await enqueue(name, { message: "recovered", delayMs: 1_000 });
+    setScenario("lease loss and stale completion");
+    const lostId = await enqueue(name, { message: "recovered", holdFirst: true });
     const lost = await pullRun(a, lostId);
     await createPostgresControlPlaneStore({ client }).recordRunEnqueueError(
       lostId,
@@ -489,16 +529,18 @@ async function main(client: DatabaseClient) {
     assert.equal(stillOwned.status, "running");
     assert.equal(stillOwned.errorCode, null);
     const interrupted = new AbortController();
-    let started = () => {};
-    const start = new Promise<void>((resolve) => {
-      started = resolve;
+    let outputPublished = () => {};
+    const firstOutput = new Promise<void>((resolve) => {
+      outputPublished = resolve;
     });
-    const running = execute(a, lost, interrupted, started);
-    // A failure before start rejects here instead of leaving the wait unresolved.
-    await Promise.race([start, running]);
-    await delay(300);
+    const running = execute(a, lost, interrupted, outputPublished);
+    await Promise.race([
+      firstOutput,
+      running.then(() => assert.fail("The first attempt exited before it published output.")),
+    ]);
     interrupted.abort();
     const oldReport = await running;
+    await expireLease(lost);
     await wait(lostId, "queued");
     const replacement = await pullRun(b, lostId);
     assert.equal(replacement.lease.generation, lost.lease.generation + 1);
@@ -523,6 +565,7 @@ async function main(client: DatabaseClient) {
     );
 
     // Slow source/credential preparation must not hold the worker ownership lock.
+    setScenario("renewal during preparation");
     const slowId = await enqueue(name, { message: "prepared after delay" });
     const blocker = await client.pool.connect();
     let slowPull: Promise<ExecutionAssignment | null> | undefined;
@@ -530,14 +573,33 @@ async function main(client: DatabaseClient) {
       await blocker.query("BEGIN");
       await blocker.query("LOCK TABLE automation_timeout_grants IN ACCESS EXCLUSIVE MODE");
       slowPull = pull(a);
-      const preparing = await wait(slowId, "running");
+      const done = new AbortController();
+      const blocked = waitForLockWaiter(blocker, done.signal);
+      try {
+        await Promise.race([
+          blocked,
+          slowPull.then(() =>
+            assert.fail("Pull returned before the preparation lock was released."),
+          ),
+        ]);
+      } finally {
+        done.abort();
+        await Promise.allSettled([blocked]);
+      }
+      const preparing = await platform.getPlatformRun(slowId);
+      assert.equal(preparing.status, "running");
       assert.equal(preparing.executions.at(-1)?.phase, "preparing");
-      await delay(4_000); // Longer than this API's 3-second lease.
-      const rows = await client.pool.query(
-        "SELECT expires_at > now() AS valid FROM execution_leases WHERE run_id=$1 AND NOT released",
-        [slowId],
-      );
-      assert.equal(rows.rows[0]?.valid, true, "server must renew while preparation is blocked");
+      const expiry = async () => {
+        const rows = await client.pool.query<{ expires_at: Date }>(
+          "SELECT expires_at FROM execution_leases WHERE run_id = $1 AND NOT released",
+          [slowId],
+        );
+        const expiresAt = rows.rows[0]?.expires_at;
+        assert.ok(expiresAt !== undefined, "preparation lost its lease while waiting on the lock");
+        return expiresAt;
+      };
+      const initialExpiry = await expiry();
+      await waitFor(async () => (await expiry()) > initialExpiry);
     } finally {
       await blocker.query("ROLLBACK");
       blocker.release();
@@ -547,26 +609,47 @@ async function main(client: DatabaseClient) {
     assert.equal(prepared.lease.runId, slowId);
     await finish(a, prepared, await execute(a, prepared));
     console.log(
-      "Preparation: ownership renewed beyond initial lease while a database read waited; final assignment fenced.",
+      "Preparation: ownership renewed while a database read waited; final assignment fenced.",
     );
 
     // A bounded admission rechecks the placement deadline before spending an attempt.
+    setScenario("placement deadline during admission");
     const deadlineName = `admission-deadline-${id}`;
-    await deploy(deadlineName, profile, "300ms");
+    await deploy(deadlineName);
     const deadlineId = await enqueue(deadlineName, {});
-    const direct = createPostgresDispatchStore({ client, leaseMs: 3_000 });
-    assert.equal(
-      await direct.claim(a.worker, deadlineId, async () => {
-        await delay(400);
-        return true;
-      }),
-      null,
+    const deadlineRow = await client.pool.query<{ placement_deadline_at: Date }>(
+      "SELECT placement_deadline_at FROM runs WHERE id = $1",
+      [deadlineId],
+    );
+    const deadlineAt = deadlineRow.rows[0]?.placement_deadline_at;
+    assert.ok(deadlineAt !== undefined);
+    mock.timers.enable({ apis: ["Date"], now: deadlineAt.getTime() - 1 });
+    try {
+      await registry.heartbeat(a.worker);
+      let admitted = false;
+      assert.equal(
+        await direct.claim(a.worker, deadlineId, async () => {
+          admitted = true;
+          mock.timers.setTime(deadlineAt.getTime());
+          return true;
+        }),
+        null,
+      );
+      assert.equal(admitted, true);
+    } finally {
+      mock.timers.reset();
+      await registry.heartbeat(a.worker);
+    }
+    await client.pool.query(
+      "UPDATE runs SET placement_deadline_at = CURRENT_TIMESTAMP WHERE id = $1",
+      [deadlineId],
     );
     assert.equal((await platform.getPlatformRun(deadlineId)).executions.length, 0);
     await wait(deadlineId, "dead-lettered");
     console.log("Admission: placement deadline crossing consumes no attempt.");
 
     // Terminal recovery resumes an invoked parent even when the child's last owner vanishes.
+    setScenario("parent recovery after a child loses its lease");
     const childName = `lost-child-${id}`;
     await deploy(childName, profile, undefined, "  retry:\n    max_attempts: 1\n");
     const person = await client.pool.query<{ id: string }>(
@@ -586,7 +669,7 @@ async function main(client: DatabaseClient) {
       eventType: "dead-lettered",
     });
     const parentName = `lost-parent-${id}`;
-    await deployParent(parentName, childName);
+    await deployParent(parentName, childName, 4_000);
     const parentId = await enqueue(parentName, {});
     const parent = await pullRun(a, parentId);
     await finish(a, parent, await execute(a, parent));
@@ -596,11 +679,19 @@ async function main(client: DatabaseClient) {
     assert.ok(child.lease.runId !== null);
     // The owner vanishes after it started: its only attempt is spent.
     await ok(a, "start", { lease: ref(child.lease) });
+    await expireLease(child);
     await wait(child.lease.runId, "dead-lettered");
     const resumed = await pullRun(b, parentId);
     await finish(b, resumed, await execute(b, resumed));
     const parentResult = await wait(parentId, "succeeded");
     assert.equal(parentResult.resumeCount, 1);
+    assert.deepEqual(
+      parentResult.executions.map((execution) => [execution.status, execution.workerName]),
+      [
+        ["suspended", a.worker.name],
+        ["succeeded", b.worker.name],
+      ],
+    );
     const deliveries = await platform.listNotificationDeliveries({ environment: "local" });
     assert.equal(deliveries.filter((delivery) => delivery.runId === child.lease.runId).length, 1);
     assert.deepEqual(parentResult.result, {
@@ -615,18 +706,26 @@ async function main(client: DatabaseClient) {
     );
 
     // A child no worker takes within its queue_timeout dead-letters and resumes its parent too.
+    setScenario("parent recovery after a child misses placement");
     const unplacedName = `unplaced-child-${id}`;
-    await deploy(unplacedName, offlineProfile, "300ms");
+    await deploy(unplacedName, offlineProfile);
     const waiterName = `unplaced-parent-${id}`;
     await deployParent(waiterName, unplacedName);
     const waiterId = await enqueue(waiterName, {});
     const waiter = await pullRun(a, waiterId);
     await finish(a, waiter, await execute(a, waiter));
     await wait(waiterId, "waiting");
-    const resumedWaiter = await pullRun(a, waiterId, AbortSignal.timeout(10_000));
+    const unplacedChild = await client.pool.query<{ id: string }>(
+      "UPDATE runs SET placement_deadline_at = CURRENT_TIMESTAMP WHERE parent_run_id = $1 AND status = 'queued' RETURNING id",
+      [waiterId],
+    );
+    const unplacedId = unplacedChild.rows[0]?.id;
+    assert.ok(unplacedId !== undefined);
+    await wait(unplacedId, "dead-lettered");
+    await wait(waiterId, "queued");
+    const resumedWaiter = await pullRun(a, waiterId);
     await finish(a, resumedWaiter, await execute(a, resumedWaiter));
     const waiterResult = await wait(waiterId, "succeeded");
-    const unplacedId = (waiterResult.result as { runId: string }).runId;
     assert.deepEqual(waiterResult.result, {
       automation: unplacedName,
       errorCode: "PLACEMENT_TIMEOUT",
@@ -639,6 +738,7 @@ async function main(client: DatabaseClient) {
     );
 
     // More unavailable offers than BullMQ slots cannot hide reachable work in the same profile.
+    setScenario("queue fairness");
     const deniedName = `other-environment-${id}`;
     await deploy(deniedName);
     // The second environment has registered grants but neither of the claiming workers serves it.
@@ -667,7 +767,10 @@ async function main(client: DatabaseClient) {
           })
         ).runId,
       );
-    await delay(1_100);
+    await waitFor(async () => {
+      const counts = await dispatchQueue.getJobCounts("active", "delayed");
+      return (counts.active ?? 0) + (counts.delayed ?? 0) >= 64;
+    });
     const reachableId = await enqueue(name, { message: "not starved" });
     const reachable = await pullRun(a, reachableId);
     await finish(a, reachable, await execute(a, reachable));
@@ -679,6 +782,7 @@ async function main(client: DatabaseClient) {
     for (const id of blockedIds) await platform.cancelPlatformRun(id);
     console.log("Admission: 70 unavailable jobs do not starve an eligible run in the same group.");
 
+    setScenario("shared worker capacity");
     const extraProfile = `extra-${id}`;
     const capacityWorker = await issue("capacity", [profile, extraProfile]);
     const extraName = `capacity-proof-${id}`;
@@ -686,19 +790,16 @@ async function main(client: DatabaseClient) {
     const capacityFirstId = await enqueue(name, { message: "first slot" });
     const capacityFirst = await pullRun(capacityWorker, capacityFirstId);
     const capacitySecondId = await enqueue(extraName, { message: "shared slot" });
-    const noSlot = new AbortController();
-    const blockedPull = pull(capacityWorker, noSlot.signal);
-    void blockedPull.catch(() => {});
-    await delay(200);
+    assert.equal(await pull(capacityWorker), null);
+    assert.equal(await direct.claim(capacityWorker.worker, capacitySecondId), null);
     assert.equal((await platform.getPlatformRun(capacitySecondId)).executions.length, 0);
-    noSlot.abort();
-    await Promise.allSettled([blockedPull]);
     await finish(capacityWorker, capacityFirst, await execute(capacityWorker, capacityFirst));
     const capacitySecond = await pullRun(capacityWorker, capacitySecondId);
     await finish(capacityWorker, capacitySecond, await execute(capacityWorker, capacitySecond));
     console.log("Capacity: one slot across two profiles; denied claims spend no attempt.");
 
     // The claim itself reads the service health the worker reported last, not only the pull.
+    setScenario("worker service health");
     const serviceEnrollment = await registry.create({
       name: `service-${id}`,
       profiles: [profile],
@@ -734,22 +835,18 @@ async function main(client: DatabaseClient) {
       "Services: an unhealthy local-llm report stops the claim of a run that needs it; a healthy one lets it run.",
     );
 
-    await request(capacityWorker, "drain", { draining: true });
+    setScenario("worker drain");
+    await ok(capacityWorker, "drain", { draining: true });
     const drainedId = await enqueue(extraName, { message: "after drain" });
-    const stopDrain = new AbortController();
-    const drainedPull = pull(capacityWorker, stopDrain.signal);
-    void drainedPull.catch(() => {});
-    await delay(200);
+    assert.equal(await pull(capacityWorker), null);
     assert.equal((await platform.getPlatformRun(drainedId)).executions.length, 0);
-    stopDrain.abort();
-    await Promise.allSettled([drainedPull]);
-    await request(capacityWorker, "drain", { draining: false });
-    const afterDrain = await pull(capacityWorker);
-    assert.ok(afterDrain !== null);
+    await ok(capacityWorker, "drain", { draining: false });
+    const afterDrain = await pullRun(capacityWorker, drainedId);
     await finish(capacityWorker, afterDrain, await execute(capacityWorker, afterDrain));
     console.log("Drain: no new assignment until resumed.");
 
-    const cancelId = await enqueue(extraName, { message: "cancelled", delayMs: 2_000 });
+    setScenario("cancellation");
+    const cancelId = await enqueue(extraName, { message: "cancelled" });
     const cancelled = await pullRun(capacityWorker, cancelId);
     await platform.cancelPlatformRun(cancelId);
     assert.equal(
@@ -774,33 +871,37 @@ async function main(client: DatabaseClient) {
     assert.equal((await platform.getPlatformRun(cancelId)).status, "dead-lettered");
     console.log("Cancel: renew, output and completion rejected after durable cancellation.");
 
+    setScenario("rate admission");
     const rateName = `rate-proof-${id}`;
     await deploy(rateName, extraProfile, undefined, `  rate_limits:\n    rate-${id}: 1/sec\n`);
+    const rateWorker = await issue("rate-worker", [extraProfile]);
     const rateFirstId = await enqueue(rateName, { message: "rate first" });
     const rateFirst = await pullRun(capacityWorker, rateFirstId);
-    const rateWorker = await issue("rate-worker", [extraProfile]);
     const rateSecondId = await enqueue(rateName, { message: "rate second" });
-    const ratePending = pull(rateWorker);
-    await delay(100);
-    assert.equal((await platform.getPlatformRun(rateSecondId)).executions.length, 0);
+    const rateSecond = await pullRun(rateWorker, rateSecondId);
     await finish(capacityWorker, rateFirst, await execute(capacityWorker, rateFirst));
-    const rateSecond = await ratePending;
-    assert.ok(rateSecond !== null);
     await finish(rateWorker, rateSecond, await execute(rateWorker, rateSecond));
-    console.log("Rate limits: blocked run stays queued without an attempt, then starts.");
+    const firstRateRun = await wait(rateFirstId, "succeeded");
+    const secondRateRun = await wait(rateSecondId, "succeeded");
+    assert.equal(firstRateRun.executions.length, 1);
+    assert.equal(secondRateRun.executions.length, 1);
+    const [firstRateExecution] = firstRateRun.executions;
+    const [secondRateExecution] = secondRateRun.executions;
+    assert.ok(firstRateExecution && secondRateExecution);
+    const startGapMs =
+      Date.parse(secondRateExecution.startedAt) - Date.parse(firstRateExecution.startedAt);
+    assert.ok(
+      startGapMs >= 1_000,
+      `Expected rate-limited starts at least 1000 ms apart, got ${startGapMs} ms.`,
+    );
+    console.log(`Rate limits: executions started ${startGapMs} ms apart with a 1/sec limit.`);
 
     // Delete only this proof's queue, while the API is down. Other worktrees keep their queues.
+    setScenario("queue reconstruction and completion receipts");
     const queueLostId = await enqueue(name, { message: "queue rebuilt" });
     await api.close();
-    const queue = new Queue(createQueueNameForProfile(profile), {
-      connection: createBullMqConnection(process.env.VALKEY_URL ?? "redis://localhost:6379"),
-    });
-    try {
-      await queue.obliterate({ force: true });
-    } finally {
-      await queue.close();
-    }
-    api = await startVerificationApi({ ...process.env, SWIZZLE_WORKER_LEASE_MS: "3000" });
+    await dispatchQueue.obliterate({ force: true });
+    api = await startVerificationApi();
     await finish(b, replacement, replacementReport);
     const rebuilt = await pullRun(a, queueLostId);
     await finish(a, rebuilt, await execute(a, rebuilt));
@@ -811,16 +912,18 @@ async function main(client: DatabaseClient) {
 
     // An attempt in flight survives an API restart: the real worker keeps its process running,
     // renews against the restarted API on the same address and delivers output and result to it.
+    setScenario("in-flight API restart");
     const restartProfile = `restart-${id}`;
     const restartCredential = await issue("restart", [restartProfile]);
     const restartName = `restart-in-flight-${id}`;
+    const restartGate = path.join(directory, "restarted");
     await writeFile(
       path.join(directory, "config.yaml"),
       `name: ${restartName}\nversion: 1.0.0\nentrypoint: main.js\ntrigger:\n  type: webhook\n  path: /${restartName}\nruntime:\n  profile: ${restartProfile}\n`,
     );
     await writeFile(
       path.join(directory, "main.js"),
-      `console.error('before restart'); await new Promise(resolve => setTimeout(resolve, 8000)); console.error('after restart'); console.log(JSON.stringify({ survived: true }));`,
+      `import { existsSync } from 'node:fs'; console.error('before restart'); while (!existsSync(${JSON.stringify(restartGate)})) await new Promise(resolve => setTimeout(resolve, 30)); console.error('after restart'); console.log(JSON.stringify({ survived: true }));`,
     );
     await platform.deployAutomationToPlatform({
       automationDirectory: directory,
@@ -830,7 +933,6 @@ async function main(client: DatabaseClient) {
     const restartEnvironment = {
       ...process.env,
       API_PORT: String(port),
-      SWIZZLE_WORKER_LEASE_MS: "10000",
     };
     await api.close();
     api = await startVerificationApi(restartEnvironment);
@@ -842,13 +944,14 @@ async function main(client: DatabaseClient) {
     });
     try {
       const restartId = await enqueue(restartName, {});
-      for (const deadline = Date.now() + 15_000; ; await delay(50)) {
+      await waitFor(async () => {
         const run = await platform.getPlatformRun(restartId);
-        if (run.executions[0]?.stderr.includes("before restart")) break;
-        assert.ok(Date.now() < deadline, `run ${restartId} printed nothing: ${run.status}`);
-      }
+        assert.ok(!isFinishedRun(run.status), `run ${restartId} finished before the restart`);
+        return run.executions[0]?.stderr.includes("before restart") ?? false;
+      });
       await api.close();
       api = await startVerificationApi(restartEnvironment);
+      await writeFile(restartGate, "");
       const survived = await wait(restartId, "succeeded");
       assert.deepEqual(survived.result, { survived: true });
       assert.deepEqual(
@@ -863,6 +966,7 @@ async function main(client: DatabaseClient) {
     } finally {
       await restartWorker.close();
     }
+    setScenario("HTTP API checks");
     const checkName = `check-protocol-${id}`;
     await platform.upsertSecret("CHECK_KEY", "scoped-check-value", {
       environment: "local",
@@ -937,7 +1041,9 @@ async function main(client: DatabaseClient) {
       "A4 checks: same HTTP protocol executes an active check with declared secrets, no infrastructure credentials, and no state/step files, and records the connection token version it received.",
     );
   } finally {
+    setScenario("dispatch cleanup");
     await api.close();
+    await dispatchQueue.close();
     for (const profile of profilesOwned) {
       const queue = new Queue(createQueueNameForProfile(profile), {
         connection: createBullMqConnection(process.env.VALKEY_URL ?? "redis://localhost:6379"),
@@ -956,6 +1062,19 @@ async function main(client: DatabaseClient) {
     ]);
   }
 }
-await withVerificationDatabase(main);
-
-await withVerificationDatabase(verifyRunImages);
+let scenario = "dispatch database setup";
+const watchdog = setTimeout(() => {
+  writeSync(process.stderr.fd, `verify-dispatch exceeded 10 minutes during ${scenario}.\n`);
+  process.exit(1);
+}, 10 * 60_000);
+try {
+  await withVerificationDatabase((client) =>
+    main(client, (current) => {
+      scenario = current;
+    }),
+  );
+  scenario = "durable run images";
+  await withVerificationDatabase(verifyRunImages);
+} finally {
+  clearTimeout(watchdog);
+}

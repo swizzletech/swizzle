@@ -112,21 +112,33 @@ export async function verifyRunImages(client: DatabaseClient): Promise<void> {
     assert.deepEqual(await keep(a), [tagA], "a stale heartbeat keeps the worker's active images");
     console.log("Run images: a worker whose heartbeat is an hour old keeps its active images.");
 
-    const disk = {
-      activeBytes: 3 * 1_048_576,
-      unmeasuredActiveImagesOmitted: 0,
-      unmeasuredActiveImages: [],
-      budgetBytes: 1_048_576,
-    };
-    await call(a, "runtime", { capabilities, services: {}, runImageDisk: disk });
-    const listed = await registry.list();
-    assert.deepEqual(
-      listed.find((worker) => worker.id === a.worker.id)?.runImageDisk,
-      disk,
-      "the heartbeat stores the worker's disk measurement",
+    const budget = { activeBytes: 50 * 1_048_576, budgetBytes: 10 * 1_048_576 };
+    const id = `sha256:${"a".repeat(64)}`;
+    const disk = { ...budget, unmeasured: { images: [{ id, tag: tagA }], total: 2 } };
+    for (const { report, expected } of [
+      { report: budget, expected: { ...budget, unmeasured: { images: [], total: 0 } } },
+      {
+        report: {
+          ...budget,
+          unmeasuredActiveImages: [{ id, tags: [tagA] }],
+          unmeasuredActiveImagesOmitted: 1,
+        },
+        expected: disk,
+      },
+      { report: disk, expected: disk },
+    ]) {
+      await call(a, "runtime", { capabilities, services: {}, runImageDisk: report });
+      const listed = await registry.list();
+      assert.deepEqual(
+        listed.find((worker) => worker.id === a.worker.id)?.runImageDisk,
+        expected,
+        "the heartbeat stores the normalized disk measurement",
+      );
+      assert.equal(listed.find((worker) => worker.id === b.worker.id)?.runImageDisk, null);
+    }
+    console.log(
+      "Run images: current and released 1.x heartbeats store the same disk report shape.",
     );
-    assert.equal(listed.find((worker) => worker.id === b.worker.id)?.runImageDisk, null);
-    console.log("Run images: the heartbeat after a pass stores its disk measurement.");
   } finally {
     await api.close();
     for (const credential of credentials) await registry.revoke(credential.worker.id, null);

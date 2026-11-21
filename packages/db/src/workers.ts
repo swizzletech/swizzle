@@ -55,17 +55,21 @@ export const RUN_IMAGE_DISK_DETAILS_LIMIT = 8;
  * `budgetBytes`. Unmeasured active images also warn the owner; nothing is refused.
  */
 export interface RunImageDisk {
-  /** Measured bytes of active images; excludes unmeasuredActiveImages. */
   readonly activeBytes: number;
-  /** Additional unmeasured images whose details are omitted from this report. */
-  readonly unmeasuredActiveImagesOmitted: number;
-  /** Details for at most RUN_IMAGE_DISK_DETAILS_LIMIT images, with one active run tag each. */
-  readonly unmeasuredActiveImages: readonly {
-    readonly id: string;
-    readonly tags: readonly string[];
-  }[];
-  /** The worker's SWIZZLE_RUNNER_IMAGE_DISK_MB in bytes. */
   readonly budgetBytes: number;
+  readonly unmeasured: {
+    readonly images: readonly { readonly id: string; readonly tag: string | null }[];
+    readonly total: number;
+  };
+}
+
+export type RunImageDiskProblem = "over-budget" | "unmeasured";
+
+export function runImageDiskProblems(disk: RunImageDisk): readonly RunImageDiskProblem[] {
+  const problems: RunImageDiskProblem[] = [];
+  if (disk.activeBytes > disk.budgetBytes) problems.push("over-budget");
+  if (disk.unmeasured.total > 0) problems.push("unmeasured");
+  return problems;
 }
 
 /**
@@ -77,11 +81,7 @@ export function runImageDiskOverBudget(
   worker: Pick<RegisteredWorker, "runImageDisk" | "state">,
 ): RunImageDisk | null {
   const disk = worker.runImageDisk;
-  return disk !== null &&
-    worker.state !== "revoked" &&
-    (disk.activeBytes > disk.budgetBytes ||
-      disk.unmeasuredActiveImages.length > 0 ||
-      disk.unmeasuredActiveImagesOmitted > 0)
+  return disk !== null && worker.state !== "revoked" && runImageDiskProblems(disk).length > 0
     ? disk
     : null;
 }

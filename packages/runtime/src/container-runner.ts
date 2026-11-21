@@ -7,19 +7,13 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { create as tarCreate } from "tar";
-import { contractChangeFailure } from "./api-signals.js";
 import { BoundedOutput } from "./bounded-output.js";
-import {
-  DockerScope,
-  dockerCliEnvironment,
-  killDockerProcess,
-  withLocalDockerStack,
-} from "./docker-cli.js";
+import { DockerScope, dockerCliEnvironment, withLocalDockerStack } from "./docker-cli.js";
 import { AutomationRuntimeError, getErrorMessage } from "./errors.js";
 import type { ExecutedScript } from "./executed-script.js";
 import { withLocalLlmAccess } from "./local-llm-access.js";
-import { OutputPump } from "./output-pump.js";
 import { createOutputRedactor, redactRunResult } from "./output-redaction.js";
+import { executeProcess, parseProcessResult, requireProcessExit } from "./process-execution.js";
 import { ensureRunImage, type RunImageRecipe, runImageRecipe, runImageTag } from "./run-image.js";
 import { pruneRunImages } from "./run-image-prune.js";
 import type { AutomationRunFailure, AutomationRunResult, RunPhases } from "./run-result.js";
@@ -36,8 +30,6 @@ import type { AutomationDefinition } from "./validation.js";
 const DEFAULT_OUTPUT_LIMIT_BYTES = 1_048_576;
 /** How much longer than the run's timeout a sandbox lives, for staging and stopping it. */
 const SANDBOX_GRACE_MS = 60_000;
-/** How long the exec may take to end once its sandbox was stopped, before the worker kills it. */
-const EXEC_CLOSE_GRACE_MS = 1_000;
 
 export interface RunContainerAutomationOptions {
   readonly abortSignal?: AbortSignal;
@@ -56,16 +48,6 @@ export interface RunContainerAutomationOptions {
   /** What the sandbox executes, in the deployment's run image, and the inputs it receives. */
   readonly script: ExecutedScript;
   readonly timeoutMs: number;
-}
-
-interface ExecutionOutcome {
-  readonly aborted: boolean;
-  readonly exitCode: number | null;
-  readonly outputLimitExceeded: "stderr" | "stdout" | null;
-  readonly signal: NodeJS.Signals | null;
-  readonly stderr: string;
-  readonly stdout: string;
-  readonly timedOut: boolean;
 }
 
 export async function runContainerAutomation(
@@ -152,16 +134,24 @@ async function executeContainerAutomation(
 
         await options.onStderrChunk?.(stderr.end());
         await options.onStdoutChunk?.(stdout.end());
+        const result = parseProcessResult({
+          durationMs: Date.now() - startedAt,
+          execution,
+          messages: {
+            timeout: "Container execution timed out.",
+            signalPrefix: "Container terminated by",
+            exitSubject: "Container",
+            emptyStdout: "Container produced no stdout output.",
+            invalidStdoutPrefix: "Container stdout is not valid JSON",
+          },
+          outputLimitBytes,
+          payload: options.script.payload,
+          runId: options.runId,
+        });
         return redactRunResult(
           {
-            ...parseExecutionResult({
-              definition: options.definition,
-              durationMs: Date.now() - startedAt,
-              execution,
-              outputLimitBytes,
-              payload: options.script.payload,
-              runId: options.runId,
-            }),
+            ...result,
+            ...(!result.success ? { definition: options.definition } : {}),
             stderr: preparationStderr.value + execution.stderr,
             phases,
           },
@@ -329,184 +319,42 @@ async function executeInSandbox(input: {
   readonly stderrLimitBytes: number;
   readonly sandbox: Sandbox;
   readonly timeoutMs: number;
-}): Promise<ExecutionOutcome> {
-  return await new Promise((resolve, reject) => {
-    if (input.abortSignal?.aborted)
-      throw new AutomationRuntimeError("RUN_CANCELLED", "Run cancelled by user.");
-    const child = spawn(
-      "docker",
-      sandboxExecArguments(input.sandbox.name, input.environment, input.command),
-      {
+}) {
+  const containerError = (message: string, error: unknown) =>
+    new AutomationRuntimeError(
+      "CONTAINER_RUNTIME_UNAVAILABLE",
+      `${message}: ${getErrorMessage(error)}`,
+      { cause: error },
+    );
+  const execution = await executeProcess({
+    abortSignal: input.abortSignal,
+    onStderrChunk: input.onStderrChunk,
+    onStdoutChunk: input.onStdoutChunk,
+    outputLimitBytes: input.outputLimitBytes,
+    stderrLimitBytes: input.stderrLimitBytes,
+    timeoutMs: input.timeoutMs,
+    start: () =>
+      spawn("docker", sandboxExecArguments(input.sandbox.name, input.environment, input.command), {
         detached: process.platform !== "win32",
         env: dockerCliEnvironment(),
         stdio: ["pipe", "pipe", "pipe"],
-      },
-    );
-    let timedOut = false;
-    let aborted = false;
-    let settled = false;
-    let stopping = false;
-    let forceKill: NodeJS.Timeout | undefined;
-
-    // Stopping the sandbox ends the exec, unless the daemon no longer answers it. Stop and kill
-    // have deadlines, so once both have returned and the grace has passed, the CLI is killed here.
-    const stop = (reason: "aborted" | "timeout" | "stderr" | "stdout") => {
-      if (reason === "aborted") aborted = true;
-      if (reason === "timeout") timedOut = true;
-      if (stopping) return;
-      stopping = true;
-      output.stop();
-      void stopContainer(input.sandbox).then(() => {
-        if (!settled) forceKill = setTimeout(() => killDockerProcess(child), EXEC_CLOSE_GRACE_MS);
-      });
-    };
-    const output = new OutputPump({
-      stdout: child.stdout,
-      stderr: child.stderr,
-      stdoutLimitBytes: input.outputLimitBytes,
-      stderrLimitBytes: input.stderrLimitBytes,
-      onStdoutChunk: input.onStdoutChunk,
-      onStderrChunk: input.onStderrChunk,
-      limitPolicy: "stop",
-      onStop: (reason) => stop(reason.kind === "limit" ? reason.stream : "aborted"),
-    });
-    const timeout = setTimeout(() => stop("timeout"), input.timeoutMs);
-    const abort = () => stop("aborted");
-    if (input.abortSignal?.aborted) abort();
-    else input.abortSignal?.addEventListener("abort", abort, { once: true });
-    const settle = () => {
-      settled = true;
-      clearTimeout(timeout);
-      clearTimeout(forceKill);
-      input.abortSignal?.removeEventListener("abort", abort);
-    };
-
-    const fail = (message: string, error: unknown) => {
-      if (settled) return;
-      settle();
-      reject(
-        new AutomationRuntimeError(
-          "CONTAINER_RUNTIME_UNAVAILABLE",
-          `${message}: ${getErrorMessage(error)}`,
-          { cause: error },
-        ),
+      }),
+    startError: (error) => containerError("Could not invoke the container runtime", error),
+    inputError: (error) => containerError("Could not send the run inputs to the container", error),
+    sendInput: (stdin, fail) => {
+      const archive = tarCreate({ cwd: input.inputDirectory, portable: true }, ["."]);
+      archive.on("error", (error: unknown) =>
+        fail(containerError("Could not pack the run inputs", error)),
       );
-    };
-    child.once("error", (error) => fail("Could not invoke the container runtime", error));
-    child.once("close", (exitCode, signal) => {
-      void output.finished().then(
-        () => {
-          if (settled) return;
-          settle();
-          resolve({
-            aborted,
-            exitCode,
-            outputLimitExceeded: output.exceeded,
-            signal,
-            stderr: output.stderr,
-            stdout: output.stdout,
-            timedOut,
-          });
-        },
-        (error: unknown) => {
-          if (settled) return;
-          settle();
-          reject(error);
-        },
-      );
-    });
-    child.stdin.on("error", (error: NodeJS.ErrnoException) => {
-      if (error.code === "EPIPE") return;
-      fail("Could not send the run inputs to the container", error);
-    });
-    const archive = tarCreate({ cwd: input.inputDirectory, portable: true }, ["."]);
-    archive.on("error", (error: unknown) => fail("Could not pack the run inputs", error));
-    archive.pipe(child.stdin);
+      archive.pipe(stdin);
+    },
+    termination: {
+      kind: "sandbox",
+      exitGraceMs: 1_000,
+      stopSandbox: () => stopContainer(input.sandbox),
+    },
   });
-}
-
-function parseExecutionResult(input: {
-  readonly definition: AutomationDefinition;
-  readonly durationMs: number;
-  readonly execution: ExecutionOutcome;
-  readonly outputLimitBytes: number;
-  readonly payload: unknown;
-  readonly runId: string;
-}): AutomationRunResult {
-  const common = {
-    definition: input.definition,
-    durationMs: input.durationMs,
-    exitCode: input.execution.exitCode,
-    payload: input.payload,
-    runId: input.runId,
-    signal: input.execution.signal,
-    stderr: input.execution.stderr,
-    stdout: input.execution.stdout,
-  };
-  if (input.execution.aborted) {
-    return { ...common, code: "RUN_CANCELLED", message: "Run cancelled by user.", success: false };
-  }
-  if (input.execution.timedOut) {
-    return {
-      ...common,
-      code: "PROCESS_TIMEOUT",
-      message: "Container execution timed out.",
-      success: false,
-    };
-  }
-  if (input.execution.outputLimitExceeded !== null) {
-    return {
-      ...common,
-      code: "PROCESS_OUTPUT_LIMIT_EXCEEDED",
-      message: `Automation ${input.execution.outputLimitExceeded} exceeded ${input.outputLimitBytes} bytes.`,
-      success: false,
-    };
-  }
-  if (input.execution.signal !== null) {
-    return {
-      ...common,
-      code: "PROCESS_SIGNAL",
-      message: `Container terminated by ${input.execution.signal}.`,
-      success: false,
-    };
-  }
-  if (input.execution.exitCode !== 0) {
-    return {
-      ...common,
-      code: "PROCESS_EXIT_NON_ZERO",
-      message: `Container exited with code ${input.execution.exitCode}.`,
-      ...contractChangeFailure(input.execution.stderr),
-      success: false,
-    };
-  }
-  const stdout = input.execution.stdout.trim();
-  if (stdout.length === 0) {
-    return {
-      ...common,
-      code: "PROCESS_STDOUT_EMPTY",
-      message: "Container produced no stdout output.",
-      success: false,
-    };
-  }
-  try {
-    return {
-      durationMs: input.durationMs,
-      exitCode: 0,
-      payload: input.payload,
-      result: JSON.parse(stdout) as unknown,
-      runId: input.runId,
-      stderr: input.execution.stderr,
-      stdout: input.execution.stdout,
-      success: true,
-    };
-  } catch (error) {
-    return {
-      ...common,
-      code: "PROCESS_STDOUT_INVALID_JSON",
-      message: `Container stdout is not valid JSON: ${getErrorMessage(error)}`,
-      success: false,
-    };
-  }
+  return requireProcessExit(execution);
 }
 
 async function stopContainer(sandbox: Sandbox): Promise<void> {

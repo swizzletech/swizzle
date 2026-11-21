@@ -33,6 +33,7 @@ export interface Repo {
   /** Repo-relative POSIX paths of the files the rules read. */
   readonly files: readonly string[];
   read(file: string): string;
+  readBaseline?(file: string): string | undefined;
   /** A file of `files`, or a directory that holds one. */
   exists(target: string): boolean;
   /** Every recipe of the root justfile; none without one. */
@@ -114,5 +115,38 @@ export function gitRepo(root: string): Repo {
     .split("\0")
     // A file deleted in the worktree stays listed until the deletion is staged.
     .filter((file) => file !== "" && existsSync(path.join(root, file)));
-  return readRepo(root, files);
+  return { ...readRepo(root, files), readBaseline: (file) => readBaseline(root, file) };
+}
+
+function readBaseline(root: string, file: string): string | undefined {
+  const git = (args: string[]): string | undefined => {
+    try {
+      return execFileSync("git", args, {
+        cwd: root,
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch {
+      return undefined;
+    }
+  };
+  const base =
+    git(["merge-base", "HEAD", "refs/heads/main"])?.trim() ??
+    git(["merge-base", "HEAD", "refs/remotes/origin/main"])?.trim();
+  if (!base) return undefined;
+  const baseline = git(["show", `${base}:${file}`]);
+  if (baseline !== undefined) return baseline;
+  const [introduced] =
+    git([
+      "log",
+      "--topo-order",
+      "--reverse",
+      "--no-renames",
+      "--diff-filter=A",
+      "--format=%H",
+      `${base}..HEAD`,
+      "--",
+      file,
+    ])?.split("\n") ?? [];
+  return introduced ? git(["show", `${introduced}:${file}`]) : undefined;
 }

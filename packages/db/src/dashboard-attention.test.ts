@@ -339,8 +339,7 @@ describe("buildAttention", () => {
   it("lists each worker whose active run images pass its disk budget", () => {
     const disk = {
       activeBytes: 3 * 1024 * 1_048_576,
-      unmeasuredActiveImagesOmitted: 0,
-      unmeasuredActiveImages: [],
+      unmeasured: { images: [], total: 0 },
       budgetBytes: 1024 * 1_048_576,
     };
     const items = buildAttention({

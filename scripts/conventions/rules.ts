@@ -1,5 +1,7 @@
 import type { Rule } from "./lint.js";
 import { ciRunsJustRecipes } from "./rules/ci-runs-just-recipes.js";
+import { ciUsesVerifyLanes } from "./rules/ci-uses-verify-lanes.js";
+import { commentBudget } from "./rules/comment-budget.js";
 import { docLinks } from "./rules/doc-links.js";
 import { docsRunJustRecipes } from "./rules/docs-run-just-recipes.js";
 import { envExampleReachesCompose } from "./rules/env-example-reaches-compose.js";
@@ -24,6 +26,7 @@ import { webShortStrings } from "./rules/web-short-strings.js";
 /** Public repository rules. conventions.test.ts exercises each registered rule. */
 export const rules: readonly Rule[] = [
   docLinks,
+  commentBudget,
   toolchainPins,
   platformVersion,
   noEnvExampleCopy,
@@ -34,6 +37,7 @@ export const rules: readonly Rule[] = [
   skillTeachesTheProduct,
   skillNamesTheRunnerImage,
   ciRunsJustRecipes,
+  ciUsesVerifyLanes,
   noRootPackageScripts,
   lockfileFrozen,
   recipesSayWhy,

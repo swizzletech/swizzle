@@ -6,9 +6,59 @@ import {
   commitDeploymentFixture,
   createQueuedRun,
 } from "../../../scripts/verify-state-fixtures.js";
+import { testPlatform } from "../../../test/platform.js";
 import { testDatabase } from "../../../test/postgres.js";
 import { testControlPlaneStore } from "../../../test/stores.js";
-import { processRunTerminalEffects, reconcileQueuedRunsWithStore } from "./run-lifecycle.js";
+import { createAutomationFixture } from "../test/platform-harness.js";
+import {
+  failPlacement,
+  processRunTerminalEffects,
+  reconcileQueuedRunsWithStore,
+} from "./run-lifecycle.js";
+
+it("sets the placement deadline from runtime.queue_timeout", async () => {
+  const client = testDatabase();
+  const platform = await testPlatform({ client });
+  const dispatch = createPostgresDispatchStore({ client });
+  const automationDirectory = await createAutomationFixture({
+    name: "placement-deadline",
+    triggerLines: ["  type: webhook", "  path: /placement-deadline"],
+    configLines: ["runtime:", "  queue_timeout: 30s"],
+  });
+  await platform.deployAutomationToPlatform({ automationDirectory, environment: "local" });
+
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    const { runId } = await platform.enqueuePlatformRun({
+      automationName: "placement-deadline",
+      environment: "local",
+      payload: {},
+    });
+    const expirePlacements = () =>
+      dispatch.expirePlacements(({ run, projectName }, store) =>
+        failPlacement({ run, projectName, store }),
+      );
+
+    vi.setSystemTime(new Date("2026-01-01T00:00:29.999Z"));
+    await expirePlacements();
+    expect(await platform.getPlatformRun(runId)).toMatchObject({
+      status: "queued",
+      executions: [],
+    });
+
+    vi.setSystemTime(new Date("2026-01-01T00:00:30.000Z"));
+    await expirePlacements();
+    expect(await platform.getPlatformRun(runId)).toMatchObject({
+      status: "dead-lettered",
+      errorCode: "PLACEMENT_TIMEOUT",
+      executions: [],
+    });
+  } finally {
+    vi.useRealTimers();
+    await platform.close();
+  }
+});
 
 it("publishes a terminal chain child only after its transaction commits and recovers a lost job", async () => {
   const client = testDatabase();

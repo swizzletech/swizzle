@@ -17,6 +17,8 @@ stdout and stderr are each limited to 1 MiB. For deployed runs, the API replaces
 
 For container runs, image preparation logs and process stderr share that limit. A run that exceeds its preparation log allowance stops waiting and fails on its own. Other runs and background preparation can finish the shared assembly. The assembly itself stops at its shared 1 MiB log limit. Process overflow stops the process. Captured output keeps the longest complete UTF-8 prefix that fits, including an initial byte order mark; stdout keeps its separate 1 MiB allowance.
 
+If the runtime cannot deliver process output, it stops collecting output and shuts down the process. A host process that ignores SIGTERM receives SIGKILL.
+
 | Failure code | Cause |
 |---|---|
 | `PROCESS_EXIT_NON_ZERO` | The process exited with a code other than `0`. |

@@ -91,7 +91,8 @@ export async function smokeRunnerEgress(
         `${name} private request was denied by the proxy`,
         async () => {
           const logs = await stack.compose("logs", "--no-color", "runner-egress-proxy");
-          const denials = logs.match(/TCP_DENIED\/403[^\n]*CONNECT 127\.0\.0\.1:80 /gu) ?? [];
+          const denials =
+            logs.match(/TCP_DENIED(?:_ABORTED)?\/403[^\n]*CONNECT 127\.0\.0\.1:80 /gu) ?? [];
           return denials.length === deniedRequests ? true : undefined;
         },
         log,

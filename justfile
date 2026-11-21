@@ -92,8 +92,12 @@ format:
 verify-fast *args: check _reference-current
     @{{ just_executable() }} --justfile {{ justfile() }} test-affected "$@"
 
-# The full gate a commit must pass; runs setup first, so a fresh clone needs nothing else.
-verify: setup check test _reference-current verify-dispatch build e2e compose-check
+# Run every verification lane, including on a fresh clone.
+verify: _verify-static test verify-dispatch _verify-e2e
+
+_verify-static: deps check _reference-current compose-check secret-scan
+
+_verify-e2e: setup e2e
 
 # Check that the packaged and the development compose files resolve.
 compose-check: init-env

@@ -1,15 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { expect, it } from "vitest";
+import { fileURLToPath } from "node:url";
+import { expect, it, vi } from "vitest";
 import { temporaryDirectory } from "../../test/support.js";
 import { lint } from "./lint.js";
 import { gitRepo, readRepo } from "./repo.js";
 import { SKILL, SKILL_REQUIRES } from "./rules/skill-teaches-the-product.js";
 import { rules } from "./rules.js";
 
-/** Plants `files` in a fresh directory and returns where one rule reports them, as sorted `file:line`. */
-async function reported(ruleId: string, files: Record<string, string>): Promise<string[]> {
+async function findingsFor(ruleId: string, files: Record<string, string>) {
   const rule = rules.find((candidate) => candidate.id === ruleId);
   if (rule === undefined) throw new Error(`rules.ts lists no rule ${ruleId}`);
   const root = await temporaryDirectory("swizzle-conventions-");
@@ -17,9 +17,11 @@ async function reported(ruleId: string, files: Record<string, string>): Promise<
     await mkdir(path.dirname(path.join(root, file)), { recursive: true });
     await writeFile(path.join(root, file), text);
   }
-  return lint(readRepo(root, Object.keys(files)), [rule])
-    .map(({ file, line }) => `${file}:${line}`)
-    .toSorted();
+  return lint(readRepo(root, Object.keys(files)), [rule]);
+}
+
+async function reported(ruleId: string, files: Record<string, string>): Promise<string[]> {
+  return (await findingsFor(ruleId, files)).map(({ file, line }) => `${file}:${line}`).toSorted();
 }
 
 const recipes = "# Install everything.\nsetup:\n    true\n\n# Lint and types.\ncheck:\n    true\n";
@@ -487,6 +489,56 @@ it("ci-runs-just-recipes reports a command on its own line inside a folded or qu
       ].join("\n"),
     }),
   ).toEqual([".github/workflows/ci.yml:6", ".github/workflows/ci.yml:8"]);
+});
+
+it("ci-uses-verify-lanes requires every lane in Verify's jobs and allows the CI-only audit", async () => {
+  const justfile = ["verify: _lint suite", "_lint:", "suite *args:", "audit:", "build:"].join("\n");
+  const workflow = [
+    "jobs:",
+    "  check:",
+    "    steps:",
+    "      - run: just _lint",
+    "      - run: just audit",
+    "  test-1:",
+    "    steps: &test-steps",
+    '      - run: just suite --shard="$SHARD"',
+    "  test-2:",
+    "    steps: *test-steps",
+    "  verify:",
+    "    needs: [check, test-1, test-2]",
+  ].join("\n");
+  const messages = async (ci: string) =>
+    (await findingsFor("ci-uses-verify-lanes", { justfile, ".github/workflows/ci.yml": ci })).map(
+      ({ message }) => message,
+    );
+
+  expect(await messages(workflow)).toEqual([]);
+  expect(await messages(workflow.replace("just _lint", "just build"))).toEqual([
+    "Job check runs `just build` outside the verify lanes. Use a lane from `just verify` or add the recipe to one.",
+    "Missing CI job for verify lane _lint. Run `just _lint` in a job listed in Verify's needs.",
+  ]);
+  expect(await messages(workflow.replace("just audit", "just build"))).toEqual([
+    "Job check runs `just build` outside the verify lanes. Use a lane from `just verify` or add the recipe to one.",
+  ]);
+  expect(await messages(workflow.replace("just audit", "just suite"))).toEqual([
+    "Job check must run exactly one recipe listed in `just verify`.",
+  ]);
+  expect(await messages(workflow.replace("just _lint", "just _lint build"))).toEqual([
+    "Run `just _lint` on its own so one command cannot invoke extra recipes.",
+  ]);
+  expect(await messages(workflow.replace("[check, test-1, test-2]", "[test-1, test-2]"))).toEqual([
+    "Add job check to Verify's needs so its result is required.",
+  ]);
+  expect(await messages(workflow.replace("      - run: just _lint\n", ""))).toEqual([
+    "Job check must run exactly one recipe listed in `just verify`.",
+    "Missing CI job for verify lane _lint. Run `just _lint` in a job listed in Verify's needs.",
+  ]);
+  const withoutCheck = workflow
+    .replace(/ {2}check:[\s\S]*?(?= {2}test-1:)/u, "")
+    .replace("needs: [check, test-1, test-2]", "needs: [test-1, test-2]");
+  expect(await messages(withoutCheck)).toEqual([
+    "Missing CI job for verify lane _lint. Run `just _lint` in a job listed in Verify's needs.",
+  ]);
 });
 
 it("no-root-package-scripts reports scripts in the root package.json", async () => {
@@ -1035,4 +1087,220 @@ it("web-design-scale refuses a written font size, radius or spacing outside the 
       ].join("\n"),
     }),
   ).toEqual([1, 2, 3, 4, 5, 6, 7].map((line) => `apps/web/src/page.tsx:${line}`));
+});
+
+const COMMENT_BUDGET = "scripts/conventions/comment-budget.json";
+
+it("comment-budget measures comments in every source root and ignores literal text", async () => {
+  const tree = {
+    [COMMENT_BUDGET]: '{"apps/web/src/page.tsx":1}',
+    "apps/web/src/page.tsx": [
+      "const regex = /[/*]x/;",
+      `const template = \`// text \${1} /* text */ \${\`/* more text */\`}\`;`,
+      'const string = "/* text */";',
+      'const page = <div title="/* text */"> // visible /* text */',
+      "  {/* existing */}",
+      "  {/* biome-ignore lint/a11y/useKeyWithClickEvents: fixture rationale */}",
+      "  <span> // more text </span>",
+      "</div>;",
+    ].join("\n"),
+    "infra/examples/main.ts": "// outside the source roots",
+  };
+  expect(await reported("comment-budget", tree)).toEqual([]);
+  expect(
+    await reported("comment-budget", {
+      ...tree,
+      "apps/api/new.ts": "const a = 1; // plain",
+      "apps/web/src/automatic.ts": "// This file is automatically generated\n// plain comment",
+      "apps/web/src/generated.ts": "// @generated by a fixture\n// plain comment",
+      "apps/web/src/page.tsx": tree["apps/web/src/page.tsx"].replace(
+        "<span>",
+        "{/* HAZARD: JSX */}<span>",
+      ),
+      "packages/sdk-py/fixture.cts": "/* ordinary block */",
+      "scripts/generated.mts": "// Code generated by a fixture\n// plain comment",
+      "scripts/new.mts": `const template = \`head \${/* inside the substitution */ 42} tail\`;`,
+      "test/new.ts": "const result = /https?:\\/\\//.test(url); // after regex",
+      ".agents/checks/new.ts": "// private check",
+    }),
+  ).toEqual([
+    ".agents/checks/new.ts:1",
+    "apps/api/new.ts:1",
+    "apps/web/src/automatic.ts:1",
+    "apps/web/src/generated.ts:1",
+    "apps/web/src/page.tsx:7",
+    "packages/sdk-py/fixture.cts:1",
+    "scripts/generated.mts:1",
+    "scripts/new.mts:1",
+    "test/new.ts:1",
+  ]);
+});
+
+it("comment-budget allows tool directives, guarded hazards and JSDoc on exported SDK API", async () => {
+  const sdk = [
+    "/** Function docs */",
+    "export function call() {}",
+    "export interface Options {",
+    "  /** Field docs */",
+    "  enabled: boolean;",
+    "}",
+    "/** Alias docs */",
+    "function local() {}",
+    "export { local as other };",
+  ].join("\n");
+  const tree = {
+    [COMMENT_BUDGET]: "{}",
+    "packages/sdk-ts/src/index.ts": sdk,
+    "apps/cli/assets/sdk/swizzle-sdk.ts": sdk,
+    "scripts/tools.mts": [
+      "#!/usr/bin/env node",
+      "// SPDX-License-Identifier: Apache-2.0",
+      '/// <reference lib="dom" />',
+      "/* eslint-disable no-console */",
+      "// biome-ignore lint/suspicious/noExplicitAny: called by an untyped library",
+      "const entry: any = null; // HAZARD: register before dispatch",
+      "// HAZARD: stop before clearing the queue",
+      "stop();",
+      "// @ts-expect-error",
+      "other();",
+    ].join("\n"),
+  };
+  expect(await reported("comment-budget", tree)).toEqual([]);
+  expect(
+    await reported("comment-budget", {
+      ...tree,
+      "packages/sdk-ts/src/index.ts": [
+        "export class Public {",
+        "  /** Private state */",
+        "  private state = false;",
+        "}",
+      ].join("\n"),
+      "apps/api/private.ts": "/** Internal docs */\nexport function call() {}",
+      "scripts/detached.ts": "// HAZARD: no code on the guarded line\n\nconst x = 1;",
+      "scripts/tools.mts":
+        "// biome-ignore lint/suspicious/noExplicitAny:\nconst entry: any = null;",
+    }),
+  ).toEqual([
+    "apps/api/private.ts:1",
+    "packages/sdk-ts/src/index.ts:2",
+    "scripts/detached.ts:1",
+    "scripts/tools.mts:1",
+  ]);
+});
+
+it("comment-budget rejects stale allowances and a generic conventions exception", async () => {
+  expect(
+    await reported("comment-budget", {
+      [COMMENT_BUDGET]: '{"test/removed.ts":1,"test/fewer.ts":2}',
+      "test/fewer.ts": "// one existing comment",
+      "test/new.ts": "// conventions-allow comment-budget: bypass attempt\nconst n = 1;",
+    }),
+  ).toEqual([
+    "scripts/conventions/comment-budget.json:1",
+    "scripts/conventions/comment-budget.json:1",
+    "test/new.ts:1",
+  ]);
+});
+
+it("keeps the committed comment budget equal to the checkout's measured count", () => {
+  const root = fileURLToPath(new URL("../..", import.meta.url));
+  const rule = rules.filter(({ id }) => id === "comment-budget");
+  expect(rule.map(({ id }) => id)).toEqual(["comment-budget"]);
+  expect(lint(readRepo(root, gitRepo(root).files), rule)).toEqual([]);
+});
+
+it("rejects committed comment budget increases from the branch baseline", async () => {
+  vi.stubEnv("CI", "true");
+  const root = await temporaryDirectory("swizzle-comment-budget-");
+  const git = (...args: string[]) =>
+    execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  const commit = (message: string) => {
+    git("add", ".");
+    git("-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", message);
+  };
+  const budget = path.join(root, COMMENT_BUDGET);
+  const lintSource = path.join(root, "test/existing.ts");
+  const rulesToRun = rules.filter(({ id }) => id === "comment-budget");
+  const notices: string[] = [];
+  const check = () => lint(gitRepo(root), rulesToRun, (message) => notices.push(message));
+
+  git("init", "--quiet", "-b", "main");
+  git("config", "user.name", "Test");
+  git("config", "user.email", "test@example.com");
+  git(
+    "-c",
+    "core.hooksPath=/dev/null",
+    "commit",
+    "--quiet",
+    "--allow-empty",
+    "-m",
+    "before budget",
+  );
+  git("switch", "-c", "topic");
+  await mkdir(path.dirname(budget), { recursive: true });
+  await mkdir(path.dirname(lintSource), { recursive: true });
+  await writeFile(budget, '{"test/existing.ts":2}');
+  await writeFile(lintSource, "// first\n// second\n");
+  commit("introduce budget");
+  expect(check()).toEqual([]);
+
+  await writeFile(budget, '{"test/existing.ts":3,"test/new.ts":1}');
+  await writeFile(lintSource, "// first\n// second\n// added\n");
+  await writeFile(path.join(root, "test/new.ts"), "// new\n");
+  commit("increase sources and budget together");
+  const increases = [
+    {
+      file: COMMENT_BUDGET,
+      line: 1,
+      message: expect.stringContaining("test/existing.ts raises its comment budget from 2 to 3."),
+    },
+    {
+      file: COMMENT_BUDGET,
+      line: 1,
+      message: expect.stringContaining("test/new.ts raises its comment budget from 0 to 1."),
+    },
+  ];
+  expect(check()).toMatchObject(increases);
+
+  git("switch", "--detach", "main");
+  git("-c", "core.hooksPath=/dev/null", "merge", "--no-ff", "--no-edit", "topic");
+  expect(check()).toMatchObject(increases);
+  git("switch", "topic");
+
+  git("branch", "-f", "main", "HEAD^");
+  git("switch", "main");
+  await writeFile(budget, '{"test/existing.ts":1}');
+  await writeFile(lintSource, "// first\n");
+  commit("lower main budget");
+  git("switch", "topic");
+  expect(check()).toMatchObject(increases);
+
+  await writeFile(budget, '{"test/existing.ts":1}');
+  await writeFile(lintSource, "// first\n");
+  await writeFile(path.join(root, "test/new.ts"), "export const fresh = true;\n");
+  git("update-ref", "refs/remotes/origin/main", "refs/heads/main");
+  git("branch", "-D", "main");
+  expect(check()).toEqual([]);
+  expect(notices).toEqual([]);
+
+  git("update-ref", "-d", "refs/remotes/origin/main");
+  expect(check()).toEqual([
+    {
+      file: COMMENT_BUDGET,
+      line: 1,
+      message: "CI requires a committed comment budget baseline. Fetch the history of main.",
+      rule: "comment-budget",
+    },
+  ]);
+  expect(notices).toEqual([]);
+
+  vi.stubEnv("CI", "false");
+  expect(check()).toEqual([]);
+  expect(notices).toEqual([
+    "comment-budget: growth check skipped. No committed baseline is available.",
+  ]);
 });

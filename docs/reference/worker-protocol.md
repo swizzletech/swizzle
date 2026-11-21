@@ -117,13 +117,17 @@ An owner or instance admin reads them through `GET /workers/:workerId/audit`.
 
 ### Run image disk report
 
-`runImageDisk` is the last image prune pass's report. It is null before the first pass. The report contains `{activeBytes, budgetBytes, unmeasuredActiveImages, unmeasuredActiveImagesOmitted}`. `activeBytes` counts measured active image bytes. `budgetBytes` is the configured budget in bytes.
+`runImageDisk` is the last image prune pass's report. It is null before the first pass. The report contains `{activeBytes, budgetBytes, unmeasured}`. `activeBytes` counts measured active image bytes. `budgetBytes` is the configured budget in bytes.
 
-`unmeasuredActiveImages` lists at most eight unknown active footprints as `{id, tags}`. Each entry has one active run tag. `unmeasuredActiveImagesOmitted` counts further unknown images. Prune warnings include every unmeasured image's ID and tags.
+`unmeasured` contains `{images, total}`. `images` lists at most eight unmeasured active images as `{id, tag}`. The tag is one active run tag or null. `total` counts all unmeasured active images, including those without details in the report.
+
+`POST /worker/runtime` also accepts both earlier 1.x formats. One reports just `activeBytes` and `budgetBytes`. The other adds `unmeasuredActiveImages` entries with `{id, tags}` and an `unmeasuredActiveImagesOmitted` count. The server stores both in the current report format.
+
+Upgrade the server before its remote workers. An earlier 1.x server rejects a newer worker's heartbeats once they include the current disk report. The worker appears offline when its last accepted heartbeat expires.
 
 `GET /workers` returns the report as `runImageDisk`. It returns the same report as `runImageDiskOverBudget` for unrevoked workers when active usage is unknown or measured bytes exceed the budget. Otherwise, `runImageDiskOverBudget` is null.
 
-`runImageDiskWarning` contains the warning from [`runImageDiskWarning`](../../packages/db/src/worker-words.ts). Settings > Workers, the Overview, and `swizzle worker list` display it.
+`runImageDiskWarning` contains the warning from [`runImageDiskWarning`](../../packages/db/src/worker-words.ts). Settings > Workers, the Overview, and `swizzle worker list` display every applicable disk problem in the same warning.
 
 Assignments contain a run or check lease, script kind, input, state/step snapshots, trace context and the SHA-256 digest of the bundle's manifest; they carry no secrets and no source. The worker fetches the source with `POST /worker/source`, refuses a bundle whose digest differs, stages it, and only then calls `POST /worker/start` for the secrets. Both routes answer only the current owner of the live lease; another worker, an older generation or a finished lease gets HTTP 409. A transfer broken off before start is fetched again under the same lease or, after expiry, by the next owner. Transfer allows 4,096 files and 32 MiB total, checks SHA-256, preserves executable bits, and rejects links, traversal and duplicate paths. Each output stream is limited to 1 MiB. Chunks have increasing sequence numbers within one generation. Logs, state and step writes are acknowledged after their durable processing. Final completion is a single immutable report. Workers retry transport failures, HTTP 429 and HTTP 5xx with the identical output sequence/chunk or report while their lease remains valid. Executors await output acknowledgements before reporting completion.
 
