@@ -1,28 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { expect, it, vi } from "vitest";
+import { expect, it } from "vitest";
 import { temporaryDirectory } from "../../test/support.js";
 import { lint } from "./lint.js";
-import { gitRepo, readRepo } from "./repo.js";
+import { gitRepo } from "./repo.js";
 import { SKILL, SKILL_REQUIRES } from "./rules/skill-teaches-the-product.js";
 import { rules } from "./rules.js";
-
-async function findingsFor(ruleId: string, files: Record<string, string>) {
-  const rule = rules.find((candidate) => candidate.id === ruleId);
-  if (rule === undefined) throw new Error(`rules.ts lists no rule ${ruleId}`);
-  const root = await temporaryDirectory("swizzle-conventions-");
-  for (const [file, text] of Object.entries(files)) {
-    await mkdir(path.dirname(path.join(root, file)), { recursive: true });
-    await writeFile(path.join(root, file), text);
-  }
-  return lint(readRepo(root, Object.keys(files)), [rule]);
-}
-
-async function reported(ruleId: string, files: Record<string, string>): Promise<string[]> {
-  return (await findingsFor(ruleId, files)).map(({ file, line }) => `${file}:${line}`).toSorted();
-}
+import { findingsFor, reported } from "./test-support.js";
 
 const recipes = "# Install everything.\nsetup:\n    true\n\n# Lint and types.\ncheck:\n    true\n";
 
@@ -147,7 +132,6 @@ it("lints the tracked and staged files of a checkout and skips untracked ones", 
 });
 
 it("docs-run-just-recipes locates a code block in a list item after prose with the same text", async () => {
-  // The hatch on line 4 covers the command on line 5 only if the block is placed on line 3.
   expect(
     await reported("docs-run-just-recipes", {
       justfile: recipes,
@@ -214,8 +198,6 @@ it("tests-wait-on-state reports a test that waits on time, sets its own budget o
     "playwright.config.ts:1",
     "test/helpers.ts:1",
   ]);
-  // A wait in the code a test writes for a child, a dated fixture, a web-first poll, the
-  // runners' own ceilings, code outside the tests and a reasoned allow stay.
   expect(
     await reported("tests-wait-on-state", {
       "apps/web/tests/flow.spec.ts": lines(
@@ -292,9 +274,6 @@ it("tests-wait-on-state reports the deadlines and durations a loaded runner fail
     "packages/core/src/b.test.ts:8",
     "packages/core/test/helpers.ts:1",
   ]);
-  // Data the test expects under a timeout key, an upper bound on anything but a duration, a
-  // duration in words, a fixture dated from one clock reading, a duration of a clock the test sets,
-  // and the options and body overloads of a test stay.
   expect(
     await reported("tests-wait-on-state", {
       "packages/core/src/a.test.ts": lines(
@@ -424,7 +403,6 @@ it("skill-names-the-runner-image reports a runner-base package or Node major the
         .replace("poppler-utils", "poppler-utils ffmpeg"),
     }),
   ).toEqual([`${SKILL}/SKILL.md:1`, `${SKILL}/SKILL.md:3`]);
-  // runner-base as the last stage, with the install on one line.
   const [last = ""] = tree["infra/docker/Dockerfile"].split("FROM base AS deps");
   expect(
     await reported("skill-names-the-runner-image", {
@@ -935,76 +913,6 @@ it("web-reads-the-contract resolves request and response bindings and ignores no
   ]);
 });
 
-const DESIGN_SCALE = JSON.stringify({
-  fontSizes: [12, 13, 14, 16, 20, 24],
-  radii: [6, 8, 12],
-  spacing: [0, 4, 8, 12, 16, 24, 32, 48],
-});
-
-it("web-design-scale measures a token as what reads it, whatever its name", async () => {
-  const css = (tokens: readonly string[], rules: readonly string[]) =>
-    [":root {", ...tokens.map((one) => `  ${one}`), "}", ".a {", ...rules, "}"].join("\n");
-  const scanned = (file: string, tsx = "") =>
-    reported("web-design-scale", {
-      "apps/web/design-scale.json": DESIGN_SCALE,
-      "apps/web/src/page.css": file,
-      "apps/web/src/page.tsx": tsx,
-    });
-
-  // A length nothing on the scale reads stays free, as does a colour read by `text-[var()]`.
-  expect(
-    await scanned(
-      css(
-        ["--page-margin: 32px;", "--page-width: 1696px;", "--blur: 7px;", "--ink: #18181b;"],
-        ["  padding: 0 var(--page-margin);", "  max-width: var(--page-width);"],
-      ),
-      '<i className="text-[var(--ink)]" />',
-    ),
-  ).toEqual([]);
-
-  for (const [token, rule] of [
-    ["--page-margin: 7px;", "  padding: 0 var(--page-margin);"],
-    ["--section-gap: 7px;", "  margin-top: var(--section-gap);"],
-    ["--corner: 7px;", "  border-radius: var(--corner);"],
-    ["--body: 15px;", "  font-size: var(--body);"],
-    ["--body: 15px;", "  font: 500 var(--body) var(--font-sans);"],
-  ] as const) {
-    expect(await scanned(css([token], [rule]))).toEqual(["apps/web/src/page.css:2"]);
-  }
-
-  // One line however many read it, through a token that reads a token, in every scope it is set.
-  expect(
-    await scanned(
-      css(
-        ["--inner: 7px;", "--outer: var(--inner);"],
-        ["  padding: var(--outer);", "  margin: var(--outer);", "  --inner: 9px;"],
-      ),
-    ),
-  ).toEqual(["apps/web/src/page.css:2", "apps/web/src/page.css:8"]);
-
-  // A fallback is written where it stands, and tokens that read each other end.
-  expect(await scanned(css([], ["  gap: var(--missing, 7px);"]))).toEqual([
-    "apps/web/src/page.css:4",
-  ]);
-  expect(await scanned(css(["--a: var(--b);", "--b: var(--a);"], ["  gap: var(--a);"]))).toEqual(
-    [],
-  );
-
-  for (const name of [
-    "p-[var(--gutter)]",
-    "gap-(--gutter)",
-    "rounded-[var(--gutter)]",
-    "text-[length:var(--gutter)]",
-  ]) {
-    expect(await scanned(css(["--gutter: 7px;"], []), `<i className="${name}" />`)).toEqual([
-      "apps/web/src/page.css:2",
-    ]);
-  }
-
-  // Tailwind multiplies every spacing utility by this one.
-  expect(await scanned(css(["--spacing: 5px;"], []))).toEqual(["apps/web/src/page.css:2"]);
-});
-
 it("web-short-strings refuses a period on a short string and leaves running text alone", async () => {
   const page = (body: string) => ({ "apps/web/src/page.tsx": body });
   const short = [
@@ -1032,275 +940,4 @@ it("web-short-strings refuses a period on a short string and leaves running text
       "apps/web/src/lib/words/runs.ts": 'export const a = { title: "No worker is running." };',
     }),
   ).toEqual(["apps/web/src/lib/words/runs.ts:1"]);
-});
-
-it("web-design-scale refuses a written font size, radius or spacing outside the scale", async () => {
-  const onScale = {
-    "apps/web/design-scale.json": DESIGN_SCALE,
-    "apps/web/src/page.css": [
-      ".a {",
-      "  font: 500 13px / 20px var(--font-sans);",
-      "  padding: 8px 16px;",
-      "  margin: 0 -16px;",
-      "  border-radius: 50%;",
-      "  gap: var(--anything);",
-      "  /* padding: 7px; a comment is not a value */",
-      "}",
-    ].join("\n"),
-    "apps/web/src/page.tsx":
-      '<div className="mt-4 -mx-2 gap-3 text-[13px] rounded-lg h-[30px] text-fail" />',
-  };
-  expect(await reported("web-design-scale", onScale)).toEqual([]);
-  expect(
-    await reported("web-design-scale", {
-      ...onScale,
-      "apps/web/src/page.css": [
-        ".a {",
-        "  font-size: 15px;",
-        "  font: 500 11px / 20px var(--font-sans);",
-        "  border-radius: 10px;",
-        "  padding: 8px 14px;",
-        "  gap: 1.5em;",
-        "  --radius-x: 3px;",
-        "}",
-      ].join("\n"),
-    }),
-  ).toEqual([
-    "apps/web/src/page.css:2",
-    "apps/web/src/page.css:3",
-    "apps/web/src/page.css:4",
-    "apps/web/src/page.css:5",
-    "apps/web/src/page.css:6",
-    "apps/web/src/page.css:7",
-  ]);
-  expect(
-    await reported("web-design-scale", {
-      ...onScale,
-      "apps/web/src/page.tsx": [
-        '<i className="text-[12.5px]" />',
-        '<i className="rounded-[10px]" />',
-        '<i className="px-[18px]" />',
-        '<i className="gap-1.5" />',
-        '<i className="p-5" />',
-        '<i className="text-lg" />',
-        '<i className="rounded" />',
-      ].join("\n"),
-    }),
-  ).toEqual([1, 2, 3, 4, 5, 6, 7].map((line) => `apps/web/src/page.tsx:${line}`));
-});
-
-const COMMENT_BUDGET = "scripts/conventions/comment-budget.json";
-
-it("comment-budget measures comments in every source root and ignores literal text", async () => {
-  const tree = {
-    [COMMENT_BUDGET]: '{"apps/web/src/page.tsx":1}',
-    "apps/web/src/page.tsx": [
-      "const regex = /[/*]x/;",
-      `const template = \`// text \${1} /* text */ \${\`/* more text */\`}\`;`,
-      'const string = "/* text */";',
-      'const page = <div title="/* text */"> // visible /* text */',
-      "  {/* existing */}",
-      "  {/* biome-ignore lint/a11y/useKeyWithClickEvents: fixture rationale */}",
-      "  <span> // more text </span>",
-      "</div>;",
-    ].join("\n"),
-    "infra/examples/main.ts": "// outside the source roots",
-  };
-  expect(await reported("comment-budget", tree)).toEqual([]);
-  expect(
-    await reported("comment-budget", {
-      ...tree,
-      "apps/api/new.ts": "const a = 1; // plain",
-      "apps/web/src/automatic.ts": "// This file is automatically generated\n// plain comment",
-      "apps/web/src/generated.ts": "// @generated by a fixture\n// plain comment",
-      "apps/web/src/page.tsx": tree["apps/web/src/page.tsx"].replace(
-        "<span>",
-        "{/* HAZARD: JSX */}<span>",
-      ),
-      "packages/sdk-py/fixture.cts": "/* ordinary block */",
-      "scripts/generated.mts": "// Code generated by a fixture\n// plain comment",
-      "scripts/new.mts": `const template = \`head \${/* inside the substitution */ 42} tail\`;`,
-      "test/new.ts": "const result = /https?:\\/\\//.test(url); // after regex",
-      ".agents/checks/new.ts": "// private check",
-    }),
-  ).toEqual([
-    ".agents/checks/new.ts:1",
-    "apps/api/new.ts:1",
-    "apps/web/src/automatic.ts:1",
-    "apps/web/src/generated.ts:1",
-    "apps/web/src/page.tsx:7",
-    "packages/sdk-py/fixture.cts:1",
-    "scripts/generated.mts:1",
-    "scripts/new.mts:1",
-    "test/new.ts:1",
-  ]);
-});
-
-it("comment-budget allows tool directives, guarded hazards and JSDoc on exported SDK API", async () => {
-  const sdk = [
-    "/** Function docs */",
-    "export function call() {}",
-    "export interface Options {",
-    "  /** Field docs */",
-    "  enabled: boolean;",
-    "}",
-    "/** Alias docs */",
-    "function local() {}",
-    "export { local as other };",
-  ].join("\n");
-  const tree = {
-    [COMMENT_BUDGET]: "{}",
-    "packages/sdk-ts/src/index.ts": sdk,
-    "apps/cli/assets/sdk/swizzle-sdk.ts": sdk,
-    "scripts/tools.mts": [
-      "#!/usr/bin/env node",
-      "// SPDX-License-Identifier: Apache-2.0",
-      '/// <reference lib="dom" />',
-      "/* eslint-disable no-console */",
-      "// biome-ignore lint/suspicious/noExplicitAny: called by an untyped library",
-      "const entry: any = null; // HAZARD: register before dispatch",
-      "// HAZARD: stop before clearing the queue",
-      "stop();",
-      "// @ts-expect-error",
-      "other();",
-    ].join("\n"),
-  };
-  expect(await reported("comment-budget", tree)).toEqual([]);
-  expect(
-    await reported("comment-budget", {
-      ...tree,
-      "packages/sdk-ts/src/index.ts": [
-        "export class Public {",
-        "  /** Private state */",
-        "  private state = false;",
-        "}",
-      ].join("\n"),
-      "apps/api/private.ts": "/** Internal docs */\nexport function call() {}",
-      "scripts/detached.ts": "// HAZARD: no code on the guarded line\n\nconst x = 1;",
-      "scripts/tools.mts":
-        "// biome-ignore lint/suspicious/noExplicitAny:\nconst entry: any = null;",
-    }),
-  ).toEqual([
-    "apps/api/private.ts:1",
-    "packages/sdk-ts/src/index.ts:2",
-    "scripts/detached.ts:1",
-    "scripts/tools.mts:1",
-  ]);
-});
-
-it("comment-budget rejects stale allowances and a generic conventions exception", async () => {
-  expect(
-    await reported("comment-budget", {
-      [COMMENT_BUDGET]: '{"test/removed.ts":1,"test/fewer.ts":2}',
-      "test/fewer.ts": "// one existing comment",
-      "test/new.ts": "// conventions-allow comment-budget: bypass attempt\nconst n = 1;",
-    }),
-  ).toEqual([
-    "scripts/conventions/comment-budget.json:1",
-    "scripts/conventions/comment-budget.json:1",
-    "test/new.ts:1",
-  ]);
-});
-
-it("keeps the committed comment budget equal to the checkout's measured count", () => {
-  const root = fileURLToPath(new URL("../..", import.meta.url));
-  const rule = rules.filter(({ id }) => id === "comment-budget");
-  expect(rule.map(({ id }) => id)).toEqual(["comment-budget"]);
-  expect(lint(readRepo(root, gitRepo(root).files), rule)).toEqual([]);
-});
-
-it("rejects committed comment budget increases from the branch baseline", async () => {
-  vi.stubEnv("CI", "true");
-  const root = await temporaryDirectory("swizzle-comment-budget-");
-  const git = (...args: string[]) =>
-    execFileSync("git", args, {
-      cwd: root,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
-    }).trim();
-  const commit = (message: string) => {
-    git("add", ".");
-    git("-c", "core.hooksPath=/dev/null", "commit", "--quiet", "-m", message);
-  };
-  const budget = path.join(root, COMMENT_BUDGET);
-  const lintSource = path.join(root, "test/existing.ts");
-  const rulesToRun = rules.filter(({ id }) => id === "comment-budget");
-  const notices: string[] = [];
-  const check = () => lint(gitRepo(root), rulesToRun, (message) => notices.push(message));
-
-  git("init", "--quiet", "-b", "main");
-  git("config", "user.name", "Test");
-  git("config", "user.email", "test@example.com");
-  git(
-    "-c",
-    "core.hooksPath=/dev/null",
-    "commit",
-    "--quiet",
-    "--allow-empty",
-    "-m",
-    "before budget",
-  );
-  git("switch", "-c", "topic");
-  await mkdir(path.dirname(budget), { recursive: true });
-  await mkdir(path.dirname(lintSource), { recursive: true });
-  await writeFile(budget, '{"test/existing.ts":2}');
-  await writeFile(lintSource, "// first\n// second\n");
-  commit("introduce budget");
-  expect(check()).toEqual([]);
-
-  await writeFile(budget, '{"test/existing.ts":3,"test/new.ts":1}');
-  await writeFile(lintSource, "// first\n// second\n// added\n");
-  await writeFile(path.join(root, "test/new.ts"), "// new\n");
-  commit("increase sources and budget together");
-  const increases = [
-    {
-      file: COMMENT_BUDGET,
-      line: 1,
-      message: expect.stringContaining("test/existing.ts raises its comment budget from 2 to 3."),
-    },
-    {
-      file: COMMENT_BUDGET,
-      line: 1,
-      message: expect.stringContaining("test/new.ts raises its comment budget from 0 to 1."),
-    },
-  ];
-  expect(check()).toMatchObject(increases);
-
-  git("switch", "--detach", "main");
-  git("-c", "core.hooksPath=/dev/null", "merge", "--no-ff", "--no-edit", "topic");
-  expect(check()).toMatchObject(increases);
-  git("switch", "topic");
-
-  git("branch", "-f", "main", "HEAD^");
-  git("switch", "main");
-  await writeFile(budget, '{"test/existing.ts":1}');
-  await writeFile(lintSource, "// first\n");
-  commit("lower main budget");
-  git("switch", "topic");
-  expect(check()).toMatchObject(increases);
-
-  await writeFile(budget, '{"test/existing.ts":1}');
-  await writeFile(lintSource, "// first\n");
-  await writeFile(path.join(root, "test/new.ts"), "export const fresh = true;\n");
-  git("update-ref", "refs/remotes/origin/main", "refs/heads/main");
-  git("branch", "-D", "main");
-  expect(check()).toEqual([]);
-  expect(notices).toEqual([]);
-
-  git("update-ref", "-d", "refs/remotes/origin/main");
-  expect(check()).toEqual([
-    {
-      file: COMMENT_BUDGET,
-      line: 1,
-      message: "CI requires a committed comment budget baseline. Fetch the history of main.",
-      rule: "comment-budget",
-    },
-  ]);
-  expect(notices).toEqual([]);
-
-  vi.stubEnv("CI", "false");
-  expect(check()).toEqual([]);
-  expect(notices).toEqual([
-    "comment-budget: growth check skipped. No committed baseline is available.",
-  ]);
 });

@@ -1,8 +1,3 @@
-// A pipeline as a track: one station per automation with its latest run's state, chain lanes from
-// each trigger's sources and dashed invoke lanes from the bundle scan and observed child runs. A
-// lane lights when the consumer's latest run came from the source's latest run; a join's run
-// records every source run it came from, so each of its lanes lights on its own.
-
 import { useNavigate } from "@tanstack/react-router";
 
 import { type AutomationSummary, isOpenRun, type RunListItem } from "../lib/api";
@@ -22,7 +17,6 @@ const RUN_STATION: Record<RunListItem["state"], StationState> = {
   waiting: "waiting",
 };
 
-/** The track of a pipeline's members, from their triggers, invoke targets and latest runs. */
 function pipelineTrack(members: readonly AutomationSummary[]): TrackGraph {
   const bySlug = new Map(members.map((member) => [member.automationSlug, member]));
   const nodes: TrackNode[] = members.map((member) => ({

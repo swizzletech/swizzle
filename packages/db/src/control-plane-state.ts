@@ -62,11 +62,6 @@ export async function setAutomationStateValue(
   });
 }
 
-/**
- * Claims `key` for `runId` in the automation's state: stores `{ runId }` when the key is unset,
- * and answers whether the key's holder is this run. Concurrent claims of one key queue on the
- * namespace lock, so exactly one run holds it. The holder's retries and resumes claim it again.
- */
 export async function claimAutomationStateKey(
   client: DatabaseClient,
   input: ClaimAutomationStateKeyInput,
@@ -121,8 +116,6 @@ function measureStateValue(key: string, value: unknown): MeasuredStateValue {
   return { serialized, valueBytes };
 }
 
-// The namespace can have no rows yet. Lock it before reading the total, including when this is a
-// savepoint inside an execution lease transaction. The lock lasts until commit.
 async function lockStateNamespace(
   tx: Transaction,
   input: { readonly automationId: string; readonly environment: string },
@@ -132,7 +125,6 @@ async function lockStateNamespace(
   );
 }
 
-/** Writes one value under the namespace lock, refusing it when the namespace would exceed 5 MB. */
 async function writeStateValue(
   tx: Transaction,
   input: Omit<SetAutomationStateValueInput, "value">,

@@ -37,7 +37,6 @@ export function createLeaderLock(options: LeaderLockOptions): LeaderLock {
 
     try {
       if (leader) {
-        // Renew: only if we still own it. Lua script keeps this atomic.
         const result = await client.eval(
           "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('PEXPIRE', KEYS[1], ARGV[2]) else return 0 end",
           1,
@@ -70,24 +69,26 @@ export function createLeaderLock(options: LeaderLockOptions): LeaderLock {
     }
   }
 
+  async function releaseLeadershipBestEffort(): Promise<void> {
+    try {
+      await client.eval(
+        "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end",
+        1,
+        options.key,
+        options.instanceId,
+      );
+    } catch {
+      return;
+    }
+  }
+
   return {
     async close() {
       closed = true;
       if (timer) clearInterval(timer);
       timer = null;
 
-      try {
-        if (leader) {
-          await client.eval(
-            "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end",
-            1,
-            options.key,
-            options.instanceId,
-          );
-        }
-      } catch {
-        // Best-effort release; lock will expire via TTL.
-      }
+      if (leader) await releaseLeadershipBestEffort();
 
       leader = false;
       try {

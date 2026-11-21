@@ -1,13 +1,3 @@
-/**
- * Pure, browser-safe interval parsing and formatting. Kept in its own module
- * (no `node:*`, `yaml`, or `zod` imports) so the dashboard can import it
- * without pulling Node-only dependencies into the browser bundle.
- *
- * Shared between the CLI and the dashboard so the `trigger.every` shorthand
- * stays in sync when the grammar evolves — single source of truth for the
- * config contract.
- */
-
 const INTERVAL_PATTERN = /^(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/;
 const MIN_INTERVAL_MS = 30_000;
 
@@ -32,12 +22,6 @@ export function parseIntervalToMs(interval: string): number {
   return ms;
 }
 
-/**
- * Inverse of {@link parseIntervalToMs}: render a millisecond interval in the
- * same shorthand the config schema accepts (`trigger.every`): `5m`, `1h`,
- * `2h30m`, `2m30s`, `1d`. Rounds to whole seconds; every non-zero part is
- * shown, concatenated without separator.
- */
 export function formatIntervalMs(ms: number): string {
   const totalSeconds = Math.round(ms / 1000);
   const days = Math.floor(totalSeconds / 86_400);
@@ -52,7 +36,6 @@ export function formatIntervalMs(ms: number): string {
   return parts.join("") || "0s";
 }
 
-/** A placement wait is independent of the minimum interval between cron ticks. */
 export function parseQueueTimeoutToMs(value: string): number {
   const match = /^(\d+)(ms|s|m|h|d)$/.exec(value);
   if (match === null) throw new Error("Expected a positive placement wait, such as 24h or 500ms.");

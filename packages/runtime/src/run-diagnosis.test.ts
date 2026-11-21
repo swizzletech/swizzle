@@ -68,7 +68,6 @@ describe("buildDiagnosis", () => {
   });
 });
 
-// The run fields buildDiagnosis reads; the rest of the record does not affect it.
 it("names who to assign when an approval's assignee matches nobody", () => {
   const message =
     "No person with the email nobody@example.com has an account here, so nobody could decide the approval gate.";

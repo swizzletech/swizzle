@@ -24,10 +24,6 @@ import { AgentError, type CliIO, EXIT_CODES, respond, warn } from "./output.js";
 
 const execFileAsync = promisify(execFile);
 
-/**
- * `swizzle backup export | restore`: an operator command on the instance host. It reads
- * DATABASE_URL and the artifact storage settings from the environment and never calls the API.
- */
 export function registerBackup(program: Command, io: CliIO, runHandler: RunHandler): void {
   const backup = localCommand(
     program

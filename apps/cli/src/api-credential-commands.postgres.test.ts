@@ -8,7 +8,6 @@ import { buildTestServer, createBufferIO, useCliTestEnvironment } from "../test/
 
 import { runCli } from "./main.js";
 
-// Commands that talk to an API instance, run against a real in-process API server with PostgreSQL stores.
 useCliTestEnvironment();
 
 describe("credential commands", () => {
@@ -54,7 +53,6 @@ describe("credential commands", () => {
         ],
       });
 
-      // The API refuses the second create under its lock, so two racing sets cannot both win.
       const taken = await cli("secret", "set", "API_TOKEN", "--value", "different-value");
       expect(taken.exitCode).toBe(8);
       expect(taken.json.code).toBe("SECRET_ALREADY_EXISTS");

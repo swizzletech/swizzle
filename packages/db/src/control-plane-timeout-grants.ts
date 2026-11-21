@@ -83,10 +83,6 @@ export async function setAutomationTimeoutGrant(
   const note = input.note ?? null;
 
   await client.db.transaction(async (tx) => {
-    // Lock any existing grant so a concurrent writer can't race the audit trail
-    // out of order, then read the previous ceiling for the audit metadata.
-    // FOR UPDATE cannot lock a row that does not exist yet; without this,
-    // two concurrent first-time upserts both audit previousMaxTimeoutMs: null.
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtextextended(${`timeout-grant:${input.automationId}:${input.environment}`}, 0))`,
     );

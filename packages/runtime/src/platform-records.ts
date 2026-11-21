@@ -1,8 +1,3 @@
-// The records the platform produces that the API's responses embed: deployments, runs, readiness,
-// credential health and diagnoses. They hold data only and import types only, so
-// http-contract.ts names them without loading the code that builds them; the dashboard
-// type-checks everything the contract reaches. A record a response embeds belongs here.
-
 import type { AutomationRuntimeConfig, WorkerService } from "@swizzle/config";
 import type {
   ConnectionView,
@@ -25,7 +20,6 @@ export interface PlatformDeploymentRecord extends StoredDeployment {
   readonly secretHealth: readonly PlatformSecretStatusRecord[];
 }
 
-/** The decision apply made, alongside its deployment. Reads have no action. */
 export interface PlatformApplyResult extends PlatformDeploymentRecord {
   readonly action: PlatformDeploymentCheck["action"];
   readonly changes: readonly DeploymentChange[];
@@ -34,22 +28,15 @@ export interface PlatformApplyResult extends PlatformDeploymentRecord {
 
 export type { DeploymentChange } from "@swizzle/db";
 
-/** A run as `getPlatformRun` reads it for the API, `swizzle diagnose` and the run panel. */
 export type PlatformRunDetail = StoredRun & {
-  /**
-   * Why a queued run waits for a worker and until when, in the words every surface prints. Null
-   * unless the run is queued, and in tests that execute a run directly.
-   */
   readonly placement: ExplainedPlacement | null;
 };
 
-/** A deleted project, with the first error removing a deleted automation's artifacts. */
 export interface DeleteProjectResultRecord
   extends Omit<DeleteProjectResult, "deletedAutomations" | "deletedConnections"> {
   readonly artifactError: string | null;
 }
 
-/** A run a person started by hand, with what the trigger noticed on the way. */
 export interface ManualTriggerRunRecord extends StoredRun {
   readonly warning?: string;
 }
@@ -67,8 +54,6 @@ export interface PlatformReadinessReport {
   };
   readonly ok: boolean;
 }
-
-// Readiness: whether workers can run a deployment, from runtime-requirements.ts.
 
 export interface RuntimeRequirementIssue {
   readonly code:
@@ -91,7 +76,6 @@ export interface RuntimeRequirementIssue {
     | "TIMEOUT_FORMAT_INVALID";
   readonly message: string;
   readonly subject?: string | undefined;
-  /** The name of the worker a gap belongs to; absent on issues of the automation itself. */
   readonly worker?: string | undefined;
 }
 
@@ -119,25 +103,16 @@ export type RunnerImageResult =
   | { readonly kind: "unverified" }
   | { readonly kind: "unavailable"; readonly message: string };
 
-/**
- * A worker as deploy readiness judges it: its groups and services from the registry, and the
- * capabilities its last heartbeat reported. An offline worker counts with its grants only.
- */
 export interface ReadinessWorker {
   readonly runnerImage?: RunnerImageResult;
   readonly availability: "online" | "offline";
   readonly capabilities: WorkerCapabilities;
   readonly concurrency: number;
   readonly instanceId: string;
-  /** The worker's name in Settings > Workers, which readiness messages name it by. */
   readonly name: string;
   readonly profiles: readonly WorkerRuntimeProfile[];
-  /** The services an owner or admin granted it. */
   readonly services: readonly WorkerService[];
 }
-
-// Credential health and connection authorization, from platform-connections.ts and
-// platform-secrets.ts.
 
 export interface PlatformConnectionStatusRecord {
   readonly accessTokenExpiresAt: string | null;
@@ -171,8 +146,6 @@ export interface TestConnectionResult {
   readonly connection: ConnectionView;
   readonly refreshed: boolean;
 }
-
-// Why a run ended as it did, from run-diagnosis.ts.
 
 export interface DiagnosisEvidence {
   readonly kind: string;
@@ -212,15 +185,12 @@ export interface DeleteAutomationResultRecord {
   readonly projectId: string;
 }
 
-/** What a deployment would do, after every check apply makes; see `checkDeployment`. */
 export interface PlatformDeploymentCheck {
   readonly changes: readonly DeploymentChange[];
   readonly action: "create" | "update" | "noop";
   readonly automationName: string;
   readonly environment: string;
   readonly projectId: string;
-  /** The normalized path of its webhook trigger; null for another trigger. */
   readonly webhookPath: string | null;
-  /** What the workers serving its project say; apply refuses it unless ready or forced. */
   readonly readiness: RuntimeReadinessReport;
 }

@@ -21,7 +21,6 @@ const inspectedImage = z.object({
 it("lets a healthy run finish when another run exceeds its shared assembly log budget", async ({
   signal,
 }) => {
-  // Other worktrees share this Docker daemon: its calls take as long as they need, up to the ceiling.
   heldDeadlines();
   const directory = await temporaryDirectory("swizzle-image-isolation-");
   const stack = `image-isolation-${randomUUID()}`;
@@ -53,7 +52,6 @@ it("lets a healthy run finish when another run exceeds its shared assembly log b
     '{"name":"image-isolation","version":"1.0.0","private":true}',
   );
   await writeFile(path.join(directory, "main.js"), "console.log(JSON.stringify({ ok: true }));");
-  // A run joins the gated assembly when it replays the install's marker; ending first fails the test.
   const start = (limit?: { outputLimitBytes: number }) => {
     let logs = "";
     let started = false;
@@ -108,8 +106,6 @@ it("lets a healthy run finish when another run exceeds its shared assembly log b
       .trim()
       .split("\n")
       .filter(Boolean);
-  // When a Docker step fails, the runtime reassembles once in a new container, gated again; it
-  // also outlives a run that ended before the release. Release whichever assembly waits until done.
   const releaseUntil = (done: () => boolean | Promise<boolean>) =>
     waitFor(signal, async () => {
       await gate.release().catch(() => {});
@@ -121,7 +117,6 @@ it("lets a healthy run finish when another run exceeds its shared assembly log b
   try {
     await healthy.joined;
     limited = start({ outputLimitBytes: 64 });
-    // Its replay proves both runs joined the still-blocked assembly before it emits the overflow.
     await limited.joined;
     await releaseUntil(runsEnded);
     expect(await limited.result).toMatchObject({
@@ -133,7 +128,6 @@ it("lets a healthy run finish when another run exceeds its shared assembly log b
     expect(await healthy.result).toMatchObject({ success: true, result: { ok: true } });
     expect([healthy.started(), limited.started()]).toEqual([true, false]);
   } finally {
-    // Removing a waiting assembly would make the runtime reassemble it: let it finish instead.
     await releaseUntil(async () => runsEnded() && (await owned("container")).length === 0);
     const images = await owned("image");
     if (images.length > 0) await exec("docker", ["image", "rm", "--force", ...images]);
@@ -144,21 +138,17 @@ it("lets a healthy run finish when another run exceeds its shared assembly log b
 it("measures partially shared bases independently of excluded images, orphan commits and inventory size", async ({
   signal,
 }) => {
-  // Other worktrees share this Docker daemon: its calls take as long as they need, up to the ceiling.
   heldDeadlines();
   const directory = await temporaryDirectory("swizzle-image-disk-docker-");
   const marker = randomUUID();
   const stack = `image-disk-${marker}`;
   const label = `swizzle.verify-image-disk=${marker}`;
-  // Fixture commands stop with the test; `cleanup` removes what they made also after a timeout.
   const dockerUntil =
     (stop?: AbortSignal) =>
     async (...args: string[]) => {
       try {
         return (await exec("docker", args, { maxBuffer: 8 * MIB, signal: stop })).stdout;
       } catch (error) {
-        // containerd drops the lease of every import and commit in flight when anything on this
-        // daemon runs `docker image prune`; the fixture cannot hold a lease of its own.
         if (error instanceof Error && error.message.includes("lease does not exist")) {
           throw new Error(
             `docker ${args[0]} ${args[1] ?? ""} lost its containerd lease: a concurrent \`docker image prune\` on this daemon removed it. Rerun once no prune runs.`,
@@ -222,7 +212,6 @@ it("measures partially shared bases independently of excluded images, orphan com
     const b = tag("b");
     await add("a", [common, zero, customA, await fixture.layer("a", randomBytes(MIB))], stack, old);
     await add("b", [common, zero, customB, await fixture.layer("b", randomBytes(MIB))], stack, old);
-    // This excluded image shares custom-a too. A daemon-wide shared size would undercount A.
     await add(
       "excluded",
       [common, zero, customA, await fixture.layer("excluded", randomBytes(2 * MIB))],
@@ -234,7 +223,6 @@ it("measures partially shared bases independently of excluded images, orphan com
     expect(imageA.RootFS.Layers.filter((id) => imageB.RootFS.Layers.includes(id))).toEqual(
       (await inspect(baseCommon)).RootFS.Layers,
     );
-    // Payload sizes are independent of Docker's version-dependent packed/unpacked Size fields.
     const expectedActive = 20 * MIB;
     vi.stubEnv("SWIZZLE_STACK", stack);
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "100");
@@ -281,12 +269,10 @@ it("measures partially shared bases independently of excluded images, orphan com
     expect((await inspect(cached)).Id).toBe(cachedId);
     closeToDisk(retained.disk.activeBytes, expectedActive);
 
-    // The orphan also consumes private bytes: lowering the budget must evict the cached image.
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", String(Math.floor(expectedRetained / MIB) - 1));
     expect((await pruneRunImages({ keep: new Set([a, b]), signal })).removed).toBe(1);
 
     const largeStack = `${stack}-large`;
-    // Twenty images span two inspect batches and three rounds of history reads.
     const inventory = Array.from({ length: 20 }, (_, i) => tag(`inventory-${i}`));
     for (const [i] of inventory.entries()) {
       await add(
@@ -306,7 +292,6 @@ it("measures partially shared bases independently of excluded images, orphan com
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "100");
     const large = await pruneRunImages({ keep: new Set(inventory), signal });
     expect(large.removed).toBe(0);
-    // Each image adds a source of a few bytes to the common and custom-a layers they all share.
     closeToDisk(large.disk.activeBytes, 12 * MIB);
   } finally {
     const ids = [
@@ -336,7 +321,6 @@ interface LayerDescriptor {
   readonly file: string;
 }
 
-/** A Docker save archive, accepted by both classic and containerd image stores. */
 async function imageArchive(directory: string, marker: string) {
   const root = path.join(directory, "archive");
   await mkdir(root);

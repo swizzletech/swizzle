@@ -4,8 +4,6 @@ import type { Repo } from "../repo.js";
 
 export const SKILL = "apps/cli/assets/skills/swizzle-builder";
 
-// Prose claims the skill must not make. The commands and flags it teaches are checked against
-// the CLI itself by scripts/agent-reference-drift.test.ts.
 const SKILL_FORBIDS: ReadonlyArray<readonly [RegExp, string]> = [
   [/Dockerfile\.service/u, "the worker image builds from infra/docker/Dockerfile"],
   [
@@ -28,16 +26,8 @@ export const SKILL_REQUIRES = [
   "localhost is not an auth bypass",
 ];
 
-/**
- * A path with at least one slash and any leading `./` or `../` steps, or one directory with a trailing
- * slash such as `infra/`; a trailing dot ends a sentence.
- */
 const PATH = /(?:\.\.?\/)*[\w.@-]*(?:\/[\w.@-]*[\w@-])+|[\w.@-]*[\w@-]\//gu;
 
-/**
- * The repository paths `text` names, from the root or relative to `file`, outside the skill itself.
- * Authors install the skill from npm without a checkout, so such a path points at nothing for them.
- */
 function checkoutPaths(repo: Repo, file: string, text: string): string[] {
   return [...new Set(text.match(PATH))].filter((found) => {
     const target = /^\.\.?\//u.test(found)

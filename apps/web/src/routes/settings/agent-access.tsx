@@ -1,8 +1,3 @@
-// Settings › Agent access (`/settings/agent-access`): the one place to connect an agent. It sets
-// the two identities an agent can act as side by side: an agent token, which acts as the signed-in
-// person and is made here with a scope and shown once, and a project's service account, which the
-// project's admins make on its Service accounts tab, linked from here.
-
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Fragment, useEffect, useRef, useState } from "react";
@@ -34,10 +29,6 @@ export function AgentAccess() {
   const [scope, setScope] = useState<Scope>(FULL_SCOPE);
   const projects = useProjects();
   const [created, setCreated] = useState<CreatedApiToken | null>(null);
-  // The browser keeps a page it leaves in the back/forward cache, state and all, and Back shows
-  // it again. Dropping the token before the page is hidden keeps the promise to show it once.
-  // A creation still in flight answers in the cached page, so it shows its token only when the
-  // page was not hidden since the request started.
   const pageHides = useRef(0);
   useEffect(() => {
     const forget = () => {
@@ -52,7 +43,6 @@ export function AgentAccess() {
     queryKey: ["tokens", ...queryScope],
   });
   const create = useMutation({
-    // The token goes to this component's state alone, never into the mutation cache.
     mutationFn: async () => {
       const hidesBefore = pageHides.current;
       const token = await api.createApiToken({
@@ -197,11 +187,6 @@ export function AgentAccess() {
   );
 }
 
-/**
- * The other identity an agent can act as. It links to the Service accounts tab of each project the
- * person administers; someone who administers none learns whom to ask, and gets no link to a tab
- * they cannot open.
- */
 function ServiceAccountsDoor({ projects }: { readonly projects: ReturnType<typeof useProjects> }) {
   const administered = (projects.data ?? []).filter((project) => project.role === "admin");
   return (
@@ -218,7 +203,6 @@ function ServiceAccountsDoor({ projects }: { readonly projects: ReturnType<typeo
   );
 }
 
-/** Where the person's service accounts live: one link per project they administer. */
 function ServiceAccountLinks(props: {
   readonly projects: ReturnType<typeof useProjects>;
   readonly administered: readonly Project[];
@@ -255,10 +239,6 @@ function ServiceAccountLinks(props: {
   );
 }
 
-/**
- * The one-time block with the token and the commands that set the agent's CLI up. The agent pastes
- * it where it already works, so the workspace goes into a new folder there.
- */
 function GiveToAgent(props: { readonly token: CreatedApiToken; readonly onDismiss: () => void }) {
   const { environment } = useDashboardClient();
   const block = [

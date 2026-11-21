@@ -1,8 +1,3 @@
-/**
- * The `swizzle` command tree and its one runner. `createProgram` registers every command group;
- * `runCli` parses argv, prints every answer and every error through output.ts, and returns the
- * exit code. bin.ts is the executable that calls `runNodeCli`.
- */
 import {
   AUTOMATION_RUNTIME_EXECUTION_MODES,
   AUTOMATION_RUNTIME_LANGUAGES,
@@ -51,7 +46,6 @@ import { registerWorkspaceCommand } from "./workspace-command.js";
 
 export { checkInvocation, describeCommandTree, describeOption } from "./introspect.js";
 
-/** The flags every command accepts, wherever they stand in argv. */
 const GLOBAL_OPTIONS = ["apiUrl", "profile", "environment", "debug"] as const;
 
 export function createProgram(io: CliIO = createNodeIO()): Command {
@@ -72,7 +66,6 @@ export function createProgram(io: CliIO = createNodeIO()): Command {
     writeOut: (message) => io.stdout(message),
   });
   program.action(async () => await renderHome(io, program.opts() as ApiCommandOptions));
-  // The loop an agent runs, so `swizzle --help` alone is enough to build, ship and operate one.
   withExamples(program, [
     "swizzle init ./hello -t python",
     `swizzle run ./hello --payload '{"name":"Ada"}'`,
@@ -110,8 +103,6 @@ export function createProgram(io: CliIO = createNodeIO()): Command {
       config: await loadProfileConfig(),
     });
     actionCommand.setOptionValue("apiUrl", resolved.url);
-    // The profile's project fills every optional --project the command was not given. A required
-    // one, such as move's target, stays explicit: commander checks it before this hook runs.
     const definesProject = actionCommand.options.some(
       (option) => option.long === "--project" && !option.mandatory,
     );
@@ -122,7 +113,6 @@ export function createProgram(io: CliIO = createNodeIO()): Command {
     ) {
       actionCommand.setOptionValueWithSource("project", resolved.project, "config");
     }
-    // Command actions use this token for environment discovery and their API calls.
     setApiAmbientContext({
       apiUrl: resolved.url,
       debug: globals.debug === true,
@@ -161,7 +151,6 @@ export function createProgram(io: CliIO = createNodeIO()): Command {
   return program;
 }
 
-/** Parses and runs one invocation; every answer and every error goes to stdout. */
 export async function runCli(
   argv: readonly string[] = process.argv.slice(2),
   io: CliIO = createNodeIO(),
@@ -194,7 +183,6 @@ export async function runCli(
   }
 }
 
-/** The process entry of bin.ts: real streams, a quiet broken pipe, the exit code. */
 export async function runNodeCli(): Promise<void> {
   const exitOnBrokenPipe = (error: NodeJS.ErrnoException) => {
     if (isBrokenPipeError(error)) process.exit(0);
@@ -206,10 +194,6 @@ export async function runNodeCli(): Promise<void> {
   process.exitCode = await runCli();
 }
 
-/**
- * A parse error, with what the command accepts folded in, so one more call fixes it: the valid
- * flags for an unknown flag, the subcommands for an unknown command.
- */
 function usageError(program: Command, argv: readonly string[], error: CommanderError): AgentError {
   const { command, word } = checkInvocation(program, argv);
   const path = commandPath(command);
@@ -244,11 +228,6 @@ function usageError(program: Command, argv: readonly string[], error: CommanderE
   });
 }
 
-/** A typo of `name`: at most two single-character edits away. */
-/**
- * The subcommand closest to a mistyped word: at most one edit away for a word of up to four
- * letters, two for a longer one, so `nope` does not suggest `move`.
- */
 function nearestCommand(word: string, names: readonly string[]): string | undefined {
   const allowed = word.length <= 4 ? 1 : 2;
   let best: { readonly name: string; readonly distance: number } | undefined;
@@ -298,8 +277,6 @@ function runHandler(io: CliIO) {
   };
 }
 
-// ---------- schema ----------
-
 const SCHEMA_TYPES = ["config", "error", "scaffolds", "runtime-error-codes", "enums", "exit-codes"];
 
 function registerSchema(program: Command, io: CliIO): void {
@@ -316,8 +293,6 @@ function registerSchema(program: Command, io: CliIO): void {
   });
 }
 
-// ---------- commands (self-describe) ----------
-
 function registerCommandsMeta(program: Command, io: CliIO): void {
   const command = program
     .command("commands")
@@ -328,8 +303,6 @@ function registerCommandsMeta(program: Command, io: CliIO): void {
     respond(io, describeCommandTree(program) as unknown as Record<string, unknown>);
   });
 }
-
-// ---------- schema builder ----------
 
 function buildSchema(type: string): Record<string, unknown> {
   switch (type) {

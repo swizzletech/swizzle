@@ -1,16 +1,9 @@
-// A mail server that accepts every message and keeps it, for tests and the dev stack: point
-// SWIZZLE_SMTP_URL at smtp://127.0.0.1:<port> and read `messages`. It offers no STARTTLS, which
-// the Swizzle mailer accepts only from a loopback address, and it accepts any AUTH PLAIN.
-// Commands it does not implement get 502, as a real server answers them.
-
 import { createServer, type Server } from "node:net";
 
 export interface SunkMail {
-  /** The credentials of AUTH PLAIN on this connection, null without AUTH. */
   readonly auth: { readonly user: string; readonly password: string } | null;
   readonly from: string;
   readonly to: readonly string[];
-  /** The header lines as the client sent them, folded lines included. */
   readonly headers: readonly string[];
   readonly subject: string;
   readonly text: string;
@@ -106,7 +99,6 @@ function parse(
 ): SunkMail {
   const blank = lines.indexOf("");
   const headers = lines.slice(0, blank);
-  // A line that starts with white space continues the header above it.
   const unfolded = headers.join("\r\n").split(/\r\n(?![ \t])/u);
   const header = (name: string) =>
     unfolded
@@ -114,7 +106,6 @@ function parse(
       ?.slice(name.length + 1)
       .replace(/\r\n[ \t]+/gu, " ")
       .trim() ?? "";
-  // White space between two encoded words belongs to neither (RFC 2047, section 6.2).
   const subject = header("subject")
     .replace(/\?=\s+=\?/gu, "?==?")
     .replace(/=\?UTF-8\?([BQ])\?([^?]*)\?=/giu, (_, encoding: string, word: string) =>
@@ -138,7 +129,6 @@ function decodeBody(encoding: string, body: readonly string[]): string {
   }
 }
 
-/** The bytes of quoted-printable text: `=` ends a soft line break or starts a hex byte. */
 function quotedPrintable(text: string): Buffer {
   return Buffer.from(
     text

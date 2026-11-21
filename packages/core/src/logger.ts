@@ -18,11 +18,6 @@ interface LoggedRequest {
   readonly url?: string;
 }
 
-/**
- * Fastify's request serializer with credentials cut out of the URL: the capability token of an
- * approval or event callback link and the OAuth callback's `code` and `state`. Fastify prefers the logger's own `req`
- * serializer over its default, so every request log line goes through this.
- */
 function serializeRequest(request: LoggedRequest) {
   return {
     host: request.host,
@@ -69,7 +64,6 @@ export function createLogger(name: string, options: CreateLoggerOptions = {}): L
         "VALKEY_URL",
       ],
     },
-    // pino serializes only `err` as an Error by default; under `error`, an Error logged as `{}`.
     serializers: {
       err: pino.stdSerializers.err,
       error: pino.stdSerializers.err,

@@ -1,10 +1,3 @@
-// Settings `/settings/<section>`: one page per section, with a nav in two groups. "You" holds what
-// every person sets for themselves: Agent access, Notifications, Account and Two-factor sign-in.
-// "Instance" holds what runs the instance, for its owners and admins: People, Teams, Workers and
-// Status. A member sees neither the group nor its sections, and an address of one opens the first
-// section instead. The foot of the nav names the version for everyone. Each section's title and
-// intro are its page's head; its content is a module in routes/settings/.
-
 import { useQuery } from "@tanstack/react-query";
 import { Link, Navigate, useParams } from "@tanstack/react-router";
 import type { ReactNode } from "react";
@@ -33,7 +26,6 @@ interface Viewer {
   readonly queryScope: readonly unknown[];
 }
 
-/** "you" is every person's own; "instance" is only for the instance's owners and admins. */
 type Group = "you" | "instance";
 
 const GROUP_LABEL: Record<Group, string> = { instance: "Instance", you: "You" };
@@ -92,7 +84,6 @@ const SECTIONS: Record<
     group: "instance",
     intro: "Every machine that runs automations, its groups and what it runs now.",
     label: "Workers",
-    // A new environment starts the enrollment form empty.
     render: ({ queryScope }) => <Workers key={JSON.stringify(queryScope)} />,
   },
   status: {
@@ -109,7 +100,6 @@ export function SettingsPage() {
   const status = useAuthStatus();
   const me = status.data?.user ?? null;
   if (!isSettingsSection(section)) return <NotFound />;
-  // The shell renders pages only once someone is signed in.
   if (me === null) return null;
   const operator = me.role === "owner" || me.role === "admin";
   const groups: readonly Group[] = operator ? ["you", "instance"] : ["you"];
@@ -156,7 +146,6 @@ export function SettingsPage() {
   );
 }
 
-/** The version, so anyone can name it when they report a problem or match their CLI to it. */
 function Version() {
   const { api } = useDashboardClient();
   const health = useQuery({ queryFn: () => api.getHealth(), queryKey: ["health"] });

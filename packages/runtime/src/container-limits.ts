@@ -1,13 +1,3 @@
-// The resources a container that runs automation code may use: the run sandbox, and the install
-// step that assembles its run image, where dependency code such as a PEP 517 backend runs too. Both
-// take their limits from containerLimitArguments, so the two cannot drift apart. The install
-// container's writable layer has its own bound, installDiskLimitMb.
-//
-// An automation asks for memory and CPUs in runtime.container. The operator caps both with
-// SWIZZLE_MAX_RUN_MEMORY_MB and SWIZZLE_MAX_RUN_CPUS: deploy readiness reports a request above the
-// cap, and the worker refuses one before it creates a container, so lowering the cap also stops
-// existing deployments that exceed it. A cap that is not a positive number is PLATFORM_CONFIG_INVALID,
-// which fails the run at once: every retry would read the same setting.
 import type { AutomationRuntimeConfig } from "@swizzle/config";
 
 import { AutomationRuntimeError } from "./errors.js";
@@ -26,7 +16,6 @@ export interface ContainerLimitIssue {
   readonly subject: "runtime.container.cpus" | "runtime.container.memory_mb";
 }
 
-/** The automation's requested limits that exceed the platform maximum; empty when all fit. */
 export function containerLimitIssues(
   runtime: Pick<AutomationRuntimeConfig, "container">,
   environment: NodeJS.ProcessEnv = process.env,
@@ -50,15 +39,6 @@ export function containerLimitIssues(
   return issues;
 }
 
-/**
- * The `docker create` arguments that bound a container running this automation's code: processes,
- * open files, memory without swap, and CPUs. Throws RUNTIME_CONTAINER_LIMIT_EXCEEDS_MAX when the
- * automation asks for more than the platform maximum.
- *
- * Processes are bounded by the container's PID limit alone. Every sandbox runs as the same user,
- * and RLIMIT_NPROC (`--ulimit nproc`) counts that user's tasks in all containers on the host, so
- * one run holding processes would make every other run's fork fail (f-222).
- */
 export function containerLimitArguments(
   runtime: Pick<AutomationRuntimeConfig, "container">,
   environment: NodeJS.ProcessEnv = process.env,
@@ -85,10 +65,6 @@ export function containerLimitArguments(
   ];
 }
 
-/**
- * How many MiB the install container's writable layer may hold, the copied source included:
- * SWIZZLE_MAX_INSTALL_DISK_MB, default 4096. The run sandbox writes only to sized tmpfs mounts.
- */
 export function installDiskLimitMb(environment: NodeJS.ProcessEnv = process.env): number {
   return platformMaximum(environment, MAX_INSTALL_DISK_MB_ENV, DEFAULT_MAX_INSTALL_DISK_MB);
 }

@@ -82,7 +82,6 @@ export function toPosixPath(input: string): string {
   return input.split(path.sep).join(path.posix.sep);
 }
 
-/** Allocation and every operation that can fail live under the same cleanup owner. */
 export async function withMaterializedSource<T>(
   copy: (directory: string) => Promise<void>,
   use: (directory: string) => Promise<T>,

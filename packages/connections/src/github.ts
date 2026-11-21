@@ -1,7 +1,6 @@
 import { createOAuth2Adapter } from "./oauth2.js";
 import type { ConnectionProviderAdapter } from "./types.js";
 
-// OAuth App tokens do not expire. Expiring GitHub App tokens use refresh.
 export const githubProviderAdapter: ConnectionProviderAdapter = createOAuth2Adapter({
   id: "github",
   requiresScopes: false,

@@ -16,7 +16,6 @@ interface RunQueueJobData {
   readonly traceContext?: Record<string, string>;
 }
 
-/** An API check due at `dueAt`. Its job ID starts with `CHECK_JOB_ID_PREFIX` and names no run. */
 interface CheckQueueJobData {
   readonly kind: "check";
   readonly checkId: string;
@@ -27,14 +26,12 @@ export type QueueJobData = RunQueueJobData | CheckQueueJobData;
 
 const CHECK_JOB_ID_PREFIX = "check-";
 
-/** BullMQ job IDs cannot hold ":", so the due time goes in as epoch milliseconds. */
 function checkJobId(checkId: string, dueAt: string): string {
   return `${CHECK_JOB_ID_PREFIX}${checkId}-${Date.parse(dueAt)}`;
 }
 
 export interface RunQueueProducer {
   close(): Promise<void>;
-  /** Adds a check job, once per check and due time; a job that already exists stays. */
   enqueueCheck(input: {
     readonly checkId: string;
     readonly dueAt: string;
@@ -101,8 +98,6 @@ export function createRunQueueProducer(valkeyUrl: string): RunQueueProducer {
       );
     },
     enqueueCheck: async (input) => {
-      // One attempt: the worker records every outcome itself. A job that is lost or stalls is
-      // removed, so the next scheduler tick finds the check still due and adds it again.
       await getQueue(input.queueName).add(
         CHECK_JOB_NAME,
         { checkId: input.checkId, dueAt: input.dueAt, kind: "check" } satisfies CheckQueueJobData,
@@ -115,8 +110,6 @@ export function createRunQueueProducer(valkeyUrl: string): RunQueueProducer {
       );
     },
     hasJob: async (input) => {
-      // BullMQ's getJob resolves to undefined (not null) for missing jobs; a
-      // null-only check makes hasJob always true and disables run recovery.
       const job = await getQueue(input.queueName).getJob(input.jobId);
       return job !== undefined && job !== null;
     },

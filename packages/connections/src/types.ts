@@ -12,21 +12,12 @@ export function isConnectionProviderId(value: string): value is ConnectionProvid
   return (CONNECTION_PROVIDER_IDS as readonly string[]).includes(value);
 }
 
-/**
- * Endpoint configuration for providers without a built-in adapter.
- * Stored on the connection record, not in automation config.
- */
 export interface CustomOAuth2ProviderConfig {
   readonly authorizeUrl: string;
   readonly tokenUrl: string;
   readonly revokeUrl?: string;
 }
 
-/**
- * Optional configuration for the Microsoft (Entra ID) adapter. `tenant`
- * selects the sign-in audience: `common` (default), `organizations`,
- * `consumers`, or a specific tenant id/domain.
- */
 export interface MicrosoftProviderConfig {
   readonly tenant: string;
 }
@@ -45,7 +36,6 @@ export interface CreateAuthorizationUrlInput {
   readonly state: string;
   readonly codeVerifier: string;
   readonly scopes: readonly string[];
-  /** Force the provider consent screen so a fresh refresh token is issued. */
   readonly forceConsent: boolean;
 }
 

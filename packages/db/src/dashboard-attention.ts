@@ -20,49 +20,31 @@ export interface BuildAttentionInput {
     Extract<DashboardAttentionItem, { kind: "approval" }>,
     "kind"
   >[];
-  /** The automations whose own rows Needs you raises: on the Overview, those its reader may edit. */
   readonly automations: readonly DashboardAutomationSummary[];
   readonly deliveries: readonly StoredNotificationDelivery[];
-  /** The environment the Overview shows. */
   readonly environment: string;
-  /** The environments a live scheduler serves, judged by the API. */
   readonly schedulerEnvironments: ReadonlySet<string>;
-  /** The environment's queued runs with their placement against `workers`. */
   readonly queued: readonly (DashboardQueuedRuns & { readonly placement: RunPlacement })[];
   readonly latestMaintenanceRun: StoredMaintenanceRun | null;
   readonly observedAt: Date;
-  /** Null when the queue could not be read. */
   readonly queueCounts: DashboardQueueSummary["counts"] | null;
-  /** The unrevoked workers that reach the environment. */
   readonly workers: readonly Pick<WorkerStatus, "name" | "state" | "runImageDiskOverBudget">[];
 }
 
-/**
- * The Needs you items only an instance owner or admin acts on: the instance's own problems, and
- * runs that wait for a worker, which only they grant or bring online.
- */
 export const INSTANCE_ATTENTION: ReadonlySet<DashboardAttentionItem["kind"]> = new Set([
   "notifications-failed",
   "platform",
   "waiting-for-worker",
 ]);
 
-/** The waits only the owner ends: no worker granted, none online, or its service unhealthy. */
 const UNPLACED: ReadonlySet<PlacementWait> = new Set(["no-worker", "offline", "service-unhealthy"]);
 
-/** The newest run that shows how the code fares: one in flight or cancelled shows nothing yet. */
 function latestResult(automation: DashboardAutomationSummary): DashboardRunGlance | undefined {
   return automation.recentRuns.find(
     (run) => isFinishedRun(run.status) && run.state !== "cancelled",
   );
 }
 
-/**
- * The Overview's "Needs you": what waits for the owner, in the order the page lists it. Approvals
- * first, then failing automations, then what blocks an automation, then API warnings, then
- * platform problems. Without automations or queued runs only approvals show, so a fresh
- * instance never reads as a fault.
- */
 export function buildAttention(input: BuildAttentionInput): readonly DashboardAttentionItem[] {
   const items: DashboardAttentionItem[] = input.approvals
     .toSorted((left, right) => left.waitingSince.localeCompare(right.waitingSince))
@@ -92,7 +74,6 @@ export function buildAttention(input: BuildAttentionInput): readonly DashboardAt
     }
   }
 
-  // By project and name: each project holds its own secret of a name.
   const missingSecrets = new Map<
     string,
     Omit<Extract<DashboardAttentionItem, { kind: "missing-secret" }>, "kind">
@@ -104,7 +85,6 @@ export function buildAttention(input: BuildAttentionInput): readonly DashboardAt
   for (const automation of input.automations) {
     for (const secret of automation.requiredSecrets) {
       if (secret.state !== "bound") {
-        // The project decides the state, so every automation of one key shares it.
         const key = JSON.stringify([automation.projectId, secret.name]);
         const known = missingSecrets.get(key);
         missingSecrets.set(key, {
@@ -117,8 +97,6 @@ export function buildAttention(input: BuildAttentionInput): readonly DashboardAt
     }
     for (const connection of automation.requiredConnections) {
       if (connection.status !== "active") {
-        // Deployments of one project can differ: an older one lost the connection it bound while a
-        // newer one bound its replacement, so each status gets its own row.
         const key = JSON.stringify([automation.projectId, connection.name, connection.status]);
         const known = brokenConnections.get(key);
         brokenConnections.set(key, {
@@ -146,8 +124,6 @@ export function buildAttention(input: BuildAttentionInput): readonly DashboardAt
       });
     }
   }
-  // Runs no worker can take now wait out their deadline unless the owner acts; a busy group or a
-  // worker about to pull clears by itself.
   for (const queued of input.queued) {
     if (!UNPLACED.has(queued.placement.wait)) continue;
     items.push({
@@ -240,12 +216,6 @@ export function buildAttention(input: BuildAttentionInput): readonly DashboardAt
 const SUNSET_WINDOW_MS = 90 * DAY_MS;
 const NOTICE_FRESH_MS = 7 * DAY_MS;
 
-/**
- * An automation's API warnings, distinct from failed runs: a check that found drift or could not
- * decide 3 times in a row, a sunset notice its runs saw within 7 days that is due within 90 days
- * or a deprecation already in effect, and a passive automation that has not reached its API
- * for longer than its threshold. An automation with `api_check: off` shows only sunset notices.
- */
 function apiAttention(
   automation: DashboardAutomationSummary,
   automationRef: DashboardAutomationRef,

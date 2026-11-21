@@ -149,7 +149,6 @@ it("cancels one caller waiting for rotation while other callers finish that rota
   void continuing.catch(() => {});
   await host.stalled;
   caller.abort(new Error("caller canceled"));
-  // The stalled request is still held, so only the cancellation can settle this.
   expect(await canceled).toBe(true);
   host.release();
   await continuing;
@@ -169,9 +168,7 @@ it.for(["probe", "renewal"] as const)(
     );
     await host.stalled;
     shutdown.abort(new Error("worker closing"));
-    // The stalled request is still held, so only the cancellation can settle this.
     expect(await canceled).toBe(true);
-    // Drain does not wait on or start another credential rotation during shutdown.
     await request("/worker/drain", { draining: true });
     expect(host.renewals()).toBe(0);
     host.release();

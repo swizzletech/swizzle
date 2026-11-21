@@ -1,15 +1,7 @@
-// The one fetch wrapper: every call goes to the API base with the session cookie, and a failed
-// answer throws ApiError with the API's code, details and fix command.
-
 import { ApiError, type ApiErrorResponse } from "../api";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/$/, "");
 
-/**
- * The API's public address as the CLI reaches it from this browser's origin. The packaged stack
- * opened at `localhost` serves the API at `api.localhost` on the same port, the address the CLI
- * defaults to and install.md teaches, so the dashboard names that one.
- */
 export function publicApiUrl(
   base: string = API_BASE_URL,
   origin: string = window.location.origin,

@@ -196,8 +196,6 @@ export async function updateAutomationTriggerStatus(
   client: DatabaseClient,
   input: UpdateTriggerStatusInput,
 ): Promise<StoredTrigger | null> {
-  // Under the automation's shared row lock: a move or delete checks its triggers while it holds
-  // that row, so a resume cannot turn one active between their check and their commit.
   const triggerId = await client.db.transaction(async (tx) => {
     const automation = await shareLiveAutomation(tx, automationNamed(input.automationSlug));
     if (automation === null) return null;

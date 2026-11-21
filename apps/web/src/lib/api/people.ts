@@ -1,5 +1,3 @@
-// Management records for owners and admins, and minimal identities for assignment and sharing.
-
 import type {
   CreateTeamResponse,
   DeleteTeamResponse,
@@ -33,10 +31,6 @@ export function peopleCalls(environment: string) {
       return (await request<InvitationsResponse>("/invitations")).invitations;
     },
 
-    /**
-     * Invites a person and returns the link to pass on, which the API shows only now; with a mail
-     * server it is also mailed. `projects` name each project by id or slug.
-     */
     async invite(input: {
       readonly email: string;
       readonly projects: readonly { readonly project: string; readonly role: ProjectRole }[];
@@ -58,14 +52,12 @@ export function peopleCalls(environment: string) {
       );
     },
 
-    /** Suspending ends the person's sessions and refuses their tokens until reactivated. */
     async setSuspended(userId: string, suspended: boolean) {
       return await request<PersonResponse>(`/users/${encodeURIComponent(userId)}/suspension`, {
         method: suspended ? "PUT" : "DELETE",
       });
     },
 
-    /** A link that sets the person's new password once, until `expiresAt`; the API shows it only now. */
     async createResetLink(userId: string) {
       return await request<ResetLinkResponse>(`/users/${encodeURIComponent(userId)}/reset-link`, {
         method: "POST",

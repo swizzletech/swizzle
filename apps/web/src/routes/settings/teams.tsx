@@ -1,6 +1,3 @@
-// Settings › Teams, for owners and admins: create and delete teams and choose their members. A
-// project's admins then give a team a role on the project's Access tab; every member gets it.
-
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ActionError } from "../../components/actions";

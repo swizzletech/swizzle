@@ -43,11 +43,6 @@ for (const [syntax, source] of [
   });
 }
 
-// The track above the runs and the Play tab, on verify-probe's flowchart: the waiting station
-// carries the decision, the fold outlives a reload, the code reads the run's position, and the
-// phone folds the rail into cards above the code.
-
-// A phone puts the track below the chosen run, so the decision stays in the panel at the top.
 test("at phone width the run panel keeps the approval and the station below carries none", async ({
   page,
 }) => {
@@ -82,7 +77,6 @@ test("Approve on the waiting station, with no approval card beside it", async ({
   await expect(gate).toContainText("Assigned to anna@example.com");
   await expect(page.getByTestId("run-panel").getByTestId("approval-card")).toHaveCount(0);
 
-  // Folded, the station is gone, so the panel's card comes back; unfolded it leaves again.
   await page.getByRole("button", { name: "Flow" }).click();
   await expect(page.getByTestId("run-panel").getByTestId("approval-card")).toBeVisible();
   await page.getByRole("button", { name: "Flow" }).click();
@@ -122,22 +116,18 @@ test("a finished run replays: the code follows the clock through the wait and ba
   await page.goto(`/automations/verify-probe?tab=play&run=${OK_RUN_ID}`);
   const code = page.getByTestId("play-code");
   await expect(code.locator('.pl[data-step="notify"] .tag')).toHaveText("done · 0.3 s");
-  // The rail and the phone bar each hold a transport; the desktop reads the rail's.
   await expect(page.getByTestId("play-rail").getByTestId("play-transport")).toContainText(
     "waits compressed",
   );
 
-  // The page's clock stands still from here, so the test decides where the replay is.
   await page.clock.pauseAt(Date.now() + 1_000);
   await page.getByRole("button", { name: "Play", exact: true }).click();
-  // The 4.6 s approval wait plays from 0.4 s to 1.9 s; the code reads it as waiting while it does.
   await page.clock.runFor(1_000);
   await expect(code.locator('.pl[data-step="gate"]').first()).toHaveClass(/waiting/u);
   await expect(code.locator('.pl[data-step="notify"]').first()).not.toHaveClass(/done/u);
   await expect(
     page.getByTestId("play-track").locator('[data-testid="station"][data-step="gate"]'),
   ).toHaveAttribute("data-state", "waiting");
-  // The replay ends at 2.25 s: the record is exact again and the transport offers Play once more.
   await page.clock.runFor(1_500);
   await expect(page.getByRole("button", { name: "Play", exact: true })).toBeVisible();
   await expect(code.locator('.pl[data-step="notify"] .tag')).toHaveText("done · 0.3 s");
@@ -179,7 +169,6 @@ test("Play reads the waiting step in colour and greys the rest", async ({ page }
     page.getByTestId("play-track").locator('[aria-current="step"][data-step="gate"]'),
   ).toBeVisible();
 
-  // Clicking a station pins its code instead.
   await page
     .getByTestId("play-track")
     .locator('[data-testid="station"][data-step="fetch"] button')
@@ -240,7 +229,6 @@ test("at 1280x720 a track wider than the run pane scrolls sideways inside its ba
 
   const track = page.getByTestId("flow-track");
   await expect(track.getByTestId("station")).toHaveCount(7);
-  // Wider than the band, the track keeps its size and scrolls; the page does not.
   const band = track.locator(".track-scroll");
   expect(await band.evaluate((area) => area.scrollWidth - area.clientWidth)).toBeGreaterThan(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1280);
@@ -250,8 +238,6 @@ test("at 1280x720 a track wider than the run pane scrolls sideways inside its ba
   await expect(last).toHaveCSS("font-size", "12px");
 });
 
-// The track lays stations out before it renders, so it estimates how tall the details grow. A
-// full-width heading wraps at about half the characters a Latin one does.
 test("an approval with long CJK details keeps its buttons inside the station", async ({ page }) => {
   const state = seededState();
   const details = {
@@ -274,7 +260,6 @@ test("an approval with long CJK details keeps its buttons inside the station", a
   await track.screenshot({
     path: `${process.env.SWIZZLE_PROOF_DIR ?? process.env.SWIZZLE_E2E_OUTPUT_DIR}/cjk-station.png`,
   });
-  // The buttons sit inside the station's frame, not below it.
   const { approveBottom, stationBottom } = await gate.evaluate((station) => ({
     approveBottom: [...station.querySelectorAll("button")]
       .find((button) => button.textContent === "Approve")
@@ -284,12 +269,9 @@ test("an approval with long CJK details keeps its buttons inside the station", a
   expect(approveBottom).toBeLessThanOrEqual(stationBottom);
 });
 
-// A flow wider than its band, measured on the shape that first cut its text: it stays as short as
-// its labels allow, opens on the run's last station, and no edge cuts a station without a cue.
 test.describe("a flow wider than its band", () => {
   test.use({ viewport: { height: 900, width: 1440 } });
 
-  /** Which sides of the window cut a station, and which sides show the cue. */
   function edges(rail: Locator) {
     return rail.locator(".track-view").evaluate((view) => {
       const port = view.querySelector(".track-scroll")?.getBoundingClientRect();
@@ -308,7 +290,6 @@ test.describe("a flow wider than its band", () => {
     });
   }
 
-  /** The text of every station: its smallest size, and any label a word breaks or a box cuts. */
   function labels(rail: Locator) {
     return rail.locator('[data-testid="station"]').evaluateAll((stations) => {
       const sizes = stations.flatMap((station) =>
@@ -372,7 +353,6 @@ test.describe("a flow wider than its band", () => {
       };
     });
     expect(size.width).toBeLessThan(1700);
-    // The window's padding and the layout's margin, and no empty row above or below.
     expect(size.band - size.stations).toBeLessThanOrEqual(24);
     expect(await labels(band)).toEqual({ cut: [], smallest: 12, split: [] });
 

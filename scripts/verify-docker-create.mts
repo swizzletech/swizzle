@@ -1,4 +1,3 @@
-// Holds real Docker create replies past the metadata budget, then withholds them to prove the bound.
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -34,7 +33,6 @@ export async function verifyDockerCreate(evidence: string, baseImage: string): P
           response.writeHead(answer.statusCode ?? 502, answer.headers);
           answer.pipe(response);
         };
-        // This is a fault injector, not a test wait: the real CLI must outlive its former deadline.
         if (create && mode === "delayed") void delay(6_000).then(send);
         else if (!create) send();
         response.once("close", () => answer.destroy());
@@ -48,7 +46,6 @@ export async function verifyDockerCreate(evidence: string, baseImage: string): P
     socket.once("close", () => sockets.delete(socket));
   });
   proxy.on("upgrade", (request, client, head) => {
-    // Node delivers an upgrade request's JSON body through IncomingMessage, not the raw head.
     const body: Buffer[] = [];
     request.on("data", (chunk: Buffer) => body.push(chunk));
     request.once("end", () => {
@@ -132,7 +129,6 @@ export async function verifyDockerCreate(evidence: string, baseImage: string): P
   } catch (error) {
     failure = { error };
   } finally {
-    // Keep cleanup on the same private namespace, but let its control calls through.
     mode = "delayed";
     try {
       const exec = promisify(execFile);

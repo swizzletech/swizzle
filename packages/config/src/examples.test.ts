@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 
 import { parseAutomationConfig } from "./schema.js";
 
-// The shipped examples are what agents copy first, so each one must satisfy the live contract.
 const examplesRoot = fileURLToPath(new URL("../../../infra/examples", import.meta.url));
 const configPaths = (await readdir(examplesRoot, { recursive: true }))
   .filter((entry) => path.basename(entry) === "config.yaml")

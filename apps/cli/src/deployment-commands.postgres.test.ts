@@ -26,7 +26,6 @@ import {
 
 import { runCli } from "./main.js";
 
-// Commands that talk to an API instance, run against a real in-process API server with PostgreSQL stores.
 useCliTestEnvironment();
 
 describe("deployment commands", () => {
@@ -203,7 +202,6 @@ describe("deployment commands", () => {
     }
   });
 
-  // Behind a proxy the API knows where senders reach it only from SWIZZLE_PUBLIC_URL.
   it.each(["", "/api", "/platform/api"])(
     "prints working apply webhook URLs through public URL path %s",
     async (prefix) => {
@@ -325,7 +323,6 @@ describe("deployment commands", () => {
     const platform = await testPlatform({
       artifactsDirectory: path.join(stateDirectory, "artifacts"),
     });
-    // The isolated environment store reports no live services, so no scheduler serves staging.
     const app = await buildTestServer({
       platform,
       environment: "staging",
@@ -475,7 +472,6 @@ describe("deployment commands", () => {
         "--local-only",
         "--artifacts-dir",
         directory,
-        // Nothing listens here, so any API call fails.
         "--api-url",
         "http://127.0.0.1:9",
       ],

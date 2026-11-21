@@ -5,9 +5,6 @@ const DOCKERFILE = "infra/docker/Dockerfile";
 const SKILL_FILE = `${SKILL}/SKILL.md`;
 const PACKAGES_LINE = "The exact packages: Debian ";
 
-// The shipped skill tells agents what a deployed run can call. Its "Execution environment" names
-// the Node major and every Debian and npm package the runner-base target installs, so a change to
-// the image that leaves the skill behind fails here.
 export const skillNamesTheRunnerImage: Rule = {
   id: "skill-names-the-runner-image",
   check(repo) {
@@ -22,7 +19,6 @@ export const skillNamesTheRunnerImage: Rule = {
       ];
     }
     const [, node = "", body = ""] = stage;
-    // One shell command per entry: continuation lines joined, then split at && ; || and |.
     const commands = body
       .split("\n")
       .filter((line) => !line.trimStart().startsWith("#"))
@@ -33,7 +29,6 @@ export const skillNamesTheRunnerImage: Rule = {
       commands
         .flatMap((text) => command.exec(text)?.[1]?.trim().split(/\s+/u) ?? [])
         .filter((word) => /^[@a-z0-9]/u.test(word))
-        // pnpm@12 names a version, @openai/codex names a scope.
         .map((word) => word.replace(/(?<=.)@[^@/]+$/u, ""));
     const debian = installed(/apt-get install(.*)/u);
     const npm = installed(/npm install --global(.*)/u);

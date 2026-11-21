@@ -71,7 +71,6 @@ export interface CreatePlatformServiceFacadeOptions {
   readonly close: () => Promise<void>;
   readonly onRunCancelled?: (runId: string) => Promise<void> | void;
   readonly listReadinessWorkers: ListReadinessWorkers;
-  /** Why a queued run waits for a worker; see `PlatformRunDetail`. */
   readonly placeRun: (run: StoredRun) => Promise<RunPlacement | null>;
   readonly queue: RunQueueProducer;
   readonly runMaintenance: (
@@ -173,8 +172,6 @@ export function createPlatformServiceFacade(
           `Connection not found in environment ${place.environment}: ${name}`,
         );
       }
-      // Force a refresh whenever the token has an expiry, so the probe proves
-      // the whole credential chain (client secrets + refresh token) still works.
       const resolved = await resolvePlatformConnectionToken({
         connection: found,
         refreshSkewMs: Number.MAX_SAFE_INTEGER,
@@ -289,8 +286,6 @@ export function createPlatformServiceFacade(
         ...(deployOptions.skipReadinessCheck ? { skipReadinessCheck: true } : {}),
       });
 
-      // Building can take minutes. Checking again right before the commit means a use revoked
-      // meanwhile refuses this deploy, as it would refuse the next one.
       await deployOptions.credentials?.(credentials, projectId);
 
       try {
@@ -470,8 +465,6 @@ export function createPlatformServiceFacade(
 
     setAutomationTimeoutGrant: async (grantOptions) => {
       const { environment } = grantOptions;
-      // getDeploymentOrThrow anchors the grant to a registered automation and
-      // yields a 404 for an unknown one.
       const deployment = await getDeploymentOrThrow(
         store,
         grantOptions.automationName,

@@ -3,7 +3,6 @@ import { expect, it, vi } from "vitest";
 import { recordingProxy } from "../../../test/support.js";
 import { shutdownTracing, startTracing, trace } from "./tracing.js";
 
-// Compose passes the endpoint through as an empty string when the operator leaves it unset.
 it.each([undefined, "", "   "])("records no spans for the endpoint %j", async (endpoint) => {
   vi.stubEnv("OTEL_EXPORTER_OTLP_ENDPOINT", endpoint);
 
@@ -12,8 +11,6 @@ it.each([undefined, "", "   "])("records no spans for the endpoint %j", async (e
   expect(trace.getTracer("test").startSpan("probe").isRecording()).toBe(false);
 });
 
-// startTracing imports the OpenTelemetry SDK and its auto-instrumentations, up to 1.1 s of CPU. The
-// budget lets a loaded host give it a tenth of a core.
 it("exports spans through the control egress proxy", async () => {
   const proxy = await recordingProxy();
   vi.stubEnv("SWIZZLE_CONTROL_EGRESS_PROXY", proxy.url);

@@ -1,7 +1,3 @@
-// The dashboard's small parts: status marks, loading and error states, copy, and the brand mark.
-// Their look lives in styles.css under the same class names; these components add only behaviour
-// and words.
-
 import { type ReactNode, useEffect, useState } from "react";
 
 import { ApiError } from "../lib/api";
@@ -32,13 +28,11 @@ export function Skeleton(props: { readonly lines?: number; readonly label?: stri
   );
 }
 
-/** A failed request in words; a refused right says what it needs and where the person's role comes from. */
 export function errorText(error: unknown): string {
   if (error instanceof ApiError) return accessProblemInWords(error) ?? error.message;
   return error instanceof Error ? error.message : String(error);
 }
 
-/** A failed request, said as one: never an empty list. */
 export function ErrorNote(props: {
   readonly error: unknown;
   readonly title: string;
@@ -57,12 +51,6 @@ export function ErrorNote(props: {
   );
 }
 
-/**
- * Copies `text` and says so for two seconds. Where the browser refuses (plain HTTP has no
- * clipboard, or permission is denied) or does not answer within a second and a half, it shows the
- * text selected with a note, so the owner copies it by hand. In a parent that wraps, the text
- * takes the last row.
- */
 export function CopyButton(props: {
   readonly text: string;
   readonly label: string;
@@ -91,7 +79,6 @@ export function CopyButton(props: {
   };
   return (
     <>
-      {/* Disabled while the clipboard is asked, so a late answer cannot overwrite a newer one. */}
       <button
         className={props.className ?? "btn"}
         disabled={state === "copying"}
@@ -120,12 +107,10 @@ export function CopyButton(props: {
   );
 }
 
-/** A ref callback that is the same function on every render, so it focuses only when the node mounts. */
 function focusOnMount(node: HTMLElement | null): void {
   node?.focus();
 }
 
-/** True below the 900 px breakpoint the stylesheets use, where layouts go to one column. */
 export function usePhone(): boolean {
   const [phone, setPhone] = useState(() => window.matchMedia(PHONE_QUERY).matches);
   useEffect(() => {
@@ -139,7 +124,6 @@ export function usePhone(): boolean {
 
 const PHONE_QUERY = "(max-width: 900px)";
 
-/** Re-renders every `intervalMs`, so ages such as "4 min ago" stay true on an open page. */
 export function useNow(intervalMs = 30_000): Date {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -149,7 +133,6 @@ export function useNow(intervalMs = 30_000): Date {
   return now;
 }
 
-/** Text whose `backticked` parts are commands, set in mono. */
 export function WithCode(props: { readonly text: string }) {
   return props.text.split("`").map((part, index) =>
     index % 2 === 1 ? (
@@ -163,7 +146,6 @@ export function WithCode(props: { readonly text: string }) {
   );
 }
 
-/** A section heading with an optional note on the right. */
 export function SectionHead(props: { readonly title: string; readonly children?: ReactNode }) {
   return (
     <div className="sec-head">

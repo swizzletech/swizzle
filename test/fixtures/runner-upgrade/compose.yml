@@ -4,7 +4,7 @@ x-build: &build
   context: ../..
   dockerfile: Dockerfile
   args: &args
-    VERSION: 1.0.3
+    VERSION: &version 1.0.3
 services:
   runner-base:
     network_mode: none
@@ -15,6 +15,7 @@ services:
         <<: *args
         SWIZZLE_RUNNER_APT_PACKAGES: ${SWIZZLE_RUNNER_APT_PACKAGES:-}
   worker:
+    init: true
     network_mode: none
     build:
       <<: *build
@@ -25,10 +26,21 @@ services:
       runner-base:
         condition: service_completed_successfully
   api:
+    init: true
     network_mode: none
-    build:
-      <<: *build
-      target: api
+    image: node:26.12.1-alpine3.24
+    environment:
+      RELEASE_VERSION: *version
+    command:
+      - node
+      - --input-type=module
+      - -e
+      - >-
+        import {createServer} from 'node:http';
+        createServer((req, res) => {
+          res.setHeader('content-type', 'application/json');
+          res.end(JSON.stringify({status: 'ok', version: process.env.RELEASE_VERSION}));
+        }).listen(19820, '0.0.0.0');
   backup:
     network_mode: none
     profiles: [tools]

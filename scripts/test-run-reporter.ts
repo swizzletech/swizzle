@@ -3,12 +3,6 @@ import path from "node:path";
 import type { UserConsoleLog } from "vitest";
 import type { Reporter, SerializedError, TestModule, TestRunEndReason, Vitest } from "vitest/node";
 
-/**
- * Writes the whole run (every module, suite and test, its errors and its console output) to
- * `vitest.log` in the run directory, so the terminal reporter can stay terse.
- * A red run keeps the directory with the state its tests left and prints the
- * log path as the last line; a green run deletes the directory.
- */
 export class TestRunReporter implements Reporter {
   private readonly consoleLogs: UserConsoleLog[] = [];
   private vitest: Vitest | undefined;
@@ -44,7 +38,6 @@ export class TestRunReporter implements Reporter {
       lines.push(`${testModule.state()} ${path.relative(root, testModule.moduleId)}`);
       lines.push(...testModule.errors().map((error) => indent(formatError(error), 2)));
       lines.push(...logsFor(testModule.id));
-      // A suite-level hook reports its errors and console output on the suite, not a test.
       for (const suite of testModule.children.allSuites()) {
         const suiteLines = [
           ...suite.errors().map((error) => indent(formatError(error), 4)),

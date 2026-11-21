@@ -1,4 +1,3 @@
-/** Public API failures and their HTTP status. Clients key advice by ApiErrorCode. */
 export const API_ERROR_STATUS = {
   ACCESS_DENIED: 403,
   ACTIVE_DEPLOYMENT_NOT_FOUND: 404,
@@ -177,7 +176,6 @@ export function isApiErrorCode(code: string): code is ApiErrorCode {
   return Object.hasOwn(API_ERROR_STATUS, code);
 }
 
-/** The control-plane error body; worker protocol errors keep their own envelope. */
 export interface ApiErrorResponse {
   readonly code: ApiErrorCode;
   readonly error: ApiErrorCode;

@@ -86,12 +86,6 @@ declare module "fastify" {
   }
 }
 
-/**
- * What the API serves from. `main.ts` passes the Postgres stores and the process's
- * SWIZZLE_ENVIRONMENT; tests pass their isolated PostgreSQL stores. The server owns them from here and closes them
- * when it closes.
- */
-// A `\u0000` escape that an odd run of backslashes starts, so `\\u0000` (a literal backslash) passes.
 const JSON_NUL_ESCAPE = /(?:^|[^\\])(?:\\\\)*\\u0000/u;
 
 const SECURITY_HEADERS = [
@@ -108,22 +102,16 @@ const SECURITY_HEADERS = [
 ] as const;
 
 export interface BuildServerOptions {
-  /** Production supplies the PostgreSQL registry; tests may omit worker routes. */
   readonly workerRegistry?: WorkerRegistry;
   readonly dispatch?: ServerDispatch;
-  /** The environment a request without `?environment=` addresses. */
   readonly environment: string;
   readonly platform: PlatformServices;
   readonly dashboard: DashboardDataProvider;
-  /** Who signed in, and the Better Auth routes `/auth/*` forwards to. */
   readonly auth: SwizzleAuth;
-  /** Projects, teams and grants, which decide what each person may see and do. */
   readonly accessStore: AccessStore;
   readonly environmentStore: EnvironmentStore;
   readonly automationFolderStore: AutomationFolderStore;
-  /** Every bearer token: agent, service account and worker. */
   readonly apiTokenStore: ApiTokenStore;
-  /** Who changed what, kept past the deletion of what they changed (request-audit.ts). */
   readonly auditStore: AuditStore;
   readonly artifactsDirectory?: string;
   readonly approvalRateLimiter?: ClientRateLimiter;
@@ -149,13 +137,10 @@ export function buildServer(options: BuildServerOptions) {
   const eventCallbackRateLimiter =
     options.eventCallbackRateLimiter ?? createEventCallbackRateLimiterFromEnvironment();
   const app: ApiServer = Fastify({
-    // Schemas check types, they do not convert them: `123` is no secret value, `["x"]` no email.
-    // Query values stay text, so query schemas match them with patterns (request-validation.ts).
     ajv: { customOptions: { coerceTypes: false, removeAdditional: false } },
     genReqId: (req) => (req.headers["x-request-id"] as string | undefined) ?? randomRequestId(),
     loggerInstance: createLogger("swizzle-api"),
     requestIdHeader: "x-request-id",
-    // Approval and event link tokens are one path parameter, longer than the default 100.
     routerOptions: { maxParamLength: MAX_WAIT_LINK_TOKEN_LENGTH },
     trustProxy: resolveTrustProxy(),
   });
@@ -167,18 +152,10 @@ export function buildServer(options: BuildServerOptions) {
 
   registerRequestValidation(app);
 
-  // Every answer is owner data or carries a credential, so no browser or proxy may keep a copy.
-  // The headers go on the raw response before routing, so even a route that writes to `reply.raw`
-  // sends them; a route's own header of the same name, such as the log stream's Cache-Control,
-  // replaces one.
   app.addHook("onRequest", async (_request, reply) => {
     for (const [name, value] of SECURITY_HEADERS) reply.raw.setHeader(name, value);
   });
 
-  // No answer to a person or a token carries an approval or event link token: whoever may read a
-  // run, its steps, payload, details or state must not take the decision a link holds (ADR 0012).
-  // Worker routes get run data as stored, because a run replays its steps and reads its payload
-  // and state from them. HTML and streamed answers have their own redaction boundary.
   app.addHook("onSend", async (request, reply, payload) => {
     const contentType = String(reply.getHeader("content-type") ?? "");
     return routeAccess(request) !== "worker" &&
@@ -192,7 +169,6 @@ export function buildServer(options: BuildServerOptions) {
   const parseJsonBody: FastifyBodyParser<Buffer> = (request, rawBody, done) => {
     request.rawBody = Buffer.isBuffer(rawBody) ? rawBody : Buffer.from(rawBody);
     const body = rawBody.toString("utf8");
-    // PostgreSQL text and jsonb cannot hold U+0000, so no JSON body may carry its escape.
     if (JSON_NUL_ESCAPE.test(body)) {
       done(
         new CodedError(
@@ -258,7 +234,6 @@ export function buildServer(options: BuildServerOptions) {
     accessStore,
     workerRegistry: options.workerRegistry,
   });
-  // After the guard, which settles the actor, and before the first route, which it checks.
   registerAccess(app, {
     accessStore,
     auth,
@@ -395,7 +370,6 @@ export function registerErrorHandler(app: ApiServer): void {
       "statusCode" in error &&
       typeof error.statusCode === "number" &&
       error.statusCode >= 400 &&
-      // 501 is deliberate too: a feature this server runs without, such as API tokens.
       (error.statusCode < 500 || error.statusCode === 501)
     ) {
       const rawCode = "code" in error && typeof error.code === "string" ? error.code : "";

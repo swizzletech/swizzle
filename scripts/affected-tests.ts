@@ -73,7 +73,6 @@ export async function selectTests(
   const identity = (file: TestSpecification) =>
     `${file.project.name}\0${file.moduleId}\0${file.pool}`;
   for (const changedFile of changed) {
-    // Use docs-check's prose test so an accompanying guide does not select the whole suite.
     const input = isDocumentation(changedFile)
       ? "scripts/agent-reference-drift.test.ts"
       : changedFile;
@@ -86,7 +85,6 @@ export async function selectTests(
           patterns.some((pattern) => path.matchesGlob(changedFile, pattern)),
       ),
     );
-    // An undeclared input with no import edge still fails safe by running every test.
     if (consumers.length === 0 && external.length === 0) {
       return { reason: `unmapped input: ${changedFile}`, files: all, total: all.length };
     }

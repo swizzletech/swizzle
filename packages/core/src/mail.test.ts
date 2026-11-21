@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 import { startMailSink } from "../../../test/mail-sink.js";
 import { createSmtpMailer, readMailSettings } from "./mail.js";
 
-/** An HTTP proxy that answers every CONNECT with 200 and tunnels to `port`, whatever the target. */
 async function connectProxy(port: number) {
   const targets: string[] = [];
   const server = createServer((client) => {
@@ -31,7 +30,6 @@ afterEach(async () => {
 
 describe("createSmtpMailer", () => {
   it("delivers a message, with its UTF-8 subject and body, through the egress proxy", async () => {
-    // A line on its own with a dot ends DATA, and a link longer than a mail line must arrive whole.
     const text = `Hallo,\n.\nein Punkt allein beendet die Nachricht nicht: https://swizzle.example.com/invitation#token=swzi_${"x".repeat(64)}`;
     const sink = await startMailSink();
     sinks.push(sink);
@@ -99,7 +97,6 @@ describe("createSmtpMailer", () => {
     const sink = await startMailSink();
     sinks.push(sink);
     const proxy = await connectProxy(Number(new URL(sink.url).port));
-    // Only the proxy resolves the server's name; the API container may have no DNS for it.
     const settings = readMailSettings({
       SWIZZLE_CONTROL_EGRESS_PROXY: proxy.url,
       SWIZZLE_MAIL_FROM: "ops@example.com",

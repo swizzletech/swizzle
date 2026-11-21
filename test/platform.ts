@@ -48,7 +48,6 @@ export async function testPlatform(
     readonly client?: import("@swizzle/db/postgres").DatabaseClient;
     readonly profiles?: readonly string[];
     readonly auditStore?: import("@swizzle/db").AuditStore;
-    /** The workers that serve every project; by default this process, as it runs every run. */
     readonly readinessWorkers?: readonly import("@swizzle/runtime").ReadinessWorker[];
   } = {},
 ): Promise<TestPlatform> {
@@ -61,7 +60,6 @@ export async function testPlatform(
   const queuedRuns: Array<{ jobId: string; queueName: string; runId: string }> = [];
   const queue: RunQueueProducer = {
     close: async () => {},
-    // The test platform has no scheduler loop; tests call processPlatformCheck directly.
     enqueueCheck: async () => {},
     enqueue: async (input) => {
       queuedRuns.push({ jobId: input.jobId, queueName: input.queueName, runId: input.runId });
@@ -100,7 +98,6 @@ export async function testPlatform(
         queuedRuns.splice(queuedIndex, 1);
       }
     },
-    // The test platform runs every run in this process, so it is its own only worker.
     listReadinessWorkers: async ({ config }) =>
       options.readinessWorkers ?? [await thisMachine(config.runtime, `test-worker-${process.pid}`)],
     placeRun: async () => null,
@@ -153,7 +150,6 @@ export async function testPlatform(
       const run = await getRunOrThrow(store, queueEntry.runId);
       const { rateLimiter, onStderrChunk } = processOptions;
       const claimed = await execution.run(run.runId, {
-        // Rate admission precedes claiming: a blocked run stays queued without spending an attempt.
         ...(rateLimiter !== undefined
           ? {
               admit: async () =>

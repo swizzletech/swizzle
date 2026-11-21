@@ -1,5 +1,3 @@
-// The signed-in person's agent tokens.
-
 import type { CreatedTokenResponse, ScopeInput, TokenResponse, TokensResponse } from "../api";
 import { request } from "./request";
 

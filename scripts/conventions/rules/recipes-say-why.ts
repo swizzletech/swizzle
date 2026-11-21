@@ -17,7 +17,6 @@ export const recipesSayWhy: Rule = {
             },
           ];
         }
-        // The doc is the nearest comment above the header; attributes may sit between them.
         const docIndex = lines.slice(0, line - 1).findLastIndex((text) => text.startsWith("#"));
         if (!lines[docIndex - 1]?.startsWith("#")) return [];
         return [

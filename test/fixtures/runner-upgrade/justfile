@@ -1,4 +1,5 @@
 set shell := ["mise", "exec", "--", "bash", "-euo", "pipefail", "-c"]
+writer_exit := "{{.ExitCode}}"
 init-env:
     node scripts/init-env.ts
 stack: init-env
@@ -7,5 +8,10 @@ upgrade tag="":
     node scripts/upgrade.ts {{ quote(tag) }}
 # API liveness and backup data are fixtures; image preparation and upgrade run the shipped code.
 _backup dir config:
+    exits=$(docker compose -f {{ quote(config) }} ps --all --format {{ quote(writer_exit) }} api worker); \
+    if [[ "$exits" != $'143\n143' ]]; then \
+        printf 'Expected api and worker exit codes 143 and 143. Saw:\n%s\n' "$exits" >&2; \
+        exit 1; \
+    fi
     mkdir -p {{ quote(dir) }}
     echo durable-fixture > {{ quote(dir) }}/database.sql

@@ -41,7 +41,6 @@ function inValues(
   )})`;
 }
 
-/** A sorting folder inside one project; it grants nothing (ADR 0014). */
 export const automationFolders = pgTable(
   "automation_folders",
   {
@@ -67,10 +66,6 @@ export const automationFolders = pgTable(
     ),
   }),
 );
-
-// Access (ADR 0014, access.ts): projects own automations; people and teams hold roles on projects,
-// on single automations and, in a protected environment, on that environment. A grant names a
-// person or a team, never both. Deleting the person, the team or the place deletes the grant.
 
 export const projects = pgTable(
   "projects",
@@ -115,11 +110,6 @@ export const teamMembers = pgTable(
   }),
 );
 
-/**
- * A project's own identity (CONTEXT.md, Service account). It goes with its project, not with the
- * person who created it; its grants and tokens go with it. Like an audit event, it names its
- * creator by id and name without a foreign key, so both outlive the person.
- */
 export const serviceAccounts = pgTable(
   "service_accounts",
   {
@@ -141,7 +131,6 @@ export const serviceAccounts = pgTable(
   }),
 );
 
-// A grant names a person, a team or a service account: exactly one of the three columns.
 const grantSubject = {
   userId: uuid("user_id").references(() => authUsers.id, { onDelete: "cascade" }),
   teamId: uuid("team_id").references(() => teams.id, { onDelete: "cascade" }),
@@ -152,7 +141,6 @@ const grantSubject = {
 };
 const oneSubject = sql`num_nonnulls(user_id, team_id, service_account_id) = 1`;
 
-/** An environment of a project that only people with an environment grant may reach. */
 export const protectedEnvironments = pgTable(
   "protected_environments",
   {
@@ -167,7 +155,6 @@ export const protectedEnvironments = pgTable(
   }),
 );
 
-/** A subject's role at one project, automation or protected environment. */
 export const grants = pgTable(
   "grants",
   {
@@ -219,7 +206,6 @@ export const automations = pgTable(
   "automations",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    // Restrict: deleteProject moves or deletes the automations before the project goes.
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "restrict" }),
@@ -238,12 +224,10 @@ export const automations = pgTable(
   }),
 );
 
-/** The automation with this name. */
 export function automationNamed(slug: string): SQL {
   return sql`${automations.slug} = ${slug}`;
 }
 
-/** The automation's project as a row is written: what a run or an audit event belongs to. */
 export function projectOf(automationId: string): SQL<string> {
   return sql<string>`(SELECT ${automations.projectId} FROM ${automations} WHERE ${automations.id} = ${automationId})`;
 }
@@ -411,9 +395,6 @@ export const automationState = pgTable(
   }),
 );
 
-// The API check of an automation with `api_check.mode: active`, one row per environment. A deploy
-// writes it and makes it due; a check job writes its outcome. Checks are not runs and have no rows
-// in `runs`.
 export const automationChecks = pgTable(
   "automation_checks",
   {
@@ -438,8 +419,6 @@ export const automationChecks = pgTable(
     lastExitCode: integer("last_exit_code"),
     lastOutput: text("last_output"),
     lastReport: jsonb("last_report").$type<ApiCheckReport>(),
-    // The connection tokens and secrets the latest check received, never their values: a check
-    // keeps only its latest.
     lastConnectionUsages: jsonb("last_connection_usages")
       .$type<readonly StoredConnectionUsage[]>()
       .notNull()
@@ -466,8 +445,6 @@ export const automationChecks = pgTable(
   }),
 );
 
-// What an automation's runs and checks saw of each outside API host through the SDK's HTTP helper:
-// the last contact and the latest Deprecation or Sunset notice. It never holds a response body.
 export const apiContacts = pgTable(
   "api_contacts",
   {
@@ -499,9 +476,6 @@ export const runs = pgTable(
   "runs",
   {
     id: uuid("id").primaryKey(),
-    // A run belongs to the project its automation was in when it started, also after the
-    // automation moves (ADR 0014). Deleting the automation deletes its runs (ADR 0015); a project
-    // is deleted only after deleteProject moved or deleted its runs, so that key restricts.
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "restrict" }),
@@ -531,8 +505,6 @@ export const runs = pgTable(
     parentStepKey: varchar("parent_step_key", { length: 255 }),
     invokeDepth: integer("invoke_depth").notNull().default(0),
     resumeCount: integer("resume_count").notNull().default(0),
-    // The run's step rows and the JSON bytes of their results. Every step write keeps both under a
-    // lock on this row (control-plane-steps.ts), so the step limits never read the steps.
     stepCount: integer("step_count").notNull().default(0),
     stepResultBytes: integer("step_result_bytes").notNull().default(0),
     chainOriginRunId: uuid("chain_origin_run_id").references((): AnyPgColumn => runs.id, {
@@ -552,7 +524,6 @@ export const runs = pgTable(
     correlationId: varchar("correlation_id", { length: 128 }),
     queuedAt: timestamp("queued_at", { withTimezone: true }).notNull().defaultNow(),
     terminalPending: boolean("terminal_pending").notNull().default(false),
-    /** When a queued run fails with PLACEMENT_TIMEOUT: its queue_timeout from when it last queued. */
     placementDeadlineAt: timestamp("placement_deadline_at", { withTimezone: true }).notNull(),
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
@@ -621,13 +592,9 @@ export const runExecutions = pgTable(
       .notNull()
       .references(() => runs.id, { onDelete: "cascade" }),
     queueJobId: varchar("queue_job_id", { length: 120 }).notNull(),
-    /** Counts every execution of the run, resumed ones included. */
     executionNumber: integer("execution_number").notNull(),
-    /** The retry attempt this execution spends: `runs.attempts_made` + 1 when it began. */
     attempt: integer("attempt").notNull(),
-    /** The wait this execution suspended at; null unless its status is `suspended`. */
     wait: jsonb("wait").$type<ExecutionWait>(),
-    /** The name of the worker that claimed the execution, as it was then; a run reader sees it. */
     workerName: varchar("worker_name", { length: 120 }).notNull(),
     phase: varchar("phase", { length: 32, enum: RUN_EXECUTION_PHASES })
       .notNull()
@@ -676,11 +643,8 @@ export const runSteps = pgTable(
       .references(() => runs.id, { onDelete: "cascade" }),
     stepKey: varchar("step_key", { length: 255 }).notNull(),
     executionNumber: integer("execution_number").notNull(),
-    // Null until the step's result arrives; a row without a result is a step that started.
     value: jsonb("value").$type<RunStepResult>(),
-    // When the SDK reported step_start; null for a result that arrived without one.
     startedAt: timestamp("started_at", { withTimezone: true }),
-    // When the result arrived. Null while the step runs, or when its attempt died inside it.
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -695,7 +659,6 @@ export const environmentSecrets = pgTable(
   "environment_secrets",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    // A secret belongs to one environment of one project; only that project's automations get it.
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
@@ -747,7 +710,6 @@ export const environmentConnections = pgTable(
   "environment_connections",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    // A connection belongs to one environment of one project, like a secret.
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
@@ -755,10 +717,6 @@ export const environmentConnections = pgTable(
     name: varchar("name", { length: 120 }).notNull(),
     provider: varchar("provider", { length: 64 }).notNull(),
     providerConfig: jsonb("provider_config"),
-    // OAuth client credentials registered on the provider side. They live on the
-    // connection itself: one connection = one account authorized against one
-    // client id/secret. The client secret is confidential and reuses the same
-    // AES-256-GCM envelope as platform secrets; it never leaves the API/worker.
     clientId: text("client_id").notNull(),
     clientSecretCiphertext: text("client_secret_ciphertext").notNull(),
     clientSecretAlgorithm: varchar("client_secret_algorithm", { length: 32 }).notNull(),
@@ -769,7 +727,6 @@ export const environmentConnections = pgTable(
     tokenAlgorithm: varchar("token_algorithm", { length: 32 }),
     tokenKeyVersion: varchar("token_key_version", { length: 32 }),
     tokenVersion: integer("token_version").notNull().default(0),
-    // Plaintext expiry mirror so refresh checks never need to decrypt.
     accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
     lastRefreshedAt: timestamp("last_refreshed_at", { withTimezone: true }),
     lastErrorCode: varchar("last_error_code", { length: 64 }),
@@ -789,8 +746,6 @@ export const environmentConnections = pgTable(
     environmentConnectionsEnvironmentUpdatedIdx: index(
       "environment_connections_environment_updated_idx",
     ).on(table.environment, table.updatedAt),
-    // The state hash is the sole callback lookup key, so it must be globally
-    // unique across environments while staying nullable outside authorizations.
     environmentConnectionsPendingStateUnique: uniqueIndex(
       "environment_connections_pending_state_unique",
     )
@@ -799,10 +754,6 @@ export const environmentConnections = pgTable(
   }),
 );
 
-// Credential rights (ADR 0014, access.ts): a secret or a connection is a credential. A person or
-// team holds `use` or `manage` on it; a share lets another project's deployments bind it; a
-// deployment records the credentials it bound when it was published. Each row names a secret or a
-// connection, never both, and deleting the credential deletes its rows.
 const oneCredential = sql`(secret_id IS NULL) <> (connection_id IS NULL)`;
 const credentialColumns = {
   secretId: uuid("secret_id").references(() => environmentSecrets.id, { onDelete: "cascade" }),
@@ -846,10 +797,6 @@ export const credentialGrants = pgTable(
   }),
 );
 
-/**
- * A credential offered to another project in the credential's environment. It binds only once an
- * admin of that project accepted it; deleting it unbinds every deployment that bound through it.
- */
 export const credentialShares = pgTable(
   "credential_shares",
   {
@@ -876,10 +823,6 @@ export const credentialShares = pgTable(
   }),
 );
 
-/**
- * The credentials a deployment bound when it was published: what its runs and checks may receive.
- * `shareId` is set for a credential of another project.
- */
 export const deploymentCredentials = pgTable(
   "deployment_credentials",
   {
@@ -937,8 +880,6 @@ export const automationTimeoutGrants = pgTable(
       .notNull()
       .references(() => automations.id, { onDelete: "cascade" }),
     environment: varchar("environment", { length: 32 }).notNull(),
-    // Per-automation override of SWIZZLE_MAX_RUN_TIMEOUT. Stored as milliseconds
-    // in a bigint so long ceilings (multi-hour) stay exact.
     maxTimeoutMs: bigint("max_timeout_ms", { mode: "number" }).notNull(),
     note: text("note"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -964,7 +905,6 @@ export const notificationRules = pgTable(
     projectId: uuid("project_id")
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    // Null on a rule that covers every automation of the project in the environment.
     automationId: uuid("automation_id").references(() => automations.id, { onDelete: "cascade" }),
     environment: varchar("environment", { length: 32 }).notNull(),
     channel: varchar("channel", { length: 32 }).notNull().default("telegram"),
@@ -1031,17 +971,12 @@ export const notificationDeliveries = pgTable(
   }),
 );
 
-/**
- * The instance audit (audit.ts). No foreign key on purpose: deleting an automation, a project, a
- * person or a token leaves every event and its labels readable.
- */
 export const auditEvents = pgTable(
   "audit_events",
   {
     id: uuid("id").primaryKey().defaultRandom(),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
     actorKind: varchar("actor_kind", { length: 24 }).notNull(),
-    // The person, service account or worker; null for links, anonymous callers, the system and the host.
     actorId: uuid("actor_id"),
     actorLabel: varchar("actor_label", { length: 320 }),
     actorRole: varchar("actor_role", { length: 16, enum: INSTANCE_ROLES }),
@@ -1123,13 +1058,6 @@ export const maintenanceRuns = pgTable(
   }),
 );
 
-/**
- * API tokens. An agent token acts as its person, with their rights at the time of each request; a
- * service account token acts as its account. Either is capped by the scope it was minted with
- * (access.ts, TokenScope): `project_ids` and `environments` null mean every one. The person who
- * issued it is named by id and name without a foreign key, so both outlive them; a worker's
- * credential has none.
- */
 export const apiTokens = pgTable(
   "api_tokens",
   {
@@ -1162,7 +1090,6 @@ export const apiTokens = pgTable(
       "api_tokens_issuer",
       sql`(issued_by IS NULL) = (issued_by_name IS NULL)`,
     ),
-    // A revoked token keeps its name for the record; rotation reuses it.
     apiTokensUserNameUnique: uniqueIndex("api_tokens_user_name_unique")
       .on(table.userId, table.name)
       .where(sql`${table.revokedAt} IS NULL`),
@@ -1176,10 +1103,6 @@ export const apiTokens = pgTable(
   }),
 );
 
-// Sign-in for people. Better Auth reads and writes these tables through its Drizzle adapter, so
-// their JS property names are Better Auth's field names (packages/db/src/auth.ts maps the models).
-// Ids are UUIDs PostgreSQL generates; Better Auth leaves them out of each insert.
-
 export const authUsers = pgTable(
   "auth_users",
   {
@@ -1188,10 +1111,8 @@ export const authUsers = pgTable(
     email: varchar("email", { length: 320 }).notNull(),
     emailVerified: boolean("email_verified").notNull().default(false),
     image: text("image"),
-    // The instance role (access.ts); the first account is the owner (auth-guarantees.ts).
     role: varchar("role", { length: 16, enum: INSTANCE_ROLES }).notNull().default("member"),
     twoFactorEnabled: boolean("two_factor_enabled").notNull().default(false),
-    // Set while an owner or admin suspends the person: no session, no working token.
     suspendedAt: timestamp("suspended_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -1202,7 +1123,6 @@ export const authUsers = pgTable(
   }),
 );
 
-/** `token` holds the SHA-256 hash of the cookie's token (auth-session-store.ts). */
 export const authSessions = pgTable(
   "auth_sessions",
   {
@@ -1211,7 +1131,6 @@ export const authSessions = pgTable(
       .notNull()
       .references(() => authUsers.id, { onDelete: "cascade" }),
     token: varchar("token", { length: 64 }).notNull(),
-    // The sign-in this session descends from; the absolute limit counts from it.
     signedInAt: timestamp("signed_in_at", { withTimezone: true }).notNull(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
@@ -1226,7 +1145,6 @@ export const authSessions = pgTable(
   }),
 );
 
-/** A sign-in method of a user; `password` holds the scrypt hash for the "credential" provider. */
 export const authAccounts = pgTable(
   "auth_accounts",
   {
@@ -1251,7 +1169,6 @@ export const authAccounts = pgTable(
   }),
 );
 
-/** Short-lived single-use values, such as the challenge between password and code. */
 export const authVerifications = pgTable(
   "auth_verifications",
   {
@@ -1267,10 +1184,6 @@ export const authVerifications = pgTable(
   }),
 );
 
-/**
- * A user's TOTP factor. Better Auth encrypts the secret and the recovery codes with a key derived
- * from SWIZZLE_ENCRYPTION_KEY. `verified` is false while enrollment awaits a code.
- */
 export const authTwoFactors = pgTable(
   "auth_two_factors",
   {
@@ -1289,7 +1202,6 @@ export const authTwoFactors = pgTable(
   }),
 );
 
-/** Accepted TOTP codes, hashed with their person, retained through the acceptance window. */
 export const authTotpUses = pgTable(
   "auth_totp_uses",
   {
@@ -1306,7 +1218,6 @@ export const authTotpUses = pgTable(
   }),
 );
 
-/** A browser that signed in to this account. It spends its own sign-in budget. */
 export const authDevices = pgTable(
   "auth_devices",
   {
@@ -1323,12 +1234,6 @@ export const authDevices = pgTable(
   }),
 );
 
-/**
- * An invitation to join the instance (auth-membership.ts). Its mail carries the token; `tokenHash`
- * is its SHA-256. `grants` are the project grants it promises, `[{ projectId, role }]`, given once
- * the recipient has an account. Accepting sets `acceptedAt` in the transaction that inserts that
- * account; `grantedAt` follows when the grants are in place.
- */
 export const invitations = pgTable(
   "invitations",
   {
@@ -1353,7 +1258,6 @@ export const invitations = pgTable(
   }),
 );
 
-/** Sign-in attempts spent per budget and scope in the current window (auth-guarantees.ts). */
 export const authBudgets = pgTable(
   "auth_budgets",
   {
@@ -1400,7 +1304,6 @@ export const serviceHeartbeats = pgTable(
   }),
 );
 
-/** Worker authority is independent of agent tokens and project roles (ADR 0013). */
 export const workers = pgTable("workers", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: varchar("name", { length: 120 }).notNull(),
@@ -1416,9 +1319,7 @@ export const workers = pgTable("workers", {
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   runImageDisk: jsonb("run_image_disk").$type<import("./workers.js").RunImageDisk>(),
-  /** What the worker's host can run, from its last heartbeat; deploy readiness reads it. */
   capabilities: jsonb("capabilities").$type<import("./workers.js").WorkerCapabilities>(),
-  /** The services' health from the worker's last runtime report; placement trusts it for a minute. */
   serviceHealth: jsonb("service_health")
     .$type<import("./workers.js").ServiceHealthReport>()
     .notNull()
@@ -1426,7 +1327,6 @@ export const workers = pgTable("workers", {
   serviceHealthAt: timestamp("service_health_at", { withTimezone: true }),
 });
 
-/** A worker reports a deployment's image tag before assembling or reusing it. */
 export const workerRunImages = pgTable(
   "worker_run_images",
   {
@@ -1442,7 +1342,6 @@ export const workerRunImages = pgTable(
   (table) => [primaryKey({ columns: [table.deploymentId, table.workerId] })],
 );
 
-/** Machine execution grants have no role and disappear with their project or worker. */
 export const workerGrants = pgTable(
   "worker_grants",
   {
@@ -1457,7 +1356,6 @@ export const workerGrants = pgTable(
   (table) => [primaryKey({ columns: [table.workerId, table.projectId, table.environment] })],
 );
 
-/** One durable owner per run. Generations are retained when a lease is released. */
 export const executionLeases = pgTable(
   "execution_leases",
   {
@@ -1474,12 +1372,7 @@ export const executionLeases = pgTable(
     released: boolean("released").notNull().default(false),
     resultDigest: text("result_digest"),
     deadlineAt: timestamp("deadline_at", { withTimezone: true }).notNull(),
-    /** When the worker fetched the execution's secrets. Unstarted leases spend no attempt. */
     startedAt: timestamp("started_at", { withTimezone: true }),
-    /**
-     * The prepared execution's ExecutionState (dispatch.ts), sealed with SWIZZLE_ENCRYPTION_KEY: it
-     * holds the delivered secrets. Cleared when the lease is released.
-     */
     executionState: text("execution_state"),
   },
   (table) => [

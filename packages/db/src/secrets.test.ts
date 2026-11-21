@@ -4,6 +4,7 @@ import { TEST_ENCRYPTION_KEY } from "../../../test/support.js";
 import {
   decryptSecretValue,
   encryptSecretValue,
+  resolveSecretEncryptionKey,
   SWIZZLE_ENCRYPTION_KEY_ENV,
   SWIZZLE_ENCRYPTION_PREVIOUS_KEYS_ENV,
 } from "./secrets.js";
@@ -25,6 +26,19 @@ describe("secret encryption", () => {
 
     expect(() => encryptSecretValue("hello")).toThrow(
       `${SWIZZLE_ENCRYPTION_KEY_ENV} must be set to a 32-byte secret before using platform secrets.`,
+    );
+  });
+
+  it("accepts a 32-byte key encoded as base64", () => {
+    const key = Buffer.alloc(32, 1);
+    expect(
+      resolveSecretEncryptionKey({ [SWIZZLE_ENCRYPTION_KEY_ENV]: key.toString("base64") }),
+    ).toEqual(key);
+  });
+
+  it("reports an invalid encryption key when the decoded key has the wrong length", () => {
+    expect(() => resolveSecretEncryptionKey({ [SWIZZLE_ENCRYPTION_KEY_ENV]: "YWJj" })).toThrow(
+      expect.objectContaining({ code: "INVALID_ENCRYPTION_KEY" }),
     );
   });
 

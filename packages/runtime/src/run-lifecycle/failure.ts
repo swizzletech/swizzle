@@ -15,10 +15,6 @@ import {
   type ProcessRunOutcome,
 } from "./records.js";
 
-/**
- * The one retry and dead-letter decision for a failed execution, whether the process failed or the
- * worker lost its lease: retry while the failure is retryable and the segment has attempts left.
- */
 export async function handleFailedRunExecution(input: {
   readonly executionNumber: number;
   readonly execution: AutomationRunFailure;
@@ -92,12 +88,6 @@ export async function handleFailedRunExecution(input: {
 
 const LOST_BEFORE_START = "WORKER_LOST_BEFORE_START";
 
-/**
- * Ends the execution of a lease its worker lost, in the transaction that releases the lease. A
- * delivery lost before `start` released no secrets, so no process ran and it spends no attempt.
- * Only one such delivery per attempt is free, so a worker that always fails before start still
- * exhausts the retry policy. Any other loss is a WORKER_LEASE_LOST failure under that policy.
- */
 export async function loseRunExecution(
   input: LostExecution & { readonly store: ControlPlaneStore },
 ): Promise<void> {
@@ -149,10 +139,6 @@ export async function loseRunExecution(
   if (isFinishedRun(outcome.run.status)) await store.markRunTerminalPending(run.runId);
 }
 
-/**
- * Dead-letters a queued run no worker took within its queue timeout; it spends no attempt. Its
- * terminal effects are those of any dead letter: notifications, and a waiting parent resumes.
- */
 export async function failPlacement(
   input: ExpiredPlacement & { readonly store: ControlPlaneStore },
 ): Promise<void> {
@@ -174,10 +160,6 @@ export async function failPlacement(
   });
 }
 
-/**
- * Retryable: the process failed in a way another attempt can pass, Docker failed the platform, or
- * the worker lost the execution's lease.
- */
 function classifyFailure(result: AutomationRunFailure): ErrorClassification {
   switch (result.code) {
     case "CONTAINER_RUNTIME_UNAVAILABLE":

@@ -172,11 +172,6 @@ export async function resumeAutomationTrigger(options: {
   return updatedTrigger;
 }
 
-/**
- * Starts a run of a webhook or cron automation by hand. The run's trigger type is `manual` and it
- * carries no webhook context, so automation code can tell it from a signed delivery: the caller
- * passed no signature check and sent no sender headers.
- */
 export async function startManualRun(
   options: ManualRunOptions & {
     readonly enqueueRun: TriggerRunEnqueueFn;
@@ -239,9 +234,6 @@ export async function triggerWebhookByPath(
       configurationProblem,
     );
   }
-  // Signature is verified BEFORE payload validation: an unsigned or wrongly-signed
-  // caller to a signed endpoint must be rejected before any payload-schema feedback
-  // (which would otherwise confirm the endpoint exists and leak its schema).
   const signatureValidation = await validateWebhookSignature({
     store: options.store,
     trigger,
@@ -254,7 +246,6 @@ export async function triggerWebhookByPath(
       source: options.source ?? "config-webhook-path",
       webhookPath: trigger.webhookPath,
     });
-    // The audit event keeps the cause; the caller learns only that no webhook is here.
     throw new AutomationRuntimeError(
       "WEBHOOK_NOT_AVAILABLE",
       `Webhook signature verification failed for automation ${trigger.automationName}.`,
@@ -311,13 +302,11 @@ export async function materializeDueCronRuns(
           scheduledFor = nextRunAt;
           dueCount++;
           nextRunAt = occurrences.next().value;
-          // Long downtime must leave the event loop available for other environments and timers.
           if (dueCount % 1_000 === 0) await scheduler.yield();
         }
       } else {
         continue;
       }
-      // Two default scheduler ticks tolerate ordinary polling lag without replaying downtime.
       const withinGrace = now.getTime() - Date.parse(scheduledFor) <= 30_000;
       const missedCount = dueCount - (withinGrace ? 1 : 0);
       const claimed = await options.store.advanceCronTriggerCursor({
@@ -460,7 +449,6 @@ function validateTriggerConfiguration(
     : null;
 }
 
-/** Payload checks follow configuration checks and, for signed deliveries, signature verification. */
 function validateTriggerPayload(
   trigger: StoredTrigger,
   payload: unknown,

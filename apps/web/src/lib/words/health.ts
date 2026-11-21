@@ -1,9 +1,5 @@
-// An automation's health in words: what its dot shows, the tone of each state, and why a deployment
-// cannot run. The pages say every state in words; these pure functions turn API records into them.
-
 import type { AutomationSummary, RunState, RuntimeReadiness } from "../api";
 
-/** What an automation's dot shows: why it cannot run, or its latest run's result. */
 export type AutomationHealth =
   | "blocked"
   | "failing"
@@ -36,7 +32,6 @@ const RUN_HEALTH: Record<RunState, AutomationHealth> = {
   waiting: "waiting",
 };
 
-/** The colour family of a health or run state, as the dot, chip and strip classes name it. */
 export type Tone = "fail" | "idle" | "ok" | "run" | "warn";
 
 export const HEALTH_TONE: Record<AutomationHealth, Tone> = {
@@ -59,7 +54,6 @@ export const RUN_TONE: Record<RunState, Tone> = {
   waiting: "warn",
 };
 
-/** Why a deployment cannot run: missing credentials, a broken trigger, or worker requirements. */
 export function readinessInWords(readiness: RuntimeReadiness): string {
   const subjects = (code: RuntimeReadiness["errors"][number]["code"]) =>
     readiness.errors.filter((issue) => issue.code === code).map((issue) => issue.subject ?? "");
@@ -73,7 +67,6 @@ export function readinessInWords(readiness: RuntimeReadiness): string {
     : "No worker can run it";
 }
 
-/** The overview row's short form of `readinessInWords`, which names no secret or account. */
 export function readinessLabel(readiness: RuntimeReadiness): string {
   const codes = new Set(readiness.errors.map((issue) => issue.code));
   if (codes.has("SECRET_MISSING")) return "Needs secret";

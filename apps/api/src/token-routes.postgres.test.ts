@@ -14,10 +14,6 @@ beforeEach(() => {
   vi.stubEnv("SWIZZLE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
 });
 
-/**
- * An office instance: owner Ada signed in, projects office and finance, and a member who joined
- * through an invitation for each person the test names.
- */
 async function office(...members: (typeof PAULA)[]) {
   const mails: MailMessage[] = [];
   const app = await buildTestServer({
@@ -61,7 +57,6 @@ async function office(...members: (typeof PAULA)[]) {
   return { ada, app, bearer, joined };
 }
 
-// Sign-ins hash with production-cost scrypt; see sign-in.test.ts.
 describe("tokens and service accounts over HTTP", () => {
   it("takes a team's rights from an agent token on the next request after its person leaves", async () => {
     const { ada, bearer, joined } = await office(MIA);
@@ -120,7 +115,6 @@ describe("tokens and service accounts over HTTP", () => {
       role: "editor",
       serviceAccount: "deployer",
     });
-    // Production is protected: this grant lets the account's rights reach it, the token does not.
     await paula.browser.send("PUT", "/projects/office/grants", {
       environment: "production",
       role: "editor",
@@ -187,7 +181,6 @@ describe("tokens and service accounts over HTTP", () => {
       }),
     ]);
 
-    // Once Paula is removed the card still says who set the account up and minted its token.
     expect((await ada.send("DELETE", `/users/${paula.id}`)).statusCode).toBe(204);
     const kept = (await ada.send("GET", "/projects/office/service-accounts")).json();
     expect(kept.serviceAccounts).toEqual([
@@ -325,7 +318,6 @@ describe("tokens and service accounts over HTTP", () => {
   });
 });
 
-// The dashboard's Access tab shows these roles as they are; it never re-derives the production cap.
 describe("who may do what in a project", () => {
   it("names each holder's role per environment, capped where the project is protected", async () => {
     const { ada, joined } = await office(MIA);
@@ -361,7 +353,6 @@ describe("who may do what in a project", () => {
       Ada: { production: { cap: "editor", role: "admin" }, role: "admin" },
       Bookkeeping: { production: { cap: null, role: null }, role: "editor" },
       Mia: { production: { cap: null, role: null }, role: "editor" },
-      // Release holds production of every new project; it caps a member's project role and gives none.
       Release: { production: { cap: "editor", role: null }, role: null },
       deployer: { production: { cap: null, role: null }, role: "viewer" },
     });
@@ -369,7 +360,6 @@ describe("who may do what in a project", () => {
       Bookkeeping: { production: { cap: "operator", role: "operator" }, role: "editor" },
       Mia: { production: { cap: "operator", role: "operator" }, role: "editor" },
     });
-    // An instance role shows only where it is the reason for access.
     const listed = (await ada.send("GET", "/projects/office/access")).json();
     expect(
       Object.fromEntries(
@@ -379,7 +369,6 @@ describe("who may do what in a project", () => {
         ]),
       ),
     ).toEqual({ Ada: "owner", Bookkeeping: null, Mia: null, Release: null, deployer: null });
-    // A protected environment is listed even where the instance names no such environment.
     expect((await ada.send("GET", "/projects/office/access")).json().environments).toContain(
       "production",
     );

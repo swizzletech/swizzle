@@ -70,7 +70,6 @@ describe("platformProblemInWords", () => {
         "No scheduler runs for production, so its cron runs do not start and its waits do not end",
       todo: "Run `just stack` in the checkout on the server: it rebuilds the images and starts the scheduler from the current code. One scheduler serves every environment.",
     });
-    // An older scheduler may still report only one namespace during an upgrade.
     expect(
       platformProblemInWords({
         code: "scheduler-down",

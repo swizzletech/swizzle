@@ -22,24 +22,15 @@ import {
 } from "./worker-wire.js";
 
 const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
-/** What the server keeps for one prepared execution until its lease ends. */
 export interface ExecutionDelivery {
   readonly assignment: ExecutionAssignment;
   readonly source: ExecutionSource;
   readonly secrets: ExecutionSecrets;
 }
-/**
- * The execution-scoped worker routes as one accepted execution sees them. Each call carries the
- * execution's lease, so the server answers only for the execution the worker owns now.
- */
 export interface ExecutionChannel {
-  /** `POST /worker/source`: the bundle. Repeatable while the lease lives. */
   source(): Promise<ExecutionSource>;
-  /** `POST /worker/start`: records the start and returns the secrets. Repeatable. */
   start(): Promise<ExecutionSecrets>;
-  /** `POST /worker/ready`: preparation ended; the process can start. Repeatable. */
   ready(): Promise<void>;
-  /** `POST /worker/output`: one ordered chunk, acknowledged after durable processing. */
   output(stream: "stdout" | "stderr", chunk: string): Promise<void>;
 }
 const reportExecution = (result: AutomationRunResult): ExecutionReport => ({
@@ -63,7 +54,6 @@ const reportExecution = (result: AutomationRunResult): ExecutionReport => ({
       },
 });
 
-/** Source transfer has no archive links or extraction semantics. Every file is bounded and hashed. */
 export async function readExecutionSource(directory: string): Promise<ExecutionSource> {
   const files: ExecutionSource = [];
   let bytes = 0;
@@ -97,7 +87,6 @@ export async function readExecutionSource(directory: string): Promise<ExecutionS
   return files;
 }
 
-/** Server side: splits prepared options into the pull reply, the bundle and the secrets. */
 export async function createExecutionDelivery(
   lease: ExecutionLease,
   script: "run" | "check",
@@ -140,7 +129,6 @@ export async function createExecutionDelivery(
   };
 }
 
-/** The digest a worker checks a fetched bundle against: paths, contents and modes. */
 function sourceDigest(source: ExecutionSource): string {
   const manifest = source
     .map((file) => `${file.path}\0${file.sha256}\0${file.executable ? "x" : "-"}\n`)
@@ -184,12 +172,10 @@ export async function withExecutionSource<T>(
   }
 }
 
-/** Fetches and checks the bundle, starts the execution, then runs it with this machine's executor. */
 export async function executeAssignment(input: {
   readonly assignment: ExecutionAssignment;
   readonly channel: ExecutionChannel;
   readonly executor: ExecutionProtocol;
-  /** The executing machine's own environment: its policy and the child's allowlisted base. */
   readonly environment: NodeJS.ProcessEnv;
   readonly signal: AbortSignal;
 }): Promise<ExecutionReport> {
@@ -213,13 +199,11 @@ export async function executeAssignment(input: {
             return await withExecutionSource(
               source,
               async (directory) => {
-                // Secrets arrive only once the bundle is staged, just before the process starts.
                 const secrets = await input.channel.start();
                 input.signal.throwIfAborted();
                 const options: RunAutomationOptions = {
                   ...input.assignment.options,
                   automationDirectory: directory,
-                  // The server sends only injected values; this machine supplies the base.
                   environment: { ...platformBaseEnvironment(input.environment), ...secrets },
                   policyEnvironment: input.environment,
                   abortSignal: input.signal,
@@ -277,10 +261,6 @@ function isProcessSignal(value: string): value is NodeJS.Signals {
   return Object.hasOwn(os.constants.signals, value);
 }
 
-/**
- * The server derives success and JSON from stdout; a machine cannot supply an unchecked result.
- * `payload` and `runId` are the execution's own, from the server's records.
- */
 export function acceptExecutionReport(
   report: ExecutionReport,
   execution: { readonly payload: unknown; readonly runId: string },

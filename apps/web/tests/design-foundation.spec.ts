@@ -12,12 +12,6 @@ import {
   seededState,
 } from "./dashboard-mock";
 
-// The foundation in apps/web/src/styles.css, read off what a page draws. Every page and tab, in
-// light, dark and at phone width, fails on a visible element outside the scale in
-// apps/web/design-scale.json or on text below 4.5:1 against its background. An element that may
-// differ is listed by name in EXCEPTIONS with its reason. The last tests plant off-scale values, so
-// the walk is known to see them.
-
 type Property = "height" | "padding" | "gap" | "font-size";
 
 const EXCEPTIONS: readonly {
@@ -62,7 +56,6 @@ const OWNER = {
   twoFactorEnabled: false,
 } as const;
 
-/** The page's own computed styles, as lines naming the element and what is off. */
 function auditPage(input: {
   readonly scale: typeof scale;
   readonly exceptions: typeof EXCEPTIONS;
@@ -74,7 +67,6 @@ function auditPage(input: {
     willReadFrequently: true,
   }) as CanvasRenderingContext2D;
   type Rgba = readonly [number, number, number, number];
-  // The canvas reads every form a computed colour takes, color-mix and oklch among them.
   const parsed = new Map<string, Rgba>();
   const rgba = (color: string): Rgba => {
     const known = parsed.get(color);
@@ -258,7 +250,6 @@ const SHARE = {
   shareId: "share-1",
 };
 
-/** Answers every list a page shows, so the walk audits rows and not the empty or error state. */
 async function asOwner(page: Page, state: MockState) {
   state.secrets = [
     {
@@ -404,7 +395,6 @@ async function asOwner(page: Page, state: MockState) {
 interface Stop {
   readonly name: string;
   readonly path: string;
-  /** What to open before the audit; the state to wait for is part of it. */
   readonly open?: (page: Page) => Promise<void>;
 }
 
@@ -514,8 +504,6 @@ test.describe("every page", () => {
     });
   }
 
-  // The type and spacing that set a page's hierarchy: a 32/40 title, page sections 40 apart and,
-  // on the Overview, 32/40 stat figures at 500 in tiles with a 24 px inset.
   for (const path of ["/", "/projects", "/credentials", "/settings/account", "/no-such-page"]) {
     test(`${path} sets its title 32/40 and its sections 40 apart`, async ({ page }) => {
       await asOwner(page, seededState());
@@ -527,7 +515,6 @@ test.describe("every page", () => {
       const gaps = await page
         .locator(".page-content.stack > * + *:not(.sec-head + *)")
         .evaluateAll((all) => [...new Set(all.map((one) => getComputedStyle(one).marginTop))]);
-      // A page with one section has no gap; the Overview's sections prove the gap is drawn.
       expect(gaps).toEqual(path === "/" ? ["40px"] : gaps.length === 0 ? [] : ["40px"]);
     });
   }
@@ -646,8 +633,6 @@ const CHECKED_API: AutomationSummary["apiCheck"] = {
   secrets: null,
 };
 
-// One rule for every page type: beside a 240 px sidebar, content fills a narrow window and stops at
-// 1600 px, so wider windows share one right edge.
 test.describe("one width", () => {
   for (const [width, edge] of [
     [1440, 1408],
@@ -704,8 +689,6 @@ test.describe("one width", () => {
   });
 });
 
-// A version reads one way in the sans face, numbers line up in a row, and a code value in a narrow
-// panel breaks at its spaces.
 test.describe("what a value looks like", () => {
   test.use({ viewport: { height: 900, width: 1440 } });
 

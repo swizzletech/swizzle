@@ -64,7 +64,6 @@ export async function processChainTriggers(input: {
       });
     } catch (error) {
       if (input.retryFailures) throw error;
-      // Chain trigger failures must not affect the source run
     }
   }
 }
@@ -140,6 +139,5 @@ async function processChainJoinTrigger(input: {
     });
   } catch (error) {
     if (input.retryFailures) throw error;
-    // Chain trigger failures must not affect the source run.
   }
 }

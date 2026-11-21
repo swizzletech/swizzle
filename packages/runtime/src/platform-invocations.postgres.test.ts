@@ -91,7 +91,6 @@ describe("platform invocations", () => {
       parentStepKey: "invoke-child",
       status: "succeeded",
     });
-    // The parent's output is redacted, but the payload it hands its child is not.
     expect(childRun?.result).toMatchObject({
       parentRunId: parentRun.runId,
       payload: { from: "parent", secret: "parent-secret-value" },

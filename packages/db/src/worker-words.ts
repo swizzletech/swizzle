@@ -1,8 +1,3 @@
-// The sentences about workers that more than one surface shows: why a queued run waits for one,
-// why it failed to find one, and a worker's run image disk. `swizzle diagnose`, the run panel, the
-// Overview's Needs you, Settings > Workers and `swizzle worker list` all print these, so the CLI
-// and the dashboard say the same thing.
-
 import { LOCAL_LLM_SERVICE } from "@swizzle/config";
 import {
   type PlacementFix,
@@ -14,7 +9,6 @@ import {
   type WorkerWarning,
 } from "./workers.js";
 
-/** Why a queued run has not started and what gets it going. */
 export function placementInWords(
   placement: RunPlacement,
   target: { readonly projectId?: string | undefined; readonly environment?: string | undefined },
@@ -84,10 +78,6 @@ function placementFixes(
   }
 }
 
-/**
- * Why a run found no worker within its queue timeout, naming its project and how an owner or
- * admin grants it a worker.
- */
 export function unservedProjectMessage(input: {
   readonly project: { readonly id: string; readonly name: string };
   readonly environment: string;
@@ -97,7 +87,6 @@ export function unservedProjectMessage(input: {
   return `No live worker served project "${input.project.name}" in ${input.environment} for group "${input.profile}" within ${input.within}. An owner or admin grants a worker under Settings > Workers, or with swizzle worker create <name> --project ${input.project.id} --environment ${input.environment} --groups ${input.profile}.`;
 }
 
-/** The warning for active images whose measured bytes exceed the budget or whose usage is unknown. */
 export function runImageDiskWarning(
   worker: string,
   disk: RunImageDisk | null,
@@ -133,7 +122,6 @@ function diskProblemInWords(problem: RunImageDiskProblem, disk: RunImageDisk): W
   }
 }
 
-/** "512 MiB" or "3.3 GiB". */
 function bytesInWords(bytes: number): string {
   const mib = bytes / 1_048_576;
   return mib < 1024 ? `${Math.ceil(mib)} MiB` : `${(mib / 1024).toFixed(1)} GiB`;

@@ -32,7 +32,6 @@ function baseRun(overrides: Partial<RunDetailRecord> = {}): RunDetailRecord {
 
 type Execution = RunDetailRecord["executions"][number];
 
-/** Execution `executionNumber` of a run, spending `attempt`, on this machine unless named. */
 function execution(
   executionNumber: number,
   attempt: number,

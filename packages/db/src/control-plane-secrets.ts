@@ -95,8 +95,6 @@ export async function upsertSecret(
   input: UpsertSecretInput,
 ): Promise<StoredSecret> {
   return await client.db.transaction(async (tx) => {
-    // Row-level lock on any existing secret so we serialize concurrent writers. `replaces` is
-    // checked against the locked row, so the write touches only the secret its caller checked.
     const [existingSecret] = await tx
       .select({
         id: environmentSecrets.id,
@@ -136,7 +134,6 @@ export async function upsertSecret(
       return mapSecretRow(updated);
     }
 
-    // The lock above finds no row to hold, so a concurrent create surfaces here.
     const [inserted] = await tx
       .insert(environmentSecrets)
       .values({

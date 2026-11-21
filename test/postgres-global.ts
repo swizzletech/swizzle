@@ -35,7 +35,6 @@ export default async function setup(project: TestProject) {
     try {
       stop();
     } finally {
-      // Restore the default signal exit after releasing the run's detached database.
       process.removeAllListeners(signal);
       process.kill(process.pid, signal);
     }
@@ -71,7 +70,6 @@ declare module "vitest" {
   }
 }
 
-/** Capture migration seeds once. Foreign keys determine their restore order. */
 async function resetStatement(client: DatabaseClient): Promise<string> {
   const tables = await client.pool.query<{ tablename: string }>(
     "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename",

@@ -23,14 +23,6 @@ interface SecretQuery extends EnvironmentQuery {
   readonly project?: string;
 }
 
-/**
- * Secrets belong to a project and an environment. `?project=` names the project by slug or id,
- * the default project when absent. Reading needs read in the environment, so a protected
- * environment's secrets take its grant. Creating needs edit there and gives the creator manage;
- * replacing or deleting an existing secret needs manage (packages/db/src/access.ts). A list
- * without `?project=` shows every project the caller may read there, with the caller's right on
- * each secret and its project by slug.
- */
 export function registerSecretRoutes(
   app: ApiServer,
   options: { readonly platform: PlatformServices },
@@ -69,11 +61,6 @@ export function registerSecretRoutes(
     const body = request.body as { value: string };
     const place = await credentialPlace(request);
 
-    // PUT replaces an existing secret by default (HTTP PUT semantics). Callers that want the CLI's
-    // atomic-create semantics pass `?overwrite=false`. The write names the secret whose right was
-    // checked, or none for a create, and the DB layer holds it to that in the same transaction:
-    // SECRET_ALREADY_EXISTS (409) when a create finds one, CREDENTIAL_CHANGED (409) when the
-    // checked secret was replaced meanwhile.
     const overwrite = query?.overwrite !== "false";
     const existing = await platform.credentials.findCredential("secret", params.secretName, place);
     let replaces: string | null = null;

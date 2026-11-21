@@ -1,4 +1,3 @@
-/** Captures one UTF-8 prefix. Once output exceeds the budget, later chunks stay excluded. */
 export class BoundedOutput {
   private text = "";
   private bytes = 0;

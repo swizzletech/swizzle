@@ -1,7 +1,3 @@
-// A run in a sandbox container (ADR 0006): make sure the deployment's run image exists, claim a
-// started sandbox for it, then stage the inputs and run the automation with one `docker exec`.
-// The sandbox is removed in the background after the run, so removal is not part of its time.
-
 import { spawn } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -28,7 +24,6 @@ import {
 import type { AutomationDefinition } from "./validation.js";
 
 const DEFAULT_OUTPUT_LIMIT_BYTES = 1_048_576;
-/** How much longer than the run's timeout a sandbox lives, for staging and stopping it. */
 const SANDBOX_GRACE_MS = 60_000;
 
 export interface RunContainerAutomationOptions {
@@ -36,16 +31,13 @@ export interface RunContainerAutomationOptions {
   readonly automationDirectory: string;
   readonly definition: AutomationDefinition;
   readonly environment: Record<string, string>;
-  /** Image, dependencies and sandbox are ready; the process timeout has not started. */
   readonly onReady?: () => Promise<void>;
   readonly onStderrChunk?: (chunk: string) => void | Promise<void>;
   readonly onStdoutChunk?: (chunk: string) => void | Promise<void>;
   readonly outputLimitBytes?: number;
-  /** A worker's run: it keeps a standby sandbox for the deployment's next run. */
   readonly platformRun: boolean;
   readonly policyEnvironment?: NodeJS.ProcessEnv;
   readonly runId: string;
-  /** What the sandbox executes, in the deployment's run image, and the inputs it receives. */
   readonly script: ExecutedScript;
   readonly timeoutMs: number;
 }
@@ -174,18 +166,12 @@ async function executeContainerAutomation(
     };
   } finally {
     await rm(inputDirectory, { force: true, recursive: true });
-    // A local run that assembled an image prunes the older ones. A worker prunes from its
-    // deployment preparation instead, which knows the images of the active deployments.
     if (!options.platformRun && phases.image !== undefined) {
       await pruneRunImages({ keep: new Set() }).catch(() => undefined);
     }
   }
 }
 
-/**
- * Prepares a deployment before its first run: assembles its run image, and with `standby` starts
- * a sandbox for that run. A worker calls it when it first sees an active deployment.
- */
 export async function prepareContainerAutomation(input: {
   readonly automationDirectory: string;
   readonly definition: AutomationDefinition;
@@ -218,7 +204,6 @@ export async function isDockerAvailable(): Promise<boolean> {
   }
 }
 
-/** The run image's tag, and how long assembling it took when it did not exist yet. */
 async function prepareImage(
   automationDirectory: string,
   recipe: RunImageRecipe,
@@ -235,7 +220,6 @@ async function prepareImage(
   return { assembledMs: outcome === "assembled" ? Date.now() - startedAt : null, tag };
 }
 
-/** Writes the files the script reads from /run/swizzle, the payload included. */
 async function createRunInputDirectory(script: ExecutedScript): Promise<string> {
   const directory = await mkdtemp(path.join(tmpdir(), "swizzle-container-input-"));
   const write = (name: string, value: unknown) =>
@@ -278,18 +262,10 @@ function runtimeEnvironment(script: ExecutedScript): Record<string, string> {
   return values;
 }
 
-/**
- * The recipe's command with the script in place of the entrypoint, which is the recipe's last
- * argument. Every script runs in the run image: the check script is part of the bundle too.
- */
 function scriptCommand(recipe: RunImageRecipe, script: ExecutedScript): string[] {
   return [...recipe.command.slice(0, -1), `/automation/${script.relativePath}`];
 }
 
-/**
- * The `docker exec` of a run: the shell unpacks the inputs into /run/swizzle and replaces itself
- * with the automation, which reads the payload on stdin.
- */
 export function sandboxExecArguments(
   sandboxName: string,
   environment: Record<string, string>,
@@ -351,20 +327,20 @@ async function executeInSandbox(input: {
     termination: {
       kind: "sandbox",
       exitGraceMs: 1_000,
-      stopSandbox: () => stopContainer(input.sandbox),
+      stopSandbox: () => stopSandboxBestEffort(input.sandbox),
     },
   });
   return requireProcessExit(execution);
 }
 
-async function stopContainer(sandbox: Sandbox): Promise<void> {
+async function stopSandboxBestEffort(sandbox: Sandbox): Promise<void> {
   try {
     await sandbox.docker.run(["stop", "--time", "1", sandbox.name], { outputLimitBytes: 4096 });
   } catch {
     try {
       await sandbox.docker.run(["kill", sandbox.name], { outputLimitBytes: 4096 });
     } catch {
-      // The container may already have exited.
+      return;
     }
   }
 }

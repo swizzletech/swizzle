@@ -10,19 +10,12 @@ import {
 } from "./client-rate-limiter.js";
 import type { ApiServer } from "./http-shared.js";
 
-// The largest step result a run may store; a bigger body could never become the event value.
 const MAX_EVENT_BODY_BYTES = 64 * 1024;
 
 export function createEventCallbackRateLimiterFromEnvironment(): ClientRateLimiter {
   return createClientRateLimiterFromEnvironment("SWIZZLE_EVENT_CALLBACK_RATE_LIMIT", "60/min");
 }
 
-/**
- * `POST /events/:token`: the public callback a third-party system posts to, without a Swizzle
- * credential, to resolve one `waitForEvent` step. The parsed body (JSON, form fields or text)
- * becomes the event value. A forged, expired or already used link gets the same opaque 404 as an
- * unknown one, so a caller learns nothing about which runs exist.
- */
 export function registerEventCallbackRoutes(
   app: ApiServer,
   options: {

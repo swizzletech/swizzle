@@ -49,11 +49,6 @@ function resolvePlatformMaxRunTimeout(environment: NodeJS.ProcessEnv = process.e
 
 export interface EffectiveTimeoutCeilingOptions {
   readonly environment?: NodeJS.ProcessEnv;
-  /**
-   * Per-automation timeout grant in milliseconds, if one exists for this
-   * automation + environment. A grant only ever raises the ceiling — a grant
-   * smaller than the global ceiling is ignored.
-   */
   readonly grantMaxTimeoutMs?: number | null;
 }
 
@@ -65,12 +60,6 @@ export interface EffectiveTimeoutCeiling {
   readonly platformMilliseconds: number;
 }
 
-/**
- * Render a millisecond duration in the same single-unit shorthand
- * {@link parseRuntimeTimeout} accepts (`3h`, `90m`, `500ms`). This is the
- * inverse of the `runtime.timeout` parser, so it is the canonical way to
- * display a run-timeout value (including a timeout grant) across the CLI.
- */
 export function formatRuntimeTimeoutMs(milliseconds: number): string {
   if (milliseconds % 3_600_000 === 0) {
     return `${milliseconds / 3_600_000}h`;
@@ -84,11 +73,6 @@ export function formatRuntimeTimeoutMs(milliseconds: number): string {
   return `${milliseconds}ms`;
 }
 
-/**
- * Effective run-timeout ceiling for a single automation:
- * `max(grant.max_timeout_ms, global ceiling)`. Without a grant it is the global
- * ceiling; a grant only ever raises it, never lowers it.
- */
 export function resolveEffectiveRunTimeoutCeiling(
   options: EffectiveTimeoutCeilingOptions = {},
 ): EffectiveTimeoutCeiling {

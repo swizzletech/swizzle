@@ -7,11 +7,6 @@ import { createMicrosoftAdapter, parseMicrosoftProviderConfig } from "./microsof
 import type { ConnectionProviderAdapter, ConnectionProviderId } from "./types.js";
 import { isConnectionProviderId } from "./types.js";
 
-/**
- * Resolve the adapter for a provider id. `providerConfig` is the connection's
- * stored endpoint configuration; it is required for `custom-oauth2` and
- * ignored for built-in providers.
- */
 export function getConnectionProviderAdapter(
   providerId: string,
   providerConfig?: unknown,

@@ -9,8 +9,6 @@ import { gitRepo, readRepo } from "./conventions/repo.js";
 
 const repoRoot = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
 
-// Decisions and declined requests record what was true when they were written; they stay as they
-// are. The CLI reference is generated from the command tree, so it cannot drift.
 const EXEMPT = /^(docs\/adr\/|\.out-of-scope\/|docs\/reference\/cli\.md$)/u;
 
 describe("agent reference drift", () => {
@@ -61,8 +59,6 @@ describe("agent reference drift", () => {
   });
 });
 
-// Every `swizzle` command in Markdown code or a generated shell script, as the shell splits it.
-// The verify skill drives the CLI as `$V/swizzle`.
 function cliCommands(root: string, pages: readonly string[]) {
   return readRepo(root, pages)
     .commands()

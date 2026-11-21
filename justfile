@@ -9,6 +9,7 @@ set shell := ["mise", "exec", "--", "bash", "-euo", "pipefail", "-c"]
 compose := "docker compose --env-file .env -f infra/docker/compose.yml"
 # Runs a command against the Postgres and Valkey of this worktree's `just dev`, starting them first.
 dev_db := "node scripts/dev-stack.mts run --"
+verify_db := "node scripts/dev-stack.mts verify --"
 # Runs a TypeScript file with every @swizzle/* import resolved to the package's src through the
 # swizzle-source export condition: how the repository runs its own code, so no recipe builds first.
 tsx := "pnpm exec tsx --conditions=swizzle-source"
@@ -53,7 +54,7 @@ dev: setup
 dev-fresh: setup
     exec node scripts/dev-stack.mts fresh
 
-# Stop this worktree's dev stacks, also after their recipe was killed; `dev-fresh` data goes, `dev` data stays.
+# Stop this worktree's dev stacks and remove fresh and verification data. Persistent dev data stays.
 dev-down:
     node scripts/dev-stack.mts down
 
@@ -247,15 +248,15 @@ verify-state-machine:
 
 # Exercise HTTP worker claims, offline placement, lease loss, stale results and restart receipts.
 verify-dispatch:
-    {{ dev_db }} {{ tsx }} scripts/verify-dispatch.ts
+    {{ verify_db }} {{ tsx }} scripts/verify-dispatch.ts
 
 # Exercise durable image ownership, same-source replacement and concurrent registration/pruning.
 verify-run-images:
-    {{ dev_db }} {{ tsx }} -e 'import { withVerificationDatabase } from "./scripts/verification-database.ts"; import { verifyRunImages } from "./scripts/verify-run-images.ts"; withVerificationDatabase(verifyRunImages).catch(error => { console.error(error); process.exitCode = 1; });'
+    {{ verify_db }} {{ tsx }} -e 'import { withVerificationDatabase } from "./scripts/verification-database.ts"; import { verifyRunImages } from "./scripts/verify-run-images.ts"; withVerificationDatabase(verifyRunImages).catch(error => { console.error(error); process.exitCode = 1; });'
 
-# Two workers on one queue finish every run exactly once, against dev Postgres and Valkey.
+# Two workers on one queue finish every run exactly once, against this worktree's verification Postgres and Valkey.
 verify-multi-worker:
-    {{ dev_db }} {{ tsx }} scripts/verify-multi-worker.ts
+    {{ verify_db }} {{ tsx }} scripts/verify-multi-worker.ts
 
 # Boot the packaged stack as a throwaway project, deploy and trigger an example through it, then remove it with its volumes.
 smoke: init-env deps

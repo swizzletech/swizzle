@@ -3,7 +3,6 @@ import { LOCAL_LLM_SERVICE } from "@swizzle/config";
 import { AutomationRuntimeError } from "./errors.js";
 import type { AutomationDefinition } from "./validation.js";
 
-/** The worker's direct control channel. It is on runner-control, outside the run network. */
 async function control(
   environment: NodeJS.ProcessEnv,
   method: "GET" | "POST" | "PUT" | "DELETE",
@@ -31,7 +30,6 @@ async function control(
   let bytes = 0;
   for await (const chunk of response.body ?? []) {
     bytes += chunk.byteLength;
-    // Leaving the loop cancels the rest of the body.
     if (bytes > 4096) throw new Error("Gateway control response too large.");
     chunks.push(chunk);
   }
@@ -52,12 +50,11 @@ export async function localLlmHealth(
     )
       return value.state;
   } catch {
-    /* An unavailable control listener is unhealthy too. */
+    return "unhealthy";
   }
   return "unhealthy";
 }
 
-/** A fresh identity for this attempt only. Renewal never resets the gateway's quotas. */
 export async function withLocalLlmAccess<T>(
   input: {
     readonly definition: AutomationDefinition;

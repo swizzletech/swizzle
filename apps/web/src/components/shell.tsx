@@ -1,10 +1,3 @@
-// The frame around every page: sign-in, then the sidebar with the five places at the top and, at
-// its foot, the environment and the signed-in person with Sign out. The frame fills the window and
-// each page scrolls inside it. At phone width the sidebar folds into a header that still shows every
-// place. AppShell signs the person in, offers two-factor sign-in after setup, and learns the
-// instance's environments before it mounts DashboardClientProvider, so every page reads a known
-// environment.
-
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
@@ -43,8 +36,6 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
     staleTime: Number.POSITIVE_INFINITY,
   });
 
-  // Held here, not in SignIn: the account is signed in as soon as it exists, and the next status
-  // refetch would otherwise replace the two-factor step with the dashboard.
   const [onboarding, setOnboarding] = useState<TwoFactorStart | null>(null);
   const enter = () => {
     setOnboarding(null);
@@ -105,8 +96,6 @@ function Frame({ children }: { readonly children: ReactNode }) {
   );
 }
 
-// The logo is drawn inline, not loaded, so the first contentful paint happens before sign-in status
-// is known.
 function Connecting() {
   return (
     <div className="grid min-h-screen place-items-center">
@@ -120,7 +109,6 @@ function Connecting() {
 
 type Destination = "/" | "/runs" | "/projects" | "/credentials" | "/settings";
 
-// Each place's icon, drawn on a 24 px grid in 2 px round strokes and shown at 16 px.
 const DESTINATIONS: readonly {
   readonly label: string;
   readonly to: Destination;
@@ -195,7 +183,6 @@ function Sidebar() {
       refreshAuth();
     },
   });
-  // A failed sign-out leaves the session active, which matters on a shared device.
   let signOutLabel = "Sign out";
   if (signOut.isError) signOutLabel = "Try again";
   if (signOut.isPending) signOutLabel = "Signing out…";
@@ -330,7 +317,6 @@ function SignIn(props: {
   const [password, setPassword] = useState("");
   const [setupToken, setSetupToken] = useState("");
   const [offerTwoFactor, setOfferTwoFactor] = useState(true);
-  // The second step, once the password was right and two-factor sign-in is on.
   const [codeAsked, setCodeAsked] = useState(false);
   const [code, setCode] = useState("");
   const [forgot, setForgot] = useState(false);
@@ -353,7 +339,6 @@ function SignIn(props: {
       return "twoFactorRedirect" in result ? "code" : "signed-in";
     },
     onError: (error) => {
-      // The step between password and code lasts minutes; after that the password comes first.
       if (error instanceof ApiError && error.code === "AUTH_CODE_CHALLENGE_EXPIRED") {
         setCodeAsked(false);
         setCode("");
@@ -496,7 +481,6 @@ function SignIn(props: {
   );
 }
 
-/** Asks for a reset link by mail. The answer is the same whether an account has the address. */
 function ForgotPassword(props: { readonly initialEmail: string; readonly onBack: () => void }) {
   const [email, setEmail] = useState(props.initialEmail);
   const send = useMutation({ mutationFn: () => sessionApi.requestPasswordReset(email.trim()) });
@@ -549,7 +533,6 @@ function ForgotPassword(props: { readonly initialEmail: string; readonly onBack:
   );
 }
 
-/** What a removed or mistyped address shows. */
 export function NotFound() {
   return (
     <Page

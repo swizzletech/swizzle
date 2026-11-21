@@ -2,7 +2,6 @@ import { and, eq, getTableColumns, isNull, sql } from "drizzle-orm";
 import type { DatabaseClient } from "./client.js";
 import { apiTokens, workerGrants, workers } from "./schema.js";
 
-/** Registry and dispatch read expiry from the same current credential that the guard verifies. */
 export function selectWorkerCredentials(db: DatabaseClient["db"]) {
   return db
     .select({
@@ -21,14 +20,12 @@ export function selectWorkerCredentials(db: DatabaseClient["db"]) {
     .leftJoin(apiTokens, and(eq(apiTokens.workerId, workers.id), isNull(apiTokens.revokedAt)));
 }
 
-/** A worker row with its current credential's expiry, as `selectWorkerCredentials` reads it. */
 interface CredentialState {
   readonly revokedAt: Date | null;
   readonly tokenExpiresAt: Date | null;
   readonly credentialGeneration: number;
 }
 
-/** The one rule for a live credential: the worker is not revoked and its token has not expired. */
 export function credentialLive<Row extends CredentialState>(
   row: Row | undefined,
 ): row is Row & { readonly tokenExpiresAt: Date } {
@@ -40,7 +37,6 @@ export function credentialLive<Row extends CredentialState>(
   );
 }
 
-/** Whether `identity` holds the worker's live credential, not one a renewal already replaced. */
 export function holdsCredential<Row extends CredentialState>(
   row: Row | undefined,
   identity: { readonly credentialGeneration: number },

@@ -15,14 +15,8 @@ const MAX_STEP_VALUE_BYTES = 64 * 1024;
 
 const MAX_TOTAL_STEP_BYTES = 5 * 1024 * 1024;
 
-/** Rows per run: a stream of starts with no results must not grow run_steps without end. */
 const MAX_RUN_STEPS = 2_000;
 
-/**
- * Applies the state and step events on the complete lines of a run execution's stderr, one after
- * another, and returns the unfinished line. The first event that fails stops the rest; it ends
- * the attempt.
- */
 export async function applyRunEvents(input: {
   readonly chunk: string;
   readonly lease: Pick<ExecutionLease, "executionNumber">;
@@ -120,7 +114,6 @@ async function applyStepStartEvent(input: {
     startedAt,
     stepKey,
   });
-  // A step that already has its result keeps it; nothing moved.
   if (entry.finishedAt !== null) return;
   input.onStep?.({
     attempt: input.attempt,
@@ -149,8 +142,6 @@ async function applyStepResultEvent(input: {
   }
   assertJsonSerializableStepValue(stepKey, input.event.value);
   const totals = await input.store.getRunStepTotals({ runId: input.runId, stepKey });
-  // First write wins: the first persisted result is the memoized truth for this
-  // run, so a duplicate step_result event must not overwrite it.
   if (totals.step !== null && totals.step.finishedAt !== null) return;
   assertStepCountWithinLimit(totals, stepKey);
   assertStepWriteWithinLimits({ result: { value: input.event.value }, stepKey, totals });
@@ -200,7 +191,6 @@ function assertJsonSerializableStepValue(stepKey: string, value: unknown): void 
   }
 }
 
-/** A new key may not take the run past MAX_RUN_STEPS rows; a known key restarts or completes freely. */
 function assertStepCountWithinLimit(totals: RunStepTotals, stepKey: string): void {
   if (totals.steps < MAX_RUN_STEPS || totals.step !== null) return;
   throw new AutomationRuntimeError(
@@ -210,7 +200,6 @@ function assertStepCountWithinLimit(totals: RunStepTotals, stepKey: string): voi
   );
 }
 
-/** The result, and the run's results with it, for a step that has none yet. */
 export function assertStepWriteWithinLimits(input: {
   readonly result: StepResultInput;
   readonly stepKey: string;

@@ -5,6 +5,7 @@ import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, onTestFailed, onTestFinished, test } from "vitest";
+import { invoke } from "../test/dev-stack.js";
 import { processesNaming } from "../test/processes.js";
 import { temporaryDirectory, waitFor } from "../test/support.js";
 import { readProcessIdentity } from "./process-identity.ts";
@@ -50,6 +51,75 @@ async function stackRoot(turboScript: string) {
   });
   return { root, bin };
 }
+
+test.skipIf(process.platform !== "linux").for(["slow", "stuck"] as const)(
+  "just dev-down handles %s Compose teardown",
+  async (teardown, { signal }) => {
+    const { root, bin } = await stackRoot(`#!/bin/sh
+touch services-ready
+exec node -e 'setInterval(() => {}, 1000)'
+`);
+    const dockerTeardown =
+      teardown === "slow"
+        ? 'setTimeout(() => require("node:fs").writeFileSync("compose-finished", ""), 32_000)'
+        : 'const fs = require("node:fs"); const release = () => { if (fs.existsSync("compose-release")) watch.close(); }; const watch = fs.watch(".", release); release();';
+    const stopPattern = teardown === "stuck" ? '|*" stop "*' : "";
+    await writeFile(
+      path.join(bin, "docker"),
+      `#!/bin/sh
+case " $* " in
+  *" port "*) echo 127.0.0.1:1 ;;
+  *" -p swizzle-dev-fresh-"*" down "*${stopPattern}) if [ -f services-ready ] && [ ! -f compose-finished ]; then
+    mkdir compose-started || exit 1
+    exec node -e '${dockerTeardown}'
+  fi ;;
+esac
+`,
+      { mode: 0o755 },
+    );
+    const env = {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      ...(teardown === "stuck" ? { SWIZZLE_DEV_COMPOSE_TEARDOWN_TIMEOUT_MS: "1000" } : {}),
+      XDG_CONFIG_HOME: path.join(root, "config"),
+    };
+    const stack = spawn(process.execPath, ["scripts/dev-stack.mts", "fresh"], {
+      cwd: root,
+      env,
+      stdio: "ignore",
+    });
+    const stackExit = once(stack, "exit");
+    onTestFinished(async () => {
+      await writeFile(path.join(root, "compose-release"), "");
+      if (stack.exitCode === null && stack.signalCode === null) stack.kill("SIGTERM");
+      await stackExit;
+    });
+    await waitFor(signal, () => existsSync(path.join(root, "services-ready")));
+    const recordFile = path.join(root, ".git/swizzle-dev-fresh/stack.json");
+    await waitFor(signal, async () => {
+      const record = await readFile(recordFile, "utf8")
+        .then(JSON.parse)
+        .catch(() => null);
+      return (record?.groups.length ?? 0) > 0;
+    });
+
+    const result = await invoke("just", ["dev-down"], { cwd: root, env });
+
+    if (teardown === "stuck") {
+      expect(result.status, result.stdout + result.stderr).toBe(1);
+      expect(result.stderr).toContain(`Orchestrator pid ${stack.pid}`);
+      expect(result.stderr).toContain("stuck in Compose teardown");
+      expect(result.stderr).toContain(`kill -KILL ${stack.pid} and rerun just dev-down`);
+      expect(existsSync(path.join(root, "compose-started"))).toBe(true);
+      expect(existsSync(recordFile)).toBe(true);
+      return;
+    }
+    expect(result.status, result.stdout + result.stderr).toBe(0);
+    expect(existsSync(path.join(root, "compose-finished"))).toBe(true);
+    expect(existsSync(recordFile)).toBe(false);
+    expect((await stackExit)[0]).toBe(0);
+  },
+);
 
 // turbo's npm shim forwards SIGTERM to the turbo binary, which force-kills its tasks on a second
 // signal, so the services stop gracefully only when the binary gets exactly one.

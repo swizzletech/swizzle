@@ -1,12 +1,3 @@
-import { it } from "vitest";
-import { testDatabase, untilLockWaiters } from "../test/postgres.js";
-import { testControlPlaneStore } from "../test/stores.js";
-// Run history expiry and project deletion on PostgreSQL (ADR 0015): a finished run past the
-// cutoff goes with its executions and logs while a waiting
-// run of the same age stays; a project with contents is refused without a choice; moving keeps the
-// automations' credential bindings and runs in the target project; deleting leaves nothing of the
-// project but its audit events; a delete that meets a run being created waits for it.
-
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { ControlPlaneStore } from "@swizzle/db";
@@ -15,6 +6,9 @@ import {
   createPostgresAuditStore,
   type DatabaseClient,
 } from "@swizzle/db/postgres";
+import { it } from "vitest";
+import { testDatabase, untilLockWaiters } from "../test/postgres.js";
+import { testControlPlaneStore } from "../test/stores.js";
 import { commitDeploymentFixture, createQueuedRun } from "./verify-state-fixtures.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -95,8 +89,6 @@ async function verifyProjectDeletion(
     );
   const production = (projectId: string) => ({ environment: "state-machine", projectId });
 
-  // Moving: the automation, its secret and its run land in the target, and the deployment still
-  // binds the secret there.
   const leaving = await access.createProject({ name: "Leaving", slug: "history-leaving" });
   const staying = await access.createProject({ name: "Staying", slug: "history-staying" });
   const secret = await store.upsertSecret({
@@ -152,8 +144,6 @@ async function verifyProjectDeletion(
   await createQueuedRun(store, moving, later, `history-${later}`, {});
   assert.equal((await store.getRun(later))?.projectId, staying.id, "new runs start in the target");
 
-  // Deleting: an unfinished run refuses, then every automation, credential and run goes, the
-  // automation's audit event stays.
   const doomed = await access.createProject({ name: "Doomed", slug: "history-doomed" });
   await store.upsertSecret({ ...production(doomed.id), name: "DOOMED_TOKEN", value: "v1" });
   const deleting = await commitDeploymentFixture(store, "history-deleting", doomed.id);
@@ -191,11 +181,6 @@ async function verifyProjectDeletion(
   );
 }
 
-/**
- * A run being created holds its automation shared, then its insert needs the project for the
- * foreign key. A project delete that starts in between waits for the automation and lets the run
- * land, then refuses because of it, instead of deadlocking with the insert.
- */
 async function verifyDeletionBesideRunCreation(
   client: DatabaseClient,
   store: ControlPlaneStore,
@@ -234,7 +219,7 @@ async function verifyDeletionBesideRunCreation(
   assert.ok(await access.getProject(project.id), "the project stays");
 }
 
-it("history deletion", async () => {
+it("expires finished runs and keeps audit events when a project and its contents are deleted", async () => {
   const client = testDatabase();
   const store = testControlPlaneStore();
   await verifyHistoryDeletion(client, store);

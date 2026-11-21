@@ -19,15 +19,6 @@ import {
 } from "./client-rate-limiter.js";
 import { type ApiServer, getEnvironment } from "./http-shared.js";
 
-// The webhook ingress is the platform's only unauthenticated door. Its error
-// responses must never reveal platform internals (declared secret names, automation
-// names, config state) and must not act as an existence oracle. Every state that
-// means "there is nothing here you may talk to" — unknown path, paused trigger,
-// misconfigured trigger, missing platform secrets, or a failed/absent signature on a
-// signed endpoint — collapses to the SAME opaque 404 so an anonymous caller cannot
-// distinguish a real-but-not-ready webhook from a nonexistent one. Only two outcomes
-// remain observable: 200 (accepted) and 422 (payload schema mismatch), and 422 is
-// reachable only after any required signature has already passed.
 const WEBHOOK_NOT_AVAILABLE_CODES = new Set<AutomationRuntimeError["code"]>([
   "TRIGGER_NOT_FOUND",
   "TRIGGER_PAUSED",
@@ -51,8 +42,6 @@ export function registerWebhookIngressRoute(
     const environment = getEnvironment(request);
     const requestPath = getRequestPath(request.raw.url);
     if (!isWebhookDeliveryPath(requestPath)) return replyWebhookNotAvailable();
-    // One budget per client across paths and environments: guessing either spends the same
-    // budget as flooding one webhook.
     const rateLimit = options.webhookIngressLimiter.check(clientKey(request));
     if (!rateLimit.allowed) {
       const retryAfterSeconds = Math.max(1, Math.ceil(rateLimit.retryAfterMs / 1_000));
@@ -95,10 +84,6 @@ export function registerWebhookIngressRoute(
   app.post<{ Reply: TriggerRunResponse }>("/*", deliver);
 }
 
-// Turns a runtime error into a caller-safe response for the public ingress door.
-// Never forwards `error.details` or `error.message` verbatim (both can embed secret
-// names or automation names); uses fixed, generic text instead. Non-runtime errors
-// are rethrown so the global handler returns an opaque 500.
 function sanitizeWebhookIngressError(error: unknown): never {
   if (!(error instanceof AutomationRuntimeError)) {
     throw error;
@@ -107,8 +92,6 @@ function sanitizeWebhookIngressError(error: unknown): never {
   if (WEBHOOK_NOT_AVAILABLE_CODES.has(error.code)) return replyWebhookNotAvailable();
 
   if (error.code === "WEBHOOK_PAYLOAD_INVALID") {
-    // Payload errors describe the caller's own request, not platform internals, and
-    // are only reachable once any required signature has passed — safe to surface.
     throw new CodedError(
       "WEBHOOK_PAYLOAD_INVALID",
       "Webhook payload does not match the trigger payload schema.",
@@ -142,7 +125,6 @@ function buildWebhookContext(request: FastifyRequest): WebhookRunContext | null 
   });
 }
 
-/** The complete delivery path, as stored by every released 1.x server, without the query. */
 function getRequestPath(url: string | undefined): string {
   const path = (url ?? "").split("?")[0] ?? "";
   return path || "/";

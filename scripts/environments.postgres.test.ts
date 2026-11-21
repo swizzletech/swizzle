@@ -22,7 +22,6 @@ async function verifyEnvironments(client: DatabaseClient): Promise<void> {
   assert.equal(updated.createdAt, created.createdAt);
   const listed = await environments.listEnvironments();
   assert.equal(listed.filter(({ name }) => name === "store-check").length, 1);
-  // State-machine deployments discover an environment even when it is not registered explicitly.
   const discovered = listed.find(({ name }) => name === "state-machine");
   assert.equal(discovered?.registered, false);
   assert.equal(discovered?.hasData, true);
@@ -37,7 +36,7 @@ async function verifyEnvironments(client: DatabaseClient): Promise<void> {
   );
 }
 
-it("environments", async () => {
+it("registers and updates environments, including those discovered from deployments", async () => {
   const client = testDatabase();
   await commitDeploymentFixture(testControlPlaneStore(), "discovered");
   await verifyEnvironments(client);

@@ -1,9 +1,5 @@
 import type { IdentityResponse as Identity } from "@swizzle/runtime/http-contract";
 
-/**
- * `swizzle profile add | list | use | remove` keep the targets in ~/.swizzle/config.toml and never
- * call the API. `swizzle whoami` asks the API who the resolved profile acts as.
- */
 import type { Command } from "commander";
 
 import { apiRequest } from "./api.js";
@@ -201,10 +197,6 @@ function sortedKeys(profile: StoredProfile): [string, unknown][] {
   return Object.entries(profile).sort(([a], [b]) => a.localeCompare(b));
 }
 
-/**
- * `swizzle whoami`: the identity, project and environment the resolved profile acts as, and the
- * role that gives it there. It asks the API, so a revoked token or a suspended person shows here.
- */
 function registerWhoami(program: Command, io: CliIO, runHandler: RunHandler): void {
   const whoami = program
     .command("whoami")
@@ -213,7 +205,6 @@ function registerWhoami(program: Command, io: CliIO, runHandler: RunHandler): vo
   withExamples(whoami, ["swizzle whoami", "swizzle whoami --project billing -e prod --json"]);
   whoami.action(async (options: ApiCommandOptions & { project?: string }, command: Command) => {
     await runHandler(async () => {
-      // The API URL main.ts settled, so the profile shown is the instance that answers.
       const profile = resolveProfile({
         ...(options.profile !== undefined ? { profile: options.profile } : {}),
         ...(options.apiUrl !== undefined ? { apiUrl: options.apiUrl } : {}),
@@ -224,7 +215,6 @@ function registerWhoami(program: Command, io: CliIO, runHandler: RunHandler): vo
         profileEnvironment: profile.environment,
         profileName: profile.name,
       });
-      // A named profile without an environment shows as unpinned instead of failing.
       const environment = pinned.source === "unpinned" ? null : pinned.environment;
       const { environment: _flag, ...target } = options;
       const identity = await apiRequest<Identity>(
@@ -268,7 +258,6 @@ function registerWhoami(program: Command, io: CliIO, runHandler: RunHandler): vo
   });
 }
 
-/** Where whoami's project came from; main.ts fills an unpassed one from the profile as "config". */
 function projectSource(command: Command): "flag" | "profile" | null {
   if (command.getOptionValue("project") === undefined) return null;
   if (command.getOptionValueSource("project") === "config") return "profile";
@@ -287,10 +276,6 @@ function identityLabel(identity: Identity): string {
   return `${identity.kind} that no longer exists`;
 }
 
-/**
- * A token's name, limits and expiry. A person's token without limits acts with all their rights,
- * which for an instance owner or admin reach past any project role, as the dashboard says.
- */
 function tokenLabel(token: NonNullable<Identity["token"]>, holder: Identity["kind"]): string {
   const { environments, projects, role } = token.scope;
   const unlimited =

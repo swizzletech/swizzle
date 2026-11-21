@@ -2,7 +2,6 @@ import type { Rule } from "../lint.js";
 
 const PACKAGE_VERSION = /"version"\s*:\s*"([^"]+)"/u;
 
-/** The CLI, API and platform code must describe the same release. */
 export const platformVersion: Rule = {
   id: "platform-version",
   check(repo) {

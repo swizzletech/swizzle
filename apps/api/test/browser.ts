@@ -2,11 +2,6 @@ import type { buildServer } from "../src/server.js";
 
 export const DASHBOARD_ORIGIN = "http://127.0.0.1:5173";
 
-/**
- * A dashboard browser for API tests: it keeps the cookies the server sets, sends them back, and
- * names DASHBOARD_ORIGIN, which a test allows with SWIZZLE_DASHBOARD_ORIGIN before it builds the
- * server.
- */
 export function testBrowser(app: ReturnType<typeof buildServer>, address = "203.0.113.45") {
   const cookies = new Map<string, string>();
   const send = async (

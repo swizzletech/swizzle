@@ -3,14 +3,8 @@ import { once } from "node:events";
 import { setTimeout as delay } from "node:timers/promises";
 
 const LOCAL_LISTENER = "swizzle-local-worker-api";
-/** Matches `INFO (swizzle-api): Server listening at http://127.0.0.1:<port>`, colored or not. */
 const LISTENING = /\(([\w-]+)\):[^\n]*?Server listening at (http:\/\/127\.0\.0\.1:\d+)/g;
 
-/**
- * A real API process on an OS-assigned port, or on `API_PORT` when the caller restarts an API that
- * a worker must find again. The caller owns its lifetime and database. With
- * SWIZZLE_LOCAL_WORKER_TOKEN set it also serves the local worker listener, on its own port.
- */
 export async function startVerificationApi(environment: NodeJS.ProcessEnv = process.env) {
   const local = Boolean(environment.SWIZZLE_LOCAL_WORKER_TOKEN);
   const child = spawn(

@@ -11,11 +11,6 @@ import type {
 import { stepResultBytes, stepResultView, storedStepResult } from "./run-approval.js";
 import { runSteps, runs } from "./schema.js";
 
-// One row per (run, step key). step_start inserts it; step_result fills in the value and
-// finishedAt. A finished row never changes again, so the first result wins and a later attempt's
-// step_start for a step that already has a result is ignored. Every write goes through writeStep,
-// which keeps the run's step totals, so the step limits read two numbers instead of every step.
-
 type RunStepRow = typeof runSteps.$inferSelect;
 type RunStepWrite = Pick<
   typeof runSteps.$inferInsert,
@@ -80,7 +75,6 @@ export async function setRunStepResult(
   return toStoredRunStepEntry(row);
 }
 
-/** Stores a step's result unless the step already has one; `written` is false then. */
 export async function writeStepResult(
   db: DatabaseClient["db"],
   input: SetRunStepResultInput,
@@ -99,11 +93,6 @@ export async function writeStepResult(
   });
 }
 
-/**
- * Inserts or updates the row of `stepKey` under a lock on the run row, and adds the new row and
- * the result's bytes to the run's totals. The lock serializes the run's step writes, so each row
- * and each result counts exactly once. A finished row is returned unchanged with `written: false`.
- */
 async function writeStep(
   db: DatabaseClient["db"],
   key: { readonly runId: string; readonly stepKey: string },
@@ -119,8 +108,6 @@ async function writeStep(
     .where(eq(runs.id, key.runId))
     .for("update");
   if (locked === undefined) throw new Error(`Run not found: ${key.runId}`);
-  // A separate statement: under READ COMMITTED it takes its snapshot after the lock, so it sees
-  // the row a writer that held the lock before us committed.
   const [prior = null] = await db
     .select()
     .from(runSteps)

@@ -33,12 +33,9 @@ function automation(
       chainSourceAutomationSlugs: opts.sources ?? [],
       triggerType,
     },
-    // The grouping algorithm reads only slug/name/trigger/lastRun; the rest of
-    // the summary shape is irrelevant here.
   } as unknown as AutomationSummary;
 }
 
-// exec-intake → exec-build → { review-standards ∥ review-spec ∥ e2e } → exec-triage
 function execPipeline(): readonly AutomationSummary[] {
   return [
     automation("exec-build", { sources: ["exec-intake"], triggerType: "chain" }),
@@ -75,7 +72,6 @@ describe("groupAutomationsIntoPipelines", () => {
   it("collapses a connected chain pipeline into one group with the entry as label", () => {
     const items = groupAutomationsIntoPipelines([automation("hello-webhook"), ...execPipeline()]);
 
-    // hello-webhook stays single; the six exec-* members collapse to one group.
     expect(items.filter((item) => item.kind === "single")).toHaveLength(1);
     const group = onlyGroup(items);
     expect(group.key).toBe("exec-intake");
@@ -90,7 +86,6 @@ describe("groupAutomationsIntoPipelines", () => {
     expect(layerSlugs[1]).toEqual(["exec-build"]);
     expect(layerSlugs[2]).toEqual(["exec-e2e", "exec-review-spec", "exec-review-standards"]);
     expect(layerSlugs[3]).toEqual(["exec-triage"]);
-    // Flattened layers are exactly the display order.
     expect(group.layers.flat()).toEqual(group.members);
   });
 

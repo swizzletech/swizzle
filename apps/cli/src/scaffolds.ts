@@ -26,7 +26,6 @@ interface ScaffoldTemplateDefinition {
   readonly description: string;
   readonly displayName: string;
   readonly entrypoint: string;
-  /** The API check stub beside the entrypoint, the file `api_check.mode: active` runs by default. */
   readonly checkFile: string;
   readonly generatedFiles: readonly string[];
   readonly helperStyle: "raw" | "vendored-sdk";
@@ -52,11 +51,6 @@ interface ScaffoldPatternDefinition {
 type TriggerInput = AutomationConfigInput["trigger"];
 type WebhookTriggerInput = Extract<TriggerInput, { type: "webhook" }>;
 
-/**
- * The trigger a scaffold writes to config.yaml, as the schema takes it. A webhook gets a path with
- * 96 random bits and a signature, so a deployed one starts runs only for senders that sign the raw
- * body with its secret.
- */
 export type ScaffoldTrigger =
   | Extract<TriggerInput, { type: "cron" }>
   | (WebhookTriggerInput & {
@@ -64,7 +58,6 @@ export type ScaffoldTrigger =
       readonly signature: NonNullable<WebhookTriggerInput["signature"]>;
     });
 
-/** The header and prefix a scaffolded webhook's senders put its signature in. */
 const SCAFFOLD_SIGNATURE_HEADER = "x-swizzle-signature";
 const SCAFFOLD_SIGNATURE_PREFIX = "sha256=";
 
@@ -234,7 +227,6 @@ export function createScaffoldTrigger(
     type: "webhook",
     path: `/hooks/${automationName}-${randomBytes(12).toString("hex")}`,
     signature: {
-      // An automation name may start with a digit, which a secret name may not.
       secret: AUTOMATION_ENV_NAME_PATTERN.test(secret) ? secret : `HOOK_${secret}`,
       header: SCAFFOLD_SIGNATURE_HEADER,
       prefix: SCAFFOLD_SIGNATURE_PREFIX,
@@ -242,11 +234,6 @@ export function createScaffoldTrigger(
   };
 }
 
-/**
- * The commands that make a webhook's signing key and store it as `secret`. They run before
- * `swizzle validate`, which refuses a version whose secret the instance lacks; the scaffold's
- * README.md and the answer of `swizzle init` list them in that order.
- */
 export function signingKeyCommands(secret: string): readonly [string, string] {
   return [
     `export ${secret}="$(openssl rand -hex 32)"`,
@@ -372,10 +359,6 @@ async function buildEntrypointFiles(input: {
   }
 }
 
-// The API check stubs. A fresh scaffold calls no API, so its config.yaml has no api_check; the
-// schema asks for the decision once the automation lists a secret or a connection. Each stub
-// exits 1 with a todo, so switching to `mode: active` before writing the check shows an API check
-// warning instead of a false green.
 const CHECK_RULES = [
   "API check. With `api_check: { mode: active }` in config.yaml, Swizzle runs this file every 7d",
   "and after each deploy. A check is never a run: it reads the payload {}, holds no state, and",
@@ -629,8 +612,6 @@ function buildSamplePayload(input: {
 }): string {
   switch (input.selection.pattern) {
     case "webhook-basic":
-      // Neutral placeholder payload — replace with a realistic shape for your
-      // trigger. `swizzle run .` uses this when sample-payload.json is present.
       return `${JSON.stringify(
         {
           _note: `Replace this with a realistic payload for ${input.automationName}.`,

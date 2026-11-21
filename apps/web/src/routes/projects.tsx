@@ -1,6 +1,3 @@
-// Projects `/projects`: every project the signed-in person sees, with their role in it and the
-// environments it protects. Owners and admins create projects here. Each row opens the project.
-
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";

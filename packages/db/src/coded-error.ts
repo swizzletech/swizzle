@@ -1,6 +1,5 @@
 import type { ApiErrorCode } from "@swizzle/core";
 
-/** A database or request failure whose public status is owned by the API boundary. */
 export class CodedError extends Error {
   readonly fixCommand: string | undefined;
   readonly details: Record<string, unknown> | undefined;
@@ -20,7 +19,6 @@ export class CodedError extends Error {
   }
 }
 
-/** Moving requires admin of both projects, so the caller can read these same-project names. */
 export function chainMoveConflict(
   automationSlug: string,
   connected: readonly string[],

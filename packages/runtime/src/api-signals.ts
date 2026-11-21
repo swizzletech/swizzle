@@ -1,20 +1,9 @@
-// The structured stderr lines automation code prints, and the two that tell the platform about
-// the outside APIs it calls: `api_contact` for each distinct answer `apiFetch` / `api_request`
-// saw, and `contract_changed` when the code's own parser found the answer changed. Runs and
-// checks both read contacts and contract changes from stderr. The platform never
-// looks at response bodies. `readExecutionSignals` folds contacts and `rate_limit_usage` into the
-// execution's state as its output arrives, so an execution keeps them however it ends.
 import type { ApiContactObservation, ApiNoticeObservation, ExecutionSignals } from "@swizzle/db";
 
 import type { OutputRedactor } from "./output-redaction.js";
 
-/** One structured stderr line: a JSON object with a string `type`. */
 export type StructuredEvent = Record<string, unknown> & { readonly type: string };
 
-/**
- * Hands each complete structured line of `buffer + chunk` to `onEvent` and returns the unfinished
- * tail, the next call's buffer. Other lines are ordinary logs and are skipped.
- */
 export function readStructuredEvents(
   buffer: string,
   chunk: string,
@@ -38,10 +27,6 @@ export function readStructuredEvents(
 
 export const NO_SIGNALS: ExecutionSignals = { contacts: {}, rateLimitUsage: {} };
 
-/**
- * Adds the `api_contact` and `rate_limit_usage` events of the complete lines of `line + chunk` to
- * `signals`, and returns them with the unfinished tail. A chunk of "\n" reads the last line.
- */
 export function readExecutionSignals(
   signals: ExecutionSignals,
   line: string,
@@ -60,7 +45,6 @@ export function readExecutionSignals(
   return { signals: { contacts: contacts.contacts(), rateLimitUsage }, line: rest };
 }
 
-/** A field the automation's parser named when the API's answer stopped matching. */
 interface ContractChange {
   readonly api: string;
   readonly expected: string;
@@ -68,13 +52,11 @@ interface ContractChange {
   readonly got: string;
 }
 
-/** An execution that names more hosts than this is not reporting real API calls; the rest are dropped. */
 const MAX_HOSTS_PER_EXECUTION = 50;
 const MAX_TEXT_LENGTH = 512;
 
 type HostContact = ExecutionSignals["contacts"][string];
 
-/** Folds one execution's `api_contact` events per host, written once when the execution ends. */
 export class ApiContactLog {
   private readonly hosts: Map<string, HostContact>;
 
@@ -117,12 +99,10 @@ export class ApiContactLog {
     });
   }
 
-  /** The log as the execution's state keeps it between requests. */
   contacts(): ExecutionSignals["contacts"] {
     return Object.fromEntries(this.hosts);
   }
 
-  /** The observations with each notice path and link passed through the execution's redactor. */
   observations(redactor: OutputRedactor): readonly ApiContactObservation[] {
     return [...this.hosts].map(([host, contact]) => ({
       host,
@@ -141,7 +121,6 @@ export class ApiContactLog {
   }
 }
 
-/** The last `contract_changed` event in a process's stderr, or null. */
 export function findContractChange(stderr: string): ContractChange | null {
   let found: ContractChange | null = null;
   readStructuredEvents("", `${stderr}\n`, (event) => {
@@ -159,10 +138,6 @@ export function findContractChange(stderr: string): ContractChange | null {
   return found;
 }
 
-/**
- * The failure a non-zero exit becomes when the process reported a contract change: terminal,
- * because a retry cannot fix a changed API and would only spend calls.
- */
 export function contractChangeFailure(
   stderr: string,
 ):
@@ -174,7 +149,6 @@ export function contractChangeFailure(
     : { code: "UPSTREAM_CONTRACT_CHANGED", message: describeContractChange(change) };
 }
 
-/** "The API of api.example.com changed: items[].amount is a string, expected a number." */
 function describeContractChange(change: ContractChange): string {
   return `The API of ${change.api} changed: ${change.field} is ${change.got}, expected ${change.expected}.`;
 }
@@ -192,7 +166,6 @@ function parseNotice(event: Record<string, unknown>, at: string): ApiNoticeObser
   };
 }
 
-/** The target of the first Link entry with `rel="deprecation"` or `rel="sunset"` (RFC 9745, RFC 8594). */
 function noticeLink(header: string): string | null {
   for (const match of header.matchAll(/<([^>]*)>([^,]*)/gu)) {
     const rel = /\brel\s*=\s*"?([^";]*)"?/iu.exec(match[2] ?? "")?.[1] ?? "";
@@ -202,16 +175,11 @@ function noticeLink(header: string): string | null {
   return null;
 }
 
-/**
- * RFC 9745 sends `@<unix seconds>`; earlier drafts sent an HTTP date, or `true` for "deprecated
- * now". Any other value, such as `false` or a typo, announces nothing.
- */
 function parseDeprecation(value: string | null, at: string): string | null {
   if (value === null) return null;
   return value.toLowerCase() === "true" ? at : parseHttpDate(value);
 }
 
-/** An ISO time, or null for a value that is no date or lies outside the range a Date holds. */
 function parseHttpDate(value: string): string | null {
   const seconds = /^@(-?\d+)$/u.exec(value.trim())?.[1];
   const date = new Date(seconds !== undefined ? Number(seconds) * 1000 : Date.parse(value));

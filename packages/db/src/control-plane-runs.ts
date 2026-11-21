@@ -54,10 +54,6 @@ import {
   runs,
 } from "./schema.js";
 
-/**
- * When a run that queues now fails with PLACEMENT_TIMEOUT: its version's `runtime.queue_timeout`
- * from now. Every write that queues a run stores it, so the expiry pass reads one column.
- */
 async function placementDeadline(
   db: Pick<DatabaseClient["db"], "select">,
   run: { readonly versionId: string } | { readonly runId: string },
@@ -129,7 +125,6 @@ export async function countDeadLetteredFailuresSince(
   return rows.length;
 }
 
-/** A run belongs to its automation's project as it is created; a deleted automation starts none. */
 async function liveProjectOf(
   tx: Parameters<Parameters<DatabaseClient["db"]["transaction"]>[0]>[0],
   automationId: string,
@@ -484,9 +479,6 @@ export async function listQueuedRuns(
   input: ListQueuedRunsPageInput,
 ): Promise<readonly StoredRun[]> {
   const limit = input.limit ?? 50;
-  // The aggregate must not reuse the raw column name: Drizzle renders the join
-  // comparison against a same-named alias unqualified, which Postgres rejects
-  // as an ambiguous column reference.
   const latestAttempts = client.db
     .select({
       latestAttemptNumber: sql<number>`max(${runExecutions.executionNumber})`.as(
@@ -529,8 +521,6 @@ export async function listQueuedRuns(
   return resolved.filter((run): run is StoredRun => run !== null);
 }
 
-// The cursor's position comes from its own row: `queued_at` carries microseconds that a
-// JavaScript Date would truncate, which would list the cursor run again.
 function afterQueuedRun(runId: string) {
   return sql`(${runs.queuedAt}, ${runs.id}) > (select r.queued_at, r.id from runs r where r.id = ${runId})`;
 }
@@ -563,12 +553,10 @@ export async function resumeWaitingRun(
         .returning({ runId: runs.id });
       if (!updated) return null;
 
-      // The result belongs to the execution that suspended: the run's last.
       const [suspended] = await tx
         .select({ executionNumber: max(runExecutions.executionNumber) })
         .from(runExecutions)
         .where(eq(runExecutions.runId, input.runId));
-      // A step waits at most once per run, so a result already there means the wait was over.
       const { written } = await writeStepResult(tx, {
         ...input.result,
         executionNumber: suspended?.executionNumber ?? 0,
@@ -623,7 +611,6 @@ export async function updateRunState(
     updatedAt: new Date(),
   };
 
-  // A run that queues again gets a fresh wait; one already queued keeps its deadline.
   if (input.status === "queued") {
     values.placementDeadlineAt =
       sql`case when ${runs.status} = 'queued' then ${runs.placementDeadlineAt} else ${await placementDeadline(client.db, input)} end` as unknown as Date;
@@ -690,7 +677,6 @@ export async function updateRunState(
     );
 }
 
-/** Serializes cancellation with a leased result's run lock. */
 export async function cancelRun(
   client: DatabaseClient,
   input: { readonly runId: string; readonly finishedAt: string },

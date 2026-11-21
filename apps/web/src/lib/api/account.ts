@@ -1,6 +1,3 @@
-// The signed-in person's own account. `sessionApi` holds the calls the dashboard makes before
-// it knows its environment: signing in and asking which environments the instance lists.
-
 import type {
   AuthStatusResponse,
   EnvironmentsResponse,
@@ -14,10 +11,6 @@ import type {
 } from "../api";
 import { json, request } from "./request";
 
-/**
- * The calls the dashboard makes before it knows its environment: signing in, and asking the
- * instance which environments it lists. Every other call goes through createDashboardApiClient.
- */
 export const sessionApi = {
   async getAuthStatus() {
     return await request<AuthStatusResponse>(`/auth/status?requestTime=${Date.now()}`, {
@@ -39,7 +32,6 @@ export const sessionApi = {
     });
   },
 
-  /** The second sign-in step: a 6-digit code from the app, or a recovery code. */
   async verifySignInCode(code: string) {
     await request<unknown>(
       isAppCode(code) ? "/auth/two-factor/verify-totp" : "/auth/two-factor/verify-backup-code",
@@ -55,7 +47,6 @@ export const sessionApi = {
     return await request<InvitationOfferResponse>("/auth/invitation", json("POST", { token }));
   },
 
-  /** Creates the invited account and signs this browser in. */
   async acceptInvitation(input: {
     readonly email: string;
     readonly name: string;
@@ -69,7 +60,6 @@ export const sessionApi = {
     });
   },
 
-  /** Mails a reset link when an account has this address; answers the same when none has. */
   async requestPasswordReset(email: string) {
     await request<unknown>("/auth/request-password-reset", json("POST", { email }));
   },
@@ -78,7 +68,6 @@ export const sessionApi = {
     await request<unknown>("/auth/reset-password", json("POST", input));
   },
 
-  /** Starts setup; two-factor sign-in is on once `confirmTwoFactor` accepts a code. */
   async enableTwoFactor(input: { readonly password: string }) {
     return await request<TwoFactorEnrollmentResponse>(
       "/auth/two-factor/enable",
@@ -90,7 +79,6 @@ export const sessionApi = {
     await request<unknown>("/auth/two-factor/verify-totp", json("POST", { code: code.trim() }));
   },
 
-  /** Creates the first account and signs this browser in. */
   async setUp(input: {
     readonly email: string;
     readonly name: string;
@@ -115,7 +103,6 @@ function isAppCode(code: string): boolean {
 
 export function accountCalls() {
   return {
-    /** `code` is the second factor, needed while two-factor sign-in is on. Signs out every other browser. */
     async changePassword(input: {
       readonly code: string;
       readonly currentPassword: string;

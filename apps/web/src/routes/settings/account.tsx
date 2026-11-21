@@ -1,5 +1,3 @@
-// Settings › Account (`/settings/account`): the password and the browsers signed in.
-
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { ActionError } from "../../components/actions";
@@ -45,7 +43,6 @@ export function Account() {
   });
   const problem = passwordProblemInWords(next);
   const ids = useId();
-  // Until the two-factor state is known, the form cannot tell whether it needs a code.
   const ready =
     twoFactor.data !== undefined &&
     current !== "" &&

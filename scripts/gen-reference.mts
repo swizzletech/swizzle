@@ -1,6 +1,3 @@
-// Writes the reference pages under docs/reference from the code they describe:
-// the config contract from packages/config, the CLI from apps/cli, the API routes from apps/api.
-// `just gen` writes the pages; `just docs-check` runs this with --check and fails on a stale page.
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,7 +46,6 @@ function main(): void {
   console.log(check ? "Generated reference is current." : `Wrote ${pages.length} reference pages.`);
 }
 
-/** Link from a page in docs/reference to a repository path. */
 function repoLink(label: string, repoPath: string): string {
   return `[${label}](../../${repoPath})`;
 }
@@ -65,8 +61,6 @@ function cell(text: string): string {
 function code(text: string): string {
   return text.includes("`") ? `\`\` ${text} \`\`` : `\`${text}\``;
 }
-
-// ---------- config.yaml ----------
 
 type JsonSchema = {
   readonly $ref?: string;
@@ -84,7 +78,6 @@ type JsonSchema = {
   readonly properties?: Readonly<Record<string, JsonSchema>>;
   readonly propertyNames?: JsonSchema;
   readonly required?: readonly string[];
-  // A union of primitives is one schema whose type lists them.
   readonly type?: string | readonly string[];
 };
 
@@ -146,8 +139,6 @@ function renderObjectSection(sections: string[], objectPath: string, schema: Jso
   }
 }
 
-// A discriminated union such as `trigger` (on `type`) or `api_check` (on `mode`) is a `oneOf` of
-// objects that share a constant property: each variant gets its own section.
 function variantUnion(
   schema: JsonSchema,
 ): { readonly key: string; readonly variants: readonly JsonSchema[] } | undefined {
@@ -206,8 +197,6 @@ function describeField(schema: JsonSchema): string {
   const keys = keyPattern === undefined ? "" : ` Keys match ${code(keyPattern)}.`;
   return `${schema.description ?? ""}${keys}`.trim();
 }
-
-// ---------- CLI ----------
 
 type CommandDescriptor = ReturnType<typeof describeCommandTree>["commands"][number];
 type OptionDescriptor = CommandDescriptor["options"][number];
@@ -278,7 +267,6 @@ function renderOptions(options: readonly OptionDescriptor[]): string {
   return `| Option | Description | Default |\n|---|---|---|\n${rows.join("\n")}`;
 }
 
-/** Maps each top-level command to the file that registers it with `program.command("<name>")`. */
 function scanCommandSources(): ReadonlyMap<string, string> {
   const sources = new Map<string, string>();
   for (const file of sourceFiles("apps/cli/src")) {
@@ -289,8 +277,6 @@ function scanCommandSources(): ReadonlyMap<string, string> {
   }
   return sources;
 }
-
-// ---------- API ----------
 
 const ROUTE_METHODS = new Set([
   "get",
@@ -304,7 +290,6 @@ const ROUTE_METHODS = new Set([
   "route",
 ]);
 const REFERENCE_METHODS = new Set(["get", "post", "put", "patch", "delete"]);
-/** Files that register routes from a route table or constant instead of path literals: their POST paths. */
 const TABLE_ROUTES: Readonly<Record<string, readonly string[]>> = {
   "apps/api/src/dispatch-routes.ts": Object.values(WORKER_ROUTES).map((route) => route.path),
   "apps/api/src/webhook-ingress.ts": [`${WEBHOOK_PATH_PREFIX}/*`],

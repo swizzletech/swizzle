@@ -2,9 +2,6 @@ import { expect, type Page, test } from "@playwright/test";
 
 import { mockDashboardApi, seededState } from "./dashboard-mock";
 
-// Settings as each instance role sees it: one page per section, the nav that reaches each one, the
-// signed-in browsers and the workers.
-
 const OWNER = {
   createdAt: "2026-10-01T00:00:00.000Z",
   email: "owner@example.com",
@@ -78,7 +75,6 @@ test("the sidebar's Settings opens Agent access, and the nav opens every section
 test("a member sees only their own sections, and an instance section's address opens Agent access", async ({
   page,
 }) => {
-  // The mock's person is a member.
   await mockDashboardApi(page, seededState());
   await page.goto("/settings/status");
 
@@ -102,7 +98,6 @@ for (const path of ["/projects", "/no-such-page"]) {
     await page.goto(path);
     await expect(page.locator("main h1").first()).toBeVisible();
 
-    // The space between the header's last row and its bottom edge: its padding, not a band.
     const band = await page
       .locator("aside.side")
       .evaluate(

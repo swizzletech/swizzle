@@ -1,7 +1,3 @@
-// The Overview `/`: the status sentence, Needs you, the automations as a timetable of their last 24
-// hours and what changed recently, in that fixed order. An instance without automations shows only the three steps to the first one,
-// or why the person may not deploy it.
-
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -85,7 +81,6 @@ export function OverviewPage() {
         <Automations automations={automations.data} timetable={overview.data?.timetable ?? null} />
       )}
 
-      {/* After the list above it, so a list arriving later cannot push it down the page. */}
       {automations.data !== undefined &&
       overview.data !== undefined &&
       overview.data.recentChanges.length > 0 ? (
@@ -135,10 +130,6 @@ function StatusCard({ overview }: { readonly overview: Overview }) {
   );
 }
 
-/**
- * The automations as a timetable: each one's last 24 hours hour by hour, those with a failure in
- * them first, and its next run. Without the Overview's timetable the rows keep an empty lane.
- */
 function Automations(props: {
   readonly automations: readonly AutomationSummary[];
   readonly timetable: Timetable | null;
@@ -192,8 +183,6 @@ function AutomationRow(props: {
   const [graphOpen, setGraphOpen] = useState(false);
   const automation = item.kind === "group" ? item.entry : item.automation;
   const trigger = triggerInWords(automation.trigger);
-  // The name link stretches over the whole row; the strip and a pipeline's member links sit above
-  // it, so each opens on its own without nesting links.
   return (
     <>
       <div className="arow linked" data-testid="automation-row">
@@ -259,7 +248,6 @@ function AutomationRow(props: {
   );
 }
 
-/** The next run as a clock time over how far off it is, or what keeps the automation from it. */
 function NextCell(props: { readonly automation: AutomationSummary }) {
   const now = useNow();
   const { trigger } = props.automation;
@@ -296,7 +284,6 @@ function NextCell(props: { readonly automation: AutomationSummary }) {
   );
 }
 
-/** Why New folder, or Rename and Delete of the shown folder, are not offered. */
 function RefusedFolders(props: { readonly folderId: string | null }) {
   const listed = useFolders().data;
   const folder = listed?.folders.find((candidate) => candidate.id === props.folderId);
@@ -322,7 +309,6 @@ function FolderTabs(props: {
   const queryClient = useQueryClient();
   const listed = useFolders();
   const folders = listed.data?.folders ?? [];
-  // A refusal that arrives with a refetch also closes an open New folder form.
   const mayCreate = listed.data?.create === null;
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
@@ -415,7 +401,6 @@ function FolderTabs(props: {
   );
 }
 
-/** Rename or delete the selected folder. Its automations stay, without a folder. */
 function FolderMenu(props: { readonly folder: AutomationFolder; readonly onDeleted: () => void }) {
   const confirm = useConfirm();
   const { api } = useDashboardClient();
@@ -472,7 +457,6 @@ function FolderMenu(props: { readonly folder: AutomationFolder; readonly onDelet
         </button>
         {rename.isError ? <ActionError error={rename.error} /> : null}
       </Menu>
-      {/* Outside the menu: the confirmation dialog's click closes it before the answer arrives. */}
       {remove.isError ? (
         <span className="t-faint text-fail" role="alert">
           {errorText(remove.error)}
@@ -525,7 +509,6 @@ function EmptyInstance() {
   );
 }
 
-/** The three steps to a first automation, or for someone who may not deploy, what it needs. */
 function FirstSteps() {
   const overview = useOverview();
   if (overview.isError) {

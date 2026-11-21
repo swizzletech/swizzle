@@ -2,7 +2,6 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { isIP } from "node:net";
 import { addAbortSignal } from "node:stream";
-// The cheap config entry: the gateway process loads no zod, ajv or yaml.
 import { LOCAL_LLM_SERVICE } from "@swizzle/config/browser";
 import type { LocalLlmGateway, LocalLlmPolicy } from "./local-llm.js";
 
@@ -19,7 +18,6 @@ const hash = (token: string) => createHash("sha256").update(token).digest("hex")
 const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
-/** Literal addresses pin DNS and the port for the gateway's entire lifetime. */
 export function localLlmPolicy(environment: NodeJS.ProcessEnv): LocalLlmPolicy | null {
   const configured = environment.SWIZZLE_LOCAL_LLM_UPSTREAM?.trim();
   if (!configured) return null;
@@ -58,10 +56,6 @@ export function localLlmPolicy(environment: NodeJS.ProcessEnv): LocalLlmPolicy |
   };
 }
 
-/**
- * Only generated text requests cross this boundary. The run cannot supply a URL, model, tools,
- * headers or an API path. Both HTTP proxy clients and CONNECT clients reach this same listener.
- */
 export function createLocalLlmGateway(input: {
   readonly policy: LocalLlmPolicy | null;
   readonly controlToken: string;
@@ -108,7 +102,6 @@ export function createLocalLlmGateway(input: {
       if (request.method === "POST") {
         if (!input.policy || (await health(input.policy)) !== "healthy")
           return reply(response, 503, "Local LLM service is unavailable.");
-        // Health yields; overlapping registrations must reuse the same quota and controllers.
         const existing = grants.get(key);
         if (typeof body.runId !== "string" || body.runId.length > 128)
           return reply(response, 400, "Invalid run identity.");
@@ -147,7 +140,6 @@ export function createLocalLlmGateway(input: {
         return reply(response, 403, "Only POST /v1/chat/completions is permitted.");
       if (active >= policy.concurrency || grant.active.size >= 1 || grant.remaining <= 0)
         return reply(response, 429, "Local LLM concurrency or attempt quota exhausted.");
-      // Reserve capacity before reading a body, so slow senders are bounded too.
       controller = new AbortController();
       const currentController = controller;
       grant.active.add(controller);
@@ -157,7 +149,6 @@ export function createLocalLlmGateway(input: {
         JSON.parse(await readBody(request, MAX_BODY_BYTES, controller.signal)),
         policy,
       );
-      // Recheck after the asynchronous body read: revocation must stop an unstarted inference.
       if (controller.signal.aborted || grant.expiresAt <= Date.now())
         return reply(response, 403, "Attempt token is expired or revoked.");
       grant.remaining--;
@@ -180,7 +171,6 @@ export function createLocalLlmGateway(input: {
         chunks.push(chunk);
       }
       const result: unknown = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-      // The fixed upstream's response headers and any credentials never pass back to a run.
       return reply(response, 200, result);
     } catch {
       reply(

@@ -41,7 +41,6 @@ import { withVerificationDatabase } from "./verification-database.js";
 import { startVerificationApi } from "./verify-api-process.js";
 import { verifyRunImages } from "./verify-run-images.js";
 
-/** A port the OS just handed out, so a restarted API listens where its worker already points. */
 async function freePort(): Promise<number> {
   const server = createServer();
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -66,7 +65,6 @@ async function waitForLockWaiter(holder: PoolClient, signal?: AbortSignal) {
   }, signal);
 }
 
-/** The real HTTP worker protocol, real subprocesses, PostgreSQL and BullMQ. No test endpoints. */
 async function main(client: DatabaseClient, setScenario: (scenario: string) => void) {
   setScenario("API startup");
   process.env.SWIZZLE_ENCRYPTION_KEY ??= "12345678901234567890123456789012";
@@ -96,7 +94,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
     credentials.push(credential);
     return credential;
   };
-  // The stack's own worker: the API provisions it and serves it on the private listener only.
   const localToken = `swz_${randomBytes(32).toString("base64url")}`;
   let api = await startVerificationApi({
     ...process.env,
@@ -118,7 +115,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
     const value: unknown = await response.json();
     return { status: response.status, value };
   };
-  // How every request after the pull names its attempt.
   const ref = (lease: ExecutionAssignment["lease"]) => ({
     taskId: lease.taskId,
     generation: lease.generation,
@@ -135,10 +131,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
     assert.equal(response.status, 200);
     return readWorkerReply(WORKER_ROUTES.pull, response.value).assignment;
   };
-  /**
-   * Pulls the assignment of `runId`. When another or none comes, it fails with the run's last
-   * execution error, such as an API that could not write its temporary copy of the source.
-   */
   const pullRun = async (worker: WorkerCredential, runId: string, signal?: AbortSignal) => {
     const assignment = await pull(worker, signal);
     if (assignment?.lease.runId === runId) return assignment;
@@ -162,7 +154,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
       environment: "local",
     });
   };
-  /** Deploys an automation whose first attempt invokes `child` and whose resume returns its envelope. */
   const deployParent = async (name: string, child: string, resumeDelayMs?: number) => {
     await writeFile(
       path.join(directory, "config.yaml"),
@@ -311,7 +302,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
       `A1/A2 online race: one assignment and one execution; ${runId} succeeded; duplicate completion accepted.`,
     );
 
-    // Source and secrets answer only the attempt a worker owns now.
     setScenario("source and secret scope");
     const scopedName = `secret-scope-${id}`;
     await platform.upsertSecret("SCOPED_KEY", `scoped-value-${id}`, {
@@ -348,8 +338,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
       `A2 scope: ${scopedId} delivered its secret only to the owner; another worker and the finished lease got HTTP 409 for source and start.`,
     );
 
-    // Output and renewals take no lock on the worker row, which a claim holds while it counts the
-    // worker's slots, so a worker's running attempts do not queue behind its claims.
     setScenario("output and renewal under a claim lock");
     const unlockedId = await enqueue(name, { message: "unlocked" });
     const unlocked = await pullRun(a, unlockedId);
@@ -392,7 +380,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
       `A2 lock: ${unlockedId} took output and a renewal while another transaction held its worker row.`,
     );
 
-    // A delivery lost before start spends no attempt, even on the run's only attempt.
     setScenario("one free redelivery before start");
     const onceName = `unstarted-${id}`;
     await deploy(onceName, profile, undefined, "  retry:\n    max_attempts: 1\n");
@@ -401,7 +388,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
     await expireLease(abandoned);
     const requeued = await wait(unstartedId, "queued");
     assert.equal(requeued.attemptsMade, 0);
-    // Its job goes back on the queue with the whole budget, the attempt it did not spend included.
     await waitFor(async () => (await dispatchQueue.getJob(requeued.queueJobId)) !== undefined);
     assert.equal(
       (await dispatchQueue.getJob(requeued.queueJobId))?.opts.attempts,
@@ -412,7 +398,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
     assert.equal(redelivered.lease.generation, abandoned.lease.generation + 1);
     await finish(b, redelivered, await execute(b, redelivered));
     const delivered = await wait(unstartedId, "succeeded");
-    // The redelivery spends the attempt the lost delivery did not.
     assert.deepEqual(
       delivered.executions.map((execution) => [
         execution.status,
@@ -427,7 +412,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
     console.log(
       `A3 unstarted: ${unstartedId} lost its first delivery, went back on the queue with its single attempt and succeeded on worker b.`,
     );
-    // Only one delivery per attempt is free: a worker that never starts still spends the attempt.
     setScenario("bounded loss before start");
     const neverStartedId = await enqueue(onceName, { message: "never started" });
     for (const status of ["queued", "dead-lettered"] as const) {
@@ -448,8 +432,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
       `A3 unstarted bound: ${neverStartedId} lost two deliveries before start; the second spent its single attempt.`,
     );
 
-    // The local worker serves a project created after it was provisioned, without a grant; an
-    // enrolled worker with the same group keeps to its grant.
     setScenario("local worker project access");
     const localCredential = await createPostgresApiTokenStore({ client }).verifyToken(localToken);
     assert.ok(localCredential?.holder.kind === "worker");
@@ -457,7 +439,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
       worker: await registry.authenticate(localCredential.holder.workerId, localCredential.id),
       token: localToken,
     };
-    // Enrolled directly, so cleanup leaves the shared host-default queue to `just dev`.
     const remote = await registry.enroll(
       (
         await registry.create({
@@ -564,7 +545,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
       `A2/A3 loss: ${lostId} retried in the same group, generation ${lost.lease.generation} -> ${replacement.lease.generation}; stale completion HTTP 409.`,
     );
 
-    // Slow source/credential preparation must not hold the worker ownership lock.
     setScenario("renewal during preparation");
     const slowId = await enqueue(name, { message: "prepared after delay" });
     const blocker = await client.pool.connect();
@@ -612,7 +592,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
       "Preparation: ownership renewed while a database read waited; final assignment fenced.",
     );
 
-    // A bounded admission rechecks the placement deadline before spending an attempt.
     setScenario("placement deadline during admission");
     const deadlineName = `admission-deadline-${id}`;
     await deploy(deadlineName);
@@ -648,7 +627,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
     await wait(deadlineId, "dead-lettered");
     console.log("Admission: placement deadline crossing consumes no attempt.");
 
-    // Terminal recovery resumes an invoked parent even when the child's last owner vanishes.
     setScenario("parent recovery after a child loses its lease");
     const childName = `lost-child-${id}`;
     await deploy(childName, profile, undefined, "  retry:\n    max_attempts: 1\n");
@@ -677,7 +655,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
     const child = await pull(a);
     assert.ok(child !== null);
     assert.ok(child.lease.runId !== null);
-    // The owner vanishes after it started: its only attempt is spent.
     await ok(a, "start", { lease: ref(child.lease) });
     await expireLease(child);
     await wait(child.lease.runId, "dead-lettered");
@@ -705,7 +682,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
       "Recovery: an exhausted child lease resumes its parent once with the durable failure envelope.",
     );
 
-    // A child no worker takes within its queue_timeout dead-letters and resumes its parent too.
     setScenario("parent recovery after a child misses placement");
     const unplacedName = `unplaced-child-${id}`;
     await deploy(unplacedName, offlineProfile);
@@ -737,11 +713,9 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
       `Recovery: ${unplacedId}, a child no worker took within its queue_timeout, dead-lettered with PLACEMENT_TIMEOUT and resumed its parent.`,
     );
 
-    // More unavailable offers than BullMQ slots cannot hide reachable work in the same profile.
     setScenario("queue fairness");
     const deniedName = `other-environment-${id}`;
     await deploy(deniedName);
-    // The second environment has registered grants but neither of the claiming workers serves it.
     const unavailable = await registry.create({
       name: `unavailable-${id}`,
       services: [],
@@ -798,7 +772,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
     await finish(capacityWorker, capacitySecond, await execute(capacityWorker, capacitySecond));
     console.log("Capacity: one slot across two profiles; denied claims spend no attempt.");
 
-    // The claim itself reads the service health the worker reported last, not only the pull.
     setScenario("worker service health");
     const serviceEnrollment = await registry.create({
       name: `service-${id}`,
@@ -810,7 +783,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
     });
     const serviceWorker = await registry.enroll(serviceEnrollment.code, `service-${id}`);
     credentials.push(serviceWorker);
-    // What a worker service reports: this host's capabilities and its service health.
     const reportService = async (health: "healthy" | "unhealthy") =>
       ok(serviceWorker, "runtime", {
         capabilities,
@@ -896,7 +868,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
     );
     console.log(`Rate limits: executions started ${startGapMs} ms apart with a 1/sec limit.`);
 
-    // Delete only this proof's queue, while the API is down. Other worktrees keep their queues.
     setScenario("queue reconstruction and completion receipts");
     const queueLostId = await enqueue(name, { message: "queue rebuilt" });
     await api.close();
@@ -910,8 +881,6 @@ async function main(client: DatabaseClient, setScenario: (scenario: string) => v
       "Restart/queue loss: durable queued work rebuilt; completed result receipt survived restart.",
     );
 
-    // An attempt in flight survives an API restart: the real worker keeps its process running,
-    // renews against the restarted API on the same address and delivers output and result to it.
     setScenario("in-flight API restart");
     const restartProfile = `restart-${id}`;
     const restartCredential = await issue("restart", [restartProfile]);

@@ -1,7 +1,5 @@
 import type { PlatformRunStatus } from "./control-plane-types.js";
 
-/** Failed runs are finished: retryable failures belong to executions, whose run stays queued. */
-/** Its type keeps each status's phase, so a copy typed `typeof RUN_STATUS_PHASE` must agree. */
 export const RUN_STATUS_PHASE = {
   queued: "open",
   running: "open",
@@ -19,16 +17,13 @@ export function isFinishedRun(status: PlatformRunStatus): boolean {
   return RUN_STATUS_PHASE[status] === "finished";
 }
 
-/** The dead-letter reason of a run a person cancelled. */
 export const USER_CANCELLED = "user-cancelled";
 export const PARENT_CANCELLED = "parent-cancelled";
 
 export const CANCELLED_RUN_REASONS = [USER_CANCELLED, PARENT_CANCELLED] as const;
 
-/** A run as its owner reads it: its status, or `cancelled`, because a cancelled run did not fail. */
 export type RunState = PlatformRunStatus | "cancelled";
 
-/** Every surface that counts, lists or draws failures reads this one decision. */
 export function runState(run: {
   readonly deadLetterReason: string | null;
   readonly status: PlatformRunStatus;

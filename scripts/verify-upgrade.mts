@@ -1,5 +1,3 @@
-// `just verify-upgrade`: the latest stable release's data survives an upgrade to this exact HEAD.
-// A local origin and a test-only release tag keep the check independent of published releases.
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { createHash, createHmac, randomBytes } from "node:crypto";
@@ -165,7 +163,6 @@ try {
   stack = await startPackagedStack("smoke", log, checkout, { SWIZZLE_ENVIRONMENT: "staging" });
   await copyFile(stack.envFile, path.join(checkout, ".env"));
   const originalEnv = await readFile(path.join(checkout, ".env"), "utf8");
-  // Generate and deploy through the released CLI, not a reconstruction of its scaffold.
   await command("just", [
     "--command",
     "mise",
@@ -373,7 +370,6 @@ api_check:
   for (const webhook of legacyWebhooks) {
     assert.equal(await inspectWebhook(webhook.name), webhook.url);
     const upgradedRun = await signedWebhook(webhook.url, webhook.name, signingSecret);
-    // Force exercises trigger registration even when an unchanged apply could be a no-op.
     const applied: ApplyResponse = JSON.parse(await stack.cli("apply", webhook.fixture, "--force"));
     assert.equal(applied.webhookUrl, webhook.url);
     const redeployedUrl = await inspectWebhook(webhook.name);
@@ -431,7 +427,6 @@ api_check:
   const freshUrl = await inspectWebhook("fresh-scaffold");
   assert.match(new URL(freshUrl).pathname, /^\/hooks\/fresh-scaffold-/u);
   const freshRun = await signedWebhook(freshUrl, "fresh-scaffold", signingSecret);
-  // Exercise the same printed path through the limited public listener as well.
   const publicUrl = new URL(freshUrl);
   const publicPath = publicUrl.pathname;
   const publicRun = await signedWebhook(
@@ -488,8 +483,6 @@ api_check:
     );
   }
   const privateApiBase = `${stack.dashboard}/api`;
-  // HEAD and the latest stable tag can share a version before the next bump. A distinct stale
-  // value makes the observation sensitive to the old Compose-to-API override as well.
   await writeFile(
     path.join(checkout, ".env"),
     `${originalEnv
@@ -500,7 +493,6 @@ api_check:
         `SWIZZLE_API_ORIGIN=${privateApiBase}`,
       )}SWIZZLE_IMAGE_TAG=v0.0.0\n`,
   );
-  // Configuration changes use the same release image selection as an operator's restart.
   await command("just", ["stack"]);
   assert.doesNotMatch(await readFile(path.join(checkout, ".env"), "utf8"), /^SWIZZLE_IMAGE_TAG=/mu);
   const health: HealthResponse = JSON.parse((await get(`${stack.dashboard}/api/health`)) ?? "null");

@@ -3,20 +3,13 @@ import { writeSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
 export interface AutomationMetadata {
-  /** The retry attempt this execution spends; a resume from a wait starts again at 1. */
   readonly attempt: number | null;
   readonly automationId: string | null;
   readonly automationName: string | null;
   readonly automationVersion: string | null;
   readonly environment: string | null;
-  /** Which execution of the run this is, counting every resume and retry. */
   readonly executionNumber: number | null;
   readonly runId: string | null;
-  /**
-   * What started the run. Only `webhook` passed the trigger's signature check. A run started by
-   * hand, on the platform or with `swizzle run`, is `manual` and has no webhook headers. An API
-   * check reads `check`.
-   */
   readonly triggerType: "webhook" | "cron" | "chain" | "manual" | "check" | null;
   readonly versionId: string | null;
 }
@@ -63,25 +56,18 @@ export interface WaitForEventResult<TValue = unknown> {
 }
 
 export interface RequestApprovalOptions extends WaitForEventOptions {
-  /**
-   * Who decides: a Swizzle person by email, or any member of a Swizzle team by name, signed in to
-   * the dashboard. Without it, the approval link or anyone who may run the automation decides.
-   */
   readonly assignee?: { readonly user: string } | { readonly team: string };
   readonly details?: unknown;
 }
 
-/** Whom the approval was assigned to when it was decided. */
 export type ApprovalAssignee =
   | { readonly kind: "user"; readonly userId: string; readonly label: string }
   | { readonly kind: "team"; readonly teamId: string; readonly label: string };
 
-/** Who decided: a signed-in person or the holder of the approval link. */
 export type ApprovalDecider =
   | { readonly kind: "person"; readonly userId: string; readonly label: string }
   | { readonly kind: "link" };
 
-/** The decision; a timed-out approval is rejected and names nobody. */
 export type ApprovalResult =
   | {
       readonly timedOut: false;
@@ -121,19 +107,11 @@ export function getAutomationMetadata(): AutomationMetadata {
     environment: process.env.SWIZZLE_ENV ?? null,
     executionNumber: parseOptionalInteger(process.env.SWIZZLE_EXECUTION),
     runId: process.env.SWIZZLE_RUN_ID ?? null,
-    // The platform sets it to one of the declared types.
     triggerType: (process.env.SWIZZLE_TRIGGER_TYPE ?? null) as AutomationMetadata["triggerType"],
     versionId: process.env.SWIZZLE_VERSION_ID ?? null,
   };
 }
 
-/**
- * Read the access token for a platform connection declared in `config.yaml`
- * under `connections:`. The platform injects the current (auto-refreshed) token
- * as `SWIZZLE_CONNECTION_<NAME>`; refresh tokens and client secrets never
- * reach automation code. Throws if the connection was not injected — usually
- * because it is not declared in `connections:` or is not authorized yet.
- */
 export function getConnectionToken(connectionName: string): string {
   const token = process.env[connectionEnvVarName(connectionName)];
   if (token === undefined || token === "") {
@@ -144,11 +122,6 @@ export function getConnectionToken(connectionName: string): string {
   return token;
 }
 
-/**
- * The ISO expiry of the injected connection access token, when the provider
- * supplied one. The platform refreshes tokens automatically, so this is only
- * useful for long-running automations that want to re-read the token.
- */
 export function getConnectionTokenExpiry(connectionName: string): string | null {
   return process.env[`${connectionEnvVarName(connectionName)}_EXPIRES_AT`] ?? null;
 }
@@ -183,12 +156,6 @@ export function stateDelete(key: string): void {
   process.stderr.write(`${JSON.stringify({ key, type: "state_delete" })}\n`);
 }
 
-/**
- * Run a named durable step. A step_start event tells the platform the step runs; the
- * successful JSON-serializable result is emitted as step_result and memoized per run, so
- * retries return the persisted value without re-executing fn. Undefined results are stored
- * as null.
- */
 export async function runStep<T>(name: string, fn: () => T | Promise<T>): Promise<T> {
   const stepName = validateStepName(name);
   const memoized = await readMemoizedStep<T>(stepName);
@@ -196,7 +163,6 @@ export async function runStep<T>(name: string, fn: () => T | Promise<T>): Promis
     return memoized.value;
   }
 
-  // The dashboard lights this step's station now; a crash before step_result marks it failed.
   process.stderr.write(`${JSON.stringify({ key: stepName, type: "step_start" })}\n`);
   const result = await fn();
   const value = result === undefined ? null : result;
@@ -206,12 +172,6 @@ export async function runStep<T>(name: string, fn: () => T | Promise<T>): Promis
   return value as T;
 }
 
-/**
- * Durably sleep until an ISO timestamp or Date. On the first call for a step
- * name, this writes a suspend sentinel to stdout and exits the process with
- * code 0. When the platform resumes the run, the whole entrypoint runs again
- * and this helper returns immediately from the memoized step result.
- */
 export async function sleepUntil(name: string, until: Date | string): Promise<void> {
   const stepName = validateStepName(name);
   const memoized = await readMemoizedStep(stepName);
@@ -231,10 +191,6 @@ export async function sleepUntil(name: string, until: Date | string): Promise<vo
   });
 }
 
-/**
- * Durably sleep for a duration in milliseconds. On a miss this helper exits the
- * process after emitting the suspend sentinel; it never returns on that path.
- */
 export async function sleep(name: string, durationMs: number): Promise<void> {
   if (!Number.isFinite(durationMs)) {
     throw new Error("sleep durationMs must be a finite number.");
@@ -242,12 +198,6 @@ export async function sleep(name: string, durationMs: number): Promise<void> {
   await sleepUntil(name, new Date(Date.now() + durationMs));
 }
 
-/**
- * Invoke another automation as a durable child step. On the first call for a
- * step name, this writes a suspend sentinel to stdout and exits 0. On resume it
- * returns the memoized child result envelope. Child failure is returned as data
- * with status "dead-lettered"; it is not thrown by this helper.
- */
 export async function invokeAutomation<TResult = unknown>(
   name: string,
   automation: string,
@@ -310,26 +260,14 @@ export async function requestApproval(
   });
 }
 
-/**
- * The public link that opens the approval page of one approval step. It works only while the run
- * waits at that step, at most until the wait's timeout. Send it inside a `step`, so a resume
- * does not send it again. What readers see of the run, its logs, steps, details, state and child
- * payloads, shows it as `[REDACTED]`, so whoever may only read the run cannot decide with it.
- */
 export function getApprovalUrl(step: string): string {
   return createWaitLink("approvals", "approval", step);
 }
 
-/**
- * The public URL a third-party system POSTs to, without a Swizzle credential, to resolve the
- * `waitForEvent` of one step; the request body becomes the event value.
- */
 export function getEventCallbackUrl(step: string): string {
   return createWaitLink("events", "event", step);
 }
 
-// `<runId>.<base64url(step)>.<base64url(HMAC-SHA256(SWIZZLE_LINK_KEY, "<kind>\n<step>"))>`, the
-// token packages/runtime/src/wait-links.ts verifies.
 function createWaitLink(path: "approvals" | "events", kind: "approval" | "event", step: string) {
   const stepName = validateStepName(step);
   const base = process.env.SWIZZLE_LINK_URL?.trim();
@@ -385,16 +323,6 @@ function normalizeOptionalUntil(options: WaitForEventOptions): string | null {
   return null;
 }
 
-/**
- * Claims `key` in the automation's state for this run: true for the first run that claims it, and
- * again for that run's retries and resumes; false for every other run. The platform decides with
- * one insert in PostgreSQL, so of two runs that claim a key at the same time exactly one gets
- * true. Claim before a side effect that must happen once, such as sending order A-1001.
- *
- * The first call suspends the run, and the entrypoint runs again from the top with the answer, so
- * code before it runs twice. The claim stays under the state key `claim:<key>`; delete that key
- * to let a later run claim it again. A local `swizzle run` holds no platform state and gets true.
- */
 export async function claim(key: string): Promise<boolean> {
   if (typeof key !== "string" || key.length === 0) {
     throw new Error("Swizzle claim keys must be non-empty strings.");
@@ -450,15 +378,6 @@ function normalizeSnapshotFile(value: string | undefined): string | null {
   return value;
 }
 
-/**
- * Throws when `value` has no JSON form the platform can store and give back. JSON.stringify
- * writes null for NaN and Infinity, a string for a Date, {} for a Map or Set, and drops an
- * undefined field, so a replayed step would return another value than the run saw. Only
- * null, booleans, finite numbers, strings, arrays and plain objects round-trip, and only when
- * serialization runs no code of the value's own: a toJSON method rewrites it, and a getter can
- * answer differently when serialization reads it again. The walk reads each property once
- * through its descriptor, so what it validates is what JSON.stringify then writes.
- */
 function assertJson(value: unknown, what: string, key = "", ancestors: object[] = []): void {
   const lossy = lossyKind(value);
   if (lossy !== null) throw notJson(what, lossy, key);
@@ -483,7 +402,6 @@ function notJson(what: string, found: string, key: string): Error {
   );
 }
 
-/** Names what a value is when JSON would change it or drop it, or null when it round-trips. */
 function lossyKind(value: unknown): string | null {
   if (typeof value === "number") return Number.isFinite(value) ? null : String(value);
   if (value === null || typeof value === "string" || typeof value === "boolean") return null;
@@ -498,7 +416,6 @@ function validateStepName(name: string): string {
   if (typeof name !== "string" || name.length === 0) {
     throw new Error("Swizzle step names must be non-empty strings.");
   }
-  // claim() keeps its answers under these names; a step of the same name would forge one.
   if (name.startsWith(CLAIM_PREFIX)) {
     throw new Error(`Swizzle step names starting with "${CLAIM_PREFIX}" are reserved for claim().`);
   }
@@ -585,7 +502,6 @@ export async function runAutomation<TPayload = unknown, TResult = unknown>(
   writeResult(result);
 }
 
-/** The field an API answer no longer matches, as the automation's own parser found it. */
 export interface ContractChange {
   readonly api: string;
   readonly expected: string;
@@ -595,13 +511,6 @@ export interface ContractChange {
 
 const reportedApiContacts = new Set<string>();
 
-/**
- * `fetch` that also tells the platform which API answered: one `api_contact` stderr line per
- * distinct host, status and retirement notice, so the dashboard shows when an API was last
- * reached and warns about Deprecation and Sunset headers. Only the host, the path without its
- * query, the status and those headers leave the process; the platform redacts the path. After a
- * redirect, the event names the URL that answered.
- */
 export async function apiFetch(input: string | URL, init?: RequestInit): Promise<Response> {
   const response = await fetch(input, init);
   const url = new URL(response.url === "" ? input : response.url);
@@ -629,12 +538,6 @@ export async function apiFetch(input: string | URL, init?: RequestInit): Promise
   return response;
 }
 
-/**
- * Ends the process because an API's answer no longer matches what the code expects. Name the
- * field and describe both sides as phrases, such as `{ api: "api.example.com", field:
- * "items[].amount", expected: "a number", got: "a string" }`. A run fails with
- * UPSTREAM_CONTRACT_CHANGED and is not retried; an API check records drift.
- */
 export function contractChanged(change: ContractChange): never {
   writeSync(2, `${JSON.stringify({ ...change, type: "contract_changed" })}\n`);
   process.exit(1);

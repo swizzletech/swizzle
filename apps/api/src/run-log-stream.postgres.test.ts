@@ -5,8 +5,6 @@ import { testPlatform } from "../../../test/platform.js";
 import { ownerHeaders } from "../test/people.js";
 import { buildTestServer } from "../test/server-harness.js";
 
-// A subscription that stands at once and then hears nothing, as when the run's last status was
-// published before it existed.
 vi.mock("@swizzle/runtime/platform", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@swizzle/runtime/platform")>()),
   subscribeRunLogEvents: vi.fn(async () => {}),
@@ -27,12 +25,10 @@ describe("GET /runs/:runId/logs/stream", () => {
       runId,
       status,
     });
-    // The first read sees the run running; it finishes while the stream subscribes.
     const getPlatformRun = vi
       .fn()
       .mockResolvedValueOnce(run("running"))
       .mockResolvedValue(run("succeeded"));
-    // The access check finds the run's automation before the stream opens.
     const findAutomation = async () => ({
       automationId: "5d2b3f0e-8c1a-4e6b-9f3d-2a7c1e4b8d90",
       automationSlug: "hello",
@@ -43,7 +39,6 @@ describe("GET /runs/:runId/logs/stream", () => {
     });
     const address = await app.listen({ host: "127.0.0.1", port: 0 });
 
-    // A stream that stays open never ends this read, and the test timeout aborts it.
     let text: string;
     try {
       const response = await fetch(`${address}/runs/${runId}/logs/stream`, {

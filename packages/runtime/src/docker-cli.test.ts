@@ -12,7 +12,6 @@ import {
 } from "./docker-cli.js";
 import { pruneRunImages } from "./run-image-prune.js";
 
-// f-431: a killed worker's sandboxes outlive it until their hold process ends, up to an hour.
 it("removes what a restarted or gone worker left, and keeps a live replica's", () => {
   const containers = [
     { id: "own", owner: "worker-a" },
@@ -26,7 +25,6 @@ it("removes what a restarted or gone worker left, and keeps a live replica's", (
     "recreated",
     "unlabelled",
   ]);
-  // A worker process outside the Compose stack cannot tell which of them still run.
   expect(leftoverContainers(containers, new Set(["worker-b"]), "worker-a")).toEqual([]);
 });
 
@@ -34,7 +32,6 @@ it("keeps the sandbox of a replica that starts while it lists the stack's contai
   const directory = await temporaryDirectory("swizzle-docker-leftovers-");
   const started = path.join(directory, "replica-started");
   const removed = path.join(directory, "removed");
-  // The replica starts, and makes its sandbox, while Docker answers the container listing.
   await writeFile(
     path.join(directory, "docker"),
     `#!${process.execPath}
@@ -123,23 +120,22 @@ setInterval(() => {}, 1000);
       return descendantPid > 0;
     });
     deadlines.expire();
-    // The descendant left the killed group and still holds the pipes, so a run that waited for
-    // them would end only at the test's timeout.
     expect(await outcome).toMatchObject({ code: "DOCKER_CONTROL_TIMEOUT" });
     expect(() => process.kill(descendantPid, 0)).not.toThrow();
   } finally {
     await owner.close();
-    // The wrapper wrote the pid file at once, also when the test ended before it read it.
     const pid = descendantPid || Number(await readFile(pidFile, "utf8").catch(() => "0"));
-    if (pid > 0) {
-      try {
-        process.kill(pid, "SIGKILL");
-      } catch {
-        /* Already terminated. */
-      }
-    }
+    if (pid > 0) killTestDescendantBestEffort(pid);
   }
 });
+
+function killTestDescendantBestEffort(pid: number): void {
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    return;
+  }
+}
 
 it.for([
   { name: "swizzle-run-late", expected: "removed" },
@@ -178,7 +174,6 @@ else if (args[0] === 'rm') {
     await expect(created).rejects.toMatchObject({ code: "DOCKER_TRANSFER_TIMEOUT" });
     vi.restoreAllMocks();
     await scope.close();
-    // A unique sandbox finishes late; a shared assembly name may already belong to a new owner.
     await writeFile(container, "created");
     await pruneRunImages({ keep: new Set() });
     expect(
@@ -267,8 +262,6 @@ it("reaps unresponsive Docker commands and bounds independently owned cleanup", 
   const log = path.join(directory, "calls.jsonl");
   await writeFile(
     path.join(directory, "docker"),
-    // A shell script: a Node fake takes long enough to start on a loaded host that the five calls
-    // outlast the test's timeout (f-276).
     `#!/bin/sh
 printf '{"command":"%s","pid":%s}\\n' "$1" "$$" >> '${log}'
 trap '' TERM
@@ -278,9 +271,6 @@ exec sleep 1000
     { mode: 0o755 },
   );
   vi.stubEnv("PATH", `${directory}:${process.env.PATH}`);
-  // Each control deadline is expired by the test once its fake docker process has logged its call.
-  // A timer would also run while a loaded host is still starting that process, so the call would
-  // be killed unlogged.
   const controlDeadlines = heldDeadlines();
   const loggedCalls = async (): Promise<{ command: string; pid: number }[]> => {
     try {
@@ -315,14 +305,12 @@ exec sleep 1000
     await waitFor(signal, async () => (await loggedCalls()).length >= 2);
     controlDeadlines.expireNewest();
     await expect(created).rejects.toMatchObject({ code: "DOCKER_TRANSFER_TIMEOUT" });
-    // close() retries removal under fresh deadlines, even though the create command already expired.
     const closing = owner.close();
     for (const attempt of [1, 2, 3]) {
       await expireAfterLogged(2 + attempt);
     }
     await closing;
   } finally {
-    // A failed wait must not leave a fake docker process under a deadline nobody will expire.
     controlDeadlines.expire();
     await closeDockerScopes();
   }

@@ -22,19 +22,11 @@ import type { BearerToken } from "./profile.js";
 
 export interface ResolvedAutomationName {
   readonly slug: string;
-  /** `unlisted`: no automation the caller can see has this name; the API decides what it is. */
   readonly match: "exact" | "fuzzy" | "unlisted";
   readonly confidence: number;
   readonly query: string;
 }
 
-/**
- * The slug a command acts on. A name the caller can see resolves exactly, or by a fuzzy match
- * that the output names as a warning. A slug the caller cannot see goes to the API as it is, so
- * the API's own answer reaches the caller: a 404 for an automation that does not exist, a 403
- * ACCESS_DENIED where a role is missing, such as in a protected production. Destructive commands
- * never act on a fuzzy match.
- */
 export async function resolveAutomationNameOrDie(
   name: string | undefined,
   options: ApiCommandOptions & ExactCommandOptions,
@@ -55,8 +47,6 @@ export async function resolveAutomationNameOrDie(
     exact: options.exact === true,
   });
   if (resolved === null) {
-    // The API names automations by slug, so a name that is not one reaches none; it is not
-    // rewritten into another that might, even when it differs from one only in punctuation.
     if (input !== slugify(input)) {
       throw new AgentError({
         code: "AUTOMATION_NOT_FOUND",
@@ -70,8 +60,6 @@ export async function resolveAutomationNameOrDie(
   }
 
   if (resolved.match === "fuzzy" && context.destructive === true) {
-    // Destructive commands never act on a guess: a near-miss like
-    // `delete report` silently resolving to `reporting-daily` is unrecoverable.
     throw new AgentError({
       code: "EXACT_NAME_REQUIRED",
       exitCode: EXIT_CODES.usage,
@@ -105,13 +93,11 @@ export async function listAutomations(
   return response.automations;
 }
 
-/** An automation directory packed as apply uploads it. */
 export interface PackedAutomation {
   readonly bundle: Buffer;
   readonly contentHash: string;
 }
 
-/** Packs an automation directory as apply uploads it, refusing an empty or oversized one. */
 export async function packAutomationOrThrow(
   automationDirectory: string,
 ): Promise<PackedAutomation> {
@@ -143,11 +129,9 @@ interface DeploymentRequest {
   readonly environment: string;
   readonly force?: boolean;
   readonly project?: string | undefined;
-  /** The profile's token; the ambient one when absent. */
   readonly token?: BearerToken | null;
 }
 
-/** POST /deployments with the packed automation: builds and deploys it. */
 export async function postDeployment(
   packed: PackedAutomation,
   request: DeploymentRequest,
@@ -155,11 +139,6 @@ export async function postDeployment(
   return await postBundle("/deployments", packed, request, 120_000);
 }
 
-/**
- * POST /deployment-checks with the packed automation: the API makes every check apply makes and
- * answers without building or deploying, so `swizzle validate` and `swizzle apply --dry-run`
- * refuse what apply refuses and approve nothing else.
- */
 export async function postDeploymentCheck(
   packed: PackedAutomation,
   request: DeploymentRequest,

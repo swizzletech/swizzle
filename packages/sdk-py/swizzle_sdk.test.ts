@@ -23,7 +23,6 @@ describe("log_step", () => {
     });
   });
 
-  // json.dumps writes a bare NaN token, which the runtime cannot parse as a structured line.
   it("refuses a NaN in the details instead of writing a line the runtime cannot parse", () => {
     const run = runPython(
       'import swizzle_sdk; swizzle_sdk.log_step("saw", {"ratio": float("nan")})',
@@ -36,7 +35,6 @@ describe("log_step", () => {
 });
 
 describe("claim", () => {
-  // A step under a claim's name would answer claim() without asking the platform.
   it("refuses a step named like a claim", () => {
     const run = runPython(
       'import swizzle_sdk; swizzle_sdk.run_step("claim:order:A-1001", lambda: {"claimed": True})',

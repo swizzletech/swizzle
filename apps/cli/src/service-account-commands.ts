@@ -21,7 +21,6 @@ const segment = encodeURIComponent;
 
 type ProjectOption = ApiCommandOptions & { readonly project?: string };
 
-/** `--project`, or the profile's project, which main.ts fills in. */
 function projectOf(options: ProjectOption): string {
   if (options.project !== undefined) return options.project;
   throw new AgentError({

@@ -14,15 +14,10 @@ beforeEach(() => {
 });
 
 const VALUE = "crm-token-value";
-// The run says whether it received the value, so the value itself never reaches its result.
 const READS_TOKEN = `console.log(JSON.stringify({ has: process.env.CRM_TOKEN === "${VALUE}" }));`;
 const TOKEN = "/credentials/secret/CRM_TOKEN";
 const IN_OFFICE = "environment=staging&project=office";
 
-/**
- * Project office holds the secret CRM_TOKEN in staging, set by its admin Olga. Anna and Ben edit
- * office; Carl administers finance, where Olga may look.
- */
 async function office() {
   const platform = await testPlatform({
     artifactsDirectory: path.join(await temporaryDirectory("swizzle-credentials-"), "artifacts"),
@@ -77,7 +72,6 @@ async function office() {
       { environment: "staging", project: input.project },
       { headers: { authorization: who.authorization } },
     );
-  /** Triggers the automation as `who` and processes its run; the run, or the refusal. */
   const run = async (who: { readonly send: ReturnType<typeof as> }, automation: string) => {
     const queued = await who.send(
       "POST",
@@ -115,7 +109,6 @@ describe("credential rights", () => {
     expect(attempts.map((response) => [response.statusCode, response.json().code])).toEqual(
       Array(5).fill([403, "ACCESS_DENIED"]),
     );
-    // She reads who holds it, as someone who may change nothing.
     const access = await anna.send("GET", `${TOKEN}/access?${IN_OFFICE}`);
     expect(access.json()).toMatchObject({ grants: expect.any(Array), right: "use" });
     attempts.push(access);
@@ -145,7 +138,6 @@ describe("credential rights", () => {
       ]),
     );
     expect(byName).toEqual({
-      // Anna edits office, so her manage grant manages; the team grant reaches her too.
       anna: [
         "manage",
         [
@@ -155,7 +147,6 @@ describe("credential rights", () => {
       ],
       ben: ["use", [{ kind: "team", right: "use", teamId: team.id, teamName: "Billing" }]],
       Billing: ["use", [{ kind: "grant", right: "use" }]],
-      // Olga created it and administers office; the owner holds it by instance role.
       olga: [
         "manage",
         [
@@ -183,12 +174,10 @@ describe("credential rights", () => {
       code: "CREDENTIAL_USE_DENIED",
       details: { credentials: [{ kind: "secret", name: "CRM_TOKEN" }] },
     });
-    // Ben still operates what Anna published: its unchanged version and its runs.
     expect((await deploy(ben, { name: "crm-sync", project: "office" })).json()).toMatchObject({
       action: "noop",
     });
     expect(await run(ben, "crm-sync")).toMatchObject({ result: { has: true } });
-    // Nor does replacing the value or creating it anew get round the right.
     const replaced = await ben.send("PUT", `/secrets/CRM_TOKEN?${IN_OFFICE}`, { value: "mine" });
     expect(replaced.statusCode).toBe(403);
     await app.close();
@@ -207,13 +196,11 @@ describe("credential rights", () => {
     });
     expect(next.json()).toMatchObject({ code: "CREDENTIAL_USE_DENIED" });
 
-    // Olga offers the secret to finance; it binds there once Carl accepts.
     const offered = await olga.send("PUT", `${TOKEN}/shares/finance?${IN_OFFICE}`);
     expect(offered.json()).toMatchObject({
       acceptedAt: null,
       project: expect.objectContaining({ id: expect.any(String) }),
     });
-    // Office lists what it shares to those who manage it; Anna, who no longer holds a right, sees none.
     const sharedBy = (who: typeof olga) =>
       who.send("GET", "/projects/office/shared-credentials?environment=staging");
     expect((await sharedBy(olga)).json().credentials).toEqual([
@@ -246,7 +233,6 @@ describe("credential rights", () => {
     expect((await deploy(carl, { name: "ledger", project: "finance" })).statusCode).toBe(200);
     expect(await run(carl, "ledger")).toMatchObject({ result: { has: true } });
 
-    // A run queued before the revocation does not receive the value either.
     const queued = await carl.send("POST", "/automations/ledger/runs?environment=staging", {});
     expect(queued.statusCode).toBe(200);
     expect((await olga.send("DELETE", `${TOKEN}/shares/finance?${IN_OFFICE}`)).statusCode).toBe(

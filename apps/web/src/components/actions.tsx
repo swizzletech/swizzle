@@ -1,8 +1,3 @@
-// The inline actions an owner takes where a problem shows: read and decide or reassign an approval,
-// set a missing secret, connect a missing account. Needs you, the run panel, About › Needs and
-// Credentials all use them, so each action behaves the same wherever it appears. Every success
-// refetches all reads.
-
 import { approvalDetailsInWords } from "@swizzle/config/browser";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -13,15 +8,7 @@ import { refreshAll, useDirectory } from "../lib/queries";
 import { SecretInput } from "./secret-input";
 import { errorText } from "./ui";
 
-/**
- * What an approval asks, read the way the public approval page reads it: the heading, then the
- * other fields labelled. Renders nothing for an approval without details.
- */
-export function ApprovalDetails(props: {
-  readonly details: unknown;
-  /** Each label above its value, for a narrow column such as a station on the track. */
-  readonly stacked?: boolean;
-}) {
+export function ApprovalDetails(props: { readonly details: unknown; readonly stacked?: boolean }) {
   const { fields, heading } = approvalDetailsInWords(props.details);
   if (heading === null && fields.length === 0) return null;
   return (
@@ -45,13 +32,8 @@ export function ApprovalDetails(props: {
   );
 }
 
-/** What the viewer may do with an open approval, as the API reports it on a run. */
 type ApprovalMay = { readonly decide: boolean; readonly reassign: boolean };
 
-/**
- * Comment, Approve and Reject for a run waiting at an approval step, for whoever may decide it,
- * and Reassign for an owner or admin. Needs you lists only approvals the viewer decides.
- */
 export function ApprovalActions(props: {
   readonly runId: string;
   readonly stepKey: string;
@@ -84,9 +66,6 @@ export function ApprovalActions(props: {
       Reassign
     </button>
   ) : null;
-  // The buttons are one group, so when the row is too narrow they wrap together under the comment
-  // field and none is left alone on a line. Below the width of the three side by side, as at 200%
-  // zoom, the group itself wraps so the run panel never clips one.
   return (
     <>
       {may.decide ? (
@@ -126,7 +105,6 @@ export function ApprovalActions(props: {
   );
 }
 
-/** Hands the approval to a person (by email) or a team (by name); the reason goes to the audit. */
 function ReassignForm(props: {
   readonly runId: string;
   readonly stepKey: string;
@@ -204,10 +182,6 @@ function ReassignForm(props: {
   );
 }
 
-/**
- * A write-only field that stores one secret of a project. `overwrite` is for Rotate; a missing
- * secret is created, so a value someone set meanwhile is never replaced by accident.
- */
 export function SecretField(props: {
   readonly name: string;
   readonly projectId: string;
@@ -251,8 +225,6 @@ export function SecretField(props: {
   );
 }
 
-/** Opens the connect form on Credentials, prefilled with the account an automation declares. */
-/** Opens the connect form for an account of this name in the project that needs it. */
 export function ConnectLink(props: {
   readonly name: string;
   readonly projectId: string;

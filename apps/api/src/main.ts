@@ -151,10 +151,6 @@ async function main() {
   }
 }
 
-/**
- * Invitations and password resets by mail, when SWIZZLE_SMTP_URL is set. Their links open the
- * dashboard at SWIZZLE_DASHBOARD_ORIGIN, so mail without it fails the boot.
- */
 function readAccountLinks(origin: string | null): AccountLinks | null {
   const settings = readMailSettings(process.env);
   if (origin === null && settings !== null) {

@@ -399,8 +399,6 @@ it("awaits output persistence before returning a completed execution", async ({ 
   }).finally(() => {
     returned = true;
   });
-  // The automation has exited with its stdout write still pending, so only that write holds the
-  // execution open.
   await waitFor(signal, async () => {
     const pid = Number(await readFile(pidFile, "utf8").catch(() => "0"));
     return pid > 0 && !isRunning(pid);
@@ -411,7 +409,6 @@ it("awaits output persistence before returning a completed execution", async ({ 
   expect(result.success).toBe(true);
   expect(chunks.join("")).toContain("log");
   expect(chunks.join("")).toContain("{}");
-  // A rejected write fails the execution only when the runner awaits it.
   const failed = await runAutomation({
     automationDirectory,
     environmentName: "local",

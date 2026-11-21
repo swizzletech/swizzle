@@ -26,8 +26,6 @@ export function assertPublicSecurityConfiguration(
       "SWIZZLE_TRUSTED_PROXY=true trusts every upstream. Use the proxy's address or CIDR.",
     );
   }
-  // Fastify reads a hop count such as 1 as the address 0.0.0.1, which no proxy has, so every
-  // client would share the proxy's address and its rate-limit budget.
   if (trustedProxy !== undefined && /^[1-9]\d*$/u.test(trustedProxy)) {
     throw new PublicSecurityConfigurationError(
       `SWIZZLE_TRUSTED_PROXY=${trustedProxy} is a hop count, which Fastify reads as an address. Use the proxy's address or CIDR.`,
@@ -99,7 +97,6 @@ function splitOrigins(value: string | undefined): readonly string[] {
     .filter((entry) => entry.length > 0);
 }
 
-// A Map, so a spelling such as `__proto__` finds nothing instead of an Object.prototype member.
 const BOOLEAN_SPELLINGS: ReadonlyMap<string, boolean> = new Map([
   ["0", false],
   ["1", true],
@@ -111,11 +108,6 @@ const BOOLEAN_SPELLINGS: ReadonlyMap<string, boolean> = new Map([
   ["yes", true],
 ]);
 
-/**
- * The one reader of boolean settings such as SWIZZLE_AUTH_COOKIE_SECURE, so the startup guard and
- * the code that acts on a setting agree on every spelling. Undefined when the setting is unset or
- * empty; any spelling other than true/false, 1/0, on/off or yes/no throws.
- */
 export function readBooleanSetting(
   environment: NodeJS.ProcessEnv,
   name: string,

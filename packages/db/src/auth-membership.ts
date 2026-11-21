@@ -1,32 +1,3 @@
-/**
- * Who has an account on this instance and what it is (ADR 0014). A Better Auth plugin admits
- * sign-up for exactly two people: the first account, which owns the instance and may need
- * SWIZZLE_SETUP_TOKEN, and the recipient of a pending invitation, who presents the token from its
- * link. `createPeople` changes accounts afterwards: invitations, roles, suspension, removal and a
- * lost second factor. auth.ts puts both behind SwizzleAuth.
- *
- * | Route or write                | What this plugin does                                          |
- * |-------------------------------|----------------------------------------------------------------|
- * | /sign-up/email, before        | setup token and "no account yet", or a pending invitation for the body's email |
- * | user insert, same transaction | claims the first account or the invitation; sets the role     |
- * | session insert                | refuses a suspended account                                    |
- * | account insert, same transaction | adds the first account to the team Release                  |
- * | sign-up and sign-in, after    | grants what the person's accepted invitation promised, once    |
- * | /reset-password               | mails the link; afterwards revokes the agent tokens (auth.ts)    |
- *
- * An invitation carries the project grants it promises. They become grants once its recipient has
- * an account, after that account's transaction committed, through AccountEffects.grantProject.
- * Each grant leaves the invitation in the transaction that gives it, so a failure is repaired at
- * the next sign-in for the grants still owed, and a grant given once is never given again.
- *
- * Every change to a person first takes an advisory transaction lock, so account changes run
- * one after another, including when no owner row exists. Inside that transaction it reads the
- * actor and
- * the person as they are now, decides with mayManagePeople, and keeps the last active owner: two
- * owners demoting each other at once leave one, and an admin cannot change someone an owner just
- * promoted.
- */
-
 import type { Mailer } from "@swizzle/core";
 import type { AuthContext, BetterAuthPlugin, DBTransactionAdapter } from "better-auth";
 import { getCurrentAdapter } from "better-auth";
@@ -52,52 +23,37 @@ import { causeCode, PG_ERROR } from "./client.js";
 import { CodedError } from "./coded-error.js";
 import type { InvitationRow, PeopleStore, UserRow } from "./people-store.js";
 
-/** The header `/sign-up/email` reads SWIZZLE_SETUP_TOKEN from. */
 export const SETUP_TOKEN_HEADER = "x-swizzle-setup-token";
-/** The header `/sign-up/email` reads an invitation's token from. */
 export const INVITATION_TOKEN_HEADER = "x-swizzle-invitation-token";
 
 const RESET_LINK_LIFETIME_MS = 60 * 60 * 1000;
 const INVITATION_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
-// The first account's claim is a budget row that never refills: one attempt, for good.
 const FIRST_ACCOUNT_CLAIM = sha256("setup:first-account");
 const NEVER = new Date("9999-12-31T00:00:00Z");
 
 export type { PendingGrant } from "./access.js";
 
-/** A pending invitation, as the people who manage the instance see it. Its token is not stored. */
 export interface Invitation {
   readonly id: string;
   readonly email: string;
   readonly role: InstanceRole;
   readonly grants: readonly PendingGrant[];
-  /** The person who sent it; null once their account is gone. */
   readonly invitedBy: string | null;
   readonly createdAt: string;
   readonly expiresAt: string;
 }
 
-/**
- * An invitation just made, with its complete link: the dashboard's `/invitation#<token>`.
- * Only a hash of the token is stored, so the token exists in this URL alone, and the inviter sees it once
- * to pass on. `mailed` says whether the link also went out by mail, which needs SWIZZLE_SMTP_URL.
- */
 export interface SentInvitation {
   readonly invitation: Invitation;
   readonly url: string;
   readonly mailed: boolean;
 }
 
-/**
- * A link to the dashboard's `/reset-password#<token>` that sets a new password once, until
- * `expiresAt`. Better Auth stores only a hash of the token, so the token exists in this URL alone.
- */
 export interface ResetLink {
   readonly url: string;
   readonly expiresAt: string;
 }
 
-/** What HostAuth.recoverOwner (auth.ts) did. */
 export type OwnerRecovery =
   | {
       readonly kind: "recovered";
@@ -105,18 +61,13 @@ export type OwnerRecovery =
       readonly email: string;
       readonly link: ResetLink;
     }
-  /** The addresses of the active owners, so the operator can pick one. */
   | { readonly kind: "not-an-owner"; readonly owners: readonly string[] };
 
-/** What the stores outside Better Auth do when an account changes; main.ts wires them. */
 export interface AccountEffects {
-  /** Gives a person one grant an invitation promised. */
   grantProject(userId: string, grant: PendingGrant): Promise<void>;
-  /** Revokes every agent token of the person, after their password was reset. */
   revokeTokens(userId: string): Promise<void>;
 }
 
-/** The effects over Swizzle's stores, as main.ts and the test server wire them. */
 export function accountEffects(stores: {
   readonly accessStore: Pick<AccessStore, "getProject" | "setGrant">;
   readonly apiTokenStore: Pick<ApiTokenStore, "revokeAllTokens">;
@@ -124,7 +75,6 @@ export function accountEffects(stores: {
   const { accessStore, apiTokenStore } = stores;
   return {
     async grantProject(userId, { projectId, role }) {
-      // A project deleted since the invitation went out promises nothing.
       if ((await accessStore.getProject(projectId)) === null) return;
       await accessStore.setGrant({ kind: "user", userId }, { on: "project", projectId, role });
     },
@@ -134,7 +84,6 @@ export function accountEffects(stores: {
   };
 }
 
-/** Account links share one dashboard origin, whether mailed or handed over manually. */
 export interface AccountLinks {
   readonly origin: string;
   readonly mailer: Mailer | null;
@@ -160,7 +109,6 @@ export function swizzleMembership(options: MembershipOptions): BetterAuthPlugin 
           handler: createAuthMiddleware(async (ctx) => {
             const userId = ctx.context.newSession?.user.id;
             if (userId === undefined) return;
-            // A failure leaves the person signed in without the projects; the next sign-in retries.
             await grantPromised(ctx.context.adapter, options.effects, userId).catch((error) =>
               ctx.context.logger.error("The invitation's project grants were not given.", error),
             );
@@ -221,8 +169,6 @@ export function swizzleMembership(options: MembershipOptions): BetterAuthPlugin 
           },
           account: {
             create: {
-              // Sign-up inserts the person's password account after the person, in the same
-              // transaction, so the first owner is in Release exactly when setup succeeded.
               before: async (account, ctx) => {
                 if (ctx?.headers?.get(INVITATION_TOKEN_HEADER)) return;
                 const adapter = await getCurrentAdapter(context.adapter);
@@ -235,8 +181,6 @@ export function swizzleMembership(options: MembershipOptions): BetterAuthPlugin 
           },
           user: {
             create: {
-              // Runs inside the transaction that inserts the user, so a sign-up that fails later
-              // releases its claim.
               before: async (user, ctx) => {
                 const adapter = await getCurrentAdapter(context.adapter);
                 const token = ctx?.headers?.get(INVITATION_TOKEN_HEADER);
@@ -244,7 +188,6 @@ export function swizzleMembership(options: MembershipOptions): BetterAuthPlugin 
                   await claimFirstAccount(adapter);
                   return { data: { ...user, role: "owner" } };
                 }
-                // The inviter may have passed the link on by hand, so it does not prove the mailbox.
                 const invitation = await claimInvitation(adapter, token, user.email);
                 return { data: { ...user, role: invitation.role } };
               },
@@ -273,15 +216,12 @@ export function swizzleMembership(options: MembershipOptions): BetterAuthPlugin 
           userId: { references: { field: "id", model: "user" }, required: false, type: "string" },
         },
       },
-      // Swizzle's own team_members (schema.ts), declared so setup writes the first owner's
-      // membership of Release in the sign-up transaction.
       teamMember: {
         fields: {
           teamId: { required: true, type: "string" },
           userId: { references: { field: "id", model: "user" }, required: true, type: "string" },
         },
       },
-      // The instance role (access.ts) and suspension; only the claims above and `createPeople` set them.
       user: {
         fields: {
           role: { defaultValue: "member", input: false, required: false, type: "string" },
@@ -300,10 +240,6 @@ function invitationInvalid(): APIError {
   );
 }
 
-/**
- * Of two setups racing past the "no account yet" check, PostgreSQL's unique key holds the second
- * insert until the first commits, then refuses it.
- */
 async function claimFirstAccount(adapter: DBTransactionAdapter): Promise<void> {
   try {
     await adapter.create({
@@ -318,7 +254,6 @@ async function claimFirstAccount(adapter: DBTransactionAdapter): Promise<void> {
   }
 }
 
-/** Marks the invitation accepted, or refuses when another sign-up took it first. */
 async function claimInvitation(
   adapter: DBTransactionAdapter,
   token: string,
@@ -354,7 +289,6 @@ function isPending(row: InvitationRow): boolean {
   return !row.acceptedAt && !row.revokedAt && row.expiresAt.getTime() > Date.now();
 }
 
-/** Gives the grants of the person's accepted invitation, unless they were given already. */
 async function grantPromised(
   adapter: AuthContext["adapter"],
   effects: AccountEffects,
@@ -379,13 +313,6 @@ async function grantPromised(
   }
 }
 
-/**
- * Gives the first grant the invitation still owes and drops it from the invitation in the same
- * transaction; false once nothing is owed. The first write holds the invitation's row lock while
- * the grant is given, so two sign-ins at once never give the same grant, and a failure rolls the
- * drop back for the next sign-in. Only a commit that fails after the grant was given leaves it
- * owed, to be given again.
- */
 async function giveNextGrant(
   adapter: AuthContext["adapter"],
   effects: AccountEffects,
@@ -425,7 +352,6 @@ function invitationView(row: InvitationRow): Invitation {
   };
 }
 
-/** The stored grants; Better Auth hands a JSON column back as text or as the parsed value. */
 function pendingGrants(stored: unknown): readonly PendingGrant[] {
   const value: unknown = typeof stored === "string" ? JSON.parse(stored) : stored;
   if (!Array.isArray(value)) return [];
@@ -435,7 +361,6 @@ function pendingGrants(stored: unknown): readonly PendingGrant[] {
   });
 }
 
-/** The account changes of SwizzleAuth; see its interface in auth.ts for each contract. */
 export interface People {
   invite(input: {
     readonly email: string;
@@ -455,7 +380,6 @@ export interface People {
 }
 
 export function createPeople(store: PeopleStore, links: AccountLinks | null): People {
-  /** The transaction locks before reading either actor, target or the remaining owners. */
   const changePerson = async <T>(request: {
     readonly actorId: string;
     readonly userId: string;
@@ -643,7 +567,6 @@ export function createPeople(store: PeopleStore, links: AccountLinks | null): Pe
   };
 }
 
-/** Better Auth's hashed verification identifier for its current reset-password contract. */
 async function mintResetLink(
   store: PeopleStore,
   userId: string,
@@ -700,7 +623,6 @@ function invitationMail(
   };
 }
 
-/** The mail Better Auth asks for when a person forgot their password. */
 export function passwordResetMail(origin: string, email: string, token: string) {
   return {
     subject: "Reset your Swizzle password",

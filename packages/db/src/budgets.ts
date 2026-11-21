@@ -11,7 +11,6 @@ export type SpendBudget = (key: string, limit: number, windowMs: number) => Prom
 const RETENTION_MS = 24 * 60 * 60 * 1000;
 const budgetKeyHash = (key: string): string => createHash("sha256").update(key).digest("hex");
 
-/** Atomically spends a fixed window. Call outside a transaction that may reject the request. */
 export async function spendBudget(
   db: DatabaseClient["db"],
   key: string,

@@ -7,9 +7,6 @@ import { testDatabase } from "../test/postgres.js";
 import { testControlPlaneStore } from "../test/stores.js";
 import { commitDeploymentFixture, createQueuedRun } from "./verify-state-fixtures.js";
 
-/**
- * Runs › Needs you reads the current wait from the run, regardless of the waits earlier executions suspended at.
- */
 const ANNA = {
   kind: "user",
   label: "anna@example.com",
@@ -83,7 +80,6 @@ async function verifyApprovalWaitQuery(
     });
     return runId;
   };
-  // Only the run's current wait decides the filter, not a wait an earlier execution suspended at.
   const approval = await waitingRun("approval", [{ reason: "event", stepKey: "signal" }]);
   await waitingRun("event", [{ reason: "approval", stepKey: "gate" }]);
   await waitingRun("sleep", [
@@ -106,8 +102,6 @@ async function verifyApprovalWaitQuery(
     stepKey: "gate",
   });
 
-  // Needs you filters by assignee before the limit, so newer approvals for others hide none of
-  // Anna's: two for a team she is not in come after hers, and a limit of one still finds hers.
   const finance = {
     kind: "team",
     label: "Finance",
@@ -141,7 +135,7 @@ async function verifyApprovalWaitQuery(
   assert.equal(forFinance.runs.length, 2, "a team member sees the team's approvals");
 }
 
-it("approval wait query", async () => {
+it("lists only current approval waits for the assignee before applying the limit", async () => {
   const client = testDatabase();
   const store = testControlPlaneStore();
   const deployment = await commitDeploymentFixture(store, "state-machine");

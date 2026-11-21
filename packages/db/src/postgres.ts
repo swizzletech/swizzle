@@ -1,4 +1,3 @@
-// PostgreSQL stores and the schema, client and tools that load Drizzle and pg.
 export { createPostgresAccessStore } from "./access-tables.js";
 export {
   type ApiTokenStore,

@@ -110,7 +110,6 @@ it("publishes a terminal chain child only after its transaction commits and reco
     processRunTerminalEffects({ run, store: transactionStore }),
   );
   expect(await store.listQueuedRuns({})).toHaveLength(1);
-  // A lost job is republished from the committed row without another child or terminal intent.
   await reconcileQueuedRunsWithStore(store, queue, {});
   expect(enqueue).toHaveBeenCalledTimes(2);
 });

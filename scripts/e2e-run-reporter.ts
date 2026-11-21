@@ -10,11 +10,6 @@ import type {
   TestResult,
 } from "@playwright/test/reporter";
 
-/**
- * Owns the run's output directory: a green run deletes it. A red run keeps the traces and
- * screenshots there, writes e2e.log with every test result, error and line the tests and the
- * web server printed, and prints both paths last.
- */
 export default class E2eRunReporter implements Reporter {
   private outputDirectory: string | undefined;
   private status: FullResult["status"] = "failed";
@@ -49,7 +44,6 @@ export default class E2eRunReporter implements Reporter {
     const outputDirectory = this.outputDirectory;
     if (outputDirectory === undefined) return;
     if (this.status === "passed") {
-      // Playwright writes .last-run.json after onExit, so delete on process exit.
       process.once("exit", () => rmSync(outputDirectory, { force: true, recursive: true }));
       return;
     }

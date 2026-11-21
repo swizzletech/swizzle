@@ -1,6 +1,3 @@
-// One backup per directory: metadata.json, database.sql and artifacts/ at its root.
-// An export stages the whole directory privately and publishes it with one rename, so a
-// destination either does not exist or holds one complete backup. A destination is written once.
 import { chmod, lstat, open, readdir, readFile, rename, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,7 +9,6 @@ export interface BackupMetadata {
   readonly formatVersion: 1;
 }
 
-/** The fixed layout of a backup directory. */
 export interface BackupPaths {
   readonly artifactsDirectory: string;
   readonly databaseDump: string;
@@ -47,7 +43,6 @@ export function createBackupMetadata(artifactBackend: ArtifactStorageBackend): B
   return { artifactBackend, createdAt: new Date().toISOString(), formatVersion: 1 };
 }
 
-/** Throws BACKUP_DESTINATION_EXISTS unless the directory is missing or an empty directory. */
 export async function assertBackupDestinationFree(destination: string): Promise<void> {
   let entry: Awaited<ReturnType<typeof lstat>>;
   try {
@@ -60,7 +55,6 @@ export async function assertBackupDestinationFree(destination: string): Promise<
   throw destinationExists(destination);
 }
 
-/** Reads metadata.json and checks the dump and artifact directory exist: a complete backup. */
 export async function readBackup(directory: string): Promise<BackupMetadata> {
   const paths = backupPaths(directory);
   let text: string;
@@ -109,13 +103,6 @@ export async function readBackup(directory: string): Promise<BackupMetadata> {
   return { artifactBackend: raw.artifactBackend, createdAt: raw.createdAt, formatVersion: 1 };
 }
 
-/**
- * Makes the staged tree owner-only, rejects symbolic links, flushes every file and directory to
- * disk and rejects an incomplete backup. Then it renames the tree to the destination and flushes
- * the parent directory. The rename is the commit: a crash or power loss before it leaves no
- * destination, and after it the destination holds the flushed tree. The rename refuses a
- * destination that gained content since the check.
- */
 export async function publishBackup(staging: string, destination: string): Promise<void> {
   await sealTree(staging);
   await readBackup(staging);
@@ -129,8 +116,6 @@ export async function publishBackup(staging: string, destination: string): Promi
   await syncToDisk(path.dirname(destination));
 }
 
-// Children are flushed before the directory that names them, so a flushed directory never
-// names an entry whose data is still in the page cache.
 async function sealTree(target: string): Promise<void> {
   const entry = await lstat(target);
   if (entry.isSymbolicLink()) {
@@ -147,7 +132,6 @@ async function sealTree(target: string): Promise<void> {
 }
 
 async function syncToDisk(target: string): Promise<void> {
-  // Windows cannot open a directory, so it cannot flush one either.
   if (process.platform === "win32" && (await stat(target)).isDirectory()) return;
   const handle = await open(target, "r");
   try {
@@ -170,8 +154,6 @@ function isErrno(error: unknown, code: string): boolean {
   return error instanceof Error && "code" in error && error.code === code;
 }
 
-// `just backup` runs `check <destination>` before the export and `publish <staging> <destination>`
-// after it, with Node alone, without loading the workspace graph.
 async function runRecipeStep(args: readonly string[]): Promise<void> {
   const [command, first, second] = args;
   if (command === "check" && first) return assertBackupDestinationFree(first);

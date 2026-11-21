@@ -3,7 +3,6 @@ import { createOAuth2Adapter } from "./oauth2.js";
 import type { ConnectionProviderAdapter, MicrosoftProviderConfig } from "./types.js";
 
 const DEFAULT_TENANT = "common";
-// The tenant must stay within one endpoint path segment.
 const TENANT_PATTERN = /^[A-Za-z0-9._-]+$/;
 
 export function parseMicrosoftProviderConfig(value: unknown): MicrosoftProviderConfig {
@@ -28,7 +27,6 @@ export function parseMicrosoftProviderConfig(value: unknown): MicrosoftProviderC
   return { tenant: record.tenant };
 }
 
-// Microsoft only returns a refresh token when `offline_access` is requested.
 function withOfflineAccess(scopes: readonly string[]): string[] {
   return scopes.includes("offline_access") ? [...scopes] : [...scopes, "offline_access"];
 }

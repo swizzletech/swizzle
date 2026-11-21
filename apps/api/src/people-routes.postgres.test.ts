@@ -14,10 +14,6 @@ beforeEach(() => {
   vi.stubEnv("SWIZZLE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
 });
 
-/**
- * A server whose owner Ada is signed in, with a mailbox that keeps every mail it sends, or with no
- * mail server when `mail` is false.
- */
 async function instance({ mail = true } = {}) {
   const mails: MailMessage[] = [];
   const app = await buildTestServer(
@@ -35,7 +31,6 @@ async function instance({ mail = true } = {}) {
   expect((await ada.send("POST", "/auth/sign-up/email", ADA)).statusCode).toBe(200);
   const adaId: string = (await ada.send("GET", "/auth/status")).json().user.id;
 
-  /** Sends an invitation as `from` and returns the token its mail carries. */
   const invite = async (from: typeof ada, body: object) => {
     const sent = await from.send("POST", "/invitations", body);
     const token = new RegExp(`${DASHBOARD_ORIGIN}/invitation#(\\S+)`, "u").exec(
@@ -43,7 +38,6 @@ async function instance({ mail = true } = {}) {
     )?.[1];
     return { sent, token: token ?? "" };
   };
-  /** Accepts an invitation in a fresh browser, as the person the mail reached. */
   const join = async (person: typeof ANNA, token: string) => {
     const browser = testBrowser(app, "198.51.100.20");
     const joined = await browser.send("POST", "/auth/sign-up/email", person, {
@@ -56,7 +50,6 @@ async function instance({ mail = true } = {}) {
   return { ada, adaId, app, invite, join, mails };
 }
 
-// Sign-ins hash with production-cost scrypt; see sign-in.test.ts.
 describe("people over HTTP", () => {
   it("admits only an invited address, which lands in the projects it was invited to", async () => {
     const { ada, app, invite, join, mails } = await instance();
@@ -165,7 +158,6 @@ describe("people over HTTP", () => {
     expect(suspended.json()).toMatchObject({ suspended: true });
     expect(sessionWhileSuspended.statusCode).toBe(401);
     expect(tokenWhileSuspended.statusCode).toBe(403);
-    // A suspended person cannot mint a replacement, so the refusal says whom to ask instead.
     expect(tokenWhileSuspended.json()).toEqual({
       code: "AUTH_ACCOUNT_SUSPENDED",
       error: "AUTH_ACCOUNT_SUSPENDED",

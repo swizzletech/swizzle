@@ -1,8 +1,3 @@
-/**
- * `@swizzle/config/browser`, the entry the dashboard imports: pure helpers with no `node:*`,
- * `yaml`, `zod` or `ajv` imports. `.dependency-cruiser.mjs` keeps the dashboard off the root
- * entry and keeps this module from reaching anything outside the package.
- */
 export {
   type ApprovalDetailField,
   type ApprovalDetailsInWords,

@@ -55,7 +55,6 @@ runtime:
     expect(recipe.command).toEqual(["python3", "/automation/main.py"]);
   });
 
-  // f-430: a recreated worker container has a new hostname and must reuse the image.
   it("gives every worker host of the stack the same tag for the same source", async () => {
     const directory = await temporaryDirectory("swizzle-tag-source-");
     await writeFile(path.join(directory, "main.py"), "print('{}')\n");
@@ -225,14 +224,12 @@ describe("run image assembly", () => {
     vi.stubEnv("SWIZZLE_STACK", "stack-a");
 
     const result = await runContainerAutomation(await makeRunOptions(false));
-    // The sandbox's removal runs after the result, in the background.
     await docker.reached(signal, "rm --force swizzle-run-");
     const calls = await docker.calls();
 
     expect(result.success).toBe(true);
     expect(result.phases?.standby).toBe(false);
     expect(result.phases?.image).toBeTypeOf("number");
-    // The assembly container's removal runs in the background, so its place in the log varies.
     const assembly = /--name (swizzle-image-\S+)/u.exec(calls[1] ?? "")?.[1];
     expect(calls).toContain(`rm --force ${assembly}`);
     expect(
@@ -244,12 +241,10 @@ describe("run image assembly", () => {
     expect(calls.find((call) => call.startsWith("tag "))).toMatch(
       /^tag .*swizzle-run:[0-9a-f]{24}$/u,
     );
-    // The Docker broker acts only on containers with the stack label, sandboxes included.
     expect(calls[1]).toContain("--label swizzle.stack=local-stack-a");
     expect(calls.find((call) => call.startsWith("create --name swizzle-run-"))).toContain(
       "--label swizzle.stack=local-stack-a",
     );
-    // A local run that assembled an image prunes only its local stack's run images.
     expect(calls).toContain(
       "image ls --all --filter label=swizzle.stack=local-stack-a --quiet --no-trunc",
     );
@@ -382,8 +377,6 @@ describe("run image assembly", () => {
     expect(chunks.join("")).toBe("i".repeat(16));
   });
 
-  // An install that exits non-zero is the automation's own failure; Docker failing while it runs
-  // the install step is the platform's, which the run retries.
   it.for([
     {
       attaches: 1,
@@ -419,7 +412,6 @@ describe("run image assembly", () => {
     expect(calls.filter((call) => call.startsWith("start --attach"))).toHaveLength(attaches);
   });
 
-  // The install step runs dependency code, such as a PEP 517 backend, so it gets the run's bounds.
   it("runs the install step under the run sandbox's resource limits", async () => {
     const docker = await fakeDocker({ missingImage: true });
     const options = await makeRunOptions(false);
@@ -433,14 +425,11 @@ describe("run image assembly", () => {
     const creates = (await docker.calls()).filter((call) => call.startsWith("create"));
 
     expect(result.success).toBe(true);
-    // The install container, then the run sandbox.
     expect(creates).toHaveLength(2);
     for (const create of creates) {
       expect(create).toContain(
         "--pids-limit 128 --ulimit nofile=1024:1024 --memory 768m --memory-swap 768m --cpus 1.5",
       );
-      // RLIMIT_NPROC counts the sandbox user's tasks in every container on the host (f-222), so
-      // one run would starve the others. The PID limit bounds each container on its own.
       expect(create).not.toContain("nproc");
     }
   });
@@ -531,7 +520,6 @@ describe("run image assembly", () => {
       `${PYTHON_CONFIG}  requirements:\n    python:\n      requirements_file: requirements.txt\n`,
       options.automationDirectory,
     );
-    // The assembly deadline, ten minutes, the test expires once the install step runs.
     const deadlines = heldDeadlines(600_000);
 
     const run = runContainerAutomation({ ...options, definition });
@@ -555,7 +543,6 @@ describe("run image assembly", () => {
     const calls = await docker.calls();
 
     expect(result.success ? null : result.code).toBe("CONTAINER_RUNTIME_UNAVAILABLE");
-    // Both attempts commit, fail to tag, and remove what they committed.
     expect(calls.filter((call) => call.startsWith("image rm"))).toEqual([
       "image rm sha256:committed",
       "image rm sha256:committed",

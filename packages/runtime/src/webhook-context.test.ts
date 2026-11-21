@@ -24,8 +24,6 @@ describe("createWebhookRunContext", () => {
     });
   });
 
-  // The security invariant: forwarding a webhook must never hand automation code an
-  // Swizzle credential. Everything else about header forwarding is convenience.
   it("never forwards the platform's own credential headers", () => {
     const context = createWebhookRunContext({
       headers: {

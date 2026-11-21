@@ -279,8 +279,6 @@ trigger:
 `),
     ).toThrowError(/requires at least 2 distinct sources/);
 
-    // Uniqueness must hold on normalized slugs — deployment resolves
-    // "Review Bot" and "review-bot" to the same automation.
     expect(() =>
       parseAutomationConfig(`
 name: joiner

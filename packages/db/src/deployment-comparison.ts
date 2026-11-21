@@ -99,7 +99,6 @@ export function deploymentChanges(
   return changes;
 }
 
-/** What the specific change rows above have not already described. */
 function remainingConfig(config: AutomationConfig) {
   const {
     version: _version,

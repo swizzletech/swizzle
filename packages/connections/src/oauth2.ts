@@ -56,7 +56,6 @@ async function requestOAuth2(
 ): Promise<unknown> {
   const signal = AbortSignal.timeout(PROVIDER_REQUEST_TIMEOUT_MS);
   try {
-    // RFC 6749 section 2.3.1 encodes each credential as a form value first.
     const formEncode = (value: string) => new URLSearchParams({ "": value }).toString().slice(1);
     const basic = Buffer.from(
       `${formEncode(credentials.clientId)}:${formEncode(credentials.clientSecret)}`,
@@ -84,7 +83,6 @@ async function requestOAuth2(
       });
     }
     const payload: unknown = await response.json();
-    // GitHub can return OAuth errors with HTTP 200.
     if (
       typeof payload === "object" &&
       payload !== null &&
@@ -104,7 +102,6 @@ async function requestOAuth2(
   }
 }
 
-/** Shared OAuth wire protocol with provider-specific consent and scope policy. */
 export function createOAuth2Adapter(config: OAuth2AdapterConfig): ConnectionProviderAdapter {
   const { revokeUrl } = config;
   return {

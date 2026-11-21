@@ -22,11 +22,6 @@ import { objectSchema, text, urlText } from "./request-validation.js";
 
 const SWIZZLE_PUBLIC_URL_ENV = "SWIZZLE_PUBLIC_URL";
 
-/**
- * The OAuth redirect_uri must be a stable, server-known absolute URL that matches what the
- * operator registered with the provider: `publicApiUrl`, with a proxy path such as /api kept, since
- * behind one the callback route is reachable only under it.
- */
 function resolveConnectionPublicUrl(request: FastifyRequest): string {
   const base = publicApiUrl(request);
   if (base === null) {
@@ -81,12 +76,6 @@ const CALLBACK_FALLBACK_ERROR = {
     "The provider authorization could not be completed. Start a new authorization and try again.",
 };
 
-/**
- * Connections belong to a project and an environment, as secrets do: `?project=` names the
- * project, the default one when absent. Reading needs read there; authorizing a new connection
- * needs edit and gives the creator manage; re-authorizing or deleting one needs manage, testing
- * one needs use (packages/db/src/access.ts).
- */
 export function registerConnectionRoutes(
   app: ApiServer,
   options: { readonly platform: PlatformServices },
@@ -103,9 +92,6 @@ export function registerConnectionRoutes(
       const scope = await request.access.scope(environment);
       projectIds = scope.all ? "all" : scope.projectIds;
     }
-    // The redirect base lets the dashboard show operators the exact redirect
-    // URI to register in their provider console before they authorize. Listing
-    // must keep working when SWIZZLE_PUBLIC_URL is not configured yet.
     let redirectBaseUrl: string | null;
     try {
       redirectBaseUrl = resolveConnectionPublicUrl(request);
@@ -172,7 +158,6 @@ export function registerConnectionRoutes(
       } else {
         await request.access.credential("connection", params.connectionName, place, "manage");
       }
-      // Reusing client credentials copies a client secret, which only who manages its source may.
       const reuseFrom = body.reuseFrom?.trim();
       if (reuseFrom !== undefined) {
         await request.access.credential("connection", reuseFrom, place, "manage");
@@ -240,8 +225,6 @@ export function registerConnectionRoutes(
     },
   );
 
-  // The provider issues `code` and `error` with no length limit (Microsoft's codes run past 1KB);
-  // Node's 16KB header limit bounds them. `state` is ours.
   const providerText = { minLength: 1, pattern: urlText.pattern, type: "string" } as const;
   const callbackQuery = {
     schema: {

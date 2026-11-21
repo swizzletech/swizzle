@@ -28,7 +28,6 @@ const snapshot = (label: "none" | "nullable" | "required" = "none", note = false
   });
 type Snapshot = ReturnType<typeof snapshot>;
 
-/** Each case owns a real stopped Git rebase and real Drizzle SQL, snapshots and journal. */
 async function fixture() {
   const root = await temporaryDirectory("swizzle-migration-test-");
   const db = path.join(root, "packages/db");

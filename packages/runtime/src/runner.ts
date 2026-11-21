@@ -34,23 +34,14 @@ import { materializeWebhookRunContext } from "./webhook-context.js";
 
 const DEFAULT_CHILD_OUTPUT_LIMIT_BYTES = 1_048_576;
 
-/** What every execution takes, whichever script it runs. */
 export interface ExecutionOptions {
   readonly abortSignal?: AbortSignal;
-  /** The retry attempt the execution spends, which the automation reads as SWIZZLE_ATTEMPT. */
   readonly attempt?: number;
   readonly automationDirectory: string;
   readonly environment?: NodeJS.ProcessEnv;
-  /** The environment the run belongs to, which the automation reads as SWIZZLE_ENV. */
   readonly environmentName: string;
-  /** Which execution of the run this is, which the automation reads as SWIZZLE_EXECUTION. */
   readonly executionNumber?: number;
-  /**
-   * Per-automation timeout grant (ms), if one exists for this automation +
-   * environment. Raises the effective `runtime.timeout` ceiling for this run.
-   */
   readonly grantMaxTimeoutMs?: number | null;
-  /** Image, dependencies and sandbox are ready; the process timeout has not started. */
   readonly onReady?: () => Promise<void>;
   readonly onStderrChunk?: (chunk: string) => void | Promise<void>;
   readonly onStdoutChunk?: (chunk: string) => void | Promise<void>;
@@ -68,15 +59,10 @@ interface ExecutionCommand {
   readonly displayName: string;
 }
 
-/** Runs the automation's entrypoint with a run's inputs. */
 export async function runAutomation(options: RunAutomationOptions): Promise<AutomationRunResult> {
   return await execute(options, (definition) => entrypointScript(definition, options));
 }
 
-/**
- * Runs the automation's API check script (`api_check.mode: active`) in place of its entrypoint,
- * as the check contract reads it: see executed-script.ts for what the check receives.
- */
 export async function runAutomationCheck(options: ExecutionOptions): Promise<AutomationRunResult> {
   return await execute(options, async (definition) => checkScript(definition));
 }
@@ -280,7 +266,6 @@ async function execute(
   }
 }
 
-/** Writes the state and steps a run resumes from into its scratch directory. */
 async function writePersistenceFiles(
   scratchDirectory: string,
   persistence: ScriptPersistence,
@@ -306,7 +291,6 @@ function buildRuntimeEnvironment(input: {
   readonly environment: NodeJS.ProcessEnv;
   readonly environmentName: string;
   readonly executionNumber: number;
-  /** Absent for a script that holds no state, and in a container, which mounts its own. */
   readonly persistenceFiles?: PersistenceFiles;
   readonly runId: string;
   readonly runTmp?: string;
@@ -319,7 +303,6 @@ function buildRuntimeEnvironment(input: {
   const versionSlug = toRuntimeSegment(
     input.runtimeMetadata?.version ?? input.definition.config.version,
   );
-  // The runner owns both files: a script that holds state gets its own, never a parent's.
   const {
     SWIZZLE_STATE_FILE: _inheritedStateFile,
     SWIZZLE_STEPS_FILE: _inheritedStepsFile,
@@ -413,7 +396,6 @@ async function resolveExecutionCommand(
         displayName: "python3",
       };
     case ".ts":
-      // Node strips the types; the run image runs TypeScript the same way.
       if (!process.features.typescript) {
         throw new AutomationRuntimeError(
           "INTERPRETER_NOT_FOUND",
@@ -508,10 +490,6 @@ function normalizeOutputLimitBytes(value: number | undefined): number {
   return Math.max(1, Math.floor(value));
 }
 
-/**
- * Whether a run executes in a sandbox container: when the automation asks for one, and for every
- * platform run of a worker that requires the sandbox.
- */
 export function runsInSandbox(definition: AutomationDefinition, platformRun: boolean): boolean {
   if (definition.config.runtime.execution_mode === "container") return true;
   if (!platformRun) return false;

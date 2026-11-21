@@ -1,5 +1,3 @@
-/** `swizzle people`: the instance's people, invitations and reset links; the command table is in access-commands.ts. */
-
 import type { InstanceRole, ProjectRole } from "@swizzle/db";
 import { INSTANCE_ROLES, PROJECT_ROLES } from "@swizzle/db";
 import type {
@@ -177,7 +175,6 @@ export function registerPeople(program: Command, io: CliIO, runHandler: RunHandl
 
 type ProjectInvite = { readonly project: string; readonly role: ProjectRole };
 
-/** `billing=editor` from `--project`; a missing or unknown role is a usage error. */
 function projectInvite(value: string): ProjectInvite {
   const at = value.lastIndexOf("=");
   const project = value.slice(0, Math.max(at, 0)).trim();

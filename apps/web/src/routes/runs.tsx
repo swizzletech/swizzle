@@ -1,7 +1,3 @@
-// Runs `/runs`: every run of the environment, filtered by what the owner asks ("what needs me",
-// "what failed") and by automation, with the selected run beside the list. A phone shows one at a
-// time: the list, or the run a tap or a link chose, with a way back to the list.
-
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { useId, useState } from "react";
 
@@ -90,7 +86,6 @@ export function RunsPage() {
       title="Runs"
       type="workbench"
     >
-      {/* A selected run stays open when it leaves the list, e.g. the last approval just granted. */}
       <RunWorkbench
         empty="No run matches these filters"
         leads="automation"
@@ -117,7 +112,6 @@ export function RunsPage() {
   );
 }
 
-/** One field that searches the automations by name; a full name picks it. */
 function AutomationFilter(props: {
   readonly value: string | undefined;
   readonly onChange: (slug: string | undefined) => void;
@@ -126,7 +120,6 @@ function AutomationFilter(props: {
   const automations = useAutomations().data ?? [];
   const current = automations.find((automation) => automation.automationSlug === props.value);
   const [text, setText] = useState<string | null>(null);
-  // Back, Forward or Clear changes the filter from outside; the field then shows it again.
   const [shown, setShown] = useState(props.value);
   if (shown !== props.value) {
     setShown(props.value);

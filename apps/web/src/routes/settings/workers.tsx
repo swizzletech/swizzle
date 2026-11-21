@@ -1,6 +1,3 @@
-// Settings › Workers, for owners and admins: every worker with its groups and runs, enrollment of a
-// new one with a one-time code, and revoking one.
-
 import { LOCAL_LLM_SERVICE } from "@swizzle/config/browser";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -76,7 +73,6 @@ export function Workers() {
           </p>
           <RunImageDiskNotice worker={worker} />
           <p className="t-meta">Groups: {worker.profiles.join(", ") || "None"}</p>
-          {/* A revoked worker holds no slot and runs nothing again. */}
           {worker.state === "revoked" ? null : (
             <p className="t-meta">
               {worker.currentRuns.length === 0 ? "Idle" : "Running "}

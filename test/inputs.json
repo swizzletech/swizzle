@@ -1,4 +1,8 @@
 {
+  "apps/api/src/recover-owner.postgres.test.ts": [
+    "apps/api/src/{recover-owner,http-shared}.ts",
+    "packages/*/src/**"
+  ],
   "packages/core/src/logger.test.ts": ["packages/core/src/logger*.ts"],
   "scripts/affected-tests.test.ts": [
     ".github/workflows/ci.yml",
@@ -21,7 +25,7 @@
     "scripts/{dev-stack.mts,dev-stack-supervisor.mts,dev-stack-timeout.ts,env-file.ts,process-identity.ts}"
   ],
   "scripts/init-env.test.ts": ["scripts/{init-env,env-file}.ts"],
-  "scripts/conventions/conventions.test.ts": [
+  "scripts/conventions/rules/comment-budget.test.ts": [
     "scripts/conventions/comment-budget.json",
     "{apps,packages,scripts,test}/**/*.{ts,mts,cts,tsx}"
   ],

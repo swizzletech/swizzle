@@ -21,11 +21,6 @@ export interface CredentialReencryptionResult {
   readonly twoFactorSecrets: number;
 }
 
-/**
- * Re-encrypt every stored credential with the current primary encryption key.
- * Previous keys are decrypt-only and must be supplied through
- * SWIZZLE_ENCRYPTION_PREVIOUS_KEYS until this transaction succeeds.
- */
 export async function reencryptStoredCredentials(
   db: NodePgDatabase<typeof schema>,
 ): Promise<CredentialReencryptionResult> {
@@ -96,9 +91,6 @@ export async function reencryptStoredCredentials(
         .where(eq(environmentConnections.id, row.id));
     }
 
-    // Better Auth encrypts each factor's TOTP secret and recovery codes under the secret it
-    // derives from the current key (auth.ts). The lock keeps a concurrent enrollment or code use
-    // from writing between this read and the write.
     const key = betterAuthSecretConfig(process.env);
     const reencrypt = async (data: string) =>
       await symmetricEncrypt({ data: await symmetricDecrypt({ data, key }), key });
@@ -114,7 +106,6 @@ export async function reencryptStoredCredentials(
       twoFactorSecrets += 1;
     }
 
-    // An attempt in flight keeps its delivered secrets sealed on its lease (dispatch-store.ts).
     let executionStates = 0;
     for (const row of await transaction
       .select({ taskId: executionLeases.taskId, executionState: executionLeases.executionState })

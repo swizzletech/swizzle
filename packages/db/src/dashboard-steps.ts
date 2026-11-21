@@ -28,8 +28,6 @@ export async function listRunSteps(
       value: runSteps.value,
     })
     .from(runSteps)
-    // Every step is written by an execution of its run: the one that ran it or, for a wait's
-    // result, the one that suspended.
     .innerJoin(
       runExecutions,
       and(
@@ -52,11 +50,6 @@ export async function listRunSteps(
   }));
 }
 
-/**
- * Over the automation's last `limit` runs in the environment: how many runs reached each step
- * family, the part of a step key before its first ':' (`stepFamily` in `@swizzle/config`), so a run
- * that uploaded three items counts once for `upload`.
- */
 export async function countStepReach(
   client: DatabaseClient,
   automationSlug: string,

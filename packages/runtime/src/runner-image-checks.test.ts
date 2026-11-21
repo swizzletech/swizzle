@@ -40,7 +40,6 @@ runtime:
     const [request] = checks.exchange(worker.instanceId, []);
     expect(request).toEqual({ id: expect.any(String), image: "custom:slow" });
     deadline.abort();
-    // The worker reports only after the read caller's deadline; the deployment still waits for it.
     checks.exchange(worker.instanceId, [
       {
         id: request?.id ?? "missing",
@@ -92,7 +91,6 @@ runtime:
     const request = checks.exchange("worker-1", []);
     expect(request).toEqual([{ id: expect.any(String), image: "custom:reviewed" }]);
     const id = request[0]?.id ?? "missing";
-    // A different worker cannot answer this worker's request.
     expect(
       checks.exchange("worker-2", [
         { id, result: { kind: "unavailable", message: "wrong worker" } },

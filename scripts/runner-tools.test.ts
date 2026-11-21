@@ -18,7 +18,6 @@ it("records the first executable file on PATH and passes over a directory of the
   await writeFile(path.join(pkg ?? "", "cli.js"), "#!/bin/sh\n");
   await chmod(path.join(pkg ?? "", "cli.js"), 0o755);
   await symlink(path.join(pkg ?? "", "cli.js"), path.join(second ?? "", "tool"));
-  // The runner image's dpkg-query; here it owns nothing.
   await writeFile(path.join(second ?? "", "dpkg-query"), "#!/bin/sh\nexit 1\n");
   await chmod(path.join(second ?? "", "dpkg-query"), 0o755);
 
@@ -49,7 +48,6 @@ it("records runtime versions and packaging probes rather than assuming executabl
   const { stdout } = await promisify(execFile)(process.execPath, [script], { env: { PATH: bin } });
   expect(JSON.parse(stdout)).toMatchObject({
     languages: [{ name: "python", version: "3.13.5" }],
-    // The venv import failed, and npm could not run, even though pip and npm are on PATH.
     dependencyPackaging: { node: false, python: false },
   });
 });

@@ -29,10 +29,6 @@ it.each(["api", "worker"])(
   },
 );
 
-// The instrumentations see ESM imports only through the loader hook startTracing installs, and
-// they register their patches through import-in-the-middle's Hook, as this probe does. The preload
-// imports the SDK and its instrumentations through tsx, about 1 s of CPU; the budget lets a loaded
-// host give it a tenth of a core.
 it("tracing preload hooks ESM imports without a warning", async () => {
   const result = await runNode(
     [
@@ -82,7 +78,6 @@ it.each(["api", "worker", "scheduler"])(
   },
 );
 
-/** Runs Node with `env` over this process's environment and returns its exit status and output. */
 async function runNode(
   args: readonly string[],
   env: NodeJS.ProcessEnv,

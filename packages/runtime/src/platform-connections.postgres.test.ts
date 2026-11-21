@@ -112,7 +112,6 @@ describe("client credentials", () => {
     const store = testControlPlaneStore();
     await authorizeAndComplete(store, "google-main");
 
-    // Second account, same app: no client id/secret re-entered — copied over.
     await authorizeAndComplete(store, "google-work", {
       clientId: undefined,
       clientSecret: undefined,
@@ -144,7 +143,6 @@ describe("client credentials", () => {
 });
 
 describe("authorization flow", () => {
-  // Google returns a refresh token only on a consented offline grant.
   it("forces consent and offline access on the first authorization", async () => {
     const store = testControlPlaneStore();
     const begun = await beginPlatformConnectionAuthorization({
@@ -205,7 +203,6 @@ describe("authorization flow", () => {
     expect(unknown).toEqual({ errorCode: "CONNECTION_STATE_INVALID", ok: false });
   });
 
-  // The API checks a right on the connection it found; one created since must not inherit it.
   it("refuses an authorization checked against another connection than the stored one", async () => {
     const store = testControlPlaneStore();
     await authorizeAndComplete(store);
@@ -224,7 +221,6 @@ describe("authorization flow", () => {
     expect((await store.getConnection("jan-google", LOCAL))?.clientId).toBe("client-id");
   });
 
-  // The provider answers after a delay in which the connection can be deleted and recreated.
   it("stores the tokens of a callback only in the connection its authorization began on", async () => {
     const store = testControlPlaneStore();
     const begin = (clientId: string) =>
@@ -266,7 +262,6 @@ describe("authorization flow", () => {
   it("reconnects using the stored credentials without re-entering them", async () => {
     const store = testControlPlaneStore();
     await authorizeAndComplete(store);
-    // Reconnect supplies no credentials: the stored client id/secret are reused.
     const reconnect = await beginPlatformConnectionAuthorization({
       place: LOCAL,
       name: "jan-google",
@@ -338,7 +333,6 @@ describe("token resolution and refresh", () => {
     expect(resolved.token.accessToken).toBe("access-token-2");
     expect(resolved.token.tokenVersion).toBe(2);
 
-    // A second forced refresh still works: the original refresh token survived.
     mockTokenResponse({ access_token: "access-token-3", expires_in: 3600, token_type: "Bearer" });
     const again = await resolvePlatformConnectionToken({
       connection: await connectionNamed(store, "jan-google"),

@@ -1,12 +1,3 @@
-/**
- * Every check a deployment passes before it builds and commits: the uploaded bundle's hash, its
- * webhook path, the project it lands in and the deployer's right there, its chain sources, the
- * credentials it binds and the deployer's use of them, and whether the workers that would run it are
- * ready for it (unless forced).
- * POST /deployments runs it for every apply. POST /deployment-checks answers with its result
- * instead, which is how `swizzle validate` and `swizzle apply --dry-run` learn whether apply would
- * succeed: one check, so neither can approve what apply refuses.
- */
 import { createDisplayName } from "@swizzle/core";
 import {
   type ControlPlaneStore,
@@ -31,22 +22,15 @@ import type { ReadinessWorker, RuntimeReadinessReport } from "./platform-records
 import type { PlatformDeployOptions } from "./platform-types.js";
 import { normalizeConfiguredWebhookPath } from "./triggers.js";
 
-/** A deployment that passed every check apply makes before it builds. */
 interface CheckFacts {
   readonly candidate: DeploymentCandidate;
   readonly automationSlug: string;
   readonly projectId: string;
   readonly credentials: readonly DeploymentCredential[];
   readonly workers: readonly ReadinessWorker[];
-  /**
-   * The source and config match the active deployment. Unless forced, such a deployment is a
-   * no-op when it also binds exactly the credentials it bound before (`action` "noop").
-   */
   readonly unchanged: boolean;
   readonly changes: readonly DeploymentChange[];
-  /** What the workers serving its project say: ready, or not ready and forced past the check. */
   readonly readiness: RuntimeReadinessReport;
-  /** The normalized path of its webhook trigger; null for another trigger. */
   readonly webhookPath: string | null;
 }
 
@@ -91,7 +75,6 @@ export async function checkDeployment(
     store.getActiveDeploymentBySlug(slug, environment),
   );
   if (webhookPath !== null) {
-    // The commit refuses the same conflict in its transaction; this answers before the build.
     const holder = await store.getWebhookTriggerByPath(webhookPath, environment);
     if (holder !== null && holder.automationSlug !== automationSlug) {
       throw new AutomationRuntimeError(
@@ -107,8 +90,6 @@ export async function checkDeployment(
     place: { environment, projectId },
     store,
   });
-  // An unchanged version still deploys again when what it would bind changed, so that setting
-  // a deleted secret again and redeploying restores it.
   const unchanged = isDeploymentUnchanged(
     { config, sourceHash: candidate.sourceHash },
     activeDeployment,
@@ -119,8 +100,6 @@ export async function checkDeployment(
     (await bindsExactly(store, { ...activeDeployment, projectId }, credentials));
   if (!noop) await options.credentials?.(credentials, projectId);
   const workers = await context.listReadinessWorkers({ config, environment, projectId });
-  // A per-automation timeout grant raises the effective ceiling for this automation only. It
-  // exists only once the automation is registered, so a first deploy gets the global ceiling.
   const timeoutGrant = activeDeployment
     ? await store.getAutomationTimeoutGrant({
         automationId: activeDeployment.automationId,

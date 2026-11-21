@@ -1,14 +1,3 @@
-// `just perf`: measures the speed and resource use of the packaged stack, backend and frontend.
-//   just perf [api|web] [--against <git ref> | --base <result.json>] [--experiment <label>]
-// Boots a throwaway packaged stack (scripts/packaged-stack.mts) with production images, seeds it
-// with the same data every time, measures the dashboard pages, the api routes and the run
-// lifecycle, each in rounds after a warmup, and removes the stack. With --against it also unpacks
-// the ref's committed tree into a temp directory and boots a second stack from it; each round then
-// measures both stacks, in an order that flips every round, so base and head share the host's
-// noise. This checkout's measuring code and CLI drive both stacks. stdout gets the summary, or the
-// delta to the base judged against the spread; results land as JSON under
-// `git rev-parse --git-path swizzle-perf`. Progress goes to stderr.
-
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -43,20 +32,17 @@ import { stackScenario } from "./perf/scenario.mts";
 import { launchBrowser, WEB_PROFILE, warmWeb, webRound } from "./perf/web.mts";
 
 const ROUNDS = 5;
-/** Webhook examples only: a cron example would add runs on its own schedule. */
 const SEED_EXAMPLES = [
   "hello-webhook",
   "document-scanner",
   "webhook-transformer",
   "typescript-webhook",
 ];
-/** Runs of the reference automation the pages and the run-detail route read. */
 const SEED_RUNS = 12;
 
 const USAGE =
   "usage: just perf [api|web] [--against <git ref> | --base <result.json>] [--experiment <label>]";
 
-/** What the run compares with: nothing, a stored result, or a commit measured alongside. */
 type Base =
   | { readonly kind: "none" }
   | { readonly kind: "result"; readonly result: PerfResult }
@@ -123,7 +109,6 @@ function git(...args: string[]): string {
   return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 }
 
-/** The containers of the stack's long-running services, as compose names them. */
 async function services(stack: PackagedStack): Promise<Service[]> {
   const lines = (await stack.compose("ps", "--format", "json")).split("\n").filter(Boolean);
   return lines
@@ -132,7 +117,6 @@ async function services(stack: PackagedStack): Promise<Service[]> {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/** Deploys the examples and runs the reference automation SEED_RUNS times; returns the last run. */
 async function seed(stack: PackagedStack): Promise<string> {
   for (const example of SEED_EXAMPLES) await stack.cli("apply", `infra/examples/${example}`);
   let runId = "";
@@ -145,7 +129,6 @@ async function seed(stack: PackagedStack): Promise<string> {
   return runId;
 }
 
-/** Microseconds some task stalled on CPU and on IO since boot (Linux PSI); undefined elsewhere. */
 function stalls(): { readonly cpu: number; readonly io: number } | undefined {
   const total = (resource: string) => {
     const text = readFileSync(`/proc/pressure/${resource}`, "utf8");
@@ -158,7 +141,6 @@ function stalls(): { readonly cpu: number; readonly io: number } | undefined {
   }
 }
 
-/** The load and stall counters at one moment, so the measured span can be described. */
 function snapshot() {
   return { load: os.loadavg(), stalls: stalls(), time: performance.now() };
 }
@@ -189,7 +171,6 @@ function machine(before: ReturnType<typeof snapshot>, after: ReturnType<typeof s
   };
 }
 
-/** A stack under measurement, the commit it was built from and the rounds measured on it. */
 interface Session {
   readonly name: "base" | "head";
   readonly git: PerfResult["git"];
@@ -200,7 +181,6 @@ interface Session {
   readonly scenario: PerfResult["scenario"];
 }
 
-/** The committed tree of `sha` in a new temp directory; the caller removes it. */
 async function unpack(sha: string): Promise<string> {
   const directory = await mkdtemp(
     path.join(os.tmpdir(), `${throwawayPrefix("perf")}${sha.slice(0, 8)}-`),
@@ -211,11 +191,6 @@ async function unpack(sha: string): Promise<string> {
   return directory;
 }
 
-/**
- * Warms every session, then measures ROUNDS rounds; each round measures every session once, and
- * the order flips every round, so a slow moment of the host and the cost of going first or second
- * fall on base and head alike.
- */
 async function interleave(
   sessions: readonly Session[],
   label: string,
@@ -233,11 +208,6 @@ async function interleave(
   }
 }
 
-/**
- * The pages first and the routes second, so both read only the seed; the run lifecycle last,
- * because it adds runs. Each run lifecycle round deploys a new version of the reference automation
- * and measures its first run, then the runs after it.
- */
 async function measureSessions(sessions: readonly Session[], target: Target): Promise<void> {
   if (target !== "api") {
     const browser = await launchBrowser();
@@ -271,7 +241,6 @@ async function measureSessions(sessions: readonly Session[], target: Target): Pr
   }
 }
 
-/** Measures this checkout, and with --against the base commit beside it; returns one result each. */
 async function measure(
   options: Options,
 ): Promise<{ readonly head: PerfResult; readonly base?: PerfResult }> {
@@ -328,7 +297,6 @@ async function measure(
   }
 }
 
-/** Writes `result` under the worktree's git directory and returns the file. */
 async function write(result: PerfResult, name: Session["name"]): Promise<string> {
   const directory = git("rev-parse", "--path-format=absolute", "--git-path", "swizzle-perf");
   await mkdir(directory, { recursive: true });

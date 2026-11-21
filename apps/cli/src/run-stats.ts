@@ -71,7 +71,6 @@ export function aggregateRunStats(
     ? { errorCode: failureDetails[0].errorCode ?? null, runId: failureDetails[0].runId }
     : null;
 
-  // The order is the output order: counts first, then what to look at next.
   return {
     total,
     succeeded,

@@ -9,8 +9,6 @@ import { it } from "vitest";
 import { lockWaiters, testDatabase } from "../test/postgres.js";
 import { waitFor } from "../test/support.js";
 
-// A bearer token rewrites its row once per touch interval, not once per request: a row update
-// gives the row a new xmin, so an unchanged xmin means no write.
 async function verifyApiTokenTouch(client: DatabaseClient, signal: AbortSignal): Promise<void> {
   const store = createPostgresApiTokenStore({ client });
   const person = await client.pool.query<{ id: string }>(
@@ -37,7 +35,6 @@ async function verifyApiTokenTouch(client: DatabaseClient, signal: AbortSignal):
   const verified = await store.verifyToken(worker.token);
   assert.ok(verified?.holder.kind === "worker");
   await verifyTouch(client, verified.id, worker.token, signal);
-  // Auth must finish while another transaction owns both rows. Warmed last-use needs no write.
   const lock = await client.pool.connect();
   const watching = new AbortController();
   try {
@@ -49,7 +46,6 @@ async function verifyApiTokenTouch(client: DatabaseClient, signal: AbortSignal):
         assert.ok(credential?.holder.kind === "worker");
         return registry.authenticate(credential.holder.workerId, credential.id);
       }),
-      // Authentication that queues behind the locked rows shows up as a lock waiter.
       waitFor(watching.signal, async () => (await lockWaiters(client)) > 0).then(() => {
         throw new Error("WORKER_AUTH_WAITED_FOR_ROW_LOCK");
       }),
@@ -91,7 +87,6 @@ async function verifyTouch(
   }
   assert.equal(await rowVersion(), firstUse, "20 more uses inside the interval write nothing");
 
-  // Age the stored timestamp past the interval; the next use writes again.
   await client.pool.query(
     "UPDATE api_tokens SET last_used_at = now() - interval '2 minutes' WHERE id = $1",
     [id],
@@ -104,10 +99,6 @@ async function verifyTouch(
        FOR EACH ROW EXECUTE FUNCTION log_token_update()`,
   );
 
-  // Every request of the burst reads the stale row before any of them writes: a row lock held
-  // here keeps their updates waiting until all are in line. Without the guard in the UPDATE each
-  // waiting update would then write in turn. The pool lends at most 10 connections: the burst
-  // takes 8, the lock 1 and the lock-wait count 1.
   const burst = 8;
   const lock = await client.pool.connect();
   let settledUses = 0;
@@ -115,8 +106,6 @@ async function verifyTouch(
   try {
     await lock.query("BEGIN");
     await lock.query("SELECT 1 FROM api_tokens WHERE id = $1 FOR UPDATE", [id]);
-    // allSettled never rejects, so a failed use cannot escape as an unhandled rejection while
-    // the loop below awaits; its error is rethrown once the lock is gone.
     uses = Promise.allSettled(
       Array.from({ length: burst }, () =>
         store.verifyToken(token).finally(() => {
@@ -124,14 +113,11 @@ async function verifyTouch(
         }),
       ),
     );
-    // A settled use cannot become a lock waiter. Count it even when other uses are blocked.
     await waitFor(
       signal,
       async () => settledUses >= burst || (await lockWaiters(client)) + settledUses >= burst,
     );
   } finally {
-    // This connection only holds the lock. End its transaction before draining blocked uses,
-    // including when the barrier fails, so teardown can close the pool and drop the database.
     lock.release(true);
     await uses;
   }
@@ -153,7 +139,7 @@ async function verifyTouch(
   );
 }
 
-it("api token touch", async ({ signal }) => {
+it("writes token last use once per interval even under concurrent requests", async ({ signal }) => {
   const client = testDatabase();
   await verifyApiTokenTouch(client, signal);
 });

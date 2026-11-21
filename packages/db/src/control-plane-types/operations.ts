@@ -9,11 +9,6 @@ import type {
 } from "./common.js";
 import type { StoredConnectionUsage, StoredSecretUsage } from "./credentials.js";
 
-/**
- * A person's subscription to the failures of one automation, or with null automation fields of
- * every automation of a project, in one environment. It sends only while the person may read the
- * failed run (`personMayRead`), so a revoked grant stops it.
- */
 export interface StoredNotificationRule {
   readonly userId: string;
   readonly projectId: string;
@@ -36,7 +31,6 @@ export interface StoredNotificationRule {
 export interface CreateNotificationRuleInput {
   readonly userId: string;
   readonly projectId: string;
-  /** Null for a rule that covers every automation of the project. */
   readonly automationId: string | null;
   readonly channel: NotificationChannel;
   readonly chatId: string;
@@ -59,9 +53,7 @@ export interface UpdateNotificationRuleInput {
 }
 
 export interface ListNotificationRulesQuery {
-  /** Rules for this automation in this project, including the rules that cover the project. */
   readonly automation?: { readonly automationId: string; readonly projectId: string };
-  /** Only this person's rules. */
   readonly userId?: string;
   readonly environment: string;
   readonly eventType?: NotificationEventType;
@@ -123,16 +115,11 @@ export interface UpdateNotificationDeliveryInput {
 export interface ListNotificationDeliveriesQuery {
   readonly automationId?: string;
   readonly automationSlug?: string;
-  /** Only deliveries created at or after this ISO time. */
   readonly createdSince?: string;
   readonly environment: string;
   readonly eventType?: NotificationDeliveryEventType;
   readonly limit?: number;
   readonly ruleId?: string;
-  /**
-   * Only deliveries of the rules this person made, for automations they still read: a rule
-   * outlives the grant it was made under.
-   */
   readonly ruleOwner?: { readonly userId: string; readonly scope: ReadScope };
   readonly status?: NotificationDeliveryStatus;
 }
@@ -199,23 +186,15 @@ export interface CleanupMaintenanceResult {
 
 export interface ExpireRunsInput {
   readonly environment: string;
-  /** Finished runs whose finished_at is at or before this instant expire. */
   readonly cutoff: string;
 }
 
 export interface ExpireRunsResult {
-  /** Deleted runs; their attempts, logs, steps and usages went with them. */
   readonly runsDeleted: number;
 }
 
-/**
- * Where an automation's API check stands. `pending` until the first check of a deployment ran;
- * `drift` when the check reached the API and the answer differs; `credentials` when its login
- * failed; `error` when it could not decide (another exit, a signal, a timeout, invalid stdout).
- */
 export type AutomationCheckStatus = "pending" | "green" | "drift" | "credentials" | "error";
 
-/** The one `automation_checks` row of an automation with `api_check.mode: active` in an environment. */
 export interface StoredAutomationCheck {
   readonly automationId: string;
   readonly automationName: string;
@@ -223,11 +202,9 @@ export interface StoredAutomationCheck {
   readonly checkId: string;
   readonly consecutiveFailures: number;
   readonly deploymentId: string;
-  /** The check script, relative to the automation folder. */
   readonly entrypoint: string;
   readonly environment: string;
   readonly everyMs: number;
-  /** When the current run of failures began; null while green or pending. */
   readonly failingSince: string | null;
   readonly lastCheckedAt: string | null;
   readonly lastExitCode: number | null;
@@ -235,24 +212,17 @@ export interface StoredAutomationCheck {
   readonly lastGreenOutput: string | null;
   readonly lastGreenReport: ApiCheckReport | null;
   readonly lastReport: ApiCheckReport | null;
-  /** The latest check's stdout, redacted. */
   readonly lastOutput: string | null;
-  /** The connection tokens the latest check received; empty when it failed before receiving any. */
   readonly lastConnectionUsages: readonly StoredConnectionUsage[];
-  /** The secrets the latest check received; empty when it failed before receiving any. */
   readonly lastSecretUsages: readonly StoredSecretUsage[];
   readonly lastStderrTail: string | null;
-  /** What the platform ignored in the latest check, such as state writes. */
   readonly lastWarning: string | null;
-  /** The due time and claim cursor: the scheduler enqueues the check once it has passed. */
   readonly nextCheckAt: string;
-  /** The worker profile whose queue runs the check, the automation's `runtime.profile`. */
   readonly profile: string;
   readonly status: AutomationCheckStatus;
   readonly versionId: string;
 }
 
-/** The outcome of one check, written only while `dueAt` still is the row's `nextCheckAt`. */
 export interface CompleteAutomationCheckInput {
   readonly checkedAt: string;
   readonly checkId: string;
@@ -270,17 +240,13 @@ export interface CompleteAutomationCheckInput {
   readonly warning: string | null;
 }
 
-/** A retirement notice an API sent with a response: the Deprecation, Sunset and Link headers. */
 export interface ApiNoticeObservation {
   readonly deprecatedAt: string | null;
-  /** The first redacted path, without query, that carried the notice. */
   readonly path: string | null;
   readonly sunsetAt: string | null;
-  /** The Link target with `rel="deprecation"` or `rel="sunset"`. */
   readonly url: string | null;
 }
 
-/** What one attempt saw of one API host through the SDK's HTTP helper. */
 export interface ApiContactObservation {
   readonly host: string;
   readonly lastContactAt: string;
@@ -295,7 +261,6 @@ export interface RecordApiContactsInput {
   readonly environment: string;
 }
 
-/** The `api_contacts` row of one automation, environment and host. */
 export interface StoredApiContact {
   readonly automationId: string;
   readonly deprecatedAt: string | null;
@@ -305,21 +270,18 @@ export interface StoredApiContact {
   readonly lastOkAt: string | null;
   readonly lastStatus: number;
   readonly noticePath: string | null;
-  /** How many attempts saw a notice from this host. */
   readonly noticeRuns: number;
   readonly noticeSeenAt: string | null;
   readonly noticeUrl: string | null;
   readonly sunsetAt: string | null;
 }
 
-/** An automation and the project that owns it, in every environment. */
 export interface AutomationOwner {
   readonly automationId: string;
   readonly automationSlug: string;
   readonly projectId: string;
 }
 
-/** The automation after a move; `moved` is false when it was in the project already. */
 export interface MovedAutomation extends AutomationOwner {
   readonly moved: boolean;
 }

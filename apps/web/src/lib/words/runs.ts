@@ -1,5 +1,3 @@
-// Runs in words: status, duration, where they ran, and their approvals.
-
 import type { Assignee, HourCounts, RunDetail, RunListItem, RunState, RunStep } from "../api";
 import { clockTime, durationInWords } from "./time";
 
@@ -13,17 +11,12 @@ function runDurationMs(run: Pick<RunListItem, "finishedAt" | "startedAt">): numb
   return Date.parse(run.finishedAt) - Date.parse(run.startedAt);
 }
 
-/** The run panel's Duration: "Not started" until a worker starts the run, then "Still going" or "0.4 s". */
 export function runDurationInWords(run: Pick<RunListItem, "finishedAt" | "startedAt">): string {
   if (run.startedAt === null) return "Not started";
   const duration = runDurationMs(run);
   return duration === null ? "Still going" : durationInWords(duration);
 }
 
-/**
- * The run panel's Ran on: the worker of a run that stayed on one, "1: gpu-box, 2: laptop" by
- * execution number when its executions moved, null before the first execution.
- */
 export function ranOnInWords(
   executions: readonly Pick<RunDetail["executions"][number], "executionNumber" | "workerName">[],
 ): string | null {
@@ -34,7 +27,6 @@ export function ranOnInWords(
     .join(", ");
 }
 
-/** The active execution may still be preparing its image and sandbox. */
 export function runDetailStatusInWords(
   run: RunFacts & {
     readonly executions: readonly Pick<RunDetail["executions"][number], "phase">[];
@@ -45,7 +37,6 @@ export function runDetailStatusInWords(
     : runStatusInWords(run);
 }
 
-/** The states one hour of the timetable names, in this order, with the word for each. */
 const HOUR_WORDS: readonly (readonly [readonly RunState[], string])[] = [
   [["succeeded"], "succeeded"],
   [["failed", "dead-lettered"], "failed"],
@@ -55,7 +46,6 @@ const HOUR_WORDS: readonly (readonly [readonly RunState[], string])[] = [
   [["waiting"], "waiting"],
 ];
 
-/** One hour of the timetable: "14:00 · 58 succeeded, 2 failed", or "14:00 · No runs". */
 export function hourInWords(start: Date, counts: HourCounts): string {
   const parts = HOUR_WORDS.flatMap(([states, word]) => {
     const count = states.reduce((sum, state) => sum + (counts[state] ?? 0), 0);
@@ -64,12 +54,10 @@ export function hourInWords(start: Date, counts: HourCounts): string {
   return `${clockTime(start)} · ${parts.length === 0 ? "No runs" : parts.join(", ")}`;
 }
 
-/** The one form of a version number on every surface: "v1.3.1". */
 export function versionInWords(version: string): string {
   return `v${version}`;
 }
 
-/** A run row's two lines: the name above the state in a list of all runs, the state above the facts in one automation's. */
 export function runRowInWords(
   run: RunFacts & Pick<RunListItem, "automationName" | "triggerType" | "version">,
   leads: "automation" | "state",
@@ -85,7 +73,6 @@ export function runRowInWords(
     : { line: [...facts, run.triggerType, versionInWords(run.version)].join(" · "), title: state };
 }
 
-/** runStatusInWords without what a row's facts already say. */
 function shortStateInWords(run: RunFacts): string {
   switch (run.state) {
     case "succeeded":
@@ -100,15 +87,11 @@ function shortStateInWords(run: RunFacts): string {
   }
 }
 
-/** The Runs head, and the end of a run list: only a list that reached its end says all. */
 export function runCountInWords(count: number, complete: boolean): string {
   if (!complete) return `${count} newest`;
   return `${count} ${count === 1 ? "run" : "runs"}`;
 }
 
-/**
- * "Failed after 2 attempts", "Waiting for approval", "Waiting until 14:00", "Succeeded in 0.4 s".
- */
 export function runStatusInWords(run: RunFacts): string {
   switch (run.state) {
     case "cancelled":
@@ -136,7 +119,6 @@ export function runStatusInWords(run: RunFacts): string {
   }
 }
 
-/** How an approval step ended: the verdict and who gave it, or the timeout that ended it. */
 export function approvalDecisionInWords(decision: NonNullable<RunStep["approval"]>): string {
   if (decision.timedOut) return "Timed out without a decision";
   const verdict = decision.approved ? "Approved" : "Rejected";
@@ -148,7 +130,6 @@ export function approvalDecisionInWords(decision: NonNullable<RunStep["approval"
   }
 }
 
-/** Who decides an approval: a person's email or a team's name; null for whoever may run it. */
 export function assigneeInWords(assignee: Assignee | null): string | null {
   if (assignee === null) return null;
   return assignee.kind === "team" ? `the team ${assignee.label}` : assignee.label;

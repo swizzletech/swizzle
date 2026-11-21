@@ -15,7 +15,6 @@ export type ErrorClassification = "retryable" | "terminal";
 
 export type PlatformTriggerType = "chain" | "cron" | "webhook";
 
-/** What started a run: its trigger firing, or a person starting it by hand. */
 export type RunTriggerType = PlatformTriggerType | "manual";
 
 export type PlatformTriggerStatus = "active" | "invalid" | "paused";
@@ -41,10 +40,6 @@ export type NotificationChannel = "telegram";
 
 export type NotificationEventType = "dead-lettered" | "repeated-failures";
 
-/**
- * What a delivery reported. Rules name a run event; every enabled rule of an automation also
- * delivers its API alerts: a check that starts failing, and an API's retirement notice.
- */
 export type NotificationDeliveryEventType = NotificationEventType | "api-check" | "api-sunset";
 
 export type NotificationDeliveryStatus = "pending" | "sent" | "failed" | "skipped";

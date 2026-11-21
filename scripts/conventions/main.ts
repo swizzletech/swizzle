@@ -1,7 +1,3 @@
-// Repository conventions that no other tool owns: `just check` and `just docs-check` run this file.
-// Each rule is one file under rules/, listed in rules.ts and proven by conventions.test.ts.
-// For rules that allow exceptions: `conventions-allow <rule-id>: <reason>` on the offending line or the line above it.
-
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { lint } from "./lint.js";

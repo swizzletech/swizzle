@@ -23,7 +23,6 @@ import { webDesignScale } from "./rules/web-design-scale.js";
 import { webReadsTheContract } from "./rules/web-reads-the-contract.js";
 import { webShortStrings } from "./rules/web-short-strings.js";
 
-/** Public repository rules. conventions.test.ts exercises each registered rule. */
 export const rules: readonly Rule[] = [
   docLinks,
   commentBudget,

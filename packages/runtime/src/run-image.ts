@@ -1,17 +1,3 @@
-// The image a sandboxed run starts from: a runner base, the automation's source in /automation and
-// its installed dependencies. The tag names the source, the recipe, the stack and the architecture,
-// so a new deployment gets a new image, and an unchanged one reuses it on every worker of the stack
-// that shares the Docker engine, also after the worker container is recreated.
-//
-// The worker assembles the image without `docker build`: it creates a container from the base,
-// copies the source in as the sandbox user, runs the recipe's install step in that container on
-// the run network under the run sandbox's resource limits, and commits the container. While the
-// install step runs, the worker measures the container's writable layer and kills the step once
-// the layer passes the install disk limit: no Docker storage option bounds it on every driver.
-// `docker build` would be the legacy builder in the worker image, which is slow and deprecated,
-// and BuildKit cannot attach an install step to the run network, the only route through the
-// egress proxy.
-
 import { createHash } from "node:crypto";
 import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -32,13 +18,9 @@ import {
 import type { AutomationDefinition } from "./validation.js";
 
 const ASSEMBLY_ATTEMPTS = 2;
-/** How long one assembly attempt, the install step included, may take. */
 const ASSEMBLY_TIMEOUT_MS = 10 * 60 * 1_000;
-/** How often the install step's writable layer is measured against the install disk limit. */
 const LAYER_CHECK_INTERVAL_MS = 1_000;
-/** Where installed tools live, outside the source; the install step can write only here and in /automation. */
 const TOOL_DIRECTORY = "/opt/swizzle";
-/** The Node of the runner-base image in infra/docker/Dockerfile; the toolchain-pins convention fails on drift. */
 const NODE_BASE_IMAGE = "node:26.12.1-trixie-slim";
 const FALLBACK_BASE_IMAGES: Record<AutomationRuntimeConfig["language"], string> = {
   node: NODE_BASE_IMAGE,
@@ -53,16 +35,11 @@ interface RunImageAssembly {
 }
 const assemblies = new Map<string, RunImageAssembly>();
 
-/** How to turn a runner base and an automation's source into its run image. */
 export interface RunImageRecipe {
   readonly baseImage: string;
-  /** Shell commands that install dependencies as the sandbox user; null when nothing installs. */
   readonly install: string | null;
-  /** ENV instructions the image keeps, such as the virtualenv on PATH. */
   readonly environment: readonly string[];
-  /** What a run executes in the sandbox. */
   readonly command: readonly string[];
-  /** The run sandbox's resource limits, which the install step runs under too. */
   readonly limits: readonly string[];
 }
 
@@ -84,8 +61,6 @@ export function runImageRecipe(definition: AutomationDefinition): RunImageRecipe
       "runtime.container.base_image must be a single valid container image reference.",
     );
   }
-  // Node strips TypeScript types itself, so a .ts entrypoint runs like a .js one: as an ES module
-  // when it uses import, export or top-level await, unless its package.json says commonjs.
   const executable = language === "python" ? "python3" : "node";
   const automation = [executable, `/automation/${definition.entrypointRelativePath}`];
   const command = usesManagedRunner(definition)
@@ -124,12 +99,6 @@ export function runImageRecipe(definition: AutomationDefinition): RunImageRecipe
   };
 }
 
-/**
- * The tag of the run image for this source, recipe, stack and architecture. Worker replicas that
- * share the Docker engine share it too; `ensureRunImage` lets one of them assemble it and never
- * moves a tag that exists, because a moved tag can make the engine drop the image another replica's
- * sandbox is about to start from.
- */
 export async function runImageTag(
   automationDirectory: string,
   recipe: RunImageRecipe,
@@ -146,10 +115,6 @@ export async function runImageTag(
   return `swizzle-run:${digest.slice(0, 24)}`;
 }
 
-/**
- * Makes sure the run image exists: "ready" when it already did, "assembled" when this call
- * assembled it or waited for an assembly in progress.
- */
 export async function ensureRunImage(input: {
   readonly automationDirectory: string;
   readonly recipe: RunImageRecipe;
@@ -181,7 +146,6 @@ export async function ensureRunImage(input: {
   return "assembled";
 }
 
-/** Retains bounded output for later joiners and delivers new output to all current waiters. */
 function startAssembly(input: AssemblyInput): RunImageAssembly {
   const logs = new BoundedOutput(ASSEMBLY_LOG_LIMIT_BYTES);
   const listeners = new Set<(chunk: string) => void>();
@@ -198,8 +162,7 @@ function startAssembly(input: AssemblyInput): RunImageAssembly {
       }
     },
   }).finally(() => assemblies.delete(input.tag));
-  // A replay callback can fail before its caller starts awaiting this shared promise.
-  void finished.catch(() => {});
+  void finished.catch(() => undefined);
   return {
     finished,
     listeners,
@@ -222,15 +185,6 @@ async function imageExists(tag: string): Promise<boolean> {
   }
 }
 
-/**
- * Assembles the run image, and once more when a Docker step failed: this host's containerd has
- * failed layer exports and copies now and then (f-156, f-174), and a second try usually passes.
- * A failed install step is the automation's own: CONTAINER_BUILD_FAILED, which fails the run. A
- * Docker step that fails twice is the platform's: CONTAINER_RUNTIME_UNAVAILABLE, which the run
- * retries within its retry budget, as it does a Docker deadline. A lost containerd lease points
- * to concurrent image pruning; a second loss ends the run with CONTAINER_IMAGE_PRUNE_INTERRUPTED.
- * While another process on the engine assembles the same tag, it waits for that assembly instead.
- */
 async function assembleRunImage(input: AssemblyInput): Promise<void> {
   for (let attempt = 1; ; ) {
     try {
@@ -289,23 +243,12 @@ interface AssemblyInput {
 
 class InstallStepFailed extends Error {}
 
-/** Another process on the engine holds the tag's assembly container. */
 class AssembledElsewhere extends Error {}
 
-/**
- * The assembly container of a tag. Container names are unique on an engine, so creating it is the
- * lock that lets one process at a time assemble the tag.
- */
 function assemblyContainer(tag: string): string {
   return `swizzle-image-${tag.slice(tag.indexOf(":") + 1)}`;
 }
 
-/**
- * Waits while another process assembles the tag. Resolves true once the tag exists, and false once
- * that assembly container is gone without it, so the caller assembles. Past that assembly's own
- * deadline its process is gone, and that container, by its id, is removed. A container another
- * process claimed the name with meanwhile gets a deadline of its own.
- */
 async function awaitAssemblyElsewhere(tag: string): Promise<boolean> {
   const name = assemblyContainer(tag);
   let holder: string | null = null;
@@ -325,7 +268,6 @@ async function awaitAssemblyElsewhere(tag: string): Promise<boolean> {
   return false;
 }
 
-/** The id of the container with this name, or null when there is none. */
 async function containerId(name: string): Promise<string | null> {
   const docker = new DockerScope({ timeoutMs: 5_000, containerName: null });
   try {
@@ -341,10 +283,6 @@ async function containerId(name: string): Promise<string | null> {
   }
 }
 
-/**
- * Creates a container from the base, copies the source in, runs the install step and commits the
- * result, then tags it. A failure removes the container and any image it committed.
- */
 async function assembleOnce(input: AssemblyInput): Promise<void> {
   const { install } = input.recipe;
   const name = assemblyContainer(input.tag);
@@ -354,9 +292,6 @@ async function assembleOnce(input: AssemblyInput): Promise<void> {
   let toolDirectory: string | null = null;
   try {
     if (install !== null) toolDirectory = await mkdtemp(path.join(tmpdir(), "swizzle-tools-"));
-    // The stack label carries over to the committed image, so the stack prunes only its own
-    // images, and marks the container as the stack's for the Docker broker.
-    // The tmpfs keeps install caches in HOME out of the image.
     await claim(owner, [
       "create",
       "--name",
@@ -382,12 +317,10 @@ async function assembleOnce(input: AssemblyInput): Promise<void> {
       "-c",
       install === null ? "true" : installScript(install),
     ]);
-    // The process that held the name before may have tagged the image; the tag never moves.
     if (await imageExists(input.tag)) {
       await owner.close();
       return;
     }
-    // --archive gives every copied file to the container's user, the sandbox user.
     await docker(
       ["cp", "--archive", `${input.automationDirectory}/.`, `${name}:/automation`],
       "transfer",
@@ -423,11 +356,9 @@ async function assembleOnce(input: AssemblyInput): Promise<void> {
   } finally {
     if (toolDirectory !== null) await rm(toolDirectory, { force: true, recursive: true });
   }
-  // The tagged image no longer needs the container, so the run does not wait for its removal.
   void owner.close();
 }
 
-/** Creates the assembly container, or throws AssembledElsewhere when its name is taken. */
 async function claim(owner: DockerScope, create: readonly string[]): Promise<void> {
   try {
     await owner.run(create, { outputLimitBytes: 64 * 1_024 });
@@ -442,13 +373,6 @@ async function claim(owner: DockerScope, create: readonly string[]): Promise<voi
   }
 }
 
-/**
- * Runs the created install container to its end. The step fails when it exits non-zero, or when
- * the container's writable layer grows past the install disk limit, measured every
- * LAYER_CHECK_INTERVAL_MS and once more at the end, so the image the caller commits stays within it.
- * A size that cannot be read fails the step too, so the limit never lapses silently. Every Docker
- * control call has its own deadline within the assembly owner.
- */
 async function runInstallStep(
   name: string,
   onLog: ((chunk: string) => void) | undefined,
@@ -482,10 +406,6 @@ async function runInstallStep(
     );
   }
   if (installError !== null) {
-    // The assembly deadline ends an install that never finishes, the automation's own failure. Any
-    // other runtime error, such as a CLI that cannot start, keeps its code. Any other error is the
-    // install's only once its container ran and exited non-zero; otherwise Docker failed while
-    // running the step.
     const deadline =
       installError instanceof AutomationRuntimeError &&
       installError.code === "DOCKER_CONTROL_TIMEOUT";
@@ -507,11 +427,6 @@ async function runInstallStep(
   }
 }
 
-/**
- * Kills the container once its writable layer holds more than `limitBytes`, and resolves with that
- * size; null once `stop` aborts first. Missing sizes are retried, but scoped runtime errors
- * reject the guard so the assembly owner stops the install and cleans up.
- */
 async function guardWritableLayer(
   name: string,
   limitBytes: number,
@@ -532,7 +447,6 @@ async function guardWritableLayer(
   }
 }
 
-/** Whether the container ran and exited with a non-zero code; false when Docker cannot tell. */
 async function exitedNonZero(name: string, owner: DockerScope): Promise<boolean> {
   const inspected = await owner
     .run(["container", "inspect", "--format", "{{.State.Status}} {{.State.ExitCode}}", name], {
@@ -546,7 +460,6 @@ async function exitedNonZero(name: string, owner: DockerScope): Promise<boolean>
   return status === "exited" && code !== "0";
 }
 
-/** The container's writable layer size in bytes, or null when Docker cannot report it. */
 async function writableLayerBytes(name: string, owner: DockerScope): Promise<number | null> {
   const inspected = await owner
     .run(["container", "inspect", "--size", "--format", "{{.SizeRw}}", name], {
@@ -560,7 +473,6 @@ async function writableLayerBytes(name: string, owner: DockerScope): Promise<num
   return /^\d+$/u.test(reported) ? Number(reported) : null;
 }
 
-/** The install commands with the egress proxy in their environment only, not in the image. */
 function installScript(install: string): string {
   const exports = Object.entries({ ...egressProxyEnvironment(), HOME: "/tmp" })
     .map(([key, value]) => `${key}=${shellQuote(value)}`)

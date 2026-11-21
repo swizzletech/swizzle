@@ -1,21 +1,3 @@
-/**
- * Wraps the Better Auth database adapter so the session table holds only SHA-256 hashes of
- * session tokens, and so the persisted row decides when a session ends.
- *
- * - create stores H(token) and returns the row with the raw token, which only the response
- *   carries.
- * - Every query on the session token hashes its value, and a row found that way carries the
- *   token it was asked for. A stored digest presented as a cookie hashes to something else and
- *   finds nothing. A row found any other way, by user or id, carries its digest, which no
- *   lookup accepts; Swizzle lists and revokes sessions by id.
- * - expiresAt is signedInAt plus the absolute limit. Better Auth copies the old row into a rotated
- *   session, signedInAt included, so a rotation never moves the end; updates never write
- *   expiresAt.
- * - A token lookup finds only a session that has not expired and was seen within the idle limit,
- *   and it moves lastSeenAt forward when it is older than a tenth of the idle limit, at most
- *   five minutes. A session therefore ends between 90% and 100% of the idle limit after its last
- *   use, and an active session writes its row at most once per interval.
- */
 import { createHash } from "node:crypto";
 
 import type {
@@ -60,7 +42,6 @@ function wrap<Adapter extends DBTransactionAdapter<BetterAuthOptions>>(
   const isSession = (model: string) => model === SESSION_MODEL;
   const touchIntervalMs = Math.min(MAX_TOUCH_INTERVAL_MS, limits.idleMs / 10);
 
-  /** The token condition hashed, and the raw tokens it named by their hash. */
   const hashWhere = (where: readonly Where[] | undefined) => {
     const tokens = new Map<string, string>();
     const hashOne = (raw: unknown) => {
@@ -199,7 +180,6 @@ function wrap<Adapter extends DBTransactionAdapter<BetterAuthOptions>>(
   return wrapped;
 }
 
-/** The absolute end is fixed at creation; Better Auth's refresh would move it. */
 function withoutSessionEnd(update: Record<string, unknown>): Record<string, unknown> {
   const { expiresAt: _ignored, token, ...rest } = update;
   return typeof token === "string" ? { ...rest, token: hashSessionToken(token) } : rest;

@@ -21,10 +21,6 @@ export function registerDispatchRoutes(
     if (request.actor?.kind !== "worker") throw new Error("Worker authentication required.");
     return request.actor.worker;
   };
-  // Fastify answers a body outside the route's wire schema with 400 before the handler runs; the
-  // handler then reads the body through the same schema, which gives it its type. The two can
-  // still disagree, as on string lengths, which JSON Schema counts in code points and zod in UTF-16
-  // units, so a body only zod refuses is a 400 too.
   const serve = <Request, Reply>(
     route: WorkerRoute<Request, Reply>,
     handler: (

@@ -1,4 +1,3 @@
-// Listener leaks and queued queries on one PostgreSQL connection must fail the gate.
 import { setImmediate } from "node:timers/promises";
 import { afterAll, expect } from "vitest";
 
@@ -12,7 +11,6 @@ const record = (warning: Error) => {
 };
 process.on("warning", record);
 afterAll(async () => {
-  // Node emits warnings on the next tick.
   await setImmediate();
   process.off("warning", record);
   expect(warnings).toEqual([]);

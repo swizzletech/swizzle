@@ -1,5 +1,3 @@
-// Projects, their grants and protected environments, and the caller's role in one.
-
 import type {
   CreateProjectResponse,
   DeleteProjectResponse,
@@ -27,14 +25,12 @@ export function projectsCalls() {
       return await request<CreateProjectResponse>("/projects", json("POST", input));
     },
 
-    /** What deleting the project must decide about. */
     async getProjectContents(project: string) {
       return await request<ProjectContentsResponse>(
         `/projects/${encodeURIComponent(project)}/contents`,
       );
     },
 
-    /** Deletes the project; `contents` moves or deletes what it holds (ADR 0015). */
     async deleteProject(project: string, contents: ProjectContentsChoice | null) {
       const query =
         contents === null
@@ -54,7 +50,6 @@ export function projectsCalls() {
       );
     },
 
-    /** Gives `subject` `role` at `place`, in place of the role it held at that place before. */
     async setGrant(project: string, subject: SubjectRef, place: GrantPlaceRef, role: ProjectRole) {
       await request<SetGrantResponse>(
         `/projects/${encodeURIComponent(project)}/grants`,
@@ -72,7 +67,6 @@ export function projectsCalls() {
       );
     },
 
-    /** A protected environment gives a non-admin only what an environment grant gives them. */
     async setProtected(project: string, environment: string, isProtected: boolean) {
       await request<EnvironmentProtectionResponse>(
         `/projects/${encodeURIComponent(project)}/environments/${encodeURIComponent(environment)}/protection`,
@@ -80,7 +74,6 @@ export function projectsCalls() {
       );
     },
 
-    /** The caller's own role in a project, capped by `environment` when named. */
     async getIdentity(project: string, environment?: string) {
       const query = new URLSearchParams({ project });
       if (environment !== undefined) query.set("environment", environment);

@@ -24,7 +24,6 @@ describe("automationHealth", () => {
   });
 
   it("puts what blocks a run before the last result, and waiting is not failing", () => {
-    // A persisted limit no worker allows blocks the automation as surely as a missing secret.
     expect(
       automationHealth({
         ...base,

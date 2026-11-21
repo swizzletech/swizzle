@@ -1,4 +1,3 @@
-// `just stack` and the backup recipes share release selection and image preparation.
 import { mkdtempSync, rmSync } from "node:fs";
 import path from "node:path";
 import { capture, preflight, prepareImages, run } from "./stack-images.ts";
@@ -25,7 +24,6 @@ try {
     if (output === undefined) throw new Error("Pass the prepared Compose file path.");
     prepareImages(source, path.resolve(output), services.length > 0 ? { services } : {});
   } else {
-    // The Git directory survives checkout changes and keeps resolved credentials out of the tree.
     const directory = mkdtempSync(`${state}-`);
     try {
       const prepared = prepareImages(source, path.join(directory, "compose.json"), {

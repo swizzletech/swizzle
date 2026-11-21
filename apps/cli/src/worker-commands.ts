@@ -1,8 +1,3 @@
-/**
- * `swizzle worker groups | list | create | revoke | enroll`. A worker group is the
- * `runtime.profile` an automation names; it is not a CLI profile. Owners and admins create and
- * revoke workers; `enroll` runs on the worker machine with the single-use code `create` printed.
- */
 import { randomBytes } from "node:crypto";
 import { open, unlink } from "node:fs/promises";
 import { LOCAL_LLM_SERVICE } from "@swizzle/config";
@@ -35,7 +30,6 @@ type WorkerSummary = WorkerGroupsResponse["groups"][number]["workers"][number];
 
 const LIST_FIELDS = ["id", "name", "state", "groups"] as const;
 
-/** The routes under /workers take no environment. */
 function instanceUrl(pathname: string, options: ApiCommandOptions): string {
   const { environment: _environment, ...target } = options;
   return buildApiUrl(pathname, target);
@@ -290,7 +284,6 @@ export function registerWorkerCommands(program: Command, io: CliIO, runHandler: 
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ code: code.trim() }),
         });
-        // An env file: the worker reads it, and the worker-only Compose stack takes it as --env-file.
         await file.writeFile(
           [
             "# Swizzle worker credential. Keep this file private.",
@@ -315,7 +308,6 @@ export function registerWorkerCommands(program: Command, io: CliIO, runHandler: 
   );
 }
 
-/** `gpu-box online, local-llm healthy`: a machine's name, state and requested-service health. */
 function describeWorker(worker: WorkerSummary): string {
   const state = worker.draining && worker.state === "online" ? "draining" : worker.state;
   const seen = worker.state === "offline" ? ` (last seen ${worker.lastSeenAt ?? "never"})` : "";

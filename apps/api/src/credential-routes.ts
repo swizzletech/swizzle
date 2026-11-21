@@ -1,10 +1,3 @@
-/**
- * Who may use and manage a credential, a secret or a connection, over HTTP. Anyone with a right on
- * a credential reads who holds one and why. Someone who manages it grants use or manage to a
- * person, team or service account of its project and offers it to another project; an admin of
- * that project accepts the share, and from then deployments there may bind it. What a right allows
- * is decided in packages/db/src/access.ts, never here.
- */
 import {
   type AccessStore,
   CodedError,
@@ -38,17 +31,12 @@ export interface RegisterCredentialRoutesOptions {
   readonly platform: PlatformServices;
 }
 
-/** `?project=` by slug or id, the default project when absent. */
 interface CredentialQuery {
   readonly project?: string;
 }
 
 const projectQuery = { schema: { querystring: objectSchema({ project: urlText }) } };
 
-/**
- * The project and environment a secret or connection request names, once the caller may read
- * there: `?project=` and `?environment=`.
- */
 export async function credentialPlace(request: FastifyRequest): Promise<CredentialPlace> {
   const environment = getEnvironment(request);
   const { project } = request.query as CredentialQuery;
@@ -64,11 +52,9 @@ export function registerCredentialRoutes(
   options: RegisterCredentialRoutesOptions,
 ): void {
   const { platform } = options;
-  // A service account is named among those of the credential's own project.
   const subjectOf = (query: SubjectQuery, credential: StoredCredential) =>
     subjectNamed(options, query, credential.projectId).then((named) => named.subject);
 
-  /** The credential the path names, once the caller manages it. */
   const managed = async (request: FastifyRequest): Promise<StoredCredential> => {
     const { kind, name } = request.params as { kind: CredentialKind; name: string };
     return await request.access.credential(kind, name, await credentialPlace(request), "manage");
@@ -79,7 +65,6 @@ export function registerCredentialRoutes(
     return await request.access.project(project, { action: "administer" });
   };
 
-  // Anyone with a right on the credential sees who else holds one; only a manager changes that.
   app.get<{ Reply: CredentialAccessResponse }>(
     "/credentials/:kind/:name/access",
     projectQuery,
@@ -99,7 +84,6 @@ export function registerCredentialRoutes(
           credential.projectId,
         ),
       ]);
-      // request.access.credential refused a caller without a right, and the credential exists.
       if (access === undefined || right === undefined || right === null || directory === null) {
         throw new Error(`The access of ${kind} ${name} vanished while it was read.`);
       }
@@ -157,7 +141,6 @@ export function registerCredentialRoutes(
     },
   );
 
-  // The offer is accepted at once when the caller administers the receiving project too.
   app.put<{ Reply: CredentialShareResponse }>(
     "/credentials/:kind/:name/shares/:project",
     projectQuery,
@@ -202,7 +185,6 @@ export function registerCredentialRoutes(
     },
   );
 
-  // The project's credentials in the environment that the caller manages, with their shares.
   app.get<{ Reply: SharedCredentialsResponse }>(
     "/projects/:project/shared-credentials",
     async (request) => {
@@ -265,7 +247,6 @@ export function registerCredentialRoutes(
   );
 }
 
-/** A listed secret or connection as the credential it is, without its other fields. */
 function storedCredential(
   kind: CredentialKind,
   listed: Omit<StoredCredential, "kind">,
@@ -279,7 +260,6 @@ function storedCredential(
   };
 }
 
-/** The project a share path names, which the caller must see; never the credential's own. */
 async function sharedTo(request: FastifyRequest, credential: StoredCredential): Promise<string> {
   const { project } = request.params as { project: string };
   const target = await request.access.project(project, {

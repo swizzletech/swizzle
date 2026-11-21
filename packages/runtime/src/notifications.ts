@@ -36,10 +36,6 @@ interface NotificationSignal {
   readonly rule: StoredNotificationRule;
 }
 
-/**
- * Commits a delivery intent for each rule a dead-lettered run fires. Nothing is sent here: the
- * API's dispatch loop sends pending intents with `deliverPendingNotification`, outside any lease.
- */
 export async function processRunNotifications(
   input: ProcessRunNotificationsInput,
 ): Promise<readonly StoredNotificationDelivery[]> {
@@ -95,11 +91,6 @@ export async function processRunNotifications(
   return deliveries;
 }
 
-/**
- * An alert about an automation's outside API: its check started failing, or the API announced
- * its retirement. It goes once to every enabled rule of the automation, whatever run event the
- * rule names, and skips the cooldown: `key` names the event, so a second send is a no-op.
- */
 export interface ApiAlert {
   readonly automation: {
     readonly automationId: string;
@@ -110,12 +101,10 @@ export interface ApiAlert {
   readonly environment: string;
   readonly eventType: "api-check" | "api-sunset";
   readonly key: string;
-  /** The message after its header and the automation and environment lines. */
   readonly lines: readonly string[];
   readonly metadata: Record<string, unknown>;
 }
 
-/** Commits the alert's delivery intents; the dispatch loop sends them, as for run notifications. */
 export async function sendApiAlert(input: {
   readonly alert: ApiAlert;
   readonly now?: Date;
@@ -161,13 +150,6 @@ export async function sendApiAlert(input: {
   return deliveries;
 }
 
-/**
- * Records a pending delivery under `dedupeKey`, once; a known key records nothing new. A
- * rule's person must still be able to read the automation's runs in this environment, or the
- * delivery is skipped: a revoked grant, a suspension or a removal stops the next message. That
- * check comes first, so the record names the revoked access even inside the cooldown, and before
- * the key is claimed, so a failed check leaves nothing behind that would stop a retry.
- */
 async function commitDelivery(input: {
   readonly automationId: string;
   readonly cooldownActive: boolean;
@@ -227,7 +209,6 @@ async function commitDelivery(input: {
   return pending.delivery;
 }
 
-/** Sends a previously committed intent. No execution ownership lock is held here. */
 export async function deliverPendingNotification(
   delivery: StoredNotificationDelivery,
   store: ControlPlaneStore,
@@ -346,7 +327,6 @@ async function resolveTelegramBotToken(
   store: ControlPlaneStore,
   environment: string,
 ): Promise<string | null> {
-  // Notifications are the instance's, so their bot token is a secret of the default project.
   const secret = await store.findCredential("secret", TELEGRAM_BOT_TOKEN_SECRET, {
     environment,
     projectId: DEFAULT_PROJECT_ID,

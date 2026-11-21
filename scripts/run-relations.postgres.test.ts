@@ -39,8 +39,6 @@ async function verifyParentChildRunRetention(store: ControlPlaneStore): Promise<
   assert.equal(children[0]?.runId, childRunId);
   assert.equal(children[0]?.parentStepKey, "invoke-child");
 
-  // Deleting the parent's automation deletes its runs; the child run of another automation stays
-  // and loses its parent link.
   await store.updateAutomationTriggerStatus({
     automationSlug: parentDeployment.automationSlug,
     environment: parentDeployment.environment,
@@ -209,12 +207,12 @@ async function createSucceededSourceRun(
   });
 }
 
-it("parent child run retention", async () => {
+it("keeps a child run when deleting its parent's automation", async () => {
   const store = testControlPlaneStore();
   await verifyParentChildRunRetention(store);
 });
 
-it("chain join race arbiter", async () => {
+it("creates one chain join run when concurrent requests share an origin", async () => {
   const store = testControlPlaneStore();
   await verifyChainJoinRaceArbiter(store);
 });

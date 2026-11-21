@@ -1,12 +1,3 @@
-// The HTTP contract of the Swizzle API: what each route answers and the bodies its clients send.
-// The API names these types in Fastify Reply generics; the CLI and dashboard read responses through
-// them, so a changed shape fails every consumer's type check. Import it as
-// @swizzle/runtime/http-contract. Browser consumers import types only.
-//
-// The dashboard type-checks everything this module reaches, so it names records only: @swizzle/db
-// and the runtime's record modules, never platform-types.ts or a database or queue client. `just
-// check` holds that line; a record a response needs goes in platform-records.ts.
-
 import type {
   AccessRefusal,
   ApprovalAssignee,
@@ -71,7 +62,6 @@ import type {
   TestConnectionResult,
 } from "./platform-records.js";
 
-/** A deployment as apply and rollback answer it. */
 export type DeploymentResponse = Pick<
   PlatformDeploymentRecord,
   | "artifactRootPath"
@@ -93,45 +83,33 @@ export type DeploymentResponse = Pick<
   readonly vars: PlatformDeploymentRecord["config"]["vars"];
 };
 
-/** GET /runs/:runId. `dashboardUrl` is the run's panel; null without SWIZZLE_DASHBOARD_ORIGIN. */
 export type RunResponse = PlatformRunDetail & { readonly dashboardUrl: string | null };
 
-/** GET /runs/:runId/diagnosis: the record `swizzle diagnose` prints. */
 export type RunDiagnosisResponse = Diagnosis;
 
-/** A deployment in the dashboard's read model, judged by the API against the live workers. */
 export type DeploymentSummaryResponse = DashboardDeploymentSummary & {
   readonly readiness: RuntimeReadinessReport;
 };
-/** A cron's next run, or the environment no live scheduler serves; null without a next time. */
 export type CronNextRun =
   | { readonly kind: "at"; readonly at: string }
   | { readonly kind: "unserved"; readonly environment: string }
   | null;
 
-/** New scaffolds use this namespace, which the public listener forwards without rewriting. */
 export const WEBHOOK_PATH_PREFIX = "/hooks";
 
-/** Only cron triggers have a next run to judge against the live schedulers. */
 export type JudgedTriggerSummary = Omit<DashboardTriggerSummary, "triggerType" | "nextRunAt"> &
   (
     | { readonly triggerType: "cron"; readonly nextRun: CronNextRun }
     | { readonly triggerType: "chain" }
     | { readonly triggerType: "webhook" }
   );
-/**
- * A trigger with the URL its webhook answers at: /hooks/ uses the public base and root paths
- * use the API base. Null for another trigger or where the API does not know where it is reached.
- */
 export type TriggerSummaryResponse = JudgedTriggerSummary & {
   readonly webhookUrl: string | null;
 };
-/** A judged record whose trigger carries its webhook URL. */
 export type WithWebhookUrl<T extends { readonly trigger: JudgedTriggerSummary | null }> = Omit<
   T,
   "trigger"
 > & { readonly trigger: TriggerSummaryResponse | null };
-/** An automation with its active deployment and its trigger judged against the live services. */
 export type JudgedAutomationSummary = Omit<
   DashboardAutomationSummary,
   "activeDeployment" | "trigger"
@@ -140,7 +118,6 @@ export type JudgedAutomationSummary = Omit<
   readonly trigger: JudgedTriggerSummary | null;
 };
 export type AutomationSummaryResponse = WithWebhookUrl<JudgedAutomationSummary>;
-/** The automation detail with every deployment and its trigger judged against the live services. */
 export type JudgedAutomationDetail = Omit<
   DashboardAutomationDetail,
   "activeDeployment" | "deploymentHistory" | "trigger"
@@ -149,16 +126,9 @@ export type JudgedAutomationDetail = Omit<
   readonly deploymentHistory: readonly DeploymentSummaryResponse[];
   readonly trigger: JudgedTriggerSummary | null;
 };
-/**
- * GET /dashboard/overview, with why the caller may not deploy a new automation that names no
- * project, which lands in the default project; null where they may. The empty Overview offers the
- * steps to a first one only then. `timetable` counts each automation's runs per hour of the
- * caller's last 24, on the clock its `utcOffset` query parameter names.
- */
 export type OverviewResponse = DashboardOverview & {
   readonly deploy: AccessRefusal | null;
 };
-/** GET /dashboard/automations/:name, with the controls the viewer's role refuses. */
 export type AutomationDetailResponse = WithWebhookUrl<JudgedAutomationDetail> & {
   readonly refusals: DashboardAutomationRefusals;
 };
@@ -170,10 +140,6 @@ export type DeleteProjectResponse =
       readonly project: string;
     } & DeleteProjectResultRecord);
 
-/**
- * A connection as every route answers it. The client secret, provider config and token material
- * stay server-side; the client id is not confidential and tells operators which app it uses.
- */
 export type ConnectionResponse = Pick<
   ConnectionView,
   | "accessTokenExpiresAt"
@@ -235,10 +201,8 @@ export interface EnvironmentsResponse {
   readonly defaultEnvironment: string;
   readonly environments: readonly StoredEnvironment[];
 }
-/** GET /secrets: each secret with what the caller may do with it. */
 export interface SecretsResponse {
   readonly environment: string;
-  /** Each secret with the caller's right on it and its project, since a list can span several. */
   readonly secrets: readonly (SecretView & {
     readonly right: CredentialRight | null;
   })[];
@@ -335,16 +299,11 @@ export interface WorkerGroupsResponse {
 export interface WorkersResponse {
   readonly workers: readonly WorkerListing[];
 }
-/** POST /deployments. `webhookUrl` as in `TriggerSummaryResponse`. */
 export type ApplyResponse = DeploymentResponse &
   Pick<PlatformApplyResult, "action" | "changes" | "message"> & {
     readonly warnings: readonly string[];
     readonly webhookUrl: string | null;
   };
-/**
- * POST /deployment-checks: what apply would do after every check it makes. A check that fails
- * answers with apply's own error instead.
- */
 export type DeploymentCheckResponse = PlatformDeploymentCheck & {
   readonly webhookUrl: string | null;
 };
@@ -362,7 +321,6 @@ export interface ConnectionAuthorizationRequest {
   readonly scopes?: readonly string[];
 }
 
-/** GET /automations/:name returns the full active deployment. */
 export type AutomationDeploymentResponse = PlatformDeploymentRecord;
 export type DeleteAutomationResponse = DeleteAutomationResultRecord;
 export interface AutomationDeletePreviewResponse {
@@ -416,7 +374,6 @@ export interface WorkerAuditResponse {
 
 export interface AuthStatusResponse {
   readonly authenticated: boolean;
-  /** Whether the instance sends mail: without it nobody is invited or resets a password. */
   readonly mailConfigured: boolean;
   readonly setupRequired: boolean;
   readonly setupTokenRequired: boolean;
@@ -444,10 +401,6 @@ export interface InvitationResponse {
   readonly createdAt: string;
   readonly expiresAt: string;
 }
-/**
- * POST /invitations: the new invitation with its link, `/invitation#<token>` on the dashboard. The
- * API shows the link in this answer only; `mailed` says whether it also went out by mail.
- */
 export type SentInvitationResponse = InvitationResponse & {
   readonly url: string;
   readonly mailed: boolean;
@@ -479,7 +432,6 @@ export interface AuditResponse {
   readonly events: readonly AuditEvent[];
   readonly next: string | null;
 }
-/** Each route's access rule and whether its requests enter the audit. HEAD follows GET. */
 export type RouteAccess = "public" | "signed-in" | "session" | "instance" | "resource" | "worker";
 
 const ROUTE_POLICY = {
@@ -519,12 +471,8 @@ const ROUTE_POLICY = {
   "GET /approvals/:token": { access: "public", audit: false },
   "POST /approvals/:token": { access: "public", audit: true },
   "POST /events/:token": { access: "public", audit: true },
-  // Webhook ingress under WEBHOOK_PATH_PREFIX: the automation's trigger decides, by signature
-  // where it asks for one.
   "POST /hooks/*": { access: "public", audit: false },
-  // Released 1.x sources may declare root paths; reserved namespaces are refused by ingress.
   "POST /*": { access: "public", audit: false },
-  // CORS preflight.
   "OPTIONS *": { access: "public", audit: false },
 
   "POST /auth/change-password": { access: "session", audit: true },
@@ -544,12 +492,10 @@ const ROUTE_POLICY = {
   "GET /teams": { access: "instance", audit: false },
   "GET /users": { access: "instance", audit: false },
   "GET /directory": { access: "resource", audit: false },
-  // A person's own notification rules; an owner or admin sees and changes everyone's.
   "GET /notifications/rules": { access: "signed-in", audit: false },
   "POST /notifications/rules": { access: "signed-in", audit: true },
   "PATCH /notifications/rules/:ruleId": { access: "signed-in", audit: true },
   "DELETE /notifications/rules/:ruleId": { access: "signed-in", audit: true },
-  // Owners and admins read all of it, a project admin their projects', anyone their own events.
   "GET /audit": { access: "signed-in", audit: false },
 
   "GET /metrics": { access: "instance", audit: false },
@@ -666,7 +612,6 @@ const ROUTE_POLICY = {
   Record<string, { readonly access: RouteAccess; readonly audit: boolean }>
 >;
 
-/** Every route by METHOD and path, used by route registration and access checks. */
 export const ROUTE_ACCESS: Readonly<Record<string, RouteAccess>> = Object.fromEntries(
   Object.entries(ROUTE_POLICY).map(([route, policy]) => [route, policy.access]),
 );
@@ -677,7 +622,6 @@ export type AuditedRoute = {
     : never;
 }[keyof typeof ROUTE_POLICY];
 
-/** The same membership the dashboard must word, used by the request audit hook. */
 export const AUDITED_ROUTES: ReadonlySet<string> = new Set(
   Object.entries(ROUTE_POLICY)
     .filter(([, policy]) => policy.audit)
@@ -710,30 +654,22 @@ export interface SecurityAuditResponse {
   };
 }
 
-/** The body of every control-plane error answer, with the status of its code. */
 export type { ApiErrorResponse } from "@swizzle/core";
 
-/** 204 responses have no wire body; handlers either send nothing or return null. */
 export type NoContentResponse = null | undefined;
 export type HtmlResponse = string;
 export type MetricsResponse = string;
-/** A completed sign-up, sign-out, password or factor verification/disable action. */
 export type AuthActionResponse = AuthActionResult;
-/** POST /auth/sign-in/email, as the auth boundary in @swizzle/db/postgres parses it. */
 export type SignInResponse = SignInResult;
-/** POST /auth/two-factor/enable, as the auth boundary in @swizzle/db/postgres parses it. */
 export type TwoFactorEnrollmentResponse = TwoFactorEnrollment;
-/** Server-sent event bytes consumed by the CLI and browser's stream readers. */
 export type RunLogStreamResponse = AsyncIterable<string | Uint8Array>;
 
-/** A schema-defined worker reply, without pulling its validators into browser type checking. */
 export type WorkerDispatchResponse<
   Route extends { readonly reply: { parse(value: unknown): unknown } },
 > = ReturnType<Route["reply"]["parse"]>;
 
 export type { DeploymentChange } from "./platform-records.js";
 
-// A root webhook must never turn an API namespace into an anonymous trigger lookup.
 const RESERVED_WEBHOOK_NAMESPACES = new Set([
   "api",
   ...Object.keys(ROUTE_POLICY)

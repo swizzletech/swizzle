@@ -1,4 +1,3 @@
-/** Prove an npm tarball as an author installs it. Also runs on a laptop without the checkout. */
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
@@ -40,7 +39,6 @@ try {
   console.log(`Installed tarball in empty directory: ${directory}`);
   console.log(`Runtime: ${process.platform} ${process.arch}, Node ${process.version}`);
   console.log(run("npm", ["ls", "--omit=dev", "--depth=1"]));
-  // Recipes supply config; a minimal entrypoint completes each folder without calling outside APIs.
   const packageRoot = path.dirname(
     path.dirname(await realpath(path.join(directory, "node_modules/.bin/swizzle"))),
   );

@@ -1,6 +1,3 @@
-// The serializers that project platform records into the shapes http-contract.ts names. Each
-// returns its contract type, so a field the contract does not list cannot leave the API.
-
 import type { ConnectionView } from "@swizzle/db";
 
 import type { ConnectionResponse, DeploymentResponse, RunResponse } from "./http-contract.js";

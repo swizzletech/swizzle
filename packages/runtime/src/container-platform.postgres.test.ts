@@ -8,11 +8,8 @@ import { fakeDocker } from "../test/container-docker.js";
 import { createAutomationFixture } from "../test/platform-harness.js";
 import { closeSandboxes } from "./sandbox.js";
 
-// Platform tests keep no standby between their separate Docker fixtures.
 beforeAll(closeSandboxes);
 
-// A failed Docker step is the platform's, so the run gets its retries; a failed install is the
-// automation's own and fails the run at once (f-170).
 describe("platform runs whose run image cannot be assembled", () => {
   it.each(
     [
@@ -162,7 +159,6 @@ describe("platform runs whose run image cannot be assembled", () => {
     });
   });
 
-  // Another attempt meets the same setting, so retrying it would only spend the budget (f-286).
   it("fails a run once when the worker's run limit setting is invalid", async () => {
     await fakeDocker({ missingImage: false });
     const platform = await testPlatform({
@@ -174,7 +170,6 @@ describe("platform runs whose run image cannot be assembled", () => {
       triggerLines: ["  type: webhook", "  path: /misconfigured-worker"],
     });
     await platform.deployAutomationToPlatform({ automationDirectory, environment: "local" });
-    // The worker reads the setting before each run, so one set after the deploy reaches it.
     vi.stubEnv("SWIZZLE_MAX_RUN_MEMORY_MB", "2GB");
 
     await platform.enqueuePlatformRun({
@@ -197,8 +192,6 @@ describe("platform runs whose run image cannot be assembled", () => {
   });
 });
 
-// A run and its API check exec the same run image; only the script and the inputs differ. Runs
-// after closeSandboxes, so the platform run leaves no standby behind.
 describe("deployed runs and checks in the sandbox", () => {
   it("gives a run its state and steps, and its check neither", async () => {
     const docker = await fakeDocker({ missingImage: false });

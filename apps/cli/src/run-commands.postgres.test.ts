@@ -21,7 +21,6 @@ import {
 
 import { runCli } from "./main.js";
 
-// Commands that talk to an API instance, run against a real in-process API server with PostgreSQL stores.
 useCliTestEnvironment();
 
 describe("run commands", () => {
@@ -63,7 +62,6 @@ describe("run commands", () => {
       expect((await state("list", "hello-webhook")).output.state).toEqual([
         { key: "cursor", value: { id: 123 }, updatedAt: expect.any(String) },
       ]);
-      // A near miss never deletes: the guess stays a guess, and the key stays.
       const guessed = createBufferIO();
       expect(
         await runCli(
@@ -89,8 +87,6 @@ describe("run commands", () => {
   it("follows a running run's logs until it is terminal, each chunk once", async ({ signal }) => {
     const io = createBufferIO();
     const stateDirectory = await temporaryDirectory("swizzle-cli-logs-follow-");
-    // The child holds after phase-one until the test creates the gate file, so the
-    // first poll sees a running run.
     const gatePath = path.join(stateDirectory, "gate");
     const automationDirectory = path.join(stateDirectory, "streaming-logs");
     await mkdir(automationDirectory);
@@ -134,7 +130,6 @@ describe("run commands", () => {
     const processing = platform.processNextPlatformRun().finally(() => {
       settled = true;
     });
-    // Settled in finally; this handler keeps an early rejection from going unhandled while the test polls.
     processing.catch(() => undefined);
     let following: Promise<number> | undefined;
     const app = await buildTestServer({ platform });
@@ -146,7 +141,6 @@ describe("run commands", () => {
         async () =>
           settled || (await platform.getPlatformRun(queued.runId)).stderr.includes("phase-one"),
       );
-      // The CLI waits 2 s between polls; here that wait passes at once, every other timer stays real.
       const realSetTimeout = globalThis.setTimeout;
       vi.spyOn(globalThis, "setTimeout").mockImplementation(((callback: () => void, ms?: number) =>
         realSetTimeout(callback, ms === 2_000 ? 0 : ms)) as typeof setTimeout);
@@ -170,7 +164,6 @@ describe("run commands", () => {
       expect(lines.map((line) => line.log).join("")).toBe("phase-one\nphase-two\n");
       expect(result).toMatchObject({ run: { status: "succeeded" }, stdout: '{"ok":true}\n' });
     } finally {
-      // Release the child and settle both tasks before the shared cleanup removes their directories.
       await writeFile(gatePath, "");
       await Promise.allSettled([processing, following]);
       vi.restoreAllMocks();
@@ -282,7 +275,6 @@ describe("run commands", () => {
         "",
       ].join("\n"),
     );
-    // Waits for two approvals, then fails once and succeeds on the retry.
     await writeFile(
       path.join(automationDirectory, "main.js"),
       [
@@ -330,7 +322,6 @@ describe("run commands", () => {
         0,
       );
       const shown = JSON.parse(io.stdoutText).run;
-      // A resume spends no retry: the executions before the failure belong to attempt 1 of 3.
       expect(shown.attempts).toBe("2/3");
       expect(
         shown.attemptHistory.map(({ attempt, resumedAfter, status }: Record<string, unknown>) => ({
@@ -463,7 +454,6 @@ describe("run commands", () => {
       const badDuration = await cli("timeout-grant", "set", "hello-webhook", "3hours");
       expect(badDuration.exitCode).toBe(3);
 
-      // Removal takes the exact name, so a near miss cannot strip another automation's grant.
       const fuzzy = await cli("timeout-grant", "remove", "hello", "--yes");
       expect(fuzzy.exitCode).toBe(2);
       expect(fuzzy.json.code).toBe("EXACT_NAME_REQUIRED");

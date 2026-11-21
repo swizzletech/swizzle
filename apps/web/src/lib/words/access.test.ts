@@ -32,9 +32,6 @@ describe("signInProblemInWords", () => {
   });
 });
 
-// A refused right must say what is missing and where the person's role comes from (A3 of the
-// dashboard brief); the API sends the facts, these words are what the person reads.
-
 describe("accessProblemInWords", () => {
   it("names the team a capped role comes from in a protected environment", () => {
     const words = accessProblemInWords({

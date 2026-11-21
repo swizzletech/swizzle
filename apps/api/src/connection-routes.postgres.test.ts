@@ -1,10 +1,10 @@
 import type { ConnectionsResponse } from "@swizzle/runtime/http-contract";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { testPlatform } from "../../../test/platform.js";
 
-import { testAccessStore } from "../../../test/stores.js";
+import { testAccessStore, testApiTokenStore } from "../../../test/stores.js";
 import { TEST_ENCRYPTION_KEY } from "../../../test/support.js";
-import { ownerHeaders } from "../test/people.js";
+import { ownerHeaders, testPeople } from "../test/people.js";
 import { buildTestServer } from "../test/server-harness.js";
 
 let owner: { readonly authorization: string };
@@ -107,13 +107,11 @@ describe("connection routes", () => {
     const callbackResponse = await app.inject({
       headers: owner,
       method: "GET",
-      // Providers such as Microsoft issue codes longer than other URL values.
       url: `/oauth/callback/google?state=${state}&code=${"c".repeat(2_000)}`,
     });
     expect(callbackResponse.statusCode).toBe(200);
     expect(callbackResponse.headers["content-type"]).toContain("text/html");
     expect(callbackResponse.headers["cache-control"]).toBe("no-store");
-    // The approval page's frame: the logo above the card.
     expect(callbackResponse.body).toContain('aria-label="Swizzle"');
     expect(callbackResponse.body).toContain("<h1>Connection &quot;jan-google&quot; is active</h1>");
     expect(callbackResponse.body).not.toContain("<script>");
@@ -178,7 +176,6 @@ describe("connection routes", () => {
     });
     expect(first.statusCode).toBe(200);
 
-    // Second account: no client id/secret, just point at the first connection.
     const second = await app.inject({
       headers: owner,
       method: "POST",
@@ -194,6 +191,58 @@ describe("connection routes", () => {
     expect(JSON.stringify(second.json())).not.toContain("client-secret");
 
     await app.close();
+  });
+
+  it("requires manage on the source connection to reuse its credentials", async () => {
+    vi.stubEnv("SWIZZLE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
+    vi.stubEnv("SWIZZLE_PUBLIC_URL", "https://api.example.com");
+    const apiTokenStore = testApiTokenStore();
+    const editor = await testPeople().bearer(apiTokenStore, "editor@example.test");
+    const app = await buildTestServer({ apiTokenStore });
+    onTestFinished(() => app.close());
+    const scopes = ["openid"];
+    const created = await app.inject({
+      headers: owner,
+      method: "POST",
+      payload: { ...GOOGLE_CREDENTIALS, scopes },
+      url: "/connections/google-main/authorize",
+    });
+    expect(created.statusCode).toBe(200);
+    const projectGrant = await app.inject({
+      headers: owner,
+      method: "PUT",
+      payload: { role: "editor", user: editor.userId },
+      url: "/projects/default/grants",
+    });
+    expect(projectGrant.statusCode).toBe(200);
+    const grant = async (right: "manage" | "use") =>
+      app.inject({
+        headers: owner,
+        method: "PUT",
+        payload: { right, user: editor.userId },
+        url: "/credentials/connection/google-main/grants",
+      });
+    const reuse = () =>
+      app.inject({
+        headers: { authorization: editor.authorization },
+        method: "POST",
+        payload: { reuseFrom: "google-main", scopes },
+        url: "/connections/google-work/authorize",
+      });
+
+    expect((await grant("use")).statusCode).toBeLessThan(300);
+    const refused = await reuse();
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json()).toMatchObject({
+      code: "ACCESS_DENIED",
+      details: {
+        credential: { kind: "connection", name: "google-main" },
+        required: "manage",
+        right: "use",
+      },
+    });
+    expect((await grant("manage")).statusCode).toBeLessThan(300);
+    expect((await reuse()).statusCode).toBe(200);
   });
 
   it("rejects callbacks with unknown or replayed state via generic HTML", async () => {
@@ -260,8 +309,6 @@ describe("connection routes", () => {
     expect(response.statusCode).toBe(503);
     expect(response.json()).toMatchObject({ error: "CONNECTION_PUBLIC_URL_NOT_CONFIGURED" });
 
-    // Listing keeps working without a configured public URL; the dashboard
-    // gets null and shows a configuration hint instead of a redirect URI.
     const listResponse = await app.inject({
       headers: { ...owner, host: "api.example.com" },
       method: "GET",
@@ -273,8 +320,6 @@ describe("connection routes", () => {
     await app.close();
   });
 
-  // The tailnet install serves the API under /api of the dashboard's name (install.md). A query
-  // or fragment in the setting would swallow the callback path appended to it.
   it.each([
     "https://server.example-tailnet.ts.net/api/",
     "https://server.example-tailnet.ts.net/api?x=1",

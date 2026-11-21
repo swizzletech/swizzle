@@ -74,12 +74,10 @@ describe("swizzle init", () => {
       payload: {
         event: "example.created",
       },
-      // Nothing checked a signature on this unsigned sample: a local run is started by hand.
       signed_delivery: false,
       trigger_type: "manual",
     });
 
-    // The check stub validates once api_check is active, and reports drift until it is written.
     const configPath = path.join(targetDirectory, "config.yaml");
     await writeFile(
       configPath,
@@ -91,14 +89,11 @@ describe("swizzle init", () => {
     expect(checkIo.stdoutText).toContain("code: API_CHECK_DRIFT\n");
   });
 
-  // A first-time author pastes these steps into a shell with a remote profile; each one must pass
-  // before the next, so the signing secret has to exist before validate asks the instance for it.
   it("runs the webhook scaffold's README and init steps in order against a remote profile", async () => {
     const app = await buildTestServer({
       dashboard: createDashboardStub("unused"),
       platform: await testPlatform(),
     });
-    // Closing the server also closes the platform it serves.
     onTestFinished(() => app.close());
     const address = await app.listen({ host: "127.0.0.1", port: 0 });
     await runCli(
@@ -113,8 +108,6 @@ describe("swizzle init", () => {
       `#!/bin/sh\nexec "${process.execPath}" --conditions=swizzle-source --import "${import.meta.resolve("tsx")}" "${path.join(appRoot, "src/bin.ts")}" "$@"\n`,
       { mode: 0o755 },
     );
-    // Asynchronous, so this process keeps serving the API the steps call. A failure's message
-    // carries the trace and every answer, which all go to stderr.
     const shell = (script: string, cwd: string) =>
       exec("bash", ["-euo", "pipefail", "-xc", `exec 1>&2\n${script}`], {
         cwd,
@@ -248,7 +241,6 @@ describe("swizzle init", () => {
       output: { skill: { state: "replaced" } },
     });
 
-    // An extra symlink and a file in the skill's place are changes too, and --force replaces them.
     const skillDirectory = path.dirname(skillFile);
     await symlink("SKILL.md", path.join(skillDirectory, "extra"));
     expect((await install()).output.code).toBe("SKILL_CHANGED");
@@ -288,7 +280,6 @@ describe("swizzle init", () => {
     const agents = await readFile(path.join(workspace, "AGENTS.md"), "utf8");
     const readme = await readFile(path.join(workspace, "README.md"), "utf8");
     expect(agents).toContain("<INSTANCE_URL>");
-    // The instance refuses validate while a declared secret is missing, so both guides store it first.
     expect(readme.match(/swizzle profile add .*/gu)).toEqual([
       "swizzle profile add <PROFILE_NAME> --url <INSTANCE_URL> --token-env SWIZZLE_TOKEN --env <ENVIRONMENT_NAME> --default",
     ]);

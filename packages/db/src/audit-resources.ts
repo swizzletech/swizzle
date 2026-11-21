@@ -1,4 +1,3 @@
-/** Resource writers and reads share the instance audit's event contract. */
 import { eq } from "drizzle-orm";
 import type { AuditChange } from "./audit.js";
 import { createPostgresAuditStore, recordAuditChange } from "./audit-tables.js";
@@ -77,7 +76,6 @@ export async function recordTimeoutGrantChange(
   });
 }
 
-/** A moved automation's history remains in its original project. */
 export async function listAutomationAudit(
   client: DatabaseClient,
   slug: string,

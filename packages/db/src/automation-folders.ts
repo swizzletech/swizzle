@@ -14,7 +14,6 @@ export type AutomationFolderAssignmentResult =
 
 export interface AutomationFolderStore {
   close(): Promise<void>;
-  /** "folder-not-found" also for a folder of another project than the automation's. */
   assignAutomation(
     automationSlug: string,
     folderId: string | null,
@@ -22,7 +21,6 @@ export interface AutomationFolderStore {
   createFolder(projectId: string, name: string): Promise<AutomationFolderMutationResult>;
   deleteFolder(folderId: string): Promise<boolean>;
   getFolder(folderId: string): Promise<AutomationFolder | null>;
-  /** The folders of these projects; every project's with "all". */
   listFolders(projectIds: readonly string[] | "all"): Promise<readonly AutomationFolder[]>;
   renameFolder(folderId: string, name: string): Promise<AutomationFolderMutationResult>;
 }
@@ -69,8 +67,6 @@ export function createAutomationFolderStore(
         if (folder.length === 0) return { status: "folder-not-found" };
       }
 
-      // Still in the project the folder was checked against: a move committed meanwhile matches
-      // nothing here, so a folder never lands in another project.
       const updated = await client.db
         .update(automations)
         .set({ folderId, updatedAt: new Date() })

@@ -95,7 +95,6 @@ export async function listDeploymentsForArtifactRetention(
   return rows.map(mapDeploymentRow);
 }
 
-/** The deployment each automation runs, in every environment, newest first. */
 export async function listActiveDeployments(
   client: DatabaseClient,
 ): Promise<readonly StoredDeployment[]> {

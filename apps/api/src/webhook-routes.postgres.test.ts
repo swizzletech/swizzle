@@ -5,8 +5,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { DEFAULT_PROJECT_ID } from "@swizzle/db";
+import { AutomationRuntimeError } from "@swizzle/runtime";
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { testPlatform } from "../../../test/platform.js";
 
@@ -167,9 +168,6 @@ describe("webhook routes", () => {
       url: "/hooks/unknown-path",
     });
 
-    // The public ingress must not act as an existence oracle: unknown paths return
-    // the same opaque WEBHOOK_NOT_AVAILABLE as a real-but-not-ready webhook, and the
-    // response never names an automation or a trigger.
     expect(response.statusCode).toBe(404);
     expect(response.json()).toMatchObject({
       code: "WEBHOOK_NOT_AVAILABLE",
@@ -218,8 +216,6 @@ describe("webhook routes", () => {
     expect(run.payload).toEqual({ hello: "world" });
     expect(run.webhookContext).toMatchObject({
       headers: {
-        // Forwarded although no allowlist ever named it — provider headers are the
-        // automation's business, not the platform's.
         "close-sig-hash": "abc123",
         "content-type": "application/json",
         "stripe-signature": "t=123,v1=abc",
@@ -279,8 +275,6 @@ describe("webhook routes", () => {
     await app.close();
   });
 
-  // A person's manual run skips the signature check, so code must be able to tell it from a
-  // verified delivery: it is a manual run and carries none of the caller's headers.
   it("records a manual run of a signed webhook as manual, without the caller's headers", async () => {
     vi.stubEnv("SWIZZLE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
     const stateDirectory = await temporaryDirectory("swizzle-api-");
@@ -346,9 +340,6 @@ describe("webhook routes", () => {
       url: "/signed-webhook",
     });
 
-    // A wrong signature on the public ingress collapses to the same opaque 404 as an
-    // unknown path — a caller without the secret cannot confirm the endpoint exists.
-    // The true reason (signature-mismatch) is still recorded in the trigger audit.
     expect(rejected.statusCode).toBe(404);
     expect(rejected.json()).toMatchObject({
       code: "WEBHOOK_NOT_AVAILABLE",
@@ -409,7 +400,6 @@ describe("webhook routes", () => {
       host: "api.swizzle.example.com",
     };
 
-    // An operator route from the same remote origin still requires a token.
     const gatedOperator = await app.inject({
       method: "GET",
       url: "/secrets",
@@ -419,8 +409,6 @@ describe("webhook routes", () => {
     expect(gatedOperator.statusCode).toBe(401);
     expect(gatedOperator.json()).toMatchObject({ error: "UNAUTHORIZED" });
 
-    // The declared webhook path is reachable from the public internet without any
-    // Swizzle token — external callers (Stripe, GitHub, ...) never have one.
     const webhook = await app.inject({
       method: "POST",
       url: "/hooks/hello",
@@ -430,8 +418,6 @@ describe("webhook routes", () => {
     });
     expect(webhook.statusCode).toBe(200);
     expect(webhook.json()).toMatchObject({ status: "queued" });
-    // An unknown webhook path is a "no such webhook" failure, not an auth failure:
-    // proves the request cleared the auth gate and reached the trigger resolver.
     const unknown = await app.inject({
       method: "POST",
       url: "/hooks/no-such-hook",
@@ -443,6 +429,81 @@ describe("webhook routes", () => {
     expect(unknown.json()).toMatchObject({ error: "WEBHOOK_NOT_AVAILABLE" });
 
     await app.close();
+  });
+
+  it("hides webhooks missing a platform secret and sanitizes unexpected runtime errors", async () => {
+    vi.stubEnv("SWIZZLE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
+    const platform = await testPlatform();
+    const app = await buildTestServer({ platform });
+    onTestFinished(() => app.close());
+    const secret = "/secrets/REQUIRED_WEBHOOK_SECRET";
+    const url = "/secret-dependent-hook";
+    expect(
+      (
+        await app.inject({
+          headers: owner,
+          method: "PUT",
+          payload: { value: "fixture" },
+          url: secret,
+        })
+      ).statusCode,
+    ).toBe(200);
+    const fixture = await createAutomationFixture({
+      mainJs: "console.log('{}');",
+      name: "secret-dependent-hook",
+      path: url,
+      secrets: ["REQUIRED_WEBHOOK_SECRET"],
+    });
+    expect((await deployFixture(app, fixture, {}, { headers: owner })).statusCode).toBe(200);
+    expect((await app.inject({ headers: owner, method: "DELETE", url: secret })).statusCode).toBe(
+      204,
+    );
+
+    const post = (url: string) => app.inject({ method: "POST", payload: {}, url });
+    const unknown = await post("/unknown-hook");
+    const unavailable = await post(url);
+    expect([unavailable.statusCode, unavailable.json()]).toEqual([404, unknown.json()]);
+    expect(unknown.statusCode).toBe(404);
+    expect(unknown.json().code).toBe("WEBHOOK_NOT_AVAILABLE");
+
+    vi.spyOn(platform, "triggerWebhookByPath").mockRejectedValueOnce(
+      new AutomationRuntimeError("DEPLOYMENT_BUNDLE_INVALID", "Private deployment path", {
+        details: { path: "/private/bundle" },
+      }),
+    );
+    const unexpected = await post(url);
+    expect([unexpected.statusCode, unexpected.json()]).toEqual([
+      400,
+      {
+        code: "WEBHOOK_REJECTED",
+        error: "WEBHOOK_REJECTED",
+        message: "The webhook request could not be processed.",
+      },
+    ]);
+  });
+
+  it("rate-limits by the request IP regardless of an untrusted X-Forwarded-For header", async () => {
+    vi.stubEnv("SWIZZLE_WEBHOOK_INGRESS_RATE_LIMIT", "1/min");
+    vi.stubEnv("SWIZZLE_TRUSTED_PROXY", "false");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const app = await buildTestServer();
+    onTestFinished(() => app.close());
+    const post = (remoteAddress: string, forwarded: string) =>
+      app.inject({
+        headers: { "x-forwarded-for": forwarded },
+        method: "POST",
+        payload: {},
+        remoteAddress,
+        url: "/unknown-hook",
+      });
+
+    expect((await post("192.0.2.10", "198.51.100.10")).statusCode).toBe(404);
+    const limited = await post("192.0.2.10", "198.51.100.11");
+    expect([limited.statusCode, limited.json().code]).toEqual([429, "WEBHOOK_RATE_LIMITED"]);
+    expect((await post("192.0.2.11", "198.51.100.10")).statusCode).toBe(404);
   });
 
   it("rate-limits webhook ingress before trigger lookup or run creation", async () => {
@@ -511,8 +572,6 @@ describe("webhook routes", () => {
       },
     });
 
-    // The budget is per-client, not per-path: the same client hitting a DIFFERENT
-    // (real) path is still throttled, so scanning many paths cannot bypass the limit.
     const sameClientOtherPath = await app.inject({
       method: "POST",
       url: "/hooks/hello",
@@ -521,7 +580,6 @@ describe("webhook routes", () => {
     });
     expect(sameClientOtherPath.statusCode).toBe(429);
 
-    // A different client has an independent budget.
     const otherClient = await app.inject({
       method: "POST",
       url: "/hooks/hello",
@@ -615,7 +673,6 @@ describe("webhook routes", () => {
     })();
 
     try {
-      // Drain HTTP injection callbacks without reaching a one-second refresh.
       await requests;
       expect([...statuses]).toEqual([404, 404, 404]);
     } finally {

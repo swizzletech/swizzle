@@ -3,7 +3,6 @@ import type { RuntimeReadinessReport } from "@swizzle/runtime";
 
 import type { CliIO } from "./output.js";
 
-/** `active (check.ts, every 7d)`, `passive (untested after 30d)` or `off: <reason>`. */
 export function formatApiCheckSummary(apiCheck: AutomationApiCheck | undefined): string {
   switch (apiCheck?.mode) {
     case undefined:
@@ -53,7 +52,6 @@ export function writeStderrLogs(io: CliIO, stderr: string): void {
   io.stderr(stderr.endsWith("\n") ? stderr : `${stderr}\n`);
 }
 
-/** A readiness report as validate and apply --dry-run print it, with whose workers judged it. */
 export function readinessFields(readiness: RuntimeReadinessReport, judgedBy: string) {
   return {
     readiness: `${readiness.status} (${judgedBy})`,

@@ -1,4 +1,3 @@
-// Start one worker-only stack on the engine selected by the Docker CLI. No host executor.
 import { spawnSync } from "node:child_process";
 import { readFile, realpath } from "node:fs/promises";
 import path from "node:path";
@@ -68,7 +67,6 @@ if (process.env.DOCKER_DEFAULT_PLATFORM && process.env.DOCKER_DEFAULT_PLATFORM !
     `DOCKER_DEFAULT_PLATFORM must match this engine (${platform}). Build native runner images.`,
   );
 environment.DOCKER_DEFAULT_PLATFORM = platform;
-// Compose reads the shell before the credential file, so these carry an explicit value of either.
 const hostCpus = dockerCpus();
 const configured = { ...settings, ...process.env };
 environment.SWIZZLE_WORKER_CPUS = cpuLimit(
@@ -95,7 +93,6 @@ const compose = [
 ];
 if (process.argv[3]) compose.push("-f", path.resolve(process.argv[3]));
 console.log(docker([...compose, "build"]));
-// The named volume survives restarts. Never replace a renewed credential with its enrollment copy.
 const initialize = `
 import { link, open, readFile, rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';

@@ -8,9 +8,6 @@ import { platformEnvironments } from "./schema.js";
 
 export const ENVIRONMENT_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,31}$/;
 
-// A heartbeat older than this counts as "not live" for the purpose of the
-// deploy guard. Services beat every ~10s; the window is generous enough to ride
-// out a restart without producing a false "unserved" warning.
 const LIVE_SERVICE_WINDOW_SECONDS = 60;
 
 export interface CreateEnvironmentInput {
@@ -46,10 +43,6 @@ export function validateEnvironmentName(name: string): string {
   return normalized;
 }
 
-/**
- * The API's default namespace for requests without `?environment=`. Scheduler coverage is
- * instance-wide and independent of this setting.
- */
 export function readConfiguredEnvironment(environment: NodeJS.ProcessEnv = process.env): string {
   const configured = environment.SWIZZLE_ENVIRONMENT;
   if (configured === undefined || configured.trim().length === 0) {

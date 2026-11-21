@@ -61,11 +61,6 @@ export async function materializeWebhookRunContext(
   };
 }
 
-// Forwards the raw HTTP reality — every header except the platform's own credential
-// channels. Which header matters is the automation's decision, exactly as it decides
-// which payload field matters; the platform only guarantees that forwarding a webhook
-// can never hand automation code a Swizzle credential. Total header size is bounded
-// by the HTTP server's max-header limit, so this stays small enough to store per run.
 function selectWebhookHeaders(
   headers: Record<string, string | readonly string[] | undefined>,
 ): Record<string, string> {

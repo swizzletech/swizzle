@@ -32,8 +32,6 @@ beforeEach(() => {
   vi.mocked(rename).mockReset();
 });
 
-// A fixture instance: a local artifact store and a pg_dump that writes $BACKUP_TEST_DUMP and
-// logs each call, so a test can see whether the export reached the database.
 async function exportFixture() {
   const root = await temporaryDirectory("swizzle-backup-");
   const output = path.join(root, "backup");
@@ -69,7 +67,6 @@ async function exportBackup(output: string) {
   return { exitCode, envelope: JSON.parse(io.stdoutText) };
 }
 
-// Every path below a directory with its mode and, for files, its contents.
 async function snapshot(directory: string) {
   const entries: Record<string, string> = {};
   for (const name of (await readdir(directory, { recursive: true })).sort()) {
@@ -181,7 +178,6 @@ fs.copyFileSync(process.argv[process.argv.indexOf("--file") + 1], ${JSON.stringi
       "<staging>/database.sql",
       "<staging>/metadata.json",
     ]);
-    // A directory is flushed after every entry it names.
     for (const directory of flushed)
       for (const entry of flushed.filter((name) => name.startsWith(`${directory}/`)))
         expect(flushed.indexOf(entry), `${entry} before ${directory}`).toBeLessThan(
@@ -191,7 +187,6 @@ fs.copyFileSync(process.argv[process.argv.indexOf("--file") + 1], ${JSON.stringi
 
   it("refuses a destination that gains content while it exports", async () => {
     const { root, output } = await exportFixture();
-    // pg_dump runs after the destination check; another writer takes the directory meanwhile.
     await writeFile(
       path.join(root, "bin/pg_dump"),
       `#!${process.execPath}

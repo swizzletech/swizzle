@@ -16,7 +16,6 @@ it("keeps webhook and chain fields on their own trigger variants", () => {
 });
 
 describe("chain trigger cycle check", () => {
-  // target -> x -> y downstream; a, b and c are upstream of nothing.
   const downstream: Record<string, readonly string[]> = { target: ["x"], x: ["y"] };
 
   const build = async (sources: readonly string[]) => {

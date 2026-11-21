@@ -16,7 +16,6 @@ import { resumeParentAfterChildTerminal } from "./waits.js";
 
 const MAX_SUSPEND_DETAILS_BYTES = 8 * 1024;
 
-// An email address (auth_users.email) or a team name (teams.name) at most.
 const MAX_ASSIGNEE_LENGTH = 320;
 
 const MAX_INVOKE_DEPTH = 8;
@@ -255,9 +254,6 @@ export async function handleSuspendedRunExecution(
     wait: plan.wait,
   });
 
-  // updateRunState is a silent no-op when the run went terminal (cancel race
-  // after the attempt was marked suspended). Only proceed to side effects such
-  // as child creation when the waiting transition actually took effect.
   const suspendedRun = await getRunOrThrow(input.store, input.run.runId);
   if (suspendedRun.status !== "waiting") {
     return {
@@ -269,7 +265,6 @@ export async function handleSuspendedRunExecution(
   return await plan.afterWaiting();
 }
 
-/** Dispatch once; the plan closes over prerequisites specific to this reason. */
 async function prepareSuspension(
   input: SuspensionInput,
 ): Promise<SuspensionPlan | ProcessRunOutcome> {
@@ -361,9 +356,6 @@ async function prepareChildSuspension(
             store: input.store,
           });
         }
-        // Close the remaining cancel-race window: if the parent went terminal
-        // while the child was being created, the cancel cascade could not have
-        // seen this child yet. Cancel it here instead of leaving orphan work.
         const parentAfterChild = await getRunOrThrow(input.store, input.run.runId);
         if (isFinishedRun(parentAfterChild.status) && !isFinishedRun(childRun.status)) {
           await input.store.updateRunState({
@@ -415,12 +407,6 @@ async function deadLetterSuspended(
   };
 }
 
-/**
- * Claims the state key `stepKey` for the run and queues the run again with `{ claimed }` as the
- * step's result, all in the transaction that ends the execution. The run waits at the claim
- * only inside that transaction. A claim the state limit refuses, or a claim step that already
- * finished in this run, fails the run instead of leaving it waiting.
- */
 async function resumeAfterClaim(input: {
   readonly execution: AutomationRunSuccess;
   readonly run: PlatformRunRecord;

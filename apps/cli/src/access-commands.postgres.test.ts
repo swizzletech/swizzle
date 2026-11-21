@@ -17,10 +17,6 @@ import { runCli } from "./main.js";
 
 useCliTestEnvironment();
 
-/**
- * An instance with an owner, Ada, and two members without grants, Anna and Ben, each with a CLI
- * profile named after them. `cli` runs a command as one of them and parses its JSON output.
- */
 async function office() {
   vi.stubEnv("SWIZZLE_ENVIRONMENT", undefined);
   const stateDirectory = await temporaryDirectory("swizzle-cli-access-");
@@ -31,7 +27,6 @@ async function office() {
     accessStore,
     apiTokenStore,
     auth: people.auth,
-    // The read model lists what the caller's scope reaches; Ben's reaches nothing in production.
     dashboard: { ...createDashboardStub("hello-webhook"), listAutomations: async () => [] },
     environment: "staging",
     platform: await testPlatform({
@@ -106,7 +101,6 @@ describe("swizzle access commands", () => {
       expect(unchanged.json.state).toBe("already held (no-op)");
       expect(unchanged.requests).toEqual(["PUT /projects/office/grants"]);
 
-      // Anna administers office, so Anna manages its grants but not the instance's teams.
       const team = ["projects", "grant", "office", "--team", "Developers"];
       expect((await cli("anna", ...team, "--role", "editor")).json).toEqual({
         grant: { project: "office", subject: "Developers", on: "project", role: "editor" },
@@ -151,7 +145,6 @@ describe("swizzle access commands", () => {
         "--on-environment",
         "staging",
       ];
-      // A grant on an environment needs the environment protected; the refusal names the fix.
       expect(await cli("anna", "projects", "grant", "office", ...ciGrant)).toMatchObject({
         exitCode: 8,
         json: {
@@ -297,12 +290,10 @@ describe("swizzle access commands", () => {
       expect(
         (await cli("ada", "apply", hello, "--project", "office", "-e", "production")).exitCode,
       ).toBe(0);
-      // Production is protected from the start, so Ben's project grant does not reach it.
       expect((await cli("ada", "projects", "protect", "office", "production")).json.state).toBe(
         "already protected (no-op)",
       );
 
-      // Ben's list for production is empty, so the name passes to the API, which says why.
       const denied = await cli("ben", "inspect", "hello-webhook", "-e", "production");
       expect(denied).toMatchObject({ exitCode: 4, json: { code: "ACCESS_DENIED" } });
       const missing = await cli("ben", "inspect", "no-such-automation", "-e", "production");

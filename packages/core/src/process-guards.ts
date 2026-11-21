@@ -1,14 +1,7 @@
 import type { Logger } from "pino";
 
 export interface ProcessGuardOptions {
-  /**
-   * Milliseconds to wait after logging an uncaught exception before forcing
-   * process.exit(1). Gives async transports time to flush.
-   */
   readonly exitDelayMs?: number;
-  /**
-   * If false, do not exit on uncaughtException — only log. Useful for tests.
-   */
   readonly exitOnUncaught?: boolean;
 }
 

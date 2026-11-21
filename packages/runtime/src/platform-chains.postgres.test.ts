@@ -5,8 +5,6 @@ import { testPlatform } from "../../../test/platform.js";
 import { temporaryDirectory } from "../../../test/support.js";
 import { createAutomationFixture } from "../test/platform-harness.js";
 
-// Chain triggers: cycle detection, single-source payloads and multi-source joins.
-
 describe("platform chain triggers", () => {
   it("marks self-referential chain triggers invalid instead of creating a run loop", async () => {
     const stateDirectory = await temporaryDirectory("swizzle-platform-");

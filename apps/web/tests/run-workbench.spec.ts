@@ -2,9 +2,6 @@ import { expect, type Page, test } from "@playwright/test";
 
 import { addOlderRuns, mockDashboardApi, seededState } from "./dashboard-mock";
 
-// The workbench of Runs and an automation's Runs tab: a window that does not scroll, two panes with
-// the same edges that do, a list grouped by day that reaches every run, and the arrow keys.
-
 test.use({ viewport: { height: 900, width: 1440 } });
 
 const MANY = 450;
@@ -68,8 +65,6 @@ test("the automation's run list starts under its tabs, the flow above the run", 
 });
 
 test.describe("at midday", () => {
-  // The list groups by the browser's day and the mock's runs start from now, so just after midnight
-  // Today holds too few rows to scroll. A zone where it is midday keeps both days long enough.
   const hour = new Date().getUTCHours();
   test.use({ timezoneId: `Etc/GMT${hour >= 12 ? "+" : "-"}${Math.abs(12 - hour)}` });
 
@@ -142,7 +137,6 @@ test("the arrow keys walk the list and keep the selected row in view", async ({ 
   for (let step = 0; step < 20; step += 1) await page.keyboard.press("ArrowDown");
   await expect(rows.nth(20)).toBeFocused();
   await expect(rows.nth(20)).toBeInViewport({ ratio: 1 });
-  // A walk stays out of the browser's history: Back leaves the page.
   await page.goBack();
   await expect(page).not.toHaveURL(/selected=/u);
 });

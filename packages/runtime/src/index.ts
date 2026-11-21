@@ -1,8 +1,3 @@
-// The runtime's cheap entry: automation definitions, bundling, local and container runs, readiness,
-// artifact storage and webhook context. Importing it opens no Valkey or Postgres client and loads
-// neither library, so the CLI starts fast. The services that run on Valkey and Postgres are in
-// `@swizzle/runtime/platform` (src/platform.ts); `just check` keeps them out of this entry.
-
 export { placementInWords, runImageDiskWarning } from "@swizzle/db";
 export {
   assertBackupDestinationFree,

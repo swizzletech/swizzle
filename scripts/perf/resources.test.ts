@@ -39,7 +39,6 @@ test("a service's replicas report the sum of their containers", async () => {
     const container = request.url?.split("/")[2] ?? "";
     const read = (reads.get(container) ?? 0) + 1;
     reads.set(container, read);
-    // Replica a uses 1 CPU second and 2 MiB, replica b 2 CPU seconds and 3 MiB.
     const scale = container === "a" ? 1 : 2;
     response.end(
       JSON.stringify({
@@ -120,8 +119,6 @@ test("a sampler failure cancels and drains a workload that has not finished", as
 });
 
 test.each(["headers", "body"])("stats bounds a stalled %s read", async (phase) => {
-  // The read's deadline ends once the stall is in place: at the request for the headers, and right
-  // after the client took the response for the body.
   const deadlines = heldDeadlines(STATS_TIMEOUT_MS);
   if (phase === "body") {
     const expire = () => queueMicrotask(() => deadlines.expire());

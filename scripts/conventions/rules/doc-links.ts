@@ -2,7 +2,6 @@ import path from "node:path";
 import { lexer, walkTokens } from "marked";
 import type { Rule, Violation } from "../lint.js";
 
-// A label containing one code-formatted identifier names a symbol in the target file.
 const symbolLabel = /^`([A-Za-z_$][\w$]*)`$/u;
 
 function links(markdown: string): { label: string; href: string; line: number }[] {

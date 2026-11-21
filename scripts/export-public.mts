@@ -1,4 +1,3 @@
-// `just export-public <directory> [commit]` writes an independent public checkout, without history.
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -6,7 +5,6 @@ import path from "node:path";
 import { parseAllDocuments } from "yaml";
 import { exportConfiguration, PRIVATE_PATHSPECS, PUBLIC_CONFIG_FILES } from "./private-paths.ts";
 
-/** Resolve a formatter that matches the selected commit's lockfile. */
 async function selectedFormatter(directory: string): Promise<string> {
   const documents = parseAllDocuments(
     await readFile(path.join(directory, "pnpm-lock.yaml"), "utf8"),
@@ -34,7 +32,6 @@ async function selectedFormatter(directory: string): Promise<string> {
   return formatter;
 }
 
-/** Export a commit's public tree to a new directory; return the resolved source commit. */
 async function exportPublic(destination: string, commit: string): Promise<string> {
   const source = execFileSync(
     "git",
@@ -44,7 +41,6 @@ async function exportPublic(destination: string, commit: string): Promise<string
     },
   ).trim();
   const output = path.resolve(destination);
-  // mkdir without recursive refuses existing files, directories and symlinks. Never overwrite a checkout.
   await mkdir(output);
   try {
     const archive = execFileSync(
@@ -75,7 +71,6 @@ async function exportPublic(destination: string, commit: string): Promise<string
       );
       await writeFile(target, formatted);
     }
-    // The conventions inspect tracked files. Stage the archive, without creating a public commit or tag.
     execFileSync("git", ["-C", output, "add", "--all"]);
   } catch (error) {
     await rm(output, { recursive: true, force: true });

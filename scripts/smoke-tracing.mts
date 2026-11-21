@@ -1,5 +1,3 @@
-// A private OTLP/HTTP collector for `just smoke`. It checks spans exported by the packaged
-// processes, including their library instrumentation, rather than inspecting startup arguments.
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -9,7 +7,6 @@ import { promisify } from "node:util";
 import { cleanUpOnSignal, throwawayPrefix } from "./packaged-stack.mts";
 
 const execute = promisify(execFile);
-// A published Docker port works even when the host firewall refuses native host listeners.
 const COLLECTOR = `
   const { createServer } = await import("node:http");
   const exports = [];

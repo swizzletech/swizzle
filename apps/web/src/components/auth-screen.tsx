@@ -1,11 +1,3 @@
-// The screens a person sees before the dashboard: sign-in and setup (shell.tsx), accepting an
-// invitation and resetting a password (routes/account.tsx). Each renders inside AuthScreen, and
-// each that sets a password asks for it with NewPasswordField.
-//
-// Creating an account offers two-factor sign-in, preselected and never required: the form shows
-// TwoFactorChoice, its submit calls `startTwoFactor` after the account exists, and the screen then
-// renders TwoFactorOnboarding with what that returned.
-
 import type { ReactNode } from "react";
 import { useEffect, useId, useState } from "react";
 import { flushSync } from "react-dom";
@@ -36,15 +28,10 @@ export function AuthScreen(props: {
   );
 }
 
-/**
- * A new password with its rule underneath. Once a typed password is too short or too long, the rule
- * says by how much and the field is marked invalid, so a form whose button waits for it says why.
- */
 export function NewPasswordField(props: {
   readonly label: string;
   readonly value: string;
   readonly onChange: (value: string) => void;
-  /** Said after the rule while the password meets it. */
   readonly note?: string;
 }) {
   const id = useId();
@@ -73,7 +60,6 @@ export function NewPasswordField(props: {
   );
 }
 
-/** The checkbox on a form that creates an account. It starts checked; unchecking skips the step. */
 export function TwoFactorChoice(props: {
   readonly checked: boolean;
   readonly onChange: (checked: boolean) => void;
@@ -97,10 +83,8 @@ export function TwoFactorChoice(props: {
   );
 }
 
-/** What the step after account creation shows: an enrollment, or why none could start. */
 export type TwoFactorStart = TwoFactorEnrollment | { readonly failed: unknown };
 
-/** Starts two-factor setup for the account this browser just created and signed in. */
 export async function startTwoFactor(password: string): Promise<TwoFactorStart> {
   try {
     return await sessionApi.enableTwoFactor({ password });
@@ -109,14 +93,11 @@ export async function startTwoFactor(password: string): Promise<TwoFactorStart> 
   }
 }
 
-/** The step after account creation: the QR code with Skip, then the recovery codes once. */
 export function TwoFactorOnboarding(props: {
   readonly start: TwoFactorStart;
   readonly onDone: () => void;
 }) {
   const [codes, setCodes] = useState<readonly string[] | null>(null);
-  // The secret and the recovery codes are shown once, so a page the browser caches on leaving
-  // must not show them again on Back.
   const [left, setLeft] = useState(false);
   useEffect(() => {
     const forget = () => flushSync(() => setLeft(true));
@@ -153,7 +134,6 @@ export function TwoFactorOnboarding(props: {
     );
   } else {
     body = (
-      // The form sits in a narrow column here, so its buttons go below the code, not beside it.
       <div className="card rows overflow-hidden [&_.setting]:grid-cols-1">
         <TwoFactorSetup
           cancelLabel="Skip"
@@ -174,7 +154,6 @@ export function TwoFactorOnboarding(props: {
   );
 }
 
-/** The sentence for a failed sign-in or account request. */
 export function problemInWords(error: unknown): string | null {
   if (error instanceof ApiError) {
     const words = signInProblemInWords(error.code);

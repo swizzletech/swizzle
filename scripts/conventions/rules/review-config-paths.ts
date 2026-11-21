@@ -3,10 +3,8 @@ import { parse } from "yaml";
 import type { Rule } from "../lint.js";
 import type { Repo } from "../repo.js";
 
-/** The automated pull request review's configuration. */
 const REVIEW_CONFIG = ".coderabbit.yaml";
 
-/** A file named in backticks in review instructions: it has a directory or a file extension. */
 const NAMED_FILE =
   /`([\w.@*{},-]*(?:\/[\w.@*{},-]+)+|[\w.-]+\.(?:md|ts|tsx|mts|mjs|py|ya?ml|json))`/gu;
 
@@ -20,9 +18,7 @@ interface ReviewConfig {
   };
 }
 
-/** Every glob the configuration matches files with, and every file its instructions name. */
 function pointers(config: ReviewConfig): string[] {
-  // A comma inside braces separates a glob's alternatives, not two globs.
   const commaSeparated = (globs: string) => globs.split(/,(?![^{]*\})/u).map((glob) => glob.trim());
   return [
     ...(config.reviews?.path_filters ?? []).map((filter) => filter.replace(/^!/u, "")),
@@ -38,15 +34,12 @@ function pointers(config: ReviewConfig): string[] {
   ];
 }
 
-/** Whether `target` is a glob that matches a tracked file, or a tracked file or directory. */
 function resolves(repo: Repo, target: string): boolean {
   return /[*?{[]/u.test(target)
     ? repo.files.some((file) => path.posix.matchesGlob(file, target))
     : repo.exists(target);
 }
 
-// The review reads its rules from the files the configuration points at, and it skips a pattern
-// that matches nothing without saying so. A rename would quietly drop a rule from every review.
 export const reviewConfigPaths: Rule = {
   id: "review-config-paths",
   check(repo) {

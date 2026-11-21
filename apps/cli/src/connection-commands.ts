@@ -1,9 +1,3 @@
-/**
- * `swizzle connections list | inspect | authorize | test | delete`: OAuth connections over the API.
- * `authorize` answers with the URL a person opens and returns at once, so an agent relays it and
- * checks with `connections inspect`; `--wait` blocks until the person finishes, `--open` launches
- * a browser on this machine. No command prompts.
- */
 import { spawn } from "node:child_process";
 import type {
   AuthorizeConnectionResponse as AuthorizeResponse,
@@ -26,7 +20,6 @@ import {
 import { resolveCommandEnvironment } from "./environment-guard.js";
 import { AgentError, type CliIO, EXIT_CODES, respond } from "./output.js";
 
-/** `--project`: a connection belongs to a project and an environment, as a secret does. */
 interface ProjectOption {
   readonly project?: string;
 }
@@ -38,7 +31,6 @@ const PROJECT_OPTION = [
 
 type ConnectionOptions = ApiCommandOptions & ProjectOption;
 
-/** The API URL of a connection route in the command's environment and project. */
 async function connectionUrl(pathname: string, options: ConnectionOptions): Promise<string> {
   return buildApiUrl(
     pathname,
@@ -68,10 +60,6 @@ interface AuthorizeCommandOptions extends ConnectionOptions {
 const POLL_INTERVAL_MS = 2_000;
 const DEFAULT_POLL_TIMEOUT_SECONDS = 300;
 
-/**
- * What a list row and the detail view show of a connection; tokens never leave the API. A list can
- * span projects, and names are unique only within one, so each row names its project.
- */
 function connectionRow(connection: ConnectionMetadata) {
   return {
     name: connection.name,
@@ -177,7 +165,6 @@ function registerInspect(connections: Command, io: CliIO, runHandler: RunHandler
   });
 }
 
-/** The flags that name this connection, so a suggested command acts on it and no other. */
 const connectionTarget = (connection: ConnectionMetadata) =>
   `${connection.name} --project ${connection.project.slug} -e ${connection.environment}`;
 
@@ -251,7 +238,7 @@ function registerAuthorize(connections: Command, io: CliIO, runHandler: RunHandl
           method: "POST",
         },
       );
-      if (options.open === true && !openInBrowser(started.authorizationUrl)) {
+      if (options.open === true && !tryOpenInDetachedBrowser(started.authorizationUrl)) {
         io.stderr("Could not open a browser; open the URL yourself.\n");
       }
       let connection = started.connection;
@@ -339,11 +326,6 @@ function registerDelete(connections: Command, io: CliIO, runHandler: RunHandler)
   });
 }
 
-/**
- * Assemble the authorize request body from the CLI flags: reuse another
- * connection's credentials, provide fresh client id/secret (plus custom-oauth2
- * endpoints), or send neither to reconnect with the stored credentials.
- */
 function buildAuthorizeBody(options: AuthorizeCommandOptions): ConnectionAuthorizationRequest {
   const body: {
     -readonly [Key in keyof ConnectionAuthorizationRequest]: ConnectionAuthorizationRequest[Key];
@@ -401,7 +383,6 @@ function buildAuthorizeBody(options: AuthorizeCommandOptions): ConnectionAuthori
       body.providerConfig = { tenant: options.tenant };
     }
   } else if (options.provider) {
-    // Provider without credentials only makes sense alongside client id/secret.
     body.provider = options.provider;
   }
 
@@ -444,15 +425,13 @@ function parseScopes(raw: string | undefined): string[] {
     .filter((scope) => scope.length > 0);
 }
 
-// Best-effort browser launch for `--open`. Detaches so the CLI does not wait on it and swallows
-// failures; the URL is always in the answer.
-function openInBrowser(url: string): boolean {
+function tryOpenInDetachedBrowser(url: string): boolean {
   try {
     const platform = process.platform;
     const command = platform === "darwin" ? "open" : platform === "win32" ? "cmd" : "xdg-open";
     const args = platform === "win32" ? ["/c", "start", "", url] : [url];
     const child = spawn(command, args, { detached: true, stdio: "ignore" });
-    child.on("error", () => {});
+    child.on("error", () => undefined);
     child.unref();
     return true;
   } catch {

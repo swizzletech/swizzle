@@ -101,10 +101,8 @@ describe("wait routes", () => {
 
   describe("public wait links", () => {
     const sdkRoot = fileURLToPath(new URL("../../../packages/", import.meta.url));
-    // The longest step key a run may suspend on, in 3-byte UTF-8 characters: the longest token.
     const longestStep = `step-${"✓".repeat(250)}`;
 
-    // A platform whose worker gives runs their links, and an API whose dashboard reads its store.
     async function linkedServer() {
       vi.stubEnv("SWIZZLE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
       vi.stubEnv("SWIZZLE_LINK_URL", "https://links.example.com/");
@@ -126,7 +124,6 @@ describe("wait routes", () => {
         const runId = trigger.json().runId as string;
         const suspended = await platform.processNextPlatformRun();
         expect(suspended?.status, suspended?.stderr).toBe("waiting");
-        // The links as the SDK built them, which no API answer shows (the recipient gets them).
         const steps = await platform.store.listRunSteps({ runId });
         const links = steps.find((step) => step.stepKey === "links");
         const path = (url: string) => {
@@ -174,7 +171,6 @@ describe("wait routes", () => {
           url,
         });
 
-      // Opening the page, however often, decides nothing.
       for (let index = 0; index < 2; index += 1) {
         const page = await app.inject({ headers: owner, method: "GET", url: first });
         expect(page.statusCode).toBe(200);
@@ -229,8 +225,6 @@ describe("wait routes", () => {
       await app.close();
     });
 
-    // A link is a decision capability, so whoever may only read the run must not find it there:
-    // not in its output, steps, approval details, state, or a child run's payload.
     it("a run viewer finds no link that decides, and the recipient's link still does", async () => {
       vi.stubEnv("SWIZZLE_DASHBOARD_ORIGIN", DASHBOARD_ORIGIN);
       vi.stubEnv("SWIZZLE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
@@ -264,7 +258,6 @@ describe("wait routes", () => {
         );
         await deployFixture(app, directory, {}, { headers: owner });
       };
-      // The child reports whether it received the link itself, not a redacted copy.
       await deploy("api-link-child", [
         "  const payload = await sdk.readPayload();",
         "  console.log(JSON.stringify({ received: /\\/events\\/[0-9a-f-]{36}\\./.test(payload.link) }));",
@@ -346,12 +339,10 @@ describe("wait routes", () => {
       }
       expect(await waitingAt()).toBe("gate");
 
-      // The page shows the recipient this step's details, without another step's link.
       const page = await app.inject({ method: "GET", url: `/approvals/${gate}` });
       expect(page.body).toContain("https://links.example.com/events/[REDACTED]");
       expect(page.body).not.toContain(hook);
 
-      // The recipient's comment carries a link too; the approval record shows it redacted.
       const approved = await app.inject({
         headers: { "content-type": "application/x-www-form-urlencoded" },
         method: "POST",

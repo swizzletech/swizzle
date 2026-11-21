@@ -1,32 +1,15 @@
-// CPU time and resident memory of the stack's containers, read from the Docker Engine API. CPU is
-// the cgroup's cumulative usage, so the delta over the work is exact however long a sample takes;
-// memory is sampled every SAMPLE_MS and the peak kept, with how much memory the kernel has handed
-// the container in huge pages since it started. A service with several replicas reports their
-// sum: CPU and huge pages added up, and the peak of the replicas' summed memory. The automation
-// containers the worker starts per run belong to no compose service and are not counted.
-
 import { execFileSync } from "node:child_process";
 import { type IncomingMessage, request } from "node:http";
 import { setTimeout as delay } from "node:timers/promises";
 
-/** A container of a compose service; a service with replicas has one entry per container. */
 export interface Service {
   readonly name: string;
   readonly containerId: string;
 }
 
 interface Usage {
-  /** CPU seconds the container used while the work ran. */
   readonly cpuSeconds: number;
-  /** The largest resident memory a sample saw: anonymous plus shared memory, without page cache. */
   readonly rssPeakMiB: number;
-  /**
-   * Memory the kernel has handed the container in 2 MiB huge pages since it started. With
-   * transparent huge pages set to `always`, the host's memory at start decides whether a service
-   * gets them: an idle valkey holds 3 to 12 MiB from one start to the next. A huge page the kernel
-   * later splits stays resident as normal pages, so the pages held now understate the effect; the
-   * pages ever handed out bound it. Two runs' peaks can differ by up to this much with the same code.
-   */
   readonly hugePagesMiB: number;
 }
 
@@ -37,10 +20,8 @@ interface Sample {
 }
 
 const SAMPLE_MS = 250;
-/** The size of a transparent huge page with 4 KiB base pages, on x86-64 and arm64 alike. */
 const HUGE_PAGE = 2 * 2 ** 20;
 
-/** The Docker Engine's unix socket, from DOCKER_HOST or the current docker context. */
 function dockerSocket(): string {
   const host =
     process.env.DOCKER_HOST ||
@@ -56,7 +37,6 @@ function dockerSocket(): string {
 export const STATS_TIMEOUT_MS = 5_000;
 const MAX_STATS_BYTES = 2 ** 20;
 
-/** One bounded read, including headers, body and decoding. No event callback parses JSON. */
 async function sample(socketPath: string, containerId: string, stop: AbortSignal): Promise<Sample> {
   const deadline = AbortSignal.timeout(STATS_TIMEOUT_MS);
   const signal = AbortSignal.any([stop, deadline]);
@@ -97,7 +77,6 @@ async function sample(socketPath: string, containerId: string, stop: AbortSignal
     const counter = (key: string) => number(memory[key] ?? 0);
     return {
       cpuNanoseconds: number(cpu.total_usage),
-      // cgroup v1 reports rss and huge pages held now; v2 counts huge pages ever allocated.
       hugePageBytes:
         memory.anon === undefined
           ? counter("rss_huge")
@@ -120,12 +99,10 @@ async function sample(socketPath: string, containerId: string, stop: AbortSignal
 
 export interface Sampled<T> {
   readonly value: T;
-  /** The wall time of the work. */
   readonly seconds: number;
   readonly usage: ReadonlyMap<string, Usage>;
 }
 
-/** Runs `work` while sampling every service; returns its value, its duration and each service's usage. */
 export async function whileSampling<T>(
   services: readonly Service[],
   work: (signal: AbortSignal) => Promise<T>,
@@ -137,7 +114,6 @@ export async function whileSampling<T>(
     Promise.all(services.map((service) => sample(socketPath, service.containerId, signal)));
   const pending: Promise<unknown>[] = [];
   const names = [...new Set(services.map((service) => service.name))];
-  /** Adds up `value` of each service's containers in one round of samples. */
   const sum = (samples: readonly Sample[], value: (entry: Sample) => number) =>
     new Map(
       names.map((name) => [
@@ -174,7 +150,6 @@ export async function whileSampling<T>(
         record(await all(sampling.signal));
       }
     })();
-    // Both promises are observed immediately. The workload must pass this signal to its IO.
     const workload = Promise.resolve().then(async () => {
       const value = await work(lifetime.signal);
       return { seconds: (performance.now() - started) / 1000, value };

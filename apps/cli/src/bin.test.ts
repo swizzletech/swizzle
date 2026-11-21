@@ -12,7 +12,6 @@ import { VERSION } from "./version.js";
 
 const run = promisify(execFile);
 const bin = fileURLToPath(new URL("./bin.ts", import.meta.url));
-// A load hook that reports on stderr when main.ts, the root of the command graph, loads.
 const reportGraph =
   'data:text/javascript,import{registerHooks}from"node:module";registerHooks({load(url,context,next){if(url.endsWith("/src/main.ts"))process.stderr.write("graph loaded\\n");return next(url,context)}})';
 const swizzle = (...args: string[]) =>

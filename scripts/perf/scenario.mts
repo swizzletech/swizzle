@@ -1,5 +1,3 @@
-// Persist only known nonsecret settings from Compose's resolved configuration. Project names,
-// ports and credentials vary per throwaway stack and must never become result metadata.
 import type { PerfResult } from "./result.ts";
 
 const ENVIRONMENT = new Set([
@@ -49,7 +47,6 @@ function object(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-/** Each session reads its own resolved Compose model, including shell overrides and defaults. */
 export function stackScenario(json: string): PerfResult["scenario"] {
   const services = object(object(JSON.parse(json)).services);
   const worker = object(services.worker);

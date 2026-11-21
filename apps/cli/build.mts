@@ -48,7 +48,6 @@ for (const root of [...dependencyRoots].sort()) {
 }
 await writeFile(new URL("dist/THIRD-PARTY-NOTICES.txt", cli), notices.join("\n\n"));
 
-// npm receives only the executable, its assets and its one native runtime dependency.
 const output = new URL("build/npm/", cli);
 await rm(output, { recursive: true, force: true });
 await mkdir(output, { recursive: true });

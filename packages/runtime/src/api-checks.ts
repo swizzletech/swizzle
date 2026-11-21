@@ -1,15 +1,3 @@
-import { checkNeedsAttention } from "@swizzle/db";
-// API checks: an automation with `api_check.mode: active` ships a read-only check script that the
-// platform runs on its own schedule and once after each deploy. A check is its own
-// `automation_checks` record, never a run: it creates no run row, reads and writes no state, and
-// counts toward no run statistic. The scheduler enqueues due checks onto the automation's profile
-// queue; a worker claims one as a leased attempt, and the attempt service prepares it here and
-// records its outcome here.
-//
-// Passive recording lives here too: every run and check hands its `api_contact` events to
-// `recordApiContactLog`, which stores them and alerts once on a new retirement notice. Recording
-// is best effort: a failed write is logged and never decides a run's or a check's outcome.
-
 import type {
   ControlPlaneStore,
   ExecutionLease,
@@ -19,7 +7,7 @@ import type {
   StoredConnectionUsage,
   StoredSecretUsage,
 } from "@swizzle/db";
-import { ExecutionLeaseError } from "@swizzle/db";
+import { checkNeedsAttention, ExecutionLeaseError } from "@swizzle/db";
 import { ApiContactLog, readStructuredEvents } from "./api-signals.js";
 import { type CheckOutcome, checkOutcome, nextCheckState } from "./check-contract.js";
 import { type PreparedExecution, prepareDeployedExecution } from "./deployed-execution.js";
@@ -35,11 +23,6 @@ import { apiCheckSecretNames } from "./validation.js";
 const MAX_STDERR_TAIL_CHARS = 4_096;
 const MAX_WARNING_CHARS = 4_096;
 
-/**
- * Enqueues every due check of an environment; the job ID carries the due time, so a tick that sees
- * it again adds nothing. An automation has at most one check, so the list stays as short as the
- * environment's active automations, and a check stuck on an absent profile delays no other.
- */
 export async function enqueueDueChecks(input: {
   readonly environment: string;
   readonly now?: Date;
@@ -60,10 +43,8 @@ export async function enqueueDueChecks(input: {
   return due;
 }
 
-/** A lease on an API check, as the attempt service holds it. */
 export type CheckLease = ExecutionLease & { readonly checkId: string; readonly dueAt: string };
 
-/** The deployment whose check is still due at the lease's time, or null when it moved on. */
 export async function dueCheck(store: ControlPlaneStore, lease: CheckLease) {
   const check = await store.getAutomationCheck(lease.checkId);
   if (check === null || check.nextCheckAt !== lease.dueAt) return null;
@@ -72,11 +53,6 @@ export async function dueCheck(store: ControlPlaneStore, lease: CheckLease) {
   return { check, deployment };
 }
 
-/**
- * Prepares a claimed check for its worker: the deployed source, the check's own secrets and the
- * automation's connection tokens. A check keeps the secret and token versions it received for its
- * record, written with its outcome.
- */
 export async function prepareCheckExecution<T>(
   input: {
     readonly environment: NodeJS.ProcessEnv;
@@ -126,15 +102,9 @@ export async function prepareCheckExecution<T>(
   );
 }
 
-/**
- * Records a check's outcome under its lease. `execution` is the accepted, unredacted report, or
- * the error that kept the check from running, which makes the outcome undecided. A check whose
- * due time moved on, as after a deploy, records nothing.
- */
 export async function finishCheckExecution(input: {
   readonly execution: AutomationRunResult | { readonly error: unknown };
   readonly lease: CheckLease;
-  /** The contacts the check's output reported, also when an error ended it. */
   readonly signals: ExecutionSignals;
   readonly logger?: PlatformLogger;
   readonly redactor: OutputRedactor;
@@ -224,11 +194,6 @@ export async function finishCheckExecution(input: {
   return recorded;
 }
 
-/**
- * Stores what one run or check saw of each API host, and alerts once for each retirement notice
- * the write recorded first. The notice path and link pass through the attempt's redactor. It
- * never throws: a failure is logged, and the next attempt that reaches the host records it again.
- */
 export async function recordApiContactLog(input: {
   readonly automation: {
     readonly automationId: string;

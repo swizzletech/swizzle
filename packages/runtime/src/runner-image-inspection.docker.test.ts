@@ -119,7 +119,6 @@ it("reads the selected image's inventory without starting its entrypoint", async
       ],
     }),
   );
-  // The image need not even contain a runnable entrypoint to have a readable build record.
   await writeFile(
     path.join(directory, "Dockerfile"),
     'FROM scratch\nCOPY runner-tools.json /etc/swizzle/runner-tools.json\nENTRYPOINT ["/never-execute"]\n',

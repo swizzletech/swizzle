@@ -1,7 +1,3 @@
-// What every drawing of an automation's flow starts from: its flow.mermaid parsed to a graph, the
-// step sites of a deployment's entrypoint, how many recent runs reached each step, and where the
-// flow and the code disagree. The Runs, About and Play tabs share these reads through React Query.
-
 import {
   extractFlowNodeIds,
   type FlowDriftWarning,
@@ -18,28 +14,19 @@ import { parseFlow } from "./flow-source";
 import type { FlowGraph } from "./track";
 
 export interface AutomationFlow {
-  /** Null until parsed, and when the automation has no flowchart. */
   readonly graph: FlowGraph | null;
-  /** True while the diagram is still loading or parsing. */
   readonly pending: boolean;
-  /** The flow.mermaid source, for Mermaid's own drawing of a diagram that is not a flowchart. */
   readonly mermaid: string | null;
   readonly mermaidError: string | null;
   readonly source: AutomationSource | null;
-  /** Why the source request itself failed; `source.error` is the API's own report. */
   readonly sourceError: string | null;
   readonly refetchSource: () => void;
   readonly sites: readonly StepSite[];
-  /** The step families the code calls (`stepFamily`); a node of one of these ids is a station. */
   readonly families: ReadonlySet<string>;
   readonly reach: StepReach | null;
   readonly drift: readonly FlowDriftWarning[];
 }
 
-/**
- * The flow of one deployment: the active one, or the deployment of the run that shows. Both reads
- * are keyed by the deployment, which never changes once published, so they are read once.
- */
 export function useAutomationFlow(automationSlug: string, deploymentId: string): AutomationFlow {
   const { api, queryScope } = useDashboardClient();
   const diagram = useQuery({

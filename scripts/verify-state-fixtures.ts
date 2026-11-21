@@ -18,7 +18,6 @@ export async function commitDeploymentFixture(
 ): Promise<StoredDeployment> {
   const deployedAt = new Date().toISOString();
   const deploymentId = randomUUID();
-  // The config declares what the deployment binds, as a real deploy finds it.
   const named = (kind: "connection" | "secret") =>
     credentials.flatMap(({ credential }) => (credential.kind === kind ? [credential.name] : []));
   const base = createConfig(automationName, "1.0.0");

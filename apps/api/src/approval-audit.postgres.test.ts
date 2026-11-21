@@ -19,7 +19,6 @@ beforeEach(() => {
 
 const PASSWORD = "a long enough test passphrase";
 
-/** An approval step `gate` that the automation assigns to the team Finance. */
 const ASKS_FINANCE = [
   "const fs = require('node:fs');",
   "const steps = JSON.parse(fs.readFileSync(process.env.SWIZZLE_STEPS_FILE, 'utf8'));",
@@ -31,10 +30,6 @@ const ASKS_FINANCE = [
   "",
 ].join("\n");
 
-/**
- * An instance whose owner is signed in, with the team Finance. People sign in from their own
- * address each, so no sign-in budget is shared; `token` acts as the owner without a session.
- */
 async function office() {
   const stateDirectory = await temporaryDirectory("swizzle-approvals-");
   const accessStore = testAccessStore();
@@ -61,7 +56,6 @@ async function office() {
     return { browser, email, id };
   };
   const owner = await signIn("owner@office.test", "owner");
-  /** An agent token of the person: the same person, without a session. */
   const mint = async (userId: string) =>
     (
       await apiTokenStore.createToken({
@@ -101,6 +95,34 @@ async function office() {
 }
 
 describe("approvals, the audit and notifications over HTTP", () => {
+  it("omits public approval and event tokens from stored audit events", async () => {
+    const auditStore = testAuditStore();
+    const app = await buildTestServer({ auditStore });
+    onTestFinished(() => app.close());
+    const runId = "14e396cd-9490-42f8-8f78-7cc423336ee6";
+
+    for (const [kind, route, contentType, payload] of [
+      ["approval", "approvals", "application/x-www-form-urlencoded", "decision=approve"],
+      ["event", "events", "application/json", '{"paid":true}'],
+    ] as const) {
+      const token = createWaitLinkToken({ kind, runId, stepKey: "gate" });
+      const response = await app.inject({
+        headers: { "content-type": contentType },
+        method: "POST",
+        payload,
+        url: `/${route}/${token}`,
+      });
+      expect(response.statusCode).toBe(404);
+
+      const action = `POST /${route}/:token`;
+      const events = await auditStore.list({ environments: null, limit: 10, projectIds: null });
+      const event = events.find((entry) => entry.action === action);
+      expect(event).toMatchObject({ action, actor: { kind: "link" } });
+      expect(JSON.stringify(event)).not.toContain(token);
+      expect(event?.params).toEqual({});
+    }
+  });
+
   it("lets only the assignee decide, signed in, and an owner reassign with a reason", async () => {
     const {
       app,
@@ -147,7 +169,6 @@ describe("approvals, the audit and notifications over HTTP", () => {
     });
     const decide = `/runs/${runId}/approvals/gate`;
 
-    // Cy may run the automation but is not in Finance; Bo's token is Bo, but no session.
     const notCy = await cy.browser.send("POST", decide, { approved: true });
     expect([notCy.statusCode, notCy.json().code]).toEqual([403, "APPROVAL_NOT_ASSIGNED"]);
     const boByToken = await asToken(await mint(bo.id)).send("POST", decide, { approved: true });
@@ -165,7 +186,6 @@ describe("approvals, the audit and notifications over HTTP", () => {
       may: { decide: true, reassign: false },
     });
 
-    // Bo cannot reassign; the owner hands it to Cy and says why.
     const byBo = await bo.browser.send("PUT", `${decide}/assignee`, {
       reason: "mine",
       user: bo.email,
@@ -176,7 +196,6 @@ describe("approvals, the audit and notifications over HTTP", () => {
       user: cy.email,
     });
     expect(noReason.statusCode).toBe(400);
-    // The reason and the run are in the event before the assignee changes, not only after it.
     const reassign = platform.reassignApproval.bind(platform);
     let atChange: unknown;
     vi.spyOn(platform, "reassignApproval").mockImplementationOnce(async (change) => {
@@ -247,7 +266,6 @@ describe("approvals, the audit and notifications over HTTP", () => {
   it("keeps a deleted automation's audit for owners, and shows each actor and token", async () => {
     const { app, asToken, owner, ownerToken, platform, signIn } = await office();
     const cy = await signIn("cy@office.test");
-    // Refused before any handler runs: an instance route for a member, a body its schema rejects.
     expect((await cy.browser.send("POST", "/teams", { name: "Cy's" })).statusCode).toBe(403);
     const noDecision = await cy.browser.send("POST", "/runs/some-run/approvals/gate", {});
     expect(noDecision.statusCode).toBe(400);
@@ -332,7 +350,6 @@ describe("approvals, the audit and notifications over HTTP", () => {
     });
     expect(deploymentHistory[0].id).toBe(kept.at(-1)?.id);
 
-    // Cy administers nothing, so the audit shows Cy only what Cy did, refusals included.
     const own = (await cy.browser.send("GET", "/audit")).json().events as {
       action: string;
       actor: { userId?: string };
@@ -346,7 +363,6 @@ describe("approvals, the audit and notifications over HTTP", () => {
       ]),
     );
 
-    // The owner's tokens read the audit only as far as their scope reaches.
     const scoped = async (name: string, scope: object) =>
       asToken(
         (await owner.browser.send("POST", "/auth/tokens", { name, scope })).json().token as string,
@@ -361,7 +377,6 @@ describe("approvals, the audit and notifications over HTTP", () => {
     const far = await elsewhere.send("GET", "/audit?environment=local");
     expect([far.statusCode, far.json()]).toEqual([200, { events: [], next: null }]);
 
-    // The owner holds no grant on the project, so only the instance role allowed the rename.
     const folder = (
       await owner.browser.send("POST", "/automation-folders", { name: "Ops" })
     ).json();
@@ -372,9 +387,6 @@ describe("approvals, the audit and notifications over HTTP", () => {
     ]);
   });
 
-  // Only writing requests create audit events: a read an owner's instance role alone allows
-  // creates none, and neither does a dry run, which changes nothing. So an automation's change
-  // history lists exactly its changes.
   it("shows a deploy as exactly its change in the automation's history", async () => {
     const { app, asOwnerToken, ownerToken } = await office();
     const automation = await createAutomationFixture({
@@ -392,7 +404,6 @@ describe("approvals, the audit and notifications over HTTP", () => {
       ).map((event) => event.action);
     const before = await actions("limit=200");
 
-    // `swizzle validate` before the first apply, the apply, and `swizzle apply --dry-run` after.
     expect((await deploy({ dryRun: true })).json()).toMatchObject({ action: "create" });
     expect((await deploy({})).statusCode).toBe(200);
     expect((await deploy({ dryRun: true })).json()).toMatchObject({ action: "noop" });
@@ -480,7 +491,6 @@ describe("approvals, the audit and notifications over HTTP", () => {
       );
     }
 
-    // A rule reaches only what its person may read, and belongs to that person.
     const blind = await cy.browser.send("POST", "/notifications/rules", {
       automationName: "crash-a",
       chatId: "-1001",
@@ -507,7 +517,6 @@ describe("approvals, the audit and notifications over HTTP", () => {
       expect((await platform.processNextPlatformRun())?.status).toBe("dead-lettered");
     };
     await crash("crash-a");
-    // A member reads the history of their own rules alone, for automations they read.
     const own = async (who: typeof bo) => {
       const answer = await who.browser.send("GET", "/notifications/deliveries");
       return [
@@ -524,7 +533,6 @@ describe("approvals, the audit and notifications over HTTP", () => {
     ).toBeLessThan(300);
     await crash("crash-b");
 
-    // No bot token is set, so a delivery Bo may receive stops there; Telegram is never called.
     const deliveries = (await owner.browser.send("GET", "/notifications/deliveries")).json()
       .deliveries as { automationSlug: string; metadata: { reason?: string }; status: string }[];
     expect(
@@ -538,7 +546,6 @@ describe("approvals, the audit and notifications over HTTP", () => {
       "crash-a skipped missing-telegram-bot-token",
       "crash-b skipped access-revoked",
     ]);
-    // Out of Finance, Bo reads neither automation, so neither delivery names it to him.
     expect(await own(bo)).toEqual([200, []]);
   });
 });

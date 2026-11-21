@@ -26,11 +26,6 @@ const MAX_BUNDLE_FILES = 10_000;
 
 const BUNDLE_ENTRY_TYPES = new Set(["Directory", "File", "OldFile", "ContiguousFile"]);
 
-/**
- * A tar `filter` that refuses traversal, links and decompression bombs. tar calls the filter
- * outside the extract pipeline's error path, where a throw crashes the process, so the filter
- * reports a refusal through `reject`, which must stop the extraction, and skips the entry.
- */
 export function createBundleEntryFilter(
   reject: (error: Error) => void,
 ): (entryPath: string, entry: { readonly size?: number; readonly type?: string }) => boolean {
@@ -68,9 +63,6 @@ export function createBundleEntryFilter(
 }
 
 export function registerDeploymentRoutes(app: ApiServer, options: DeploymentRouteOptions): void {
-  // Every check apply makes, answered instead of building: what `swizzle validate` and
-  // `swizzle apply --dry-run` show (deployment-check.ts). It changes nothing, so it creates no
-  // audit event (ADR 0016).
   app.post<{ Reply: DeploymentCheckResponse }>(
     "/deployment-checks",
     async (request) =>
@@ -116,10 +108,6 @@ interface DeploymentRouteOptions {
   readonly platform: PlatformServices;
 }
 
-/**
- * Reads the multipart upload `swizzle apply` sends, a `bundle` file and a `meta` JSON field,
- * extracts the bundle into a temporary directory and calls `use` with the deploy options for it.
- */
 async function withUploadedAutomation<T>(
   request: FastifyRequest,
   options: DeploymentRouteOptions,
@@ -142,7 +130,6 @@ async function withUploadedAutomation<T>(
     environment?: string;
     force?: boolean;
     expectedContentHash?: string;
-    /** The project a new automation joins, by id or slug; an existing one stays where it is. */
     project?: string;
   } = {};
 
@@ -170,8 +157,6 @@ async function withUploadedAutomation<T>(
   if (bundle === null) {
     return requestValidationError("bundle field is required (multipart file).");
   }
-  // Multipart fields bypass the route schemas, so the environment rule every query follows is
-  // applied here.
   if (
     meta.environment !== undefined &&
     (typeof meta.environment !== "string" || !ENVIRONMENT_NAME_PATTERN.test(meta.environment))

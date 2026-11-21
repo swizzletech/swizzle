@@ -1,11 +1,3 @@
-// Who may use and manage one secret or connection: every person, team and service account with a
-// right on it and where that right comes from (a grant to them, to a team of theirs, or their
-// role), and the projects it is shared with. Someone who manages it adds and removes grants here;
-// anyone else with a right sees the same list read-only. The Credentials page opens it per row.
-//
-// The holders and their rights come from the API's policy (GET /credentials/:kind/:name/access);
-// this panel shows them and never derives what a grant allows.
-
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
@@ -114,10 +106,8 @@ function LoadedAccess(props: {
   );
 }
 
-/** One holder: their right, every source of it, and Remove for a grant that names them. */
 function CredentialHolderRow(props: {
   readonly holder: CredentialHolder;
-  /** Null when the viewer may not change grants. */
   readonly onRemove: (() => void) | null;
   readonly removing: boolean;
 }) {
@@ -156,7 +146,6 @@ function CredentialHolderRow(props: {
   );
 }
 
-/** Gives a person, team or service account use or manage, replacing a right they hold by grant. */
 function GrantForm(props: {
   readonly access: CredentialAccessView;
   readonly credential: CredentialRef;

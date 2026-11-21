@@ -15,7 +15,6 @@ export interface DeploymentTriggerLookup {
   ) => Promise<readonly { readonly automationId: string }[]>;
 }
 
-/** The parts of a deployment its trigger row derives from. */
 export type TriggerDeployment = Pick<
   StoredDeployment,
   "automationId" | "projectId" | "deployedAt" | "deploymentId" | "environment" | "versionId"
@@ -118,7 +117,6 @@ export async function buildDeploymentTriggerInput(
   }
 }
 
-/** Refuse absent and other-project sources identically before their config is published. */
 export async function resolveChainSources(
   deployment: Pick<TriggerDeployment, "config" | "environment" | "projectId">,
   lookup: DeploymentTriggerLookup["getActiveDeploymentBySlug"],
@@ -141,10 +139,6 @@ export async function resolveChainSources(
   return sources;
 }
 
-/**
- * The automations the deployed one triggers through active chains, directly or transitively, and
- * itself. A source in this set would close a cycle.
- */
 async function collectDownstreamAutomationIds(
   deployment: TriggerDeployment,
   lookup: DeploymentTriggerLookup,

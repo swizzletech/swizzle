@@ -1,6 +1,3 @@
-// The `automation_checks` record of an active API check and the `api_contacts` rows runs and
-// checks report. A deploy writes the check row inside its transaction; a check job writes its
-// outcome only while the due time it ran for is still the row's due time.
 import { and, asc, eq, inArray, lte, sql } from "drizzle-orm";
 
 import { deploymentCheckInput, mergeApiContact } from "./api-check-rules.js";
@@ -24,11 +21,6 @@ import {
 
 type ControlPlaneTransaction = Parameters<Parameters<DatabaseClient["db"]["transaction"]>[0]>[0];
 
-/**
- * Points the automation's check at the new deployment and makes it due at once, so every deploy
- * is checked. A new deployment starts a new failure count; the last green output stays for
- * comparison. A deployment without an active check removes the row.
- */
 export async function syncDeploymentCheckInTransaction(
   tx: ControlPlaneTransaction,
   deployment: Pick<
@@ -130,7 +122,6 @@ export async function getAutomationCheck(
   return row === undefined ? null : mapCheckRow(row);
 }
 
-/** The checks of the automations in `automationIds`, for the dashboard. */
 export async function listAutomationChecks(
   client: DatabaseClient,
   environment: string,
@@ -211,7 +202,6 @@ export async function recordApiContacts(
 ): Promise<readonly StoredApiContact[]> {
   if (input.contacts.length === 0) return [];
   return await client.db.transaction(async (tx) => {
-    // A row lock cannot cover a host's first contact, so concurrent attempts queue on one key.
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtextextended(${`api-contacts:${input.automationId}:${input.environment}`}, 0))`,
     );
@@ -263,7 +253,6 @@ export async function recordApiContacts(
   });
 }
 
-/** The API contacts of the automations in `automationIds`, most recent contact first. */
 export async function listApiContacts(
   client: DatabaseClient,
   environment: string,

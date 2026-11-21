@@ -59,8 +59,6 @@ async function verifyAuth(client: DatabaseClient): Promise<void> {
     "a uuid column refuses text that is not a UUID",
   );
   await verifyHashesAtRest(client, auth, owner);
-  // Each race below signs in from new browsers, which share the account's budgets; every section
-  // starts from full budgets, so one section's attempts do not decide the next one's.
   const { recoveryCodes, secret } = await verifySingleUseCodes(client, owner, browser);
   assert.equal(await auth.accountsWithoutTwoFactor(), 0);
   await client.pool.query("DELETE FROM auth_budgets");
@@ -81,11 +79,6 @@ async function verifyAuth(client: DatabaseClient): Promise<void> {
   );
 }
 
-/**
- * Two setups with different emails both pass the "no account yet" check while each hashes its
- * password; the claim in the user insert's transaction lets one create an account. The accounts
- * and budgets are removed afterwards, so the rest starts from a fresh instance.
- */
 async function verifySetupOnce(
   client: DatabaseClient,
   browser: (address?: string) => AuthBrowser,
@@ -104,7 +97,6 @@ async function verifySetupOnce(
   assert.deepEqual(statuses.sort(), [200, 409]);
   const { rows } = await client.pool.query<{ count: string }>("SELECT count(*) FROM auth_users");
   assert.equal(rows[0]?.count, "1");
-  // The account that won is the first owner and the team Release's only member.
   const winner = await client.pool.query<{ id: string }>("SELECT id FROM auth_users");
   const release = await client.pool.query<{ id: string }>(
     "SELECT user_id AS id FROM team_members WHERE team_id = $1",
@@ -115,7 +107,6 @@ async function verifySetupOnce(
   await client.pool.query("DELETE FROM auth_budgets");
 }
 
-/** A2: the row holds H(token), and the row's value signed as a cookie opens nothing. */
 async function verifyHashesAtRest(
   client: DatabaseClient,
   auth: SwizzleAuth,
@@ -138,7 +129,6 @@ async function verifyHashesAtRest(
   assert.ok(await owner.person());
 }
 
-/** A4: a new auth instance on the same database spends the budget the old one left. */
 async function verifyBudgetsOutliveTheServer(
   start: () => SwizzleAuth,
   browser: (address?: string) => AuthBrowser,
@@ -157,10 +147,6 @@ async function verifyBudgetsOutliveTheServer(
   await restarted.close();
 }
 
-/**
- * A3: of three challenges racing one code, one opens a session; a later challenge with the same
- * code opens none. Returns the recovery codes and the TOTP secret.
- */
 async function verifySingleUseCodes(
   client: DatabaseClient,
   owner: AuthBrowser,
@@ -174,7 +160,6 @@ async function verifySingleUseCodes(
     (await owner.post("/two-factor/verify-totp", { code: authenticatorCode(secret) })).status,
     200,
   );
-  // Turning 2FA on replaced the session; the replacement keeps the first sign-in's end.
   assert.equal((await sessionEnd(client)).getTime(), before.getTime());
 
   const nextCode = authenticatorCode(secret, new Date(Date.now() + 30_000));
@@ -199,7 +184,6 @@ async function verifySingleUseCodes(
   return { recoveryCodes: enabled.body?.backupCodes as string[], secret };
 }
 
-/** A4: the persisted row ends a session at its idle and its absolute limit. */
 async function verifySessionLimits(
   client: DatabaseClient,
   auth: SwizzleAuth,
@@ -226,11 +210,6 @@ async function verifySessionLimits(
   );
 }
 
-/**
- * Of two challenges racing one recovery code, one opens a session. Better Auth answers the loser
- * of its compare-and-swap with 409 and a later attempt with 401; either opens nothing. Returns the
- * browser that signed in.
- */
 async function verifyRecoveryCode(
   browser: (address?: string) => AuthBrowser,
   recoveryCodes: readonly string[],
@@ -245,10 +224,6 @@ async function verifyRecoveryCode(
   return racers[signedIn.indexOf(true)] as AuthBrowser;
 }
 
-/**
- * After `just db-reencrypt` and dropping the old key, the TOTP secret and the recovery codes still
- * open, and a cookie signed under the old key opens nothing.
- */
 async function verifyKeyRotation(
   client: DatabaseClient,
   start: () => SwizzleAuth,
@@ -274,7 +249,6 @@ async function verifyKeyRotation(
     );
     const browser = new AuthBrowser(rotated, ORIGIN, "192.0.2.20");
     await browser.post("/sign-in/email", PERSON);
-    // A secret that no longer decrypts answers 500; a wrong code for a readable one answers 401.
     assert.equal(
       (
         await browser.post("/two-factor/verify-totp", {
@@ -290,7 +264,6 @@ async function verifyKeyRotation(
     assert.ok(await browser.person());
     await rotated.close();
   } finally {
-    // Assigning undefined to process.env stores the text "undefined", which later steps read.
     for (const [name, value] of [
       ["SWIZZLE_ENCRYPTION_KEY", environment.current],
       ["SWIZZLE_ENCRYPTION_PREVIOUS_KEYS", environment.previous],
@@ -303,10 +276,6 @@ async function verifyKeyRotation(
 
 const ANNA = { email: "anna@example.com", name: "Anna", password: "anna's long passphrase" };
 
-/**
- * Two browsers race one owner invitation for the same address; one account comes of it. Returns
- * both owners' ids, Ada's first.
- */
 async function verifyInvitationOnce(
   client: DatabaseClient,
   auth: SwizzleAuth,
@@ -338,7 +307,6 @@ async function verifyInvitationOnce(
   return [adaId, accounts.rows[0]?.id ?? ""];
 }
 
-/** Suspension writes suspended_at, deletes the person's session rows and refuses the password. */
 async function verifySuspension(
   client: DatabaseClient,
   auth: SwizzleAuth,
@@ -360,7 +328,6 @@ async function verifySuspension(
   await auth.setSuspended(ownerId, person.user.id, false);
 }
 
-/** Two owners step down at once; one stays an owner. Returns the one who became an admin. */
 async function verifyLastOwnerRace(
   client: DatabaseClient,
   auth: SwizzleAuth,
@@ -375,11 +342,6 @@ async function verifyLastOwnerRace(
   return results[0]?.status === "fulfilled" ? owners[0] : owners[1];
 }
 
-/**
- * An admin suspends a member while an owner's transaction, holding the account-management lock, promotes that
- * member. The admin's change waits on that lock, then reads the person as an owner and is
- * refused; the member's promotion stands and they are not suspended.
- */
 async function verifyPromotionWhileWaiting(
   client: DatabaseClient,
   auth: SwizzleAuth,
@@ -435,7 +397,7 @@ async function sessionEnd(client: DatabaseClient): Promise<Date> {
   return rows[0].expires_at;
 }
 
-it("auth", async () => {
+it("enforces session expiry, single-use codes, and account changes under contention", async () => {
   const client = testDatabase();
   await verifyAuth(client);
 });

@@ -206,3 +206,16 @@ The SDK `claim(key)` uses the step key `claim:<key>`, and its step helpers refus
 | Structured log line | `logStep` | `log_step` |
 | HTTP call that records `api_contact` | `apiFetch` | `api_request` |
 | Report an API change and exit | `contractChanged` | `contract_changed` |
+
+The Python and TypeScript scaffolds copy the SDK into the automation directory. The copy needs no published package.
+
+- Metadata includes the [attempt, execution number, and trigger type](#environment-variables). A `webhook` has passed the trigger's signature check when one is configured.
+- State reads use the run's snapshot. State writes and deletes emit events for the platform to persist. Values must round-trip through JSON. TypeScript rejects `NaN`, infinities, `Date`, `Map`, `Set`, fields set to `undefined`, getters, and `toJSON` methods. Python rejects non-finite numbers.
+- A durable step calls its callback only when the step has no stored result. Retries and resumes return that result. For a step with no meaningful result, return `undefined` in TypeScript or `None` in Python. Both store JSON `null`.
+- `sleepUntil` and `sleep_until` accept an ISO timestamp or the language's date-time object. A sleep, child invocation, event wait, or approval wait without a stored result writes a [suspend sentinel](#suspend-sentinel) and exits with code `0`. When the platform restarts the entrypoint, the helper returns the [stored resume value](#resume-values). Check the child result's `status` for `dead-lettered`.
+- `requestApproval` and `request_approval` accept an assignee by person email or team name. An assignee decides while signed in. For an unassigned approval, anyone with permission to run the automation or anyone holding the approval link can decide. The result records the assignee at decision time.
+- Send an approval link inside a durable step so the entrypoint can resume without sending it again. An approval or event link works only while the run waits at its step and before the link expires. A third party can POST JSON to the event callback URL without a Swizzle credential. The request body becomes the event value.
+- The connection helpers read the injected access token for a connection declared in `config.yaml` and throw if the token is missing. The platform refreshes tokens before it injects them. The expiry helpers return the provider's ISO expiry when supplied, and otherwise return `null` in TypeScript or `None` in Python. Refresh tokens and client secrets stay on the platform.
+- `recordRateLimitUsage` and `record_rate_limit_usage` only record usage for run statistics. Use `pace` to space calls within one process using `runtime.rate_limits`. An unknown group emits one warning and leaves the call unpaced.
+- The HTTP helpers report API contact after receiving response headers. After redirects they report the URL that answered. The Python helper returns an `ApiResponse` for HTTP error statuses.
+- Give `contractChanged` or `contract_changed` the API, field, expected shape, and observed shape. For example, pass `api.example.com`, `items[].amount`, `a number`, and `a string`. The event marks drift in an API check or fails an automation run with `UPSTREAM_CONTRACT_CHANGED`.

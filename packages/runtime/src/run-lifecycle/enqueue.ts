@@ -28,12 +28,6 @@ import { getRunOrThrow } from "./records.js";
 
 const QUEUED_RUN_PAGE_SIZE = 100;
 
-/**
- * Enqueues every queued run whose BullMQ job is gone: runs that never had an attempt get
- * their job back, suspended segments get their resume job, and retries keep their remaining
- * delay and segment budget. PostgreSQL holds the rows, so this recovers what a Valkey
- * restart lost. The scheduler's reconcile tick calls it.
- */
 export async function reconcileQueuedRunsWithStore(
   store: ControlPlaneStore,
   queue: RunQueueProducer,

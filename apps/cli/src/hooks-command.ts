@@ -1,8 +1,3 @@
-/**
- * `swizzle hooks install | status | remove`: registers the home view as a SessionStart hook in
- * Claude Code and Codex and as an ambient plugin in OpenCode (axi-sdk-js), so every agent session
- * starts with Swizzle's live state. Only this command writes agent config.
- */
 import { type Command, Option } from "commander";
 
 import {
@@ -21,7 +16,6 @@ interface ScopeOptions {
   readonly scope: Scope;
 }
 
-/** axi-sdk-js's root entry loads its update checker too, so it loads only when this runs. */
 async function sdk() {
   return await import("axi-sdk-js");
 }

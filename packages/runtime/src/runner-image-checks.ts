@@ -12,19 +12,16 @@ export interface RunnerImageReport {
   readonly result: RunnerImageResult;
 }
 
-/** Read-only requests stay with the API process; workers inspect images through their own broker. */
 export interface RunnerImageChecks {
   workers(
     runtime: AutomationRuntimeConfig,
     workers: readonly ReadinessWorker[],
-    /** Stops this caller's wait without ending a shared inspection for other callers. */
     signal?: AbortSignal,
   ): Promise<readonly ReadinessWorker[]>;
   exchange(workerId: string, reports: readonly RunnerImageReport[]): readonly RunnerImageRequest[];
   close(): void;
 }
 
-/** Read-only image checks can be repeated after an API restart; they never authorize execution. */
 export function createRunnerImageChecks(): RunnerImageChecks {
   const pending = new Map<
     string,
@@ -76,7 +73,6 @@ export function createRunnerImageChecks(): RunnerImageChecks {
         pending.delete(id);
         for (const waiter of waiters) waiter(result);
       };
-      // Includes the worker's next poll and a storage operation on its Docker daemon.
       const timer = setTimeout(
         () => finish({ kind: "unavailable", message: "Runner image inspection timed out." }),
         80_000,

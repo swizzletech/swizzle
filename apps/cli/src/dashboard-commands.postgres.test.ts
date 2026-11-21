@@ -18,7 +18,6 @@ import {
 
 import { runCli } from "./main.js";
 
-// Commands that talk to an API instance, run against a real in-process API server with PostgreSQL stores.
 useCliTestEnvironment();
 
 describe("dashboard commands", () => {
@@ -201,7 +200,6 @@ describe("dashboard commands", () => {
     const billing = await accessStore.createProject({ name: "Billing", slug: "billing" });
     const hello = { automationName: "hello-webhook", automationSlug: "hello-webhook" };
     const dashboard = createDashboardStub("hello-webhook");
-    // Only the fields the home view reads; the API passes the overview through as it is.
     const overview = {
       environment: "local",
       last24h: { failed: 1 },
@@ -283,7 +281,6 @@ describe("dashboard commands", () => {
       expect(exitCode).toBe(6);
       expect(JSON.parse(io.stdoutText).code).toBe("AUTOMATION_NOT_FOUND");
 
-      // A name one punctuation mark away is not rewritten into the visible slug.
       const punctuated = createBufferIO();
       expect(
         await runCli(

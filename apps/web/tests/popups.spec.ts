@@ -2,9 +2,6 @@ import { expect, type Page, test } from "@playwright/test";
 
 import { mockDashboardApi, PROJECT_ID, seededState } from "./dashboard-mock";
 
-// Every popup closes on a click outside it and on Escape, and Escape returns focus to the button
-// that opened it: the menus that open under their button and the Delete project dialog.
-
 interface MenuCase {
   readonly name: string;
   readonly open: (page: Page) => Promise<void>;

@@ -7,7 +7,6 @@ import { createQueueNameForProfile } from "@swizzle/runtime";
 import type { PlatformServices } from "@swizzle/runtime/platform";
 import { Queue } from "bullmq";
 
-/** Called with the live workers of verify-multi-worker; never restarts them. */
 export async function verifyRetryRecovery(
   platform: PlatformServices,
   profile: string,

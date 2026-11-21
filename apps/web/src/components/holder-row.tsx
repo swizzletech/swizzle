@@ -1,7 +1,3 @@
-// One holder of access as every holder list shows them: name, email, what kind of holder, a
-// suspension and a team's size, then what they hold, then the row's one action. The Access tab,
-// a service account's card and a credential's access list use it.
-
 import type { ReactNode } from "react";
 
 import type { Holder } from "../lib/api";
@@ -16,9 +12,7 @@ function holderKind(holder: Holder): string {
 export function HolderRow(props: {
   readonly holder: Holder;
   readonly testId: string;
-  /** Chips after the holder's kind, such as their right on a credential. */
   readonly chips?: ReactNode;
-  /** What they hold and where it comes from, one line each. */
   readonly children: ReactNode;
   readonly action?: ReactNode;
 }) {

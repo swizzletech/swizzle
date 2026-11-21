@@ -36,40 +36,28 @@ import {
 import { createQueueNameForProfile } from "./runtime-requirements.js";
 import type { ExecutionAssignment, PreparationSnapshot } from "./worker-wire.js";
 
-/**
- * A queued job waiting for a worker that may take it. The job ends once a worker claims it:
- * from then on the lease in PostgreSQL owns the execution.
- */
 interface Offer {
   readonly id: string;
   readonly data: QueueJobData;
   readonly target: PlacementTarget;
   readonly rateLimits: Record<string, string>;
   claimers: number;
-  /** True once a worker claimed the offer, false once it was withdrawn. */
   readonly claimed: Promise<boolean>;
   readonly settle: (claimed: boolean) => void;
 }
-/** The worker routes' server side. Requests of an accepted execution go to the execution service. */
 export interface ServerDispatch extends Omit<ExecutionService, "prepare"> {
   preparations(
     identity: RegisteredWorker,
     knownIds: readonly string[],
   ): Promise<PreparationSnapshot>;
   recordRunImage(identity: RegisteredWorker, deploymentId: string, tag: string): Promise<void>;
-  /** The run image tags this worker's next prune pass keeps. */
   runImageKeep(identity: RegisteredWorker): Promise<readonly string[]>;
   pull(identity: RegisteredWorker, signal?: AbortSignal): Promise<ExecutionAssignment | null>;
   renew(identity: WorkerIdentity, lease: LeaseRef): Promise<ExecutionLease>;
-  /** Stops admission and unblocks requests before listeners drain. */
   stop(): void;
   close(): Promise<void>;
 }
 
-/**
- * BullMQ offers, claims and the reconcile loop live here. Executors see only an assignment and
- * scoped replies; a claimed execution belongs to its lease in PostgreSQL, not to this process.
- */
 export async function createServerDispatch(options: {
   readonly registry: WorkerRegistry;
   readonly dispatch: DispatchStore;
@@ -127,7 +115,6 @@ export async function createServerDispatch(options: {
     };
     offers.get(id)?.settle(false);
     offers.set(id, offer);
-    // Offers without a matching claimant yield their BullMQ slot to other grants.
     const offerTimer = setInterval(() => {
       if (offer.claimers === 0 && offers.get(id) === offer) {
         offers.delete(id);
@@ -162,8 +149,6 @@ export async function createServerDispatch(options: {
       processRunTerminalEffects({ run, store }),
     );
     startNotifications();
-    // PostgreSQL reconstructs jobs lost with Valkey or an interrupted enqueue, and enqueues a
-    // retry once its execution ended.
     await reconcileQueuedRunsWithStore(store, queue, {});
     for (const worker of await options.registry.list()) {
       if (worker.state === "revoked") continue;
@@ -257,10 +242,8 @@ export async function createServerDispatch(options: {
       const deadline = Date.now() + 15_000;
       while (!closing && !signal?.aborted && Date.now() < deadline) {
         for (const offer of offers.values()) {
-          // Slots free up during the long poll; the claim counts them again under the worker lock.
           const fit = workerFit(worker, offer.target);
           if (fit !== "ready" && fit !== "busy") continue;
-          // Rate admission precedes claiming: a blocked run remains queued without spending an attempt.
           const admit = async () =>
             (
               await checkAndRecordRunRateLimits({

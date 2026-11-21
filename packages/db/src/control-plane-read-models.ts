@@ -336,7 +336,6 @@ export async function getRunById(client: DatabaseClient, runId: string): Promise
     executions: executionRows.map((row, index) =>
       mapExecutionRow(
         row,
-        // Only a suspended execution has a wait, and the next one resumed after it.
         executionRows[index - 1]?.wait ?? null,
         secretUsagesByExecution.get(row.executionNumber) ?? [],
         connectionUsagesByExecution.get(row.executionNumber) ?? [],
@@ -385,7 +384,6 @@ export async function getRunById(client: DatabaseClient, runId: string): Promise
   };
 }
 
-/** A rule's columns, with its automation's name read through a left join on `automations`. */
 export const NOTIFICATION_RULE_COLUMNS = {
   automationId: automations.id,
   automationName: automations.name,

@@ -59,24 +59,16 @@ export type ResolveWaitingEventRunResult =
   | { readonly status: "not-waiting"; readonly run: PlatformRunRecord }
   | { readonly status: "key-mismatch"; readonly run: PlatformRunRecord };
 
-/** The open wait a valid link resolves, with what its public page shows. */
 export interface OpenWaitRecord {
   readonly automationName: string;
   readonly details: unknown | null;
-  /** When the link stops working: the wait's `until`, or a bounded default after it began. */
   readonly expiresAt: string;
   readonly runId: string;
   readonly stepKey: string;
 }
 
-/**
- * What a public link finds. `closed` is a valid link whose wait is over (decided, timed out,
- * expired or cancelled); `not-found` is everything else, a forged token included. A valid link
- * names its run as `target`, so the audit event of a link request names it too.
- */
 export type WaitLinkLookupResult =
   | { readonly status: "open"; readonly target: AuditTarget; readonly wait: OpenWaitRecord }
-  /** An approval assigned to a person or a team: only they decide it, signed in. */
   | {
       readonly status: "assigned";
       readonly target: AuditTarget;
@@ -96,26 +88,12 @@ export type PlatformRunStatus = DbPlatformRunStatus;
 
 export interface PlatformDeployOptions extends DeployAutomationOptions {
   readonly environment: string;
-  /**
-   * The source hash the uploader computed from the same files. A different server hash refuses the
-   * deployment with `DEPLOYMENT_CONTENT_HASH_MISMATCH` before anything is stored or activated.
-   */
   readonly expectedSourceHash?: string;
   readonly force?: boolean;
-  /**
-   * Picks the project the automation belongs to, given the project it already has, and throws to
-   * refuse the deployment; the API checks the deployer's access here. Without it an existing
-   * automation keeps its project and a new one joins DEFAULT_PROJECT_ID.
-   */
   readonly project?: (automation: {
     readonly automationSlug: string;
     readonly current: AutomationOwner | null;
   }) => Promise<string>;
-  /**
-   * Called with what a changed version would bind, before the build and again right before the
-   * commit; throws to refuse a credential the deployer may not use. The API checks the deployer's
-   * use rights here.
-   */
   readonly credentials?: (
     bound: readonly DeploymentCredential[],
     projectId: string,
@@ -188,7 +166,6 @@ interface DecideApprovalOptions {
   readonly approved: boolean;
   readonly comment: string | null;
   readonly decidedBy: ApprovalDecider;
-  /** The assignee the decider was checked against; the decision lands only while it holds. */
   readonly assignee: ApprovalAssignee | null;
 }
 
@@ -205,10 +182,8 @@ interface WaitLinkOptions {
 }
 
 export interface CreateNotificationRuleOptions {
-  /** The person the rule belongs to and reaches. */
   readonly userId: string;
   readonly projectId: string;
-  /** Null for a rule that covers every automation of the project. */
   readonly automationId: string | null;
   readonly chatId: string;
   readonly cooldownSeconds?: number;
@@ -230,15 +205,10 @@ interface UpdateNotificationRuleOptions {
 
 interface ListNotificationDeliveriesOptions {
   readonly automationName?: string;
-  /** Only deliveries created at or after this ISO time. */
   readonly createdSince?: string;
   readonly environment: string;
   readonly eventType?: NotificationDeliveryEventType;
   readonly limit?: number;
-  /**
-   * Only deliveries of the rules this person made, for automations they still read: a rule
-   * outlives the grant it was made under.
-   */
   readonly ruleOwner?: { readonly userId: string; readonly scope: ReadScope };
   readonly status?: NotificationDeliveryStatus;
 }
@@ -300,7 +270,6 @@ export interface StartPlatformWorkerOptions {
   readonly concurrency?: number;
   readonly environment?: NodeJS.ProcessEnv;
   readonly logger?: PlatformLogger;
-  /** What this host can run, reported with every heartbeat; see `collectWorkerCapabilities`. */
   readonly capabilities: import("@swizzle/db").WorkerCapabilities;
 }
 
@@ -327,19 +296,14 @@ export interface ReconcileQueuedRunsResult {
 }
 
 interface BeginConnectionAuthorizationOptions {
-  /** New client id to store on the connection (omit to reuse existing / reuseFrom). */
   readonly clientId?: string | undefined;
-  /** New client secret to store on the connection (omit to reuse existing / reuseFrom). */
   readonly clientSecret?: string | undefined;
-  /** Whoever creates the connection, a person or a service account, gets a manage grant on it. */
   readonly creator?: Subject | undefined;
   readonly name: string;
   readonly place: CredentialPlace;
   readonly provider?: string | undefined;
   readonly providerConfig?: Record<string, unknown> | null | undefined;
-  /** The id of the connection the caller checked and re-authorizes, or null for a new one. */
   readonly reauthorizes: string | null;
-  /** Copy client credentials from an existing connection instead of re-entering them. */
   readonly reuseFrom?: string | undefined;
   readonly publicUrl: string;
   readonly scopes?: readonly string[];
@@ -352,7 +316,6 @@ interface CompleteConnectionCallbackOptions {
   readonly state?: string | undefined;
 }
 
-/** Credential lookup, grants and shares; the API checks the caller's rights before it calls them. */
 type PlatformCredentials = Pick<
   ControlPlaneStore,
   | "acceptCredentialShare"
@@ -375,7 +338,6 @@ export interface PlatformServices {
   completeConnectionCallback(
     options: CompleteConnectionCallbackOptions,
   ): Promise<ConnectionCallbackResult>;
-  /** Deletes the connection with this id and revokes its tokens; false when it is gone. */
   deleteConnection(connectionId: string): Promise<boolean>;
   getConnection(name: string, place: CredentialPlace): Promise<PlatformConnectionRecord | null>;
   listConnections(
@@ -390,7 +352,6 @@ export interface PlatformServices {
     options: CreateNotificationRuleOptions,
   ): Promise<PlatformNotificationRuleRecord>;
   deleteNotificationRule(ruleId: string): Promise<boolean>;
-  /** Deletes the secret with this id; false when it is gone. */
   deleteSecret(secretId: string): Promise<boolean>;
   findSecretDeclarationCollisions(
     input: CredentialPlace & {
@@ -399,15 +360,8 @@ export interface PlatformServices {
     },
   ): Promise<readonly SecretDeclarationCollision[]>;
   deployAutomationToPlatform(options: PlatformDeployOptions): Promise<PlatformApplyResult>;
-  /**
-   * Every check `deployAutomationToPlatform` makes before it builds, without building or
-   * committing: it throws the refusal apply would throw, and otherwise says what apply would do
-   * and what the workers serving the project say about it (deployment-check.ts).
-   */
   checkDeployment(options: PlatformDeployOptions): Promise<PlatformDeploymentCheck>;
-  /** The live automation's id and project, or null when none has this name. */
   findAutomation(automationName: string): Promise<AutomationOwner | null>;
-  /** See ControlPlaneStore.moveAutomation; refuses while a trigger in any environment is active. */
   moveAutomation(automationName: string, projectId: string): Promise<MovedAutomation>;
   enqueuePlatformRun(options: EnqueuePlatformRunOptions): Promise<PlatformRunRecord>;
   getAutomationDeployment(
@@ -450,7 +404,6 @@ export interface PlatformServices {
   listNotificationDeliveries(
     options: ListNotificationDeliveriesOptions,
   ): Promise<readonly PlatformNotificationDeliveryRecord[]>;
-  /** The rules in an environment; with `userId`, only that person's. */
   listNotificationRules(
     environment: string,
     userId?: string,
@@ -464,7 +417,6 @@ export interface PlatformServices {
     environment: string,
     projectIds: readonly string[] | "all",
   ): Promise<readonly SecretView[]>;
-  /** Enqueues the API checks that are due; returns how many it enqueued. */
   enqueueDueApiChecks(options: {
     readonly environment: string;
     readonly now?: Date;
@@ -477,15 +429,10 @@ export interface PlatformServices {
     environment: string,
   ): Promise<PlatformTriggerRecord>;
   reconcileQueuedRuns(options: ReconcileQueuedRunsOptions): Promise<ReconcileQueuedRunsResult>;
-  /** Resolves the `waitForEvent` a run waits for at a step. */
   resolveRunEvent(options: ResolveRunEventOptions): Promise<ResolveWaitingEventRunResult>;
-  /** Decides the approval a run waits for at a step (run-lifecycle.ts decideWaitingApproval). */
   decideApproval(options: DecideApprovalOptions): Promise<ResolveWaitingEventRunResult>;
-  /** False when the approval was decided, timed out or reassigned meanwhile. */
   reassignApproval(options: ReassignApprovalOptions): Promise<boolean>;
-  /** The person (by email) or team (by name) an approval may be assigned to; null when unknown. */
   resolveApprovalAssignee(request: AssigneeRequest): Promise<ApprovalAssignee | null>;
-  /** The wait a public approval or event link resolves, checked against the run's current state. */
   findWaitByLink(options: WaitLinkOptions): Promise<WaitLinkLookupResult>;
   resumeDueWaitingRuns(options: ResumeDueWaitingRunsOptions): Promise<ResumeDueWaitingRunsResult>;
   resumeAutomationTrigger(
@@ -497,11 +444,9 @@ export interface PlatformServices {
     automationName: string,
   ): ReturnType<ControlPlaneStore["listAutomationChainDependents"]>;
   countProjectContents(projectId: string): Promise<ProjectContentCounts | null>;
-  /** Deletes a project and, as asked, moves or deletes its contents; see ControlPlaneStore. */
   deleteProject(input: DeleteProjectInput): Promise<DeleteProjectResultRecord>;
   rollbackDeployment(options: RollbackOptions): Promise<PlatformDeploymentRecord>;
   runMaintenance(options: RunMaintenanceOptions): Promise<MaintenanceCycleResult>;
-  /** Starts a run by hand; it reads as `manual`, never as a delivery. See startManualRun. */
   startManualRun(options: StartManualRunOptions): Promise<ManualTriggerRunRecord>;
   triggerWebhookByPath(options: TriggerWebhookByPathOptions): Promise<PlatformRunRecord>;
   updateNotificationRule(
@@ -512,9 +457,7 @@ export interface PlatformServices {
     value: string,
     place: CredentialPlace,
     options?: {
-      /** Whoever creates the secret, a person or a service account, gets a manage grant on it. */
       readonly creator?: Subject;
-      /** The secret the write may replace, as `UpsertSecretInput.replaces` describes. */
       readonly replaces?: string | null;
     },
   ): Promise<PlatformSecretRecord>;

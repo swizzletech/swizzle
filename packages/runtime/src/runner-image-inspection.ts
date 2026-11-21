@@ -1,4 +1,3 @@
-// Reads an image's build record without executing its code or giving the API Docker access.
 import { randomUUID } from "node:crypto";
 import { Parser } from "tar";
 import { containerLimitArguments } from "./container-limits.js";

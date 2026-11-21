@@ -54,7 +54,6 @@ describe("platform timeout grants", () => {
     expect(list).toHaveLength(1);
     expect(list[0]).toMatchObject({ automationSlug: "hello-webhook", maxTimeoutMs: 10_800_000 });
 
-    // Updating in place keeps a single row.
     const updated = await platform.setAutomationTimeoutGrant({
       environment: "local",
       automationName: "hello-webhook",
@@ -145,7 +144,6 @@ describe("platform timeout grants", () => {
         automationName: "hello-webhook",
       }),
     ).toBeNull();
-    // Removing a grant that no longer exists is a no-op.
     expect(
       await platform.deleteAutomationTimeoutGrant({
         environment: "local",
@@ -179,7 +177,6 @@ describe("platform timeout grants", () => {
     });
     const fixture = path.join(packageRoot, "test-fixtures/timeout-exceeds-platform-max");
 
-    // Register the automation first (bypassing readiness) so it can receive a grant.
     await platform.deployAutomationToPlatform({
       environment: "local",
       automationDirectory: fixture,
@@ -187,7 +184,6 @@ describe("platform timeout grants", () => {
       skipReadinessCheck: true,
     });
 
-    // A grant at/above the fixture's 2h timeout lifts the ceiling; the deploy passes.
     await platform.setAutomationTimeoutGrant({
       environment: "local",
       automationName: "timeout-exceeds-platform-max",
@@ -201,7 +197,6 @@ describe("platform timeout grants", () => {
     });
     expect(granted.readiness.status).toBe("ready");
 
-    // A grant smaller than the global ceiling must not lower it: 2h is rejected again.
     await platform.setAutomationTimeoutGrant({
       environment: "local",
       automationName: "timeout-exceeds-platform-max",
@@ -215,7 +210,6 @@ describe("platform timeout grants", () => {
         force: true,
       }),
     ).rejects.toMatchObject({ code: "RUNTIME_REQUIREMENTS_UNMET" });
-    // A dry run refuses what the deploy refuses.
     await expect(
       platform.checkDeployment({
         environment: "local",

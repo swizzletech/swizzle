@@ -1,10 +1,3 @@
-// `just smoke`: proves the packaged stack end to end. It boots a throwaway packaged stack
-// (scripts/packaged-stack.mts), deploys infra/examples/hello-webhook through the CLI (in process,
-// from source), POSTs to its webhook on the public listener as an outside caller would, and waits for the run to
-// succeed with HTTP server route, PostgreSQL, Valkey, automation.process and automation.complete spans in one trace.
-// It then deploys the shipped skill's PDF recipe as written and runs it (scripts/smoke-recipe.mts).
-// On exit it removes the stack with its volumes and images, so runs follow each other and run beside any other stack.
-
 import assert from "node:assert/strict";
 import { get, type PackagedStack, startPackagedStack, until } from "./packaged-stack.mts";
 import { smokeRunnerEgress } from "./smoke-egress.mts";
@@ -30,7 +23,6 @@ async function smoke(stack: PackagedStack, tracing: SmokeTracing): Promise<void>
     const approval = await fetch(`${stack.links}/approvals/invalid`, { headers: { host } });
     assert.equal(approval.status, 404);
     assert.match(await approval.text(), /This approval link is not available/u);
-    // Under /hooks a sign-in path is a webhook lookup, never sign-in.
     const hook = await fetch(`${stack.links}/hooks/auth/sign-in/email`, {
       headers: { host },
       method: "POST",
@@ -41,8 +33,6 @@ async function smoke(stack: PackagedStack, tracing: SmokeTracing): Promise<void>
   log("public listener refuses dashboard and API routes and serves approvals and webhooks");
   await stack.cli("apply", "infra/examples/hello-webhook");
   log("deployed infra/examples/hello-webhook");
-  // A sender outside the private network reaches the webhook through the public listener. The bare
-  // URL names no environment, so the api serves it from its SWIZZLE_ENVIRONMENT.
   const response = await fetch(`${stack.links}/hooks/hello`, {
     body: '{"source":"smoke"}',
     headers: { "content-type": "application/json" },

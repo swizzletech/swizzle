@@ -23,10 +23,6 @@ import { encodeRunCursor } from "./run-cursor.js";
 import { type RunState, runState, USER_CANCELLED } from "./run-status.js";
 import { automations, automationVersions, deployments, runs } from "./schema.js";
 
-/**
- * Which automations started child runs of which others since `since`, as distinct slug pairs,
- * naming only children `scope` lets the viewer read.
- */
 export async function listObservedInvocations(
   client: DatabaseClient,
   environment: string,
@@ -51,9 +47,6 @@ export async function listObservedInvocations(
     );
 }
 
-// A correlated self-count needs an explicit alias in raw SQL: interpolating a
-// Drizzle alias() table into sql`` renders only the alias name ("child_runs"),
-// which Postgres rejects as an unknown relation.
 function childRunCountSubquery(parentColumn: SQLWrapper) {
   return sql<number>`(select count(*)::int from ${runs} as child_runs where child_runs.parent_run_id = ${parentColumn})`.as(
     "child_run_count",
@@ -160,7 +153,6 @@ export async function listRuns(
     .innerJoin(deployments, eq(runs.deploymentId, deployments.id))
     .where(and(...filters))
     .orderBy(desc(runs.queuedAt), desc(runs.id))
-    // One row past the page says whether another page follows.
     .limit(limit + 1);
   const page = rows.slice(0, limit);
   const last = page.at(-1);
@@ -181,7 +173,6 @@ export async function listRuns(
   };
 }
 
-/** Each automation's newest run in `environment`. */
 export async function listLatestRunsByAutomation(
   client: DatabaseClient,
   environment: string,
@@ -270,7 +261,6 @@ export async function listLatestRunsByAutomation(
   return runRows.map(mapRunRow);
 }
 
-/** The last `perAutomation` top-level runs of each automation in the environment, newest first. */
 export async function listRecentRunGlances(
   client: DatabaseClient,
   environment: string,
@@ -336,7 +326,6 @@ export async function listRecentRunGlances(
   return glances;
 }
 
-/** Top-level runs of the environment queued since `since`, counted by state. */
 export async function countRunsSince(
   client: DatabaseClient,
   environment: string,
@@ -436,10 +425,6 @@ function mapRunRow(row: {
   };
 }
 
-/**
- * The queued runs of an environment by what placement reads of them: one row per automation,
- * project, group and services, with the oldest run and the earliest deadline.
- */
 export async function listQueuedRuns(
   client: DatabaseClient,
   environment: string,

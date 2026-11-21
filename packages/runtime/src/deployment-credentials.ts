@@ -12,17 +12,11 @@ import {
 
 import { AutomationRuntimeError } from "./errors.js";
 
-/** A deployment and the project whose credentials it may receive: the run's, or the check's. */
 export interface CredentialHolder {
   readonly deploymentId: string;
   readonly projectId: string;
 }
 
-/**
- * The credentials of one kind a deployment bound at publish that its project still holds, for the
- * declared names. A name is missing once its credential was deleted, its share was revoked, or the
- * automation moved to a project the credential is not in; setting it again needs a new deploy.
- */
 export async function boundCredentialsNamed(options: {
   readonly holder: CredentialHolder;
   readonly kind: CredentialKind;
@@ -52,7 +46,6 @@ export async function boundCredentialsNamed(options: {
   };
 }
 
-/** A declared name and how it stands for a deployment; `credential` is the one it bound. */
 export type DeclaredCredentialState =
   | { readonly credential: StoredCredential; readonly name: string; readonly state: "bound" }
   | {
@@ -61,7 +54,6 @@ export type DeclaredCredentialState =
       readonly state: Exclude<CredentialState, "bound">;
     };
 
-/** Each declared name of one kind, bound or not, in the order the config names them. */
 export async function credentialStates(options: {
   readonly deployment: CredentialHolder & { readonly environment: string };
   readonly kind: CredentialKind;
@@ -70,7 +62,6 @@ export async function credentialStates(options: {
 }): Promise<readonly DeclaredCredentialState[]> {
   const { deployment, kind, store } = options;
   const { bound } = await boundCredentialsNamed({ ...options, holder: deployment });
-  // Only a lost binding reaches the lookup, so one query per name stays rare.
   const deployableNow = async (name: string) =>
     await store
       .findDeploymentCredentials({
@@ -81,7 +72,6 @@ export async function credentialStates(options: {
       .then(
         (found) => found.length > 0,
         (error: unknown) => {
-          // Several shares of the name: a deploy finds them and says which to drop.
           if (error instanceof CodedError && error.code === "CREDENTIAL_AMBIGUOUS") {
             return true;
           }
@@ -97,11 +87,6 @@ export async function credentialStates(options: {
   );
 }
 
-/**
- * What a version publishes with: each secret and connection its config names, the webhook signing
- * secret included, found by name in the deploying place or shared into it. Throws
- * PLATFORM_REQUIRED_SECRETS_MISSING or PLATFORM_REQUIRED_CONNECTIONS_MISSING for one not there.
- */
 export async function findDeclaredCredentials(options: {
   readonly config: {
     readonly connections: readonly string[];
@@ -149,7 +134,6 @@ export async function findDeclaredCredentials(options: {
   return found;
 }
 
-/** True when the deployment still binds exactly these credentials, so a redeploy changes nothing. */
 export async function bindsExactly(
   store: ControlPlaneStore,
   holder: CredentialHolder,

@@ -1,7 +1,6 @@
 import path from "node:path";
 import type { Rule } from "../lint.js";
 
-/** The files `cp` reads: every operand but the last, or all of them with `-t <dir>`. */
 function cpSources(args: readonly string[]): string[] {
   const operands: string[] = [];
   let target = false;

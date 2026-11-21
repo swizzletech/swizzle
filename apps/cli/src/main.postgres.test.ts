@@ -20,7 +20,6 @@ import {
 } from "../test/cli-harness.js";
 import { runCli } from "./main.js";
 
-// Program-level behaviour of `swizzle`: parse errors, global flags, profiles and environment pinning.
 useCliTestEnvironment();
 
 describe("swizzle CLI program", () => {
@@ -221,8 +220,6 @@ describe("swizzle CLI program", () => {
     }
   });
 
-  // Two API servers build every route, and one deploys a fixture: up to 1.9 s of CPU. The budget
-  // lets a loaded host give it a tenth of a core.
   it("lets explicit command --api-url override the program-level value and otherwise inherits the global value", async () => {
     const automationDirectory = path.join(repoRoot, "infra/examples/hello-webhook");
     const stateDirectory = await temporaryDirectory("swizzle-cli-global-api-url-");
@@ -240,7 +237,6 @@ describe("swizzle CLI program", () => {
       if (deployFixtureFirst) {
         await platform.deployAutomationToPlatform({ environment: "local", automationDirectory });
       }
-      // A dry run asks the API where the deployment would go, which reads the workers it would use.
       const app = await buildTestServer({
         dashboard: createDashboardStub("hello-webhook"),
         platform,
@@ -288,7 +284,6 @@ describe("swizzle CLI program", () => {
       expect(exitCode).toBe(0);
       expect(JSON.parse(overrideIo.stdoutText)).toMatchObject({ action: "noop", dryRun: true });
 
-      // Forced, the unchanged source updates, and the dry run says why.
       const forcedIo = createBufferIO();
       exitCode = await runCli(
         [
@@ -327,7 +322,6 @@ describe("swizzle CLI program", () => {
     const address = await app.listen({ host: "127.0.0.1", port: 0 });
 
     try {
-      // A named profile with a URL but no --env is exactly the incident setup.
       let exitCode = await runCli(
         ["profile", "add", "prod", "--url", address, "--token", OWNER_TOKEN, "--json"],
         createBufferIO(),
@@ -337,7 +331,6 @@ describe("swizzle CLI program", () => {
       const io = createBufferIO();
       exitCode = await runCli(["secret", "list", "--profile", "prod", "--json"], io);
 
-      // Validation-class failure — the wrong path is now impossible, not warned.
       expect(exitCode).toBe(3);
       const error = JSON.parse(io.stdoutText);
       expect(error).toMatchObject({
@@ -529,8 +522,6 @@ describe("swizzle CLI program", () => {
 
     const configHome = await temporaryDirectory("swizzle-cli-global-profile-");
     vi.stubEnv("SWIZZLE_CONFIG_HOME", configHome);
-    // The default profile points at a dead port — the request only succeeds
-    // if the global --profile flag actually selects the stub profile.
     await writeFile(
       path.join(configHome, "config.toml"),
       [
@@ -588,8 +579,6 @@ describe("swizzle CLI program", () => {
         "",
       ].join("\n"),
     );
-    // A trailing newline, and a value pasted over two lines, which fetch refuses with the
-    // whole header in its message.
     for (const pasted of [`${secret}\n`, `${secret}\nsecondline`]) {
       vi.stubEnv("PASTED_TOKEN", pasted);
       const io = createBufferIO();
@@ -608,7 +597,6 @@ describe("swizzle CLI program", () => {
       expect(`${io.stdoutText}${io.stderrText}`).not.toMatch(/tokenpart|secondline/);
     }
 
-    // An inline token written over two lines reads back with its opening quote.
     await writeFile(
       path.join(configHome, "config.toml"),
       [

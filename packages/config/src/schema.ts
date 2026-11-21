@@ -32,17 +32,10 @@ import {
   webhookTriggerSchema,
 } from "./schema/triggers.js";
 
-// Pure interval helpers live in their own module so the dashboard can import
-// them without pulling Node-only deps (`node:path`, `yaml`, `zod`) into the
-// browser bundle. Re-exported here so existing `@swizzle/config` consumers
-// keep working unchanged.
 export { AUTOMATION_CONNECTION_NAME_PATTERN } from "./connection-name.js";
 
 export { formatIntervalMs, parseIntervalToMs, parseQueueTimeoutToMs } from "./intervals.js";
 
-// Mirror of @swizzle/connections CONNECTION_PROVIDER_IDS. Duplicated (not
-// imported) to keep packages/config dependency-light; the drift is covered by a
-// unit test that asserts the two lists match.
 export const AUTOMATION_CONNECTION_PROVIDERS = [
   "google",
   "microsoft",
@@ -120,7 +113,6 @@ const automationConfigRawSchema = z
       .describe("Script the run executes, relative to the automation folder."),
     trigger: z
       .preprocess(defaultChainJoinFields, triggerSchema)
-      // The preprocess makes Zod treat the trigger as optional input, which it is not.
       .nonoptional()
       .describe("Exactly one trigger; `type` selects the variant."),
     runtime: runtimeConfigSchema.describe("Execution settings."),
@@ -236,15 +228,10 @@ const automationConfigRawSchema = z
 
 type AutomationConfigRaw = z.infer<typeof automationConfigRawSchema>;
 
-/**
- * What an author writes in config.yaml: the schema's input, where a field with a default may be
- * omitted. The trigger's preprocess erases its input type, so it is named here.
- */
 export type AutomationConfigInput = Omit<z.input<typeof automationConfigRawSchema>, "trigger"> & {
   readonly trigger: z.input<typeof triggerSchema>;
 };
 
-/** config.yaml for source scaffolds and normalized deployment artifacts, in the given key order. */
 export function stringifyAutomationConfig(
   config: AutomationConfigInput | AutomationConfig,
 ): string {
@@ -253,15 +240,12 @@ export function stringifyAutomationConfig(
 
 export type AutomationVarValue = string | number | boolean;
 
-/** Readonly fields and arrays derived from the schema output. */
 type ReadonlyConfig<Value> = {
   readonly [Key in keyof Value]: Readonly<Value[Key]>;
 };
 
-/** The normalized document shared by parsed configs, deployments and run snapshots. */
 export interface AutomationConfig
   extends Omit<ReadonlyConfig<AutomationConfigRaw>, "runtime" | "api_check" | "trigger"> {
-  /** Absent only while the automation reaches no outside API, see `findExternalApiDependency`. */
   readonly api_check?: AutomationApiCheck | undefined;
   readonly runtime: AutomationRuntimeConfig;
   readonly trigger: ReadonlyConfig<AutomationConfigRaw["trigger"]>;
@@ -271,7 +255,6 @@ export const automationConfigSchema = automationConfigRawSchema;
 
 export function createAutomationConfigJsonSchema(): Record<string, unknown> {
   return {
-    // Input mode: a field with a default is optional for the author, not required.
     ...z.toJSONSchema(automationConfigRawSchema, { io: "input" }),
     title: "Swizzle automation config",
     description:
@@ -347,7 +330,6 @@ export function parseAutomationConfig(
   return config;
 }
 
-/** One line per problem, each naming the config path: `trigger.shedule: unknown key`. */
 function formatConfigIssues(issues: readonly z.core.$ZodIssue[]): string {
   return issues
     .flatMap((issue): string[] => {
@@ -355,7 +337,6 @@ function formatConfigIssues(issues: readonly z.core.$ZodIssue[]): string {
         return issue.keys.map((key) => `${[...issue.path, key].join(".")}: unknown key`);
       }
       if (issue.code === "invalid_key") {
-        // A rejected map key carries the reason (for example a var name pattern) one level down.
         return issue.issues.map(
           (inner) => `${[...issue.path, ...inner.path].join(".")}: ${inner.message}`,
         );

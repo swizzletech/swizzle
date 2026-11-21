@@ -265,6 +265,9 @@ importers:
       pg:
         specifier: 'catalog:'
         version: 8.23.1
+      postcss:
+        specifier: ^8.5.33
+        version: 8.5.33
       rimraf:
         specifier: ^6.1.4
         version: 6.1.4

@@ -7,8 +7,6 @@ import { testDatabase } from "../test/postgres.js";
 import { testControlPlaneStore } from "../test/stores.js";
 import { commitDeploymentFixture } from "./verify-state-fixtures.js";
 
-// The cooldown of a notification rule reads the rule's latest delivery for one automation, in the
-// rule's environment.
 async function verifyLatestNotificationDeliveryForRule(
   client: DatabaseClient,
   store: ControlPlaneStore,
@@ -49,7 +47,6 @@ async function verifyLatestNotificationDeliveryForRule(
   assert.equal(latest?.deliveryId, delivery.delivery.deliveryId);
 }
 
-/** The Overview counts failed deliveries of the last day; a filter the SQL drops would hide them. */
 async function verifyNotificationDeliveryFilters(
   store: ControlPlaneStore,
   deployment: StoredDeployment,
@@ -84,14 +81,14 @@ async function verifyNotificationDeliveryFilters(
   assert.deepEqual(tomorrow, []);
 }
 
-it("latest notification delivery for rule", async () => {
+it("reads a rule's latest delivery for its automation and environment", async () => {
   const client = testDatabase();
   const store = testControlPlaneStore();
   const deployment = await commitDeploymentFixture(store, "state-machine");
   await verifyLatestNotificationDeliveryForRule(client, store, deployment);
 });
 
-it("notification delivery filters", async () => {
+it("finds recent failed deliveries for an automation in its environment", async () => {
   const store = testControlPlaneStore();
   const deployment = await commitDeploymentFixture(store, "state-machine");
   await verifyNotificationDeliveryFilters(store, deployment);

@@ -1,7 +1,3 @@
-// Finds the processes a test file started that are still running, for test/process-leaks.ts.
-// Linux only, where /proc names each process's children, command line, working directory and
-// environment without starting one more.
-
 import { readdirSync, readFileSync, readlinkSync } from "node:fs";
 
 interface RunningProcess {
@@ -9,13 +5,6 @@ interface RunningProcess {
   readonly command: string;
 }
 
-/**
- * Kills the processes this worker's tests left running and throws a list of them. A process is
- * the tests' when it descends from this worker, or when its command line, working directory or
- * environment names one of `directories`, the test file's temporary directories: a fake `docker`
- * in one is on its PATH, and an automation runs in one. The second rule finds a process whose
- * parent exited, which Linux hands to another parent.
- */
 export function killLeftProcesses(directories: ReadonlySet<string>): void {
   if (process.platform !== "linux") return;
   const running = new Map<number, string>();
@@ -23,17 +12,10 @@ export function killLeftProcesses(directories: ReadonlySet<string>): void {
     ...runningDescendants(process.pid),
     ...processesNaming(directories),
   ]) {
-    // esbuild's API runs one service per process and the service exits with its parent.
     if (!/\/esbuild --service=/u.test(command)) running.set(pid, command);
   }
   if (running.size === 0) return;
-  for (const pid of running.keys()) {
-    try {
-      process.kill(pid, "SIGKILL");
-    } catch {
-      // It exited after the check read it.
-    }
-  }
+  for (const pid of running.keys()) tryKillLeakedProcess(pid);
   throw new Error(
     `This test, or one before it in this file that timed out, left ${running.size} processes running, now killed:\n${[
       ...running,
@@ -41,6 +23,14 @@ export function killLeftProcesses(directories: ReadonlySet<string>): void {
       .map(([pid, command]) => `  ${pid} ${command}`)
       .join("\n")}`,
   );
+}
+
+function tryKillLeakedProcess(pid: number): void {
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    return;
+  }
 }
 
 function runningDescendants(pid: number): RunningProcess[] {
@@ -51,7 +41,6 @@ function runningDescendants(pid: number): RunningProcess[] {
   });
 }
 
-/** Processes started since this worker that name one of `directories`. */
 export function processesNaming(directories: ReadonlySet<string>): RunningProcess[] {
   if (directories.size === 0) return [];
   const since = startTime(process.pid);
@@ -60,14 +49,7 @@ export function processesNaming(directories: ReadonlySet<string>): RunningProces
     if (!Number.isInteger(pid) || pid === process.pid || startTime(pid) < since) return [];
     const command = commandOf(pid);
     if (command === "") return [];
-    let cwd = "";
-    try {
-      cwd = readlinkSync(`/proc/${pid}/cwd`);
-    } catch {
-      // Another user's process, or one that is gone.
-    }
-    // A removed directory reads as "<path> (deleted)"; separators keep /tmp/a-1 from naming /tmp/a-12.
-    const named = `${command}\0${cwd}\0${readProcFile(`/proc/${pid}/environ`)}\0`;
+    const named = `${command}\0${readProcCwdOrEmpty(pid)}\0${readProcFile(`/proc/${pid}/environ`)}\0`;
     return [...directories].some((directory) =>
       ["/", ":", " ", "\0"].some((end) => named.includes(`${directory}${end}`)),
     )
@@ -76,22 +58,23 @@ export function processesNaming(directories: ReadonlySet<string>): RunningProces
   });
 }
 
-/**
- * The command line of `pid`, or "" for one that no longer runs: a process that is exiting has
- * already released its memory and with it its command line, and a zombie waits only for its
- * parent to read its status.
- */
+function readProcCwdOrEmpty(pid: number): string {
+  try {
+    return readlinkSync(`/proc/${pid}/cwd`);
+  } catch {
+    return "";
+  }
+}
+
 function commandOf(pid: number): string {
   return readProcFile(`/proc/${pid}/cmdline`).replaceAll("\0", " ").trim();
 }
 
-/** When `pid` started, in clock ticks since boot; Infinity for one that is gone. */
 function startTime(pid: number): number {
   const fields = readProcFile(`/proc/${pid}/stat`).split(") ")[1]?.split(" ");
   return fields === undefined ? Number.POSITIVE_INFINITY : Number(fields[19]);
 }
 
-/** The children of every thread of `pid`; a process that is gone has none. */
 function childrenOf(pid: number): number[] {
   let threads: string[];
   try {

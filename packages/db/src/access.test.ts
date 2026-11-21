@@ -122,7 +122,6 @@ describe("decide", () => {
     expect(decide(member([editor]), edit, EXPORT)).toMatchObject({
       protectedEnvironment: "production",
     });
-    // In Release, but the project role or the token is what falls short.
     expect(decide(member([viewer, releaseGrant]), edit, EXPORT)).toMatchObject({
       protectedEnvironment: null,
     });
@@ -354,7 +353,6 @@ describe("credentialRight", () => {
     expect(credentialRight(member([editor, productionEditor]), SMTP, [anna("manage")])).toBe(
       "manage",
     );
-    // Without the production grant the editor reaches no production: the grant still lets them use it.
     expect(credentialRight(member([editor]), SMTP, [anna("manage")])).toBe("use");
   });
 

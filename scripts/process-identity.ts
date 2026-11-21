@@ -1,5 +1,3 @@
-// Process identity shared by dev stacks and throwaway packaged stacks. The fingerprint includes
-// the working directory and OS start identity, so PID reuse cannot claim a previous owner's work.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, readlinkSync } from "node:fs";
@@ -16,7 +14,6 @@ function fingerprint(root: string, start: string): string {
     .slice(0, 32);
 }
 
-/** OS start identity includes the boot on Linux, so records cannot match after a reboot. */
 export function readProcessIdentity(
   pid: number,
 ): { root: string; incarnation: string } | undefined {
@@ -64,7 +61,6 @@ export function readProcessIdentity(
   throw new Error(`Stack process ownership is unsupported on ${process.platform}`);
 }
 
-/** Verifies the recorded incarnation against the current OS process before a caller acts. */
 export function processOwnerState(owner: {
   readonly pid: number;
   readonly incarnation: string;

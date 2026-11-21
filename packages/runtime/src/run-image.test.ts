@@ -609,7 +609,6 @@ it("counts zero-byte filesystem layers separately from metadata and still prunes
   });
 });
 
-/** Docker history includes metadata-only entries of zero bytes, in reverse layer order. */
 async function fakeDocker(
   images: readonly {
     tag: string | null;
@@ -702,7 +701,6 @@ else { console.error('Unexpected Docker call: ' + args.join(' ')); process.exit(
   return { removed, saveStarted, historyStarted };
 }
 
-// Closing preparation closes the process-wide Docker scopes, so give it fresh module state.
 for (const fault of ["unmappable", "timeout", "broken-archive"] as const) {
   it(`logs an unmeasured image through worker preparation after ${fault} and completes pruning`, async ({
     signal,

@@ -28,16 +28,10 @@ import {
   parseSuspendPayload,
 } from "./suspension.js";
 
-/**
- * Prepares a claimed run execution for its worker: copies the deployed source, resolves the
- * secrets and connection tokens, records under the lease which versions the execution received,
- * and reads the state and step snapshots the process starts from.
- */
 export async function prepareRunExecution<T>(
   input: {
     readonly dispatch: DispatchStore;
     readonly environment: NodeJS.ProcessEnv;
-    /** The worker that claimed the attempt. */
     readonly identity: WorkerIdentity;
     readonly lease: RunLease;
     readonly store: ControlPlaneStore;
@@ -87,7 +81,6 @@ export async function prepareRunExecution<T>(
           })
         ).map((entry) => [entry.key, entry.value]),
       );
-      // Only finished steps are memoized: a step whose attempt died inside it runs again.
       const stepsSnapshot = Object.fromEntries(
         (await input.store.listRunSteps({ runId: run.runId }))
           .filter((entry) => entry.finishedAt !== null)
@@ -117,13 +110,6 @@ export async function prepareRunExecution<T>(
   );
 }
 
-/**
- * Records a finished run execution under its lease: the execution's outcome, the run's next status,
- * its API contacts, and for a final run the terminal intent from which the dispatch loop runs
- * chains, parent resume and notifications. `execution` is the accepted, unredacted report, or the
- * error that ended the execution; `line` is the execution's unfinished stderr line, whose events still
- * apply; `signals` are the contacts and rate-limit usage its output reported.
- */
 export async function finishRunExecution(input: {
   readonly execution: AutomationRunResult | { readonly error: unknown };
   readonly lease: RunLease;
@@ -150,8 +136,6 @@ export async function finishRunExecution(input: {
     });
     if (failed !== null) execution = failure(failed.error);
   }
-  // Control instructions read the result as the run returned it: a child's invoke payload or a
-  // step key may hold an injected value on purpose. Only the stored and shown output is redacted.
   const suspend = parseSuspendPayload(execution.success ? execution.result : null);
   execution = redactRunResult(execution, input.redactor);
   await recordApiContactLog({

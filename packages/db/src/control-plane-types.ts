@@ -110,7 +110,6 @@ import type { ApprovalAssignee, AssigneeRequest } from "./run-approval.js";
 
 export interface ControlPlaneStore {
   markRunTerminalPending(runId: string): Promise<void>;
-  /** Records a publication error only while the durable run remains queued. */
   recordRunEnqueueError(runId: string, message: string): Promise<void>;
   cancelRun(input: {
     readonly runId: string;
@@ -124,15 +123,12 @@ export interface ControlPlaneStore {
   commitDeployment(input: CommitDeploymentInput): Promise<CommitDeploymentResult>;
   commitRollbackDeployment(input: CommitRollbackDeploymentInput): Promise<CommitDeploymentResult>;
   completeRunExecution(input: CompleteRunExecutionInput): Promise<void>;
-  /** Writes a check's outcome. False when the row moved on, as a deploy does, so a stale result is dropped. */
   completeAutomationCheck(input: CompleteAutomationCheckInput): Promise<boolean>;
   getAutomationCheck(checkId: string): Promise<StoredAutomationCheck | null>;
-  /** Checks whose `nextCheckAt` passed and whose trigger is active, oldest first; one per automation at most. */
   listDueAutomationChecks(
     now: string,
     environment: string,
   ): Promise<readonly StoredAutomationCheck[]>;
-  /** Upserts one row per host; returns the rows whose retirement notice this write recorded first. */
   recordApiContacts(input: RecordApiContactsInput): Promise<readonly StoredApiContact[]>;
   countActiveRunsForAutomation(
     automationId: string,
@@ -155,7 +151,6 @@ export interface ControlPlaneStore {
   deleteAutomationTimeoutGrant(input: AutomationTimeoutGrantKeyInput): Promise<boolean>;
   deleteNotificationRule(ruleId: string): Promise<boolean>;
   deleteAutomationStateValue(input: DeleteAutomationStateValueInput): Promise<boolean>;
-  /** Deletes the secret with this id, never another one that took its name. */
   deleteSecret(secretId: string): Promise<boolean>;
   getAutomationTimeoutGrant(
     input: AutomationTimeoutGrantKeyInput,
@@ -186,10 +181,6 @@ export interface ControlPlaneStore {
     limit?: number,
   ): Promise<readonly StoredTrigger[]>;
   getLatestMaintenanceRun(environment: string): Promise<StoredMaintenanceRun | null>;
-  /**
-   * Latest delivery of a rule's own event for one automation, so a rule for all automations cools
-   * down per automation and an API alert starts no cooldown.
-   */
   getLatestNotificationDeliveryForRule(
     ruleId: string,
     environment: string,
@@ -226,7 +217,6 @@ export interface ControlPlaneStore {
   listChildRuns(input: ListChildRunsInput): Promise<readonly StoredRun[]>;
   listDueSleepingRuns(input: ListDueSleepingRunsInput): Promise<readonly StoredRun[]>;
   listDueWaitingRuns(input: ListDueWaitingRunsInput): Promise<readonly StoredRun[]>;
-  /** The secrets of these projects in one environment; every project's with `projectIds: "all"`. */
   listSecrets(
     environment: string,
     projectIds: readonly string[] | "all",
@@ -235,7 +225,6 @@ export interface ControlPlaneStore {
     input: ListAutomationStateInput,
   ): Promise<readonly StoredAutomationStateEntry[]>;
   listRunSteps(input: ListRunStepsInput): Promise<readonly StoredRunStepEntry[]>;
-  /** The run's step totals and one step's row, without reading the run's other steps. */
   getRunStepTotals(input: GetRunStepTotalsInput): Promise<RunStepTotals>;
   listQueuedRuns(input: ListQueuedRunsPageInput): Promise<readonly StoredRun[]>;
   listWaitingEventRuns(input: ListWaitingEventRunsInput): Promise<readonly StoredRun[]>;
@@ -244,11 +233,6 @@ export interface ControlPlaneStore {
     environment: string,
     limit?: number,
   ): Promise<readonly AuditEventOf<"trigger">[]>;
-  /**
-   * Deletes finished runs (succeeded, failed, dead-lettered) that finished at or before the
-   * cutoff in the named environment, with everything that hangs off them. Queued, running and
-   * waiting runs never expire.
-   */
   expireRuns(input: ExpireRunsInput): Promise<ExpireRunsResult>;
   recordNotificationDelivery(
     input: CreateNotificationDeliveryInput,
@@ -257,14 +241,12 @@ export interface ControlPlaneStore {
   consumeConnectionAuthorization(
     stateHash: string,
   ): Promise<ConsumedConnectionAuthorization | null>;
-  /** Deletes the connection with this id, never another one that took its name. */
   deleteConnection(connectionId: string): Promise<DeleteConnectionResult>;
   getConnection(name: string, place: CredentialPlace): Promise<ConnectionView | null>;
   getConnectionCredentials(
     name: string,
     place: CredentialPlace,
   ): Promise<ConnectionCredentials | null>;
-  /** The connections of these projects in one environment; every project's with `projectIds: "all"`. */
   listConnections(
     environment: string,
     projectIds: readonly string[] | "all",
@@ -273,19 +255,11 @@ export interface ControlPlaneStore {
   recordRunExecutionConnectionUsages(input: RecordRunExecutionConnectionUsagesInput): Promise<void>;
   recordRunExecutionSecretUsages(input: RecordRunExecutionSecretUsagesInput): Promise<void>;
   resolveConnectionToken(input: ResolveConnectionTokenInput): Promise<ResolveConnectionTokenResult>;
-  /** Null when the connection is gone, for example deleted while the code was exchanged. */
   storeConnectionTokens(input: StoreConnectionTokensInput): Promise<StoredConnection | null>;
-  /** The values of these secrets, by id; a run asks `boundCredentials` for the ids first. */
   resolveSecrets(secretIds: readonly string[]): Promise<readonly ResolvedSecret[]>;
   resumeWaitingRun(input: ResumeWaitingRunInput): Promise<StoredRun | null>;
-  /** False when the approval was decided, timed out or reassigned meanwhile. */
   reassignApproval(input: ReassignApprovalInput): Promise<boolean>;
-  /** The person or team an automation names, by email or team name; null when there is none. */
   resolveApprovalAssignee(request: AssigneeRequest): Promise<ApprovalAssignee | null>;
-  /**
-   * Whether a person may read a run of this automation in this environment now: not suspended,
-   * not removed, and holding a grant (access.ts). A notification asks before it sends.
-   */
   personMayRead(
     userId: string,
     target: {
@@ -294,30 +268,14 @@ export interface ControlPlaneStore {
       readonly environment: string;
     },
   ): Promise<boolean>;
-  /**
-   * Deletes an automation with everything it owns, its runs included (ADR 0015), and the chain
-   * invalidates chain triggers of other automations that name it as a source. Only its audit events stay. Refuses
-   * while a trigger is active or a run is unfinished.
-   */
   deleteAutomation(input: DeleteAutomationInput): Promise<DeleteAutomationResult>;
-  /** Chain triggers in every environment whose source would be deleted, including paused ones. */
   listAutomationChainDependents(
     automationSlug: string,
   ): Promise<
     readonly Pick<StoredTrigger, "automationId" | "automationSlug" | "projectId" | "environment">[]
   >;
-  /** What a project holds that deleting it must decide about; null when there is no project. */
   countProjectContents(projectId: string): Promise<ProjectContentCounts | null>;
-  /**
-   * Deletes a project in one transaction, after moving its automations, credentials and runs to
-   * another project or deleting them (ProjectContents). Refuses the default project.
-   */
   deleteProject(input: DeleteProjectInput): Promise<DeleteProjectResult>;
-  /**
-   * Moves a live automation to another project and drops its automation grants and folder. Runs
-   * and audit events stay in the project they happened in. It decides `moved` under the row
-   * lock, so a concurrent move cannot make it report the wrong outcome.
-   */
   moveAutomation(input: MoveAutomationInput): Promise<MovedAutomation>;
   getChainTriggersForSource(
     sourceAutomationId: string,
@@ -330,57 +288,39 @@ export interface ControlPlaneStore {
   updateNotificationRule(
     input: UpdateNotificationRuleInput,
   ): Promise<StoredNotificationRule | null>;
-  /**
-   * Records that a running attempt is alive. Returns false, and records nothing, once the attempt
-   * is no longer running: a cancel or the stalled-run reconciler finished it, in whichever process.
-   */
   markRunExecutionReady(input: MarkRunExecutionReadyInput): Promise<void>;
   updateRunExecutionHeartbeat(input: UpdateRunExecutionHeartbeatInput): Promise<boolean>;
   updateRunState(input: UpdateRunStateInput): Promise<void>;
   setAutomationStateValue(input: SetAutomationStateValueInput): Promise<StoredAutomationStateEntry>;
-  /** Claims a state key for a run unless another run holds it; true when this run holds it. */
   claimAutomationStateKey(input: ClaimAutomationStateKeyInput): Promise<boolean>;
   setRunStepResult(input: SetRunStepResultInput): Promise<StoredRunStepEntry>;
-  /** Records that a step runs; a later attempt restarting an unfinished step moves its start. */
   startRunStep(input: StartRunStepInput): Promise<StoredRunStepEntry>;
   upsertSecret(input: UpsertSecretInput): Promise<StoredSecret>;
 
-  // Credential rights (access.ts decides; these read and write the grants, shares and bindings).
   findCredential(
     kind: CredentialKind,
     name: string,
     place: CredentialPlace,
   ): Promise<StoredCredential | null>;
-  /** The grants and shares of each credential, in the order given. */
   credentialAccess(credentials: readonly StoredCredential[]): Promise<readonly CredentialAccess[]>;
   setCredentialGrant(credential: StoredCredential, grant: CredentialGrant): Promise<void>;
-  /** False when there was no such grant. */
   removeCredentialGrant(credential: StoredCredential, subject: Subject): Promise<boolean>;
-  /** Offers the credential to a project, or keeps the offer that exists; `accepted` accepts it at once. */
   offerCredentialShare(input: {
     readonly credential: StoredCredential;
     readonly projectId: string;
     readonly offeredBy: string | null;
     readonly accepted: boolean;
   }): Promise<CredentialShare>;
-  /** Null when the project has no such share. */
   acceptCredentialShare(input: {
     readonly shareId: string;
     readonly projectId: string;
     readonly acceptedBy: string | null;
   }): Promise<CredentialShare | null>;
-  /** Deletes the share and every deployment binding made through it; false when there was none. */
   removeCredentialShare(shareId: string): Promise<boolean>;
-  /** The shares offered to a project, accepted or not. */
   listCredentialShares(projectId: string): Promise<readonly CredentialShare[]>;
-  /** The credential each declared name would bind; a name without an entry binds nothing. */
   findDeploymentCredentials(
     declared: DeclaredCredentials,
   ): Promise<readonly DeploymentCredential[]>;
-  /**
-   * The credentials a deployment may still inject into a run of `projectId`: bound when it was
-   * published, not deleted since, and the project's own or shared into it.
-   */
   boundCredentials(deploymentId: string, projectId: string): Promise<readonly StoredCredential[]>;
 }
 

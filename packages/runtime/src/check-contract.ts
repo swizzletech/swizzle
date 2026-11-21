@@ -1,6 +1,3 @@
-// The check contract, free of the queue and database clients so the CLI's `swizzle run --check`
-// and the API's Needs you read it from the cheap `@swizzle/runtime` entry: how a check process
-// ends (green, drift or undecided), how that folds into its record, and when it needs the owner.
 import type {
   ApiCheckReport,
   AutomationCheckStatus,
@@ -16,7 +13,6 @@ import type { AutomationRunFailure, AutomationRunSuccess } from "./run-result.js
 const MAX_OUTPUT_CHARS = 8_192;
 const MAX_MESSAGE_CHARS = 4_096;
 
-/** How one check process ended, before it is folded into the record. */
 export type CheckOutcome = { readonly report: ApiCheckReport } & (
   | { readonly status: "green"; readonly output: string }
   | { readonly status: "drift"; readonly output: string | null }
@@ -29,11 +25,6 @@ export type CheckOutcome = { readonly report: ApiCheckReport } & (
     }
 );
 
-/**
- * Exit 0 with `"ok": true` on stdout is green. A contract_changed event or bare exit 1 is drift.
- * Recognizable exceptions and credential failures are errors, including exit 1. Anything else
- * could not decide.
- */
 export function checkOutcome(
   execution:
     | Pick<AutomationRunSuccess, "result" | "stdout" | "stderr" | "success">
@@ -123,7 +114,6 @@ export function checkOutcome(
   };
 }
 
-/** Folds an outcome into the record: the failure streak, its start, and the next due time. */
 export function nextCheckState(
   previous: Pick<StoredAutomationCheck, "consecutiveFailures" | "everyMs" | "failingSince">,
   outcome: CheckOutcome,
@@ -147,7 +137,6 @@ export function nextCheckState(
   };
 }
 
-/** Parse process output once, before it becomes a persisted report. */
 function parseOutput(stdout: string): unknown {
   try {
     return JSON.parse(stdout);

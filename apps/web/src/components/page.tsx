@@ -1,9 +1,3 @@
-// One page of the dashboard: the shared head (a small path on deep pages, the title, a description
-// and the actions), an optional tab bar, then the page's content. A page is one of four types:
-// `overview` shows state at a glance, `workbench` fills the window with panes that scroll on their
-// own, `reading` is a document and its facts, and `administration` is rows and forms to change.
-// Every page renders this; a route passes what its head shows while its data still loads, too.
-
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
@@ -14,16 +8,13 @@ export type PageType = "overview" | "workbench" | "reading" | "administration";
 export function Page(props: {
   readonly type: PageType;
   readonly title: ReactNode;
-  /** A short fact beside the title, such as how many runs are loaded. */
   readonly note?: ReactNode;
   readonly description?: ReactNode;
   readonly actions?: ReactNode;
-  /** Where a deep page sits: its parent as a link, then its own name. */
   readonly path?: {
     readonly parent: { readonly label: string; readonly to: "/" | "/projects" | "/settings" };
     readonly current: string;
   };
-  /** The underline tabs of the page's views. */
   readonly tabs?: ReactNode;
   readonly children: ReactNode;
 }) {

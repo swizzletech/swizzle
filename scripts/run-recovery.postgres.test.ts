@@ -35,7 +35,6 @@ async function verifyQueuedRunRecoveryQuery(
   assert.equal(orphanedRunIds.has(orphanRunId), true);
   assert.equal(orphanedRunIds.has(attemptedRunId), false);
 
-  // Paging one row at a time must visit every row once: queued_at carries microseconds.
   for (const index of [1, 2, 3]) {
     const runId = randomUUID();
     await createQueuedRun(store, deployment, runId, `job-${runId}`, { case: `page-${index}` });
@@ -179,19 +178,19 @@ async function verifyQueuedRunsWithAttemptsQuery(
   );
 }
 
-it("queued run recovery query", async () => {
+it("pages every queued run without an attempt once in order", async () => {
   const store = testControlPlaneStore();
   const deployment = await commitDeploymentFixture(store, "state-machine");
   await verifyQueuedRunRecoveryQuery(store, deployment);
 });
 
-it("due sleeping runs cutoff", async () => {
+it("selects sleeping runs whose resume time has arrived", async () => {
   const store = testControlPlaneStore();
   const deployment = await commitDeploymentFixture(store, "state-machine");
   await verifyDueSleepingRunsCutoff(store, deployment);
 });
 
-it("queued runs with attempts query", async () => {
+it("recovers fresh queued runs, retries, and resumptions", async () => {
   const store = testControlPlaneStore();
   const deployment = await commitDeploymentFixture(store, "state-machine");
   await verifyQueuedRunsWithAttemptsQuery(store, deployment);

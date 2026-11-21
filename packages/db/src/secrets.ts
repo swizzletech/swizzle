@@ -144,14 +144,8 @@ export function resolveSecretEncryptionKey(environment: NodeJS.ProcessEnv = proc
     return utf8Key;
   }
 
-  try {
-    const base64Key = Buffer.from(rawKey, "base64");
-    if (base64Key.byteLength === SECRET_ENCRYPTION_KEY_LENGTH_BYTES) {
-      return base64Key;
-    }
-  } catch {
-    // Ignore and fall through to the explicit validation error below.
-  }
+  const base64Key = decodeBase64EncryptionKey(rawKey);
+  if (base64Key !== undefined) return base64Key;
 
   throw new SecretConfigurationError(
     "INVALID_ENCRYPTION_KEY",
@@ -159,11 +153,19 @@ export function resolveSecretEncryptionKey(environment: NodeJS.ProcessEnv = proc
   );
 }
 
+function decodeBase64EncryptionKey(encodedKey: string): Buffer | undefined {
+  try {
+    const key = Buffer.from(encodedKey, "base64");
+    return key.byteLength === SECRET_ENCRYPTION_KEY_LENGTH_BYTES ? key : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function deriveSecretEncryptionKeyVersion(key: Buffer): string {
   return `k_${createHash("sha256").update(key).digest("hex").slice(0, 16)}`;
 }
 
-/** The current key first, then the previous ones still accepted for reading. */
 export function resolveSecretEncryptionKeyring(
   environment: NodeJS.ProcessEnv,
 ): readonly { readonly key: Buffer; readonly version: string }[] {

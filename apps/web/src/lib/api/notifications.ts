@@ -1,5 +1,3 @@
-// Notification rules and the deliveries they sent.
-
 import type {
   NoContentResponse,
   NotificationDeliveriesResponse,
@@ -11,7 +9,6 @@ import { request } from "./request";
 
 export function notificationsCalls(environment: string) {
   return {
-    /** Without an automation name the rule covers every automation in the environment. */
     async createNotificationRule(
       input: {
         readonly automationName?: string;

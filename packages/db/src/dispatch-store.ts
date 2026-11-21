@@ -27,11 +27,9 @@ import { heldSlots, placementWorker } from "./worker-registry.js";
 import { type PlacementTarget, type WorkerIdentity, workerFit } from "./workers.js";
 
 type Transaction = Parameters<Parameters<DatabaseClient["db"]["transaction"]>[0]>[0];
-// Covers the existing ten-minute image assembly and bounded staging/cleanup operations.
 const EXECUTION_PREPARATION_BUDGET_MS = 15 * 60_000;
 type LeaseRow = typeof executionLeases.$inferSelect;
 const seal = (state: ExecutionState) => encryptSecretValue(JSON.stringify(state)).ciphertext;
-// The lease row holds only what this module sealed.
 const unseal = (ciphertext: string): ExecutionState =>
   JSON.parse(decryptSecretValue({ algorithm: SECRET_ENCRYPTION_ALGORITHM, ciphertext }));
 const view = (row: Omit<LeaseRow, "resultDigest" | "executionState">): ExecutionLease => {
@@ -65,7 +63,6 @@ async function admitWithinDeadline(admit: () => Promise<boolean>): Promise<boole
   }
 }
 
-/** Locks follow worker -> run -> lease; a lease request skips the worker, never reorders. */
 export function createPostgresDispatchStore(
   options: { readonly client?: DatabaseClient; readonly leaseMs?: number } = {},
 ): DispatchStore {
@@ -75,12 +72,6 @@ export function createPostgresDispatchStore(
     throw new Error("Worker execution lease must be at least 1000 milliseconds.");
   const scoped = (tx: Transaction) =>
     createPostgresControlPlaneStore({ client: { ...client, db: tx } });
-  /**
-   * Locks a lease's run or check, then the lease row, the order claims take, and reads its worker
-   * without a lock: claims hold the worker row while they count slots, so output and renewals
-   * would queue behind them. A revocation that commits after this read ends the lease on the next
-   * reclaim pass.
-   */
   const lock = async (tx: Transaction, ref: LeaseRef) => {
     const [target] = await tx
       .select({ runId: executionLeases.runId, checkId: executionLeases.checkId })
@@ -107,10 +98,6 @@ export function createPostgresDispatchStore(
         : await selectWorkerCredentials(tx).where(eq(workers.id, row.workerId));
     return { worker, run, row };
   };
-  /**
-   * Locks the claiming worker and returns whether it takes work of `target` now, by `workerFit`.
-   * The caller asks again after admission, which may have waited, before it spends an attempt.
-   */
   const claimant = async (tx: Transaction, identity: WorkerIdentity) => {
     const [worker] = await selectWorkerCredentials(tx)
       .where(eq(workers.id, identity.id))
@@ -140,7 +127,6 @@ export function createPostgresDispatchStore(
         .where(eq(executionLeases.taskId, row.taskId));
     },
   });
-  /** The lease row `identity` may act on now, or ExecutionLeaseError. */
   const owned = async (tx: Transaction, identity: WorkerIdentity, ref: LeaseRef) => {
     const { worker, run, row } = await lock(tx, ref);
     const now = new Date();
@@ -336,7 +322,6 @@ export function createPostgresDispatchStore(
     },
     async reclaim(lose) {
       const now = new Date();
-      // Narrows the pass to leases that may be lost; the locked check below decides.
       const candidates = await client.db
         .select({ taskId: executionLeases.taskId, generation: executionLeases.generation })
         .from(executionLeases)
@@ -349,7 +334,6 @@ export function createPostgresDispatchStore(
             or(
               lte(executionLeases.expiresAt, now),
               lte(executionLeases.deadlineAt, now),
-              // Not `credentialLive`: no worker, a revoked one, or no current credential in time.
               isNull(workers.id),
               isNotNull(workers.revokedAt),
               isNull(apiTokens.id),

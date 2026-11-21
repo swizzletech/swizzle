@@ -2,7 +2,6 @@ import { randomUUID } from "node:crypto";
 import { createDatabaseClient, type DatabaseClient } from "@swizzle/db/postgres";
 import { Client } from "pg";
 
-/** A verification owns its schema, including when the worktree's persistent dev schema differs. */
 export async function withVerificationDatabase(
   run: (client: DatabaseClient) => Promise<void>,
 ): Promise<void> {

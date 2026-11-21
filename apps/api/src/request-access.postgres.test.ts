@@ -27,10 +27,6 @@ afterEach(() => {
 
 const ACCESS_NOT_FOUND = ["AUTOMATION_NOT_FOUND", "PROJECT_NOT_FOUND", "RUN_NOT_FOUND"];
 
-/**
- * An office instance: project office holds report, project finance holds export, both deployed to
- * staging and production by the owner, each with a run in staging. Grants go through the API.
- */
 async function office(options: { readonly automationFolderStore?: AutomationFolderStore } = {}) {
   const stateDirectory = await temporaryDirectory("swizzle-access-");
   const accessStore = testAccessStore();
@@ -41,7 +37,6 @@ async function office(options: { readonly automationFolderStore?: AutomationFold
   const people = testPeople();
   const scopes: ReadScope[] = [];
   const runQueries: DashboardRunsQuery[] = [];
-  // Mounts the worker routes; the office has no enrolled machines.
   const workerRegistry = createPostgresWorkerRegistry({ client: testDatabase() });
   vi.spyOn(workerRegistry, "list").mockResolvedValue([]);
   vi.spyOn(workerRegistry, "placement").mockImplementation(async (run) =>
@@ -121,7 +116,6 @@ async function office(options: { readonly automationFolderStore?: AutomationFold
   };
 }
 
-/** A dashboard read model that records the scope each list is asked for, and each runs query. */
 function recordingDashboard(
   scopes: ReadScope[],
   runQueries: DashboardRunsQuery[],
@@ -131,7 +125,6 @@ function recordingDashboard(
   };
   return {
     close: async () => {},
-    // Only the refusals the route adds are under test; the read model has its own tests.
     getAutomationDetail: async () => ({ trigger: null }) as never,
     getAutomationReadme: async () => null,
     getAutomationSource: async () => null,
@@ -168,7 +161,6 @@ function recordingDashboard(
   };
 }
 
-/** Each resource and instance route with its parameters filled for one automation and run. */
 function probes(target: { automation: string; project: string; runId: string }) {
   const bodies: Record<string, object> = {
     "POST /automations/:automationName/rollback": { targetDeploymentId: "#1" },
@@ -205,7 +197,6 @@ function probes(target: { automation: string; project: string; runId: string }) 
         .replace(":shareId", "00000000-0000-4000-8000-0000000000aa");
       const query = key.endsWith("/state") && method === "DELETE" ? "&key=k" : "";
       const grantQuery = key === "DELETE /projects/:project/grants" ? "&user=x" : "";
-      // A credential route names its own project in the query; the path's project is a share's.
       const credentialQuery = template.startsWith("/credentials/")
         ? `&project=${target.project}`
         : "";
@@ -239,13 +230,11 @@ describe("access over HTTP", () => {
       }
     }
 
-    // The same routes on the project Mia views reach past the policy: no access 404 anywhere.
     for (const probe of probes({
       automation: "report",
       project: "office",
       runId: runs.report ?? "",
     })) {
-      // The open stream never ends for a reader; the revocation test below drives it.
       if (probe.rule === "instance" || probe.key.endsWith("/logs/stream")) continue;
       const response = await asMia.send(probe.method, probe.url, probe.payload);
       expect(ACCESS_NOT_FOUND, probe.key).not.toContain(response.json().code);
@@ -265,7 +254,6 @@ describe("access over HTTP", () => {
       expect.objectContaining({ role: "viewer", slug: "office" }),
     ]);
 
-    // Production is protected: a project grant alone allows nothing there, and says why.
     expect((await asMia.send("GET", "/automations/report?environment=production")).json()).toEqual(
       expect.objectContaining({
         code: "ACCESS_DENIED",
@@ -303,7 +291,6 @@ describe("access over HTTP", () => {
     await asOwner.send("DELETE", `/projects/office/grants?user=${mia.userId}`);
     expect((await asMia.send("GET", `/runs/${runs.report}`)).statusCode).toBe(404);
 
-    // In production the team's editor role is capped by its environment grant.
     await asOwner.send("PUT", `/teams/${team.id}/members/${mia.userId}`);
     await asOwner.send("PUT", "/projects/office/grants", {
       environment: "production",
@@ -444,7 +431,6 @@ describe("access over HTTP", () => {
     expect((await deploy("memo", { environment: "staging" })).json()).toMatchObject({
       code: "PROJECT_NOT_FOUND",
     });
-    // Production caps Mia's editor role to nothing until a production grant names her.
     expect((await deploy("digest", { environment: "production" })).json()).toMatchObject({
       code: "ACCESS_DENIED",
     });
@@ -462,7 +448,6 @@ describe("access over HTTP", () => {
     const { app, as, asOwner, people, apiTokenStore } = await office();
     const ed = await people.bearer(apiTokenStore, "ed@office.test");
     const rita = await people.bearer(apiTokenStore, "rita@office.test");
-    // Office grants production to the team Release from its creation; nobody grants it here.
     const dev = (await asOwner.send("POST", "/teams", { name: "Dev" })).json();
     await asOwner.send("PUT", `/teams/${dev.id}/members/${ed.userId}`);
     await asOwner.send("PUT", `/teams/${RELEASE_TEAM_ID}/members/${rita.userId}`);
@@ -489,7 +474,6 @@ describe("access over HTTP", () => {
           const { deployments } = (
             await send("GET", "/automations/report/deployments?environment=production")
           ).json();
-          // Ed cannot read production either, so his attempt names #1.
           const previous = (deployments ?? []).find(
             (entry: { status: string }) => entry.status !== "active",
           );
@@ -531,7 +515,6 @@ describe("access over HTTP", () => {
       rollback: 200,
       setSecret: 200,
     });
-    // Staging is not protected: there the Dev editor changes what Release changes in production.
     expect(
       (await as(ed).send("POST", "/automations/report/trigger/pause?environment=staging"))
         .statusCode,
@@ -591,7 +574,6 @@ describe("access over HTTP", () => {
       (await as(mia).send("POST", "/automations/export/trigger/pause?environment=staging"))
         .statusCode,
     ).toBe(404);
-    // A refused grant keeps the place it named, as the request named it.
     for (const place of [{ environment: "staging" }, { automation: "report" }]) {
       const grant = { ...place, role: "viewer", user: mia.userId };
       expect((await as(mia).send("PUT", "/projects/office/grants", grant)).statusCode).toBe(403);
@@ -602,7 +584,6 @@ describe("access over HTTP", () => {
         status: number | null;
         target: { automationSlug: string | null; environment: string | null };
       }[];
-    // The audit completes an event after the reply, so the four refusals land in their own time.
     let events: Awaited<ReturnType<typeof audit>> = [];
     await waitFor(signal, async () => {
       events = await audit();
@@ -710,7 +691,6 @@ describe("access over HTTP", () => {
         status: 403,
       });
     }
-    // Without any role in finance its folders do not exist for her.
     await asOwner.send("DELETE", `/projects/finance/grants?user=${mia.userId}`);
     const hidden = await asMia.send("PATCH", `/automation-folders/${theirs.id}`, { name: "Mine" });
     expect({ code: hidden.json().code, status: hidden.statusCode }).toEqual({
@@ -737,7 +717,6 @@ describe("access over HTTP", () => {
     const move = async (who: typeof asOwner) =>
       await who.send("PUT", "/automations/report/project", { project: "finance" });
 
-    // Moving needs admin in both projects, and no active trigger anywhere.
     expect((await move(asOlga)).json()).toMatchObject({ code: "ACCESS_DENIED" });
     expect((await move(asOwner)).json()).toMatchObject({ code: "AUTOMATION_NOT_PAUSED" });
     for (const environment of ["staging", "production"]) {
@@ -745,11 +724,8 @@ describe("access over HTTP", () => {
     }
     expect((await move(asOwner)).statusCode).toBe(200);
 
-    // The run written in office stays readable there, and only there. The automation's audit
-    // starts over in finance: the deploy event from office stays in office's history.
     expect((await asOlga.send("GET", `/runs/${runs.report}`)).statusCode).toBe(200);
     expect((await asFin.send("GET", `/runs/${runs.report}`)).statusCode).toBe(404);
-    // Its panel decides Cancel where the run is and Run again where the automation is now.
     const panel = (await asOlga.send("GET", `/dashboard/runs/${runs.report}`)).json();
     expect(panel.refusals).toMatchObject({
       cancel: null,
@@ -763,7 +739,6 @@ describe("access over HTTP", () => {
     ).json().runId;
     expect((await asFin.send("GET", `/runs/${later}`)).statusCode).toBe(200);
 
-    // A reader of office alone still diagnoses the office run, without finance's deployments.
     const vic = await people.bearer(apiTokenStore, "vic@office.test");
     await asOwner.send("PUT", "/projects/office/grants", { role: "viewer", user: vic.userId });
     const redeployed = await deployFixture(
@@ -780,7 +755,6 @@ describe("access over HTTP", () => {
     expect(diagnosis.statusCode).toBe(200);
     expect(diagnosis.body).not.toContain(redeployed.json().deploymentId);
 
-    // Delete waits for unfinished runs; these finish here.
     while ((await platform.processNextPlatformRun()) !== null) {}
     const deleted = await asOwner.send("DELETE", "/automations/report");
     expect(deleted.json()).toMatchObject({ deletedCounts: { runs: 2 } });
@@ -808,12 +782,10 @@ describe("access over HTTP", () => {
     for (const query of ["?contents=move", "?contents=delete&to=finance", "?to=finance"]) {
       expect((await asOwner.send("DELETE", `/projects/office${query}`)).statusCode).toBe(400);
     }
-    // Moving needs admin in the target too.
     expect(
       (await as(olga).send("DELETE", "/projects/office?contents=move&to=finance")).json(),
     ).toMatchObject({ code: "ACCESS_DENIED" });
 
-    // A name both projects use refuses the move before anything moves.
     expect(
       (await asOwner.send("DELETE", "/projects/office?contents=move&to=finance")).json(),
     ).toMatchObject({
@@ -829,7 +801,6 @@ describe("access over HTTP", () => {
     expect((await asOwner.send("GET", "/projects/office/access")).statusCode).toBe(404);
     const finance = projects.find((project: { slug: string }) => project.slug === "finance");
     expect((await platform.findAutomation("report"))?.projectId).toBe(finance.id);
-    // The short name is free again.
     expect(
       (await asOwner.send("POST", "/projects", { name: "Office", slug: "office" })).statusCode,
     ).toBe(201);
