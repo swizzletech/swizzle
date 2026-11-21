@@ -27,6 +27,39 @@ describe("swizzle --version", () => {
   });
 });
 
+it("identifies a recovered automation with a legacy binary rule on the home screen", async ({
+  signal,
+}) => {
+  const cwd = await temporaryDirectory("swizzle-recovered-legacy-");
+  await writeFile(
+    path.join(cwd, "config.yaml"),
+    `name: recovered-legacy
+version: 1.0.0
+entrypoint: main.js
+trigger: { type: webhook, path: /hooks/recovered-legacy }
+runtime:
+  requirements:
+    binaries: [{ name: node, version: v25.03.0 }]
+`,
+  );
+  const configHome = await temporaryDirectory("swizzle-recovered-legacy-profile-");
+  const { stdout } = await run(
+    process.execPath,
+    [
+      "--conditions=swizzle-source",
+      "--import",
+      import.meta.resolve("tsx"),
+      bin,
+      "--profile",
+      "missing",
+      "--json",
+    ],
+    { cwd, env: { ...process.env, SWIZZLE_CONFIG_HOME: configHome }, signal },
+  );
+
+  expect(JSON.parse(stdout).folder).toEqual({ automation: "recovered-legacy" });
+});
+
 describe("swizzle logs --full", () => {
   it("prints real stderr lines through a pipe and preserves the string in JSON", async ({
     signal,

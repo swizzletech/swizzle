@@ -7,6 +7,7 @@ import { AUTOMATION_RUNTIME_PROFILE_DEFAULT } from "@swizzle/config";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { temporaryDirectory, waitFor } from "../../../test/support.js";
 import { createAutomationFixture } from "../test/platform-harness.js";
+import { readExecutionSource } from "./execution-wire.js";
 import { loadAutomationDefinition } from "./validation.js";
 
 const execFileAsync = promisify(execFile);
@@ -15,6 +16,45 @@ const HOUR_MS = 60 * MINUTE_MS;
 const IMAGE_MIB = 300;
 
 describe("run images of prepared deployments", () => {
+  it("prepares an installed deployment with a 1.0.4 binary rule", async ({ signal }) => {
+    const docker = await fakeDockerImages();
+    const directory = await createAutomationFixture({
+      name: "legacy-preparation",
+      configLines: [
+        "runtime:",
+        "  execution_mode: container",
+        "  requirements:",
+        "    binaries: [{ name: pdftoppm, version: 'v25.03.0' }]",
+      ],
+      triggerLines: ["  type: webhook", "  path: /legacy-preparation"],
+    });
+    const files = await readExecutionSource(directory);
+    const { startDeploymentPreparation } = await freshRuntime();
+    const tags = new Map<string, string>();
+    const preparation = startDeploymentPreparation({
+      poll: async () => ({
+        activeIds: ["legacy-deployment"],
+        deployments: [
+          {
+            deploymentId: "legacy-deployment",
+            automationName: "legacy-preparation",
+            deployedAt: new Date(0).toISOString(),
+            files,
+          },
+        ],
+      }),
+      recordImage: async (id, tag) => {
+        tags.set(id, tag);
+      },
+      keptImages: async () => [...tags.values()],
+    });
+    onTestFinished(() => preparation.close());
+    await waitFor(signal, async () => (await docker.tagged()).size === 1);
+
+    expect(tags.get("legacy-deployment")).toMatch(/^swizzle-run:[a-f0-9]+$/);
+    expect(await docker.tagged()).toEqual(new Set(await docker.commits()));
+  });
+
   it("keeps active deployments' run images past the retention window and holds the rest to the disk budget", async ({
     signal,
   }) => {

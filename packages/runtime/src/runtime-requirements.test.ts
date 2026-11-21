@@ -146,6 +146,7 @@ describe("evaluateAutomationReadiness", () => {
     ["25", "25.03.0", "not-ready"],
     ["25", "25.0.0", "ready"],
     ["v25.03.0", "25.3", "ready"],
+    ["banana", "25.3", "ready"],
   ])("preserves saved rule %s against worker version %s as %s", (rule, version, status) => {
     const saved = parseAutomationConfig(
       `
@@ -181,6 +182,7 @@ runtime:
     ["<=25", "not-ready"],
     ["<26", "ready"],
     [">25", "ready"],
+    ["latest", "ready"],
   ])("checks rule %s against a worker's pdftoppm 25.03.0 as %s", (rule, status) => {
     const available = worker(["host"]);
     const pdfWorker = {
@@ -210,6 +212,35 @@ runtime:
     ).toMatchObject({ status });
     expect(createRuntimeSnapshot(reloaded).binary_version_matching).toBe("numeric-prefix");
   });
+
+  it.each(["banana", ">=25 <26", "v25.03.0", " "])(
+    "refuses unsupported rule %j in a stored numeric-prefix config",
+    (rule) => {
+      const parsed = config("  requirements: {}");
+      const automation = {
+        config: {
+          ...parsed,
+          runtime: {
+            ...parsed.runtime,
+            requirements: { binaries: [{ name: "pdftoppm", version: rule }] },
+          },
+        },
+        directory: process.cwd(),
+      };
+      const available = worker(["host"]);
+      const pdfWorker = {
+        ...available,
+        capabilities: {
+          ...available.capabilities,
+          binaries: [{ name: "pdftoppm", version: "25.03.0" }],
+        },
+      };
+      expect(evaluateAutomationReadiness(automation, [pdfWorker])).toMatchObject({
+        status: "not-ready",
+        errors: [{ code: "BINARY_VERSION_UNSUPPORTED" }],
+      });
+    },
+  );
 
   it("needs a worker that advertises container execution for a container automation", () => {
     const automation = { config: config("  execution_mode: container"), directory: process.cwd() };

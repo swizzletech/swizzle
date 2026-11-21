@@ -3,7 +3,8 @@ import { cp, readdir, readFile, writeFile } from "node:fs/promises";
 import { createServer, request } from "node:http";
 import path from "node:path";
 
-import { loadAutomationDefinition } from "@swizzle/runtime";
+import { parseAutomationConfig } from "@swizzle/config";
+import { createConfiguredArtifactStorage, loadAutomationDefinition } from "@swizzle/runtime";
 import { describe, expect, it, vi } from "vitest";
 
 import { testPlatform } from "../../../test/platform.js";
@@ -29,6 +30,66 @@ import { runCli } from "./main.js";
 useCliTestEnvironment();
 
 describe("deployment commands", () => {
+  it("validates and deploys recovered legacy binary rules unchanged", async () => {
+    const directory = await temporaryDirectory("swizzle-legacy-source-");
+    const yaml = `name: legacy-binary
+version: 1.0.0
+entrypoint: main.js
+trigger: { type: webhook, path: /hooks/legacy-binary }
+runtime:
+  language: node
+  execution_mode: host
+  requirements:
+    binaries: [{ name: node, version: latest }]
+`;
+    await writeFile(path.join(directory, "config.yaml"), yaml);
+    await writeFile(path.join(directory, "main.js"), "console.log('{}');\n");
+    const artifactsDirectory = await temporaryDirectory("swizzle-legacy-artifacts-");
+    const storage = createConfiguredArtifactStorage({ artifactsDirectory });
+    const legacy = await storage.createDeploymentArtifacts({
+      automationDirectory: directory,
+      automationName: "legacy-binary",
+      config: parseAutomationConfig(yaml, "deployment"),
+      deployedAt: "2026-01-01T00:00:00.000Z",
+      deploymentId: "legacy-deployment",
+      entrypoint: "main.js",
+      entrypointExtension: ".js",
+      includedFiles: ["config.yaml", "main.js"],
+      sourceHash: "legacy-source-hash",
+      triggerType: "webhook",
+      version: "1.0.0",
+    });
+    const platform = await testPlatform({ artifactsDirectory });
+    const app = await buildTestServer({ platform });
+    const address = await app.listen({ host: "127.0.0.1", port: 0 });
+    try {
+      await storage.withSourceDirectory(legacy, async (recovered) => {
+        expect(await readFile(path.join(recovered, "config.yaml"), "utf8")).toBe(yaml);
+        const validated = createBufferIO();
+        const validationExit = await runCli(
+          ["validate", recovered, "--api-url", address, "--json"],
+          validated,
+        );
+        expect(validationExit, validated.stdoutText).toBe(0);
+        expect(JSON.parse(validated.stdoutText)).toMatchObject({ valid: true });
+        const applied = createBufferIO();
+        const applyExit = await runCli(
+          ["apply", recovered, "--api-url", address, "--json"],
+          applied,
+        );
+        expect(applyExit, applied.stdoutText).toBe(0);
+        expect(JSON.parse(applied.stdoutText)).toMatchObject({ deployment: { action: "create" } });
+      });
+      const deployment = await platform.getAutomationDeployment("legacy-binary", "local");
+      expect(deployment.config.runtime.requirements.binaries).toEqual([
+        { name: "node", version: "latest" },
+      ]);
+      expect((await storage.readTextFile(deployment, "config.yaml"))?.content).toBe(yaml);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("refuses deletion when the API cannot preview its chain impact", async () => {
     const platform = await testPlatform();
     await platform.deployAutomationToPlatform({

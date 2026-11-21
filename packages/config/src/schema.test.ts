@@ -9,11 +9,10 @@ import {
 } from "./schema.js";
 
 describe("parseAutomationConfig", () => {
-  it.each(["^25", "~25", "25.x", ">=25 <26", "v25", "garbage", "25."])(
-    "rejects unsupported binary version rule %s with its accepted forms",
+  it.each(["^25", "~25", "25.x", ">=25 <26", "v25", "garbage", "25.", "", " "])(
+    "rejects binary version rule %j in source with the accepted forms",
     (rule) => {
-      expect(() =>
-        parseAutomationConfig(`
+      const yaml = `
 name: pdf
 version: 1.0.0
 entrypoint: main.py
@@ -23,8 +22,10 @@ runtime:
     binaries:
       - name: pdftoppm
         version: "${rule}"
-`),
-      ).toThrow(/version.*Invalid.*>=.*<=.*>.*<.*=/);
+`;
+      expect(() => parseAutomationConfig(yaml)).toThrow(
+        /version.*Invalid.*>=.*<=.*>.*<.*=.*latest/,
+      );
     },
   );
 
@@ -38,6 +39,23 @@ trigger:
 `),
     );
     expect(parseAutomationConfig(stored).runtime.binary_version_matching).toBe("numeric-prefix");
+  });
+
+  it("allows older rules only when loading an installed config without a matching revision", () => {
+    const yaml = `name: installed-source
+version: 1.0.0
+trigger: { type: webhook }
+runtime:
+  requirements:
+    binaries: [{ name: pdftoppm, version: 'v25.03.0' }]
+`;
+    expect(parseAutomationConfig(yaml, "deployment").runtime).toMatchObject({
+      requirements: { binaries: [{ name: "pdftoppm", version: "v25.03.0" }] },
+    });
+    expect(() => parseAutomationConfig(yaml)).toThrow(/version.*Invalid.*latest/);
+    expect(() =>
+      parseAutomationConfig(`${yaml}  binary_version_matching: numeric-prefix\n`, "deployment"),
+    ).toThrow(/version.*Invalid.*latest/);
   });
 
   it("rejects unknown keys and names every offending path", () => {
@@ -507,10 +525,14 @@ describe("runtime normalization contract", () => {
   });
 });
 
-it.each(["v25.03.0", "^25"])("reads the saved binary rule %s only from a deployment", (rule) => {
-  const yaml = `name: legacy\nversion: 1.0.0\ntrigger: { type: webhook }\nruntime:\n  requirements:\n    binaries:\n      - { name: pdftoppm, version: '${rule}' }\n`;
-  expect(parseAutomationConfig(yaml, "deployment").runtime.requirements.binaries).toEqual([
-    { name: "pdftoppm", version: rule },
-  ]);
-  expect(() => parseAutomationConfig(yaml)).toThrow("Invalid version rule");
-});
+it.each(["25", ">=25", "latest"])(
+  "reads the binary version rule %j from both source and deployments",
+  (rule) => {
+    const yaml = `name: legacy\nversion: 1.0.0\ntrigger: { type: webhook }\nruntime:\n  requirements:\n    binaries:\n      - { name: pdftoppm, version: '${rule}' }\n`;
+    for (const mode of ["source", "deployment"] as const) {
+      expect(parseAutomationConfig(yaml, mode).runtime.requirements.binaries).toEqual([
+        { name: "pdftoppm", version: rule },
+      ]);
+    }
+  },
+);

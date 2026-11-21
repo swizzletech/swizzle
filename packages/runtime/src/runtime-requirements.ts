@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import type { StepSite } from "@swizzle/config";
 import {
+  AUTOMATION_BINARY_VERSION_RULE_PATTERN,
   AUTOMATION_RUNTIME_LANGUAGES,
   AUTOMATION_RUNTIME_PROFILE_DEFAULT,
   type AutomationConfig,
@@ -691,10 +692,14 @@ function matchesVersionRequirement(
   matching: AutomationRuntimeConfig["binary_version_matching"],
 ): boolean {
   const trimmedRequirement = requirement.trim();
+  if (trimmedRequirement === "latest") return true;
+  const usesNumericPrefix = matching === "numeric-prefix";
+  if (usesNumericPrefix && !AUTOMATION_BINARY_VERSION_RULE_PATTERN.test(trimmedRequirement))
+    return false;
   const actualParts = parseVersion(actualVersion);
   const requiredParts = parseVersion(trimmedRequirement.replace(/^[^\d]*/, ""));
   if (requiredParts.length === 0 || actualParts.length === 0) {
-    return matching === undefined;
+    return !usesNumericPrefix;
   }
 
   if (trimmedRequirement.startsWith(">=")) {
@@ -717,9 +722,9 @@ function matchesVersionRequirement(
     return compareVersions(actualParts, requiredParts) === 0;
   }
 
-  return matching === undefined
-    ? compareVersions(actualParts, requiredParts) === 0
-    : requiredParts.every((part, index) => part === (actualParts[index] ?? 0));
+  return usesNumericPrefix
+    ? requiredParts.every((part, index) => part === (actualParts[index] ?? 0))
+    : compareVersions(actualParts, requiredParts) === 0;
 }
 
 function compareVersions(left: readonly number[], right: readonly number[]): number {
