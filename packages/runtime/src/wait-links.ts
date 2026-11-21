@@ -42,7 +42,7 @@ export function createRunLinkEnvironment(input: {
   readonly environment: NodeJS.ProcessEnv;
   readonly runId: string;
 }): Readonly<Record<string, string>> {
-  const linkUrl = input.environment[SWIZZLE_LINK_URL_ENV]?.trim().replace(/\/+$/, "");
+  const linkUrl = input.environment[SWIZZLE_LINK_URL_ENV]?.trim().replace(/(?<!\/)\/+$/u, "");
   if (linkUrl === undefined || linkUrl === "") return {};
   const runKey = tryDeriveRunLinkKey(input.environment, input.runId);
   if (runKey === null) return {};

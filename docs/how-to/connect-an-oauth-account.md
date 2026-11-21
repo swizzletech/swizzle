@@ -33,6 +33,7 @@ swizzle connections authorize google-sales --provider google \
 ```
 
 Add `--open` to open the URL in this machine's browser and `--wait` to wait until the connection is active. `--wait` prints the URL to stderr meanwhile and gives up after `--timeout` seconds (default 300).
+The browser opens only HTTP and HTTPS authorization URLs.
 
 `--provider` is `google`, `microsoft`, `github`, `clickup` or `custom-oauth2`. Connection lists, detail views, and suggested commands name projects by slug. A connection belongs to one project and environment, as a secret does; for an automation outside the `default` project, add `--project <slug>` to every `connections` command. In the dashboard, **Connect an account** on **Credentials** has a **Project** field that starts at the project in view. Creating a connection needs editor there and lets you manage it.
 

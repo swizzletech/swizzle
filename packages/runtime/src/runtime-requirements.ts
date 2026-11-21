@@ -52,9 +52,9 @@ export interface RuntimeReadinessOptions {
 
 function createQueueProfileSegment(profile: string): string {
   const normalized = createDisplayName(profile || AUTOMATION_RUNTIME_PROFILE_DEFAULT)
-    .replaceAll(/[^a-z0-9_-]+/g, "-")
-    .replaceAll(/-+/g, "-")
-    .replaceAll(/^[-_]+|[-_]+$/g, "");
+    .replaceAll(/[^a-z0-9_]+/gu, "-")
+    .replace(/^[-_]+/u, "")
+    .replace(/(?<![-_])[-_]+$/u, "");
 
   return normalized.length > 0 ? normalized : AUTOMATION_RUNTIME_PROFILE_DEFAULT;
 }

@@ -22,6 +22,12 @@ import type {
 } from "@swizzle/runtime/http-contract";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
+import {
+  type ClientRateLimiter,
+  clientKey,
+  enforceRouteRateLimit,
+  type RateLimitedRouteConfig,
+} from "./client-rate-limiter.js";
 import { type ApiServer, getAllowedOrigins } from "./http-shared.js";
 import { type Actor, routeAccess } from "./request-access.js";
 import { readBooleanSetting } from "./security-config.js";
@@ -53,7 +59,11 @@ export interface RegisterAuthGuardOptions {
   readonly accessStore: Pick<AccessStore, "findServiceAccount">;
 }
 
-export function registerAuthRoutes(app: ApiServer, auth: SwizzleAuth): void {
+export function registerAuthRoutes(
+  app: ApiServer,
+  auth: SwizzleAuth,
+  authStatusRateLimiter: ClientRateLimiter,
+): void {
   const forward =
     <Route extends AuthRoute>(route: Route) =>
     async (request: FastifyRequest, reply: FastifyReply): Promise<AuthResults[Route]> => {
@@ -101,17 +111,31 @@ export function registerAuthRoutes(app: ApiServer, auth: SwizzleAuth): void {
     forward("/two-factor/disable"),
   );
 
-  app.get<{ Reply: AuthStatusResponse }>("/auth/status", async (request) => {
-    const person = await auth.verifySession(requestHeaders(request));
-    const setupRequired = await auth.setupRequired();
-    return {
-      authenticated: person !== null,
-      mailConfigured: auth.mailConfigured,
-      setupRequired,
-      setupTokenRequired: setupRequired && auth.setupTokenRequired,
-      user: person?.user ?? null,
-    };
-  });
+  app.get<{ Reply: AuthStatusResponse }, RateLimitedRouteConfig>(
+    "/auth/status",
+    {
+      config: {
+        rateLimit: {
+          client: clientKey,
+          error: "AUTH_RATE_LIMITED",
+          limiter: authStatusRateLimiter,
+          message: "Too many authentication status requests. Try again shortly.",
+        },
+      },
+      preHandler: enforceRouteRateLimit,
+    },
+    async (request) => {
+      const person = await auth.verifySession(requestHeaders(request));
+      const setupRequired = await auth.setupRequired();
+      return {
+        authenticated: person !== null,
+        mailConfigured: auth.mailConfigured,
+        setupRequired,
+        setupTokenRequired: setupRequired && auth.setupTokenRequired,
+        user: person?.user ?? null,
+      };
+    },
+  );
 
   app.get<{ Reply: SessionsResponse }>("/auth/sessions", async (request) => {
     const person = browserSession(request);
@@ -285,9 +309,11 @@ function isDirectLoopbackReadinessRequest(request: FastifyRequest): boolean {
 
 function extractBearerToken(header: string | undefined): string | undefined {
   if (header === undefined) return undefined;
-  const match = /^Bearer\s+(.+)$/iu.exec(header.trim());
-  const token = match?.[1]?.trim();
-  return token && token.length > 0 ? token : undefined;
+  const value = header.trim();
+  const separator = value.search(/\s/u);
+  if (separator === -1 || value.slice(0, separator).toLowerCase() !== "bearer") return undefined;
+  const token = value.slice(separator).trimStart();
+  return /[\r\n\u2028\u2029]/u.test(token) ? undefined : token;
 }
 
 function isAllowedBrowserOrigin(request: FastifyRequest): boolean {

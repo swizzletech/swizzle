@@ -216,7 +216,7 @@ Every route needs a session or a bearer token, except the routes below. They are
 | `GET /health` | Liveness | Answers only the service name, status and version |
 | `GET /ready` | Readiness for the Compose health check | Only a direct request from loopback; from any other address it needs a credential |
 | `OPTIONS` on any path | CORS preflight, which browsers send without credentials | Answers only CORS headers and runs no route |
-| `GET /auth/status` | The dashboard asks whether to show setup or sign-in | Names the account only to the session that presents its cookie |
+| `GET /auth/status` | The dashboard asks whether to show setup or sign-in | Names the account only to the session that presents its cookie. `SWIZZLE_AUTH_STATUS_RATE_LIMIT` defaults to `120/min` per client address |
 | `POST /auth/sign-up/email` | Setting up a fresh instance, or accepting an invitation | Before the first account, `SWIZZLE_SETUP_TOKEN` in `X-Swizzle-Setup-Token`; after it, a pending invitation's token in `X-Swizzle-Invitation-Token` for the body's email; sign-up budget; allowed `Origin` |
 | `POST /auth/invitation` | The invitation page shows what the link offers | Answers only for a pending invitation's token |
 | `POST /auth/request-password-reset`, `POST /auth/reset-password` | Recovering a forgotten password | Address budget, reset mail budget; the reset needs the mailed single-use token; allowed `Origin` |

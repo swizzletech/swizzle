@@ -427,10 +427,23 @@ function parseScopes(raw: string | undefined): string[] {
 
 function tryOpenInDetachedBrowser(url: string): boolean {
   try {
+    const target = new URL(url);
+    if (target.protocol !== "https:" && target.protocol !== "http:") return false;
     const platform = process.platform;
-    const command = platform === "darwin" ? "open" : platform === "win32" ? "cmd" : "xdg-open";
-    const args = platform === "win32" ? ["/c", "start", "", url] : [url];
-    const child = spawn(command, args, { detached: true, stdio: "ignore" });
+    const options = { detached: true, stdio: "ignore" } as const;
+    const child =
+      platform === "win32"
+        ? spawn(
+            "powershell.exe",
+            [
+              "-NoProfile",
+              "-NonInteractive",
+              "-Command",
+              "Start-Process -FilePath $env:SWIZZLE_BROWSER_URL",
+            ],
+            { ...options, env: { ...process.env, SWIZZLE_BROWSER_URL: target.href } },
+          )
+        : spawn(platform === "darwin" ? "open" : "xdg-open", [target.href], options);
     child.on("error", () => undefined);
     child.unref();
     return true;

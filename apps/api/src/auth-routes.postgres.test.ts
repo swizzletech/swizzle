@@ -8,6 +8,33 @@ import { ownerHeaders, testPeople } from "../test/people.js";
 import { buildTestServer } from "../test/server-harness.js";
 
 describe("api auth", () => {
+  it("limits public status lookups by client address", async () => {
+    vi.stubEnv("SWIZZLE_AUTH_STATUS_RATE_LIMIT", "2/min");
+    vi.stubEnv("SWIZZLE_DASHBOARD_ORIGIN", DASHBOARD_ORIGIN);
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const app = await buildTestServer();
+    onTestFinished(async () => await app.close());
+    const status = async (remoteAddress: string) =>
+      await app.inject({
+        headers: { origin: DASHBOARD_ORIGIN },
+        method: "GET",
+        url: "/auth/status",
+        remoteAddress,
+      });
+
+    for (let request = 0; request < 2; request += 1) {
+      expect((await status("203.0.113.45")).statusCode).toBe(200);
+    }
+    const limited = await status("203.0.113.45");
+    expect(limited.statusCode).toBe(429);
+    expect(limited.json()).toMatchObject({ error: "AUTH_RATE_LIMITED" });
+    expect(limited.headers["retry-after"]).toBe("60");
+    expect(limited.headers["access-control-expose-headers"]).toBe("Retry-After");
+    expect((await status("203.0.113.46")).statusCode).toBe(200);
+    vi.advanceTimersByTime(60_000);
+    expect((await status("203.0.113.45")).statusCode).toBe(200);
+  });
+
   it.each([
     { url: "/health", remoteAddress: "203.0.113.45", body: { service: "api", status: "ok" } },
     { url: "/auth/status", remoteAddress: "203.0.113.45", body: { authenticated: false } },
@@ -117,7 +144,7 @@ describe("api auth", () => {
       method: "GET",
       url: "/secrets",
       headers: {
-        authorization,
+        authorization: authorization.replace(" ", "\t"),
         "x-forwarded-for": "203.0.113.45",
         host: "swizzle.example.com",
       },

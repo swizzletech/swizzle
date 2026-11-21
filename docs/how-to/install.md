@@ -145,6 +145,15 @@ Webhook senders and OAuth providers may need the API from the internet. The sign
 
 Run `just stack` again after a change to `.env`.
 
+### Set the dashboard and upload request budgets
+
+| Setting | Default | Budget shared by |
+|---|---|---|
+| `SWIZZLE_AUTH_STATUS_RATE_LIMIT` | `120/min` | Dashboard session checks from one client address |
+| `SWIZZLE_DEPLOYMENT_UPLOAD_RATE_LIMIT` | `30/min` | Deploys and deployment checks by one person or service account |
+
+Set either value in `.env` using a count per `sec`, `min`, or `hour`. Set it to `off` to disable that budget. Over-budget requests receive HTTP 429 with a `Retry-After` header. The dashboard keeps its last session status while it waits to retry.
+
 ## Add a tool to the runner image
 
 To add Debian packages to the runner, set a space-separated list in `.env`:

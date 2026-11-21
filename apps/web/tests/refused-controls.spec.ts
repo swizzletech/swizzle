@@ -50,10 +50,13 @@ test("a viewer's empty Overview says who deploys instead of the steps to a first
   page,
 }) => {
   const state = emptyState();
-  state.deploy = {
-    ...OPERATOR,
-    role: "viewer",
-    sources: [{ on: "project", projectId: PROJECT_ID, role: "viewer", via: null }],
+  state.overview = {
+    ...state.overview,
+    deploy: {
+      ...OPERATOR,
+      role: "viewer",
+      sources: [{ on: "project", projectId: PROJECT_ID, role: "viewer", via: null }],
+    },
   };
   await mockDashboardApi(page, state);
 

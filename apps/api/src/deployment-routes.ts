@@ -12,6 +12,12 @@ import type { FastifyRequest } from "fastify";
 import { x as tarExtract } from "tar";
 
 import {
+  type ClientRateLimiter,
+  clientKey,
+  enforceRouteRateLimit,
+  type RateLimitedRouteConfig,
+} from "./client-rate-limiter.js";
+import {
   type ApiServer,
   formatSecretDeclarationCollisionWarnings,
   requestValidationError,
@@ -63,8 +69,25 @@ export function createBundleEntryFilter(
 }
 
 export function registerDeploymentRoutes(app: ApiServer, options: DeploymentRouteOptions): void {
-  app.post<{ Reply: DeploymentCheckResponse }>(
+  const uploadLimit = {
+    config: {
+      rateLimit: {
+        client: (request) => {
+          const actor = request.actor;
+          if (actor?.kind === "person") return `person:${actor.userId}`;
+          if (actor?.kind === "service-account") return `service-account:${actor.serviceAccountId}`;
+          return clientKey(request);
+        },
+        error: "DEPLOYMENT_UPLOAD_RATE_LIMITED",
+        limiter: options.deploymentUploadRateLimiter,
+        message: "Too many deployment uploads. Try again shortly.",
+      },
+    } satisfies RateLimitedRouteConfig,
+    preHandler: enforceRouteRateLimit,
+  };
+  app.post<{ Reply: DeploymentCheckResponse }, RateLimitedRouteConfig>(
     "/deployment-checks",
+    uploadLimit,
     async (request) =>
       await withUploadedAutomation(request, options, async (deployOptions, urlOf) => {
         const check = await options.platform.checkDeployment(deployOptions);
@@ -72,8 +95,9 @@ export function registerDeploymentRoutes(app: ApiServer, options: DeploymentRout
       }),
   );
 
-  app.post<{ Reply: ApplyResponse }>(
+  app.post<{ Reply: ApplyResponse }, RateLimitedRouteConfig>(
     "/deployments",
+    uploadLimit,
     async (request) =>
       await withUploadedAutomation(request, options, async (deployOptions, urlOf, environment) => {
         const deployment = await options.platform.deployAutomationToPlatform(deployOptions);
@@ -105,6 +129,7 @@ export function registerDeploymentRoutes(app: ApiServer, options: DeploymentRout
 
 interface DeploymentRouteOptions {
   readonly artifactsDirectory?: string;
+  readonly deploymentUploadRateLimiter: ClientRateLimiter;
   readonly platform: PlatformServices;
 }
 

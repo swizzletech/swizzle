@@ -44,7 +44,10 @@ import {
 import { registerAuthGuard, registerAuthRoutes } from "./auth-routes.js";
 import { registerAutomationFolderRoutes } from "./automation-folder-routes.js";
 import { registerAutomationRoutes } from "./automation-routes.js";
-import type { ClientRateLimiter } from "./client-rate-limiter.js";
+import {
+  type ClientRateLimiter,
+  createClientRateLimiterFromEnvironment,
+} from "./client-rate-limiter.js";
 import { registerConnectionRoutes } from "./connection-routes.js";
 import { registerCredentialRoutes } from "./credential-routes.js";
 import type { DashboardDataProvider } from "./dashboard.js";
@@ -115,6 +118,8 @@ export interface BuildServerOptions {
   readonly auditStore: AuditStore;
   readonly artifactsDirectory?: string;
   readonly approvalRateLimiter?: ClientRateLimiter;
+  readonly authStatusRateLimiter?: ClientRateLimiter;
+  readonly deploymentUploadRateLimiter?: ClientRateLimiter;
   readonly eventCallbackRateLimiter?: ClientRateLimiter;
   readonly webhookIngressLimiter?: ClientRateLimiter;
 }
@@ -134,6 +139,12 @@ export function buildServer(options: BuildServerOptions) {
     options.webhookIngressLimiter ?? createWebhookIngressLimiterFromEnvironment();
   const approvalRateLimiter =
     options.approvalRateLimiter ?? createApprovalRateLimiterFromEnvironment();
+  const authStatusRateLimiter =
+    options.authStatusRateLimiter ??
+    createClientRateLimiterFromEnvironment("SWIZZLE_AUTH_STATUS_RATE_LIMIT", "120/min");
+  const deploymentUploadRateLimiter =
+    options.deploymentUploadRateLimiter ??
+    createClientRateLimiterFromEnvironment("SWIZZLE_DEPLOYMENT_UPLOAD_RATE_LIMIT", "30/min");
   const eventCallbackRateLimiter =
     options.eventCallbackRateLimiter ?? createEventCallbackRateLimiterFromEnvironment();
   const app: ApiServer = Fastify({
@@ -190,6 +201,7 @@ export function buildServer(options: BuildServerOptions) {
 
   void app.register(cors, {
     credentials: true,
+    exposedHeaders: ["Retry-After"],
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     origin: (origin, callback) => {
       if (origin === undefined) {
@@ -243,7 +255,7 @@ export function buildServer(options: BuildServerOptions) {
   });
   registerAudit(app, { store: auditStore });
   registerErrorHandler(app);
-  registerAuthRoutes(app, auth);
+  registerAuthRoutes(app, auth, authStatusRateLimiter);
   registerSecurityAuditRoute(app, auth);
 
   app.get<{ Reply: HealthResponse }>("/health", async () => ({
@@ -324,6 +336,7 @@ export function buildServer(options: BuildServerOptions) {
     ...(options.artifactsDirectory !== undefined
       ? { artifactsDirectory: options.artifactsDirectory }
       : {}),
+    deploymentUploadRateLimiter,
     platform,
   });
   registerSecretRoutes(app, { platform });

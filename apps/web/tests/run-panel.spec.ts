@@ -1,12 +1,21 @@
 import { expect, test } from "@playwright/test";
 
-import { FAILED_RUN_ID, mockDashboardApi, OK_RUN_ID, seededState } from "./dashboard-mock";
+import {
+  addProbeRuns,
+  allRunPage,
+  FAILED_RUN_ID,
+  mockDashboardApi,
+  OK_RUN_ID,
+  seededState,
+  setAllRunPage,
+} from "./dashboard-mock";
 
 const QUEUED_RUN_ID = "9d0e5f11-aaaa-4bbb-8ccc-000000000005";
 
 test("a queued run that no worker has started says it has not started", async ({ page }) => {
   const state = seededState();
-  const listed = state.runs.find((run) => run.runId === OK_RUN_ID);
+  const { runs } = allRunPage(state);
+  const listed = runs.find((run) => run.runId === OK_RUN_ID);
   const detail = state.runDetails.get(OK_RUN_ID);
   if (listed === undefined || detail === undefined)
     throw new Error("The seeded state lost its succeeded run.");
@@ -18,7 +27,7 @@ test("a queued run that no worker has started says it has not started", async ({
     state: "queued" as const,
     status: "queued" as const,
   };
-  state.runs.unshift({ ...listed, ...notStarted });
+  setAllRunPage(state, [{ ...listed, ...notStarted }, ...runs]);
   state.runDetails.set(QUEUED_RUN_ID, { ...detail, ...notStarted, result: null });
   await mockDashboardApi(page, state);
 
@@ -69,15 +78,18 @@ for (const { page: name, path, parameter } of [
   }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     const state = seededState();
-    const listed = state.runs.find((run) => run.runId === OK_RUN_ID);
+    const { runs } = allRunPage(state);
+    const listed = runs.find((run) => run.runId === OK_RUN_ID);
     const detail = state.runDetails.get(OK_RUN_ID);
     if (listed === undefined || detail === undefined)
       throw new Error("The seeded state lost its succeeded run.");
-    for (let index = 0; index < 60; index += 1) {
+    const added = Array.from({ length: 60 }, (_, index) => {
       const runId = `9d0e5f11-aaaa-4bbb-8ccc-${String(index).padStart(12, "0")}`;
-      state.runs.push({ ...listed, runId });
       state.runDetails.set(runId, { ...detail, runId });
-    }
+      return { ...listed, runId };
+    });
+    setAllRunPage(state, [...runs, ...added]);
+    addProbeRuns(state, added);
     await mockDashboardApi(page, state);
 
     await page.goto(`${path}?${parameter}=${FAILED_RUN_ID}`);

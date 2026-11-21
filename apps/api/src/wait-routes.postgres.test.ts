@@ -105,7 +105,7 @@ describe("wait routes", () => {
 
     async function linkedServer() {
       vi.stubEnv("SWIZZLE_ENCRYPTION_KEY", TEST_ENCRYPTION_KEY);
-      vi.stubEnv("SWIZZLE_LINK_URL", "https://links.example.com/");
+      vi.stubEnv("SWIZZLE_LINK_URL", "https://links.example.com///");
       const platform = await testPlatform();
       const dashboard = {
         close: async () => undefined,

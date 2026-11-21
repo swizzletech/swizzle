@@ -6,12 +6,15 @@ for (const overview of ["newest 200 approvals", "failed request"] as const) {
   for (const decision of ["Approve", "Reject"] as const) {
     test(`${decision} a selected approval when Overview has ${overview}`, async ({ page }) => {
       const state = seededState();
-      const approval = state.needsYou.find((item) => item.kind === "approval");
+      const approval = state.overview.needsYou.find((item) => item.kind === "approval");
       if (approval === undefined) throw new Error("Missing approval fixture");
-      state.needsYou = Array.from({ length: 200 }, (_, index) => ({
-        ...approval,
-        runId: `newer-approval-${index}`,
-      }));
+      state.overview = {
+        ...state.overview,
+        needsYou: Array.from({ length: 200 }, (_, index) => ({
+          ...approval,
+          runId: `newer-approval-${index}`,
+        })),
+      };
       await mockDashboardApi(page, state);
       if (overview === "failed request") {
         await page.route("**/api/dashboard/overview?*", (route) =>

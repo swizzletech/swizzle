@@ -12,9 +12,10 @@ import type {
 import { json, request } from "./request";
 
 export const sessionApi = {
-  async getAuthStatus() {
+  async getAuthStatus(signal: AbortSignal) {
     return await request<AuthStatusResponse>(`/auth/status?requestTime=${Date.now()}`, {
       cache: "no-store",
+      signal,
     });
   },
 

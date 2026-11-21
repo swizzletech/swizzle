@@ -47,6 +47,8 @@ ${runtime}
 describe("createQueueNameForProfile", () => {
   it("strips the separators BullMQ rejects from profile names", () => {
     expect(createQueueNameForProfile("OCR: Tools / EU")).toBe("platform-runs--ocr-tools-eu");
+    expect(createQueueNameForProfile("--")).toBe("platform-runs--host-default");
+    expect(createQueueNameForProfile("-_-")).toBe("platform-runs--host-default");
   });
 });
 

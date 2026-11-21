@@ -74,14 +74,20 @@ test("Connect in the Missing section opens the form for that account", async ({ 
     role: "editor",
     slug: "finance",
   });
-  state.needsYou.push({
-    connectionName: "google-ops",
-    kind: "missing-connection",
-    project: { id: FINANCE_ID, slug: "finance", name: "Finance" },
-    provider: "google",
-    status: "missing",
-    usedBy: [{ automationName: "verify-vault", automationSlug: "verify-vault" }],
-  });
+  state.overview = {
+    ...state.overview,
+    needsYou: [
+      ...state.overview.needsYou,
+      {
+        connectionName: "google-ops",
+        kind: "missing-connection",
+        project: { id: FINANCE_ID, slug: "finance", name: "Finance" },
+        provider: "google",
+        status: "missing",
+        usedBy: [{ automationName: "verify-vault", automationSlug: "verify-vault" }],
+      },
+    ],
+  };
   await mockDashboardApi(page, state);
   await page.goto("/credentials");
   await expect(page.getByTestId("connect-form")).toHaveCount(0);
