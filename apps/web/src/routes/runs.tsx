@@ -4,7 +4,7 @@ import { useId, useState } from "react";
 import { Page } from "../components/page";
 import { RunPanel } from "../components/run-panel";
 import { RunWorkbench, useRunSplit } from "../components/run-workbench";
-import type { RunStatus } from "../lib/api";
+import type { RunState } from "../lib/api";
 import { useAutomations } from "../lib/queries";
 import { RUN_FILTERS, type RunFilter } from "../lib/search";
 import { useRunPages } from "../lib/use-run-pages";
@@ -14,16 +14,15 @@ const FILTER: Record<
   RunFilter,
   {
     readonly label: string;
-    readonly statuses: readonly RunStatus[];
+    readonly states: readonly RunState[];
     readonly approvalOnly?: boolean;
-    readonly failedOnly?: boolean;
   }
 > = {
-  all: { label: "All", statuses: [] },
-  failed: { failedOnly: true, label: "Failed", statuses: [] },
-  "needs-you": { approvalOnly: true, label: "Needs you", statuses: [] },
-  running: { label: "Running", statuses: ["queued", "running"] },
-  succeeded: { label: "Succeeded", statuses: ["succeeded"] },
+  all: { label: "All", states: [] },
+  failed: { label: "Failed", states: ["failed", "dead-lettered"] },
+  "needs-you": { approvalOnly: true, label: "Needs you", states: [] },
+  running: { label: "Running", states: ["queued", "running"] },
+  succeeded: { label: "Succeeded", states: ["succeeded"] },
 };
 
 export function RunsPage() {
@@ -32,8 +31,7 @@ export function RunsPage() {
   const filter: RunFilter = search.status ?? "all";
   const pages = useRunPages({
     approvalOnly: FILTER[filter].approvalOnly === true,
-    failedOnly: FILTER[filter].failedOnly === true,
-    statuses: FILTER[filter].statuses,
+    states: FILTER[filter].states,
     ...(search.automation === undefined ? {} : { automation: search.automation }),
   });
   const view = useRunSplit(search.selected, pages.runs?.[0]?.runId);

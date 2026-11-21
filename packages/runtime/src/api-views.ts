@@ -1,7 +1,16 @@
-import type { ConnectionView } from "@swizzle/db";
+import { type ConnectionView, runState } from "@swizzle/db";
 
-import type { ConnectionResponse, DeploymentResponse, RunResponse } from "./http-contract.js";
-import type { PlatformDeploymentRecord, PlatformRunDetail } from "./platform-records.js";
+import type {
+  ConnectionResponse,
+  DeploymentResponse,
+  RunResponse,
+  TriggerRunResponse,
+} from "./http-contract.js";
+import type {
+  ManualTriggerRunRecord,
+  PlatformDeploymentRecord,
+  PlatformRunDetail,
+} from "./platform-records.js";
 
 export function deploymentResponse(deployment: PlatformDeploymentRecord): DeploymentResponse {
   return {
@@ -25,7 +34,18 @@ export function deploymentResponse(deployment: PlatformDeploymentRecord): Deploy
 }
 
 export function runResponse(run: PlatformRunDetail, dashboardUrl: string | null): RunResponse {
-  return { ...run, dashboardUrl };
+  return { ...run, dashboardUrl, state: runState(run) };
+}
+
+export function triggerRunResponse(run: ManualTriggerRunRecord): TriggerRunResponse {
+  return {
+    deploymentId: run.deploymentId,
+    queuedAt: run.queuedAt,
+    runId: run.runId,
+    state: runState(run),
+    status: run.status,
+    ...(run.warning === undefined ? {} : { warning: run.warning }),
+  };
 }
 
 export function connectionResponse(connection: ConnectionView): ConnectionResponse {

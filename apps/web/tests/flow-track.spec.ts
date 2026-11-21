@@ -151,6 +151,42 @@ test("the fold is remembered across a reload", async ({ page }) => {
   await expect(page.getByTestId("track")).toHaveCount(0);
 });
 
+test("Play's elapsed label holds its position across overlapping item passes", async ({ page }) => {
+  const state = seededState();
+  const run = state.runDetails.get(OK_RUN_ID);
+  if (run?.startedAt == null) throw new Error("Expected a started run");
+  const start = Date.parse(run.startedAt);
+  const steps = [
+    { key: "fetch:a", from: 0, to: 2_000 },
+    { key: "fetch:b", from: 100, to: 1_000 },
+  ].map(({ key, from, to }) => ({
+    approval: null,
+    attempt: 1,
+    createdAt: new Date(start + from).toISOString(),
+    executionNumber: 1,
+    finishedAt: new Date(start + to).toISOString(),
+    startedAt: new Date(start + from).toISOString(),
+    stepKey: key,
+    updatedAt: new Date(start + to).toISOString(),
+    value: null,
+  }));
+  await mockDashboardApi(page, state);
+  await page.route("**/dashboard/runs/*/steps*", (route) => route.fulfill({ json: steps }));
+  await page.goto(`/automations/verify-probe?tab=play&run=${OK_RUN_ID}`);
+
+  const transport = page.getByTestId("play-rail").getByTestId("play-transport");
+  const slider = transport.getByRole("slider", { name: "Replay position" });
+  const pass = transport.getByTestId("play-pass");
+  await slider.fill("990");
+  await expect(pass).toContainText("Item 1 of 2");
+  const elapsed = transport.getByText(/^[\d.]+ s in/u);
+  const lastElapsed = await elapsed.textContent();
+  await slider.fill("1500");
+  await expect(pass).toContainText("Item 2 of 2");
+  const seconds = (text: string | null) => Number(text?.split(" ")[0]);
+  expect(seconds(await elapsed.textContent())).toBeGreaterThanOrEqual(seconds(lastElapsed));
+});
+
 test("Play reads the waiting step in colour and greys the rest", async ({ page }) => {
   await mockDashboardApi(page, seededState());
   await page.goto(`/automations/verify-probe?tab=play&run=${APPROVAL_RUN_ID}`);

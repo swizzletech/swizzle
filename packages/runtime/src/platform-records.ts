@@ -8,6 +8,8 @@ import type {
   DeploymentChange,
   ExplainedPlacement,
   KeptAutomationHistory,
+  PlatformRunStatus,
+  RunState,
   StoredDeployment,
   StoredRun,
   WorkerCapabilities,
@@ -161,7 +163,8 @@ export interface DiagnosisFix {
 export interface Diagnosis {
   readonly runId: string;
   readonly automation: string | null;
-  readonly status: string;
+  readonly status: PlatformRunStatus;
+  readonly state: RunState;
   readonly triggerType: string;
   readonly attempts: { readonly made: number; readonly max: number };
   readonly likelyCause: { readonly code: string; readonly summary: string };

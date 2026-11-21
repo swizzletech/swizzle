@@ -35,6 +35,7 @@ import {
 } from "./command-support.js";
 import { resolveCommandEnvironment } from "./environment-guard.js";
 import { AgentError, type CliIO, EXIT_CODES, respond, selectFields, warn } from "./output.js";
+import { runOutcome } from "./run-records.js";
 
 export function registerAutomationCommands(
   program: Command,
@@ -65,7 +66,7 @@ function automationRow(automation: AutomationSummaryRecord) {
   const notReady = readiness.status === "not-ready";
   return {
     deployedAt: automation.activeDeployment.deployedAt,
-    lastRun: automation.lastRun?.status ?? "never",
+    lastRun: automation.lastRun?.state ?? "never",
     lastRunAt: automation.lastRun?.queuedAt ?? null,
     name: automation.automationSlug,
     notReady: notReady ? readiness.errors.map((issue) => issue.message).join("; ") : null,
@@ -213,7 +214,7 @@ function automationDetail(
     recentRuns: runSummary(runs),
     ...(runs[0] !== undefined
       ? {
-          lastRun: `${runs[0].status} ${runs[0].runId} at ${runs[0].queuedAt}${
+          lastRun: `${runs[0].state} ${runs[0].runId} at ${runs[0].queuedAt}${
             runs[0].errorCode != null ? `: ${runs[0].errorCode}` : ""
           }`,
         }
@@ -239,11 +240,11 @@ function readinessText(readiness: ReadinessRecord): string {
   return `no: ${readiness.errors.map((issue) => issue.message).join("; ")}`;
 }
 
-function runSummary(runs: readonly { readonly status: string }[]): string {
+function runSummary(runs: AutomationDetailRecord["recentRuns"]): string {
   if (runs.length === 0) return "none";
   const counts = new Map<string, number>();
-  for (const run of runs) counts.set(run.status, (counts.get(run.status) ?? 0) + 1);
-  return `${runs.length} recent: ${[...counts].map(([status, count]) => `${count} ${status}`).join(", ")}`;
+  for (const run of runs) counts.set(run.state, (counts.get(run.state) ?? 0) + 1);
+  return `${runs.length} recent: ${[...counts].map(([state, count]) => `${count} ${state}`).join(", ")}`;
 }
 
 function inspectHelp(detail: AutomationDetailRecord): string[] {
@@ -487,13 +488,13 @@ function registerTrigger(program: Command, io: CliIO, runHandler: RunHandler): v
             run: {
               id: result.runId,
               automation: resolved.slug,
-              status: result.status,
+              ...runOutcome(result),
               queuedAt: result.queuedAt,
             },
           },
           [
             `Run \`swizzle logs --run ${result.runId} --follow\` to watch it to the end`,
-            `Run \`swizzle runs inspect ${result.runId}\` for its status and result`,
+            `Run \`swizzle runs inspect ${result.runId}\` for its state and result`,
           ],
         );
       });

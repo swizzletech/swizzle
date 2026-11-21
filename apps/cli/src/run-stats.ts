@@ -5,6 +5,7 @@ export interface RunStats {
   readonly succeeded: number;
   readonly failed: number;
   readonly deadLettered: number;
+  readonly cancelled: number;
   readonly queued: number;
   readonly running: number;
   readonly waiting: number;
@@ -24,11 +25,12 @@ export function aggregateRunStats(
   let succeeded = 0;
   let failed = 0;
   let deadLettered = 0;
+  let cancelled = 0;
   let queued = 0;
   let running = 0;
   let waiting = 0;
   for (const run of runs) {
-    switch (run.status) {
+    switch (run.state) {
       case "succeeded":
         succeeded++;
         break;
@@ -37,6 +39,9 @@ export function aggregateRunStats(
         break;
       case "dead-lettered":
         deadLettered++;
+        break;
+      case "cancelled":
+        cancelled++;
         break;
       case "queued":
         queued++;
@@ -48,7 +53,7 @@ export function aggregateRunStats(
         waiting++;
         break;
       default:
-        throw new Error(`Unknown run status: ${run.status}`);
+        throw new Error(`Unknown run state: ${run.state}`);
     }
   }
   const total = runs.length;
@@ -76,6 +81,7 @@ export function aggregateRunStats(
     succeeded,
     failed,
     deadLettered,
+    cancelled,
     running,
     queued,
     waiting,

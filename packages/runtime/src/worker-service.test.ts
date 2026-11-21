@@ -21,9 +21,11 @@ const lease: ExecutionLease = {
 
 interface Faults {
   readonly stalledTokenRenewal?: boolean;
-  readonly heldRenewal?: boolean;
+  readonly holdExecutionAt?: "/worker/source" | "/gate";
   readonly cutSource?: boolean;
   readonly refusedRenewal?: boolean;
+  readonly renewalStatusAfterStart?: number;
+  readonly outputStatus?: number;
   readonly hostSlept?: boolean;
   readonly onAssignment?: () => void;
 }
@@ -61,6 +63,14 @@ async function api(script: string, faults: Faults = {}, expiresAt = lease.expire
   const tokenProbe = new Promise<void>((resolve) => {
     tokenProbeStarted = resolve;
   });
+  let holdExecution = () => {};
+  const executionHeld = new Promise<void>((resolve) => {
+    holdExecution = resolve;
+  });
+  let holdRenewal = () => {};
+  const renewalHeld = new Promise<void>((resolve) => {
+    holdRenewal = resolve;
+  });
   const server = createServer(async (req, res) => {
     let raw = "";
     for await (const chunk of req) raw += chunk;
@@ -76,6 +86,11 @@ async function api(script: string, faults: Faults = {}, expiresAt = lease.expire
       if (!pulled) faults.onAssignment?.();
       body = { assignment: pulled ? null : delivery.assignment };
       pulled = true;
+    }
+    if (faults.holdExecutionAt !== undefined && req.url === faults.holdExecutionAt) {
+      holdExecution();
+      await testFinished;
+      return;
     }
     if (req.url === "/worker/source") {
       body = { files: delivery.source };
@@ -99,16 +114,23 @@ async function api(script: string, faults: Faults = {}, expiresAt = lease.expire
     if (req.url === "/worker/lease/renew") {
       renewals++;
       if (faults.hostSlept) serverClockAhead = 10 * 60_000;
-      if (faults.heldRenewal && renewals > 1) await testFinished;
-      if (faults.refusedRenewal && started && failedRenewals === 0) {
+      if (faults.holdExecutionAt !== undefined && renewals > 1) {
+        holdRenewal();
+        await testFinished;
+        return;
+      }
+      if (faults.renewalStatusAfterStart !== undefined && started) {
+        res.statusCode = faults.renewalStatusAfterStart;
+      } else if (faults.refusedRenewal && started && failedRenewals === 0) {
         failedRenewals++;
         res.statusCode = 503;
       } else if (failedRenewals > 0) renewalSucceeded();
-      body = { lease: { ...serverLease, remainingMs: faults.heldRenewal ? 500 : 3_000 } };
+      body = { lease: serverLease };
     }
     if (req.url === "/worker/output") {
       outputs.push(raw);
-      if (outputs.length === 1) res.statusCode = 503;
+      if (faults.outputStatus !== undefined) res.statusCode = faults.outputStatus;
+      else if (outputs.length === 1) res.statusCode = 503;
     }
     if (req.url === "/worker/complete") {
       reports.push(raw);
@@ -168,10 +190,11 @@ async function api(script: string, faults: Faults = {}, expiresAt = lease.expire
     outputs,
     reports,
     tokenProbe,
+    executionHeld,
+    renewalHeld,
     failure,
     close: () => worker.close(),
     accepted: () => accepted,
-    renewals: () => renewals,
     failedRenewals: () => failedRenewals,
     sources: () => sources,
   };
@@ -193,12 +216,28 @@ it.for(["1970-01-01T00:00:00.000Z", "2099-01-01T00:00:00.000Z"])(
   },
 );
 
-it("stops before server expiry when a renewal acknowledgement is delayed", async () => {
-  const client = await api("setInterval(() => {}, 60_000);", { heldRenewal: true });
-  expect((await client.failure).message).toBe("Execution lease was lost.");
-  expect(client.renewals()).toBeGreaterThan(1);
-  expect(client.reports).toEqual([]);
-});
+it.for(["/worker/source", "/gate"] as const)(
+  "stops before server expiry when a renewal acknowledgement is delayed during %s",
+  async (holdExecutionAt) => {
+    vi.useFakeTimers({
+      toFake: ["Date", "performance", "setTimeout", "clearTimeout", "setInterval", "clearInterval"],
+    });
+    try {
+      const client = await api("await fetch(process.env.GATE); console.log('{}');", {
+        holdExecutionAt,
+      });
+      const renewalInterval = lease.remainingMs / 3;
+      await client.executionHeld;
+      await vi.advanceTimersByTimeAsync(renewalInterval);
+      await client.renewalHeld;
+      await vi.advanceTimersByTimeAsync(lease.remainingMs - renewalInterval - 1);
+      expect((await client.failure).message).toBe("Execution lease was lost.");
+      expect(client.reports).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  },
+);
 
 it("fetches the bundle again after a transfer breaks off", async ({ signal }) => {
   const client = await api(
@@ -219,6 +258,20 @@ it("keeps running through renewal failures shorter than the lease", async ({ sig
   await waitFor(signal, client.accepted);
   expect(client.failedRenewals()).toBe(1);
   expect(JSON.parse(client.reports[1] ?? "{}").report).toMatchObject({ exitCode: 0 });
+});
+
+it("loses the lease when the server refuses a renewal during the run", async () => {
+  const client = await api("await fetch(process.env.GATE); console.log('{}');", {
+    renewalStatusAfterStart: 409,
+  });
+  expect((await client.failure).message).toBe("Execution lease was lost.");
+  expect(client.reports).toEqual([]);
+});
+
+it("reports a refused output as its request failure, not as a lost lease", async () => {
+  const client = await api("console.log(JSON.stringify({ok:true}));", { outputStatus: 409 });
+  expect((await client.failure).message).toBe("Worker request /worker/output failed (409).");
+  expect(client.reports).toEqual([]);
 });
 
 it("closes the worker while shared token renewal is stalled", async () => {

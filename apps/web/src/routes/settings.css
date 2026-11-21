@@ -1,5 +1,3 @@
-/* Settings: the nav of sections, in groups, on the left and the open section on the right; at
-   phone width the nav wraps above the section, so every link shows. */
 @layer components {
   .settings {
     display: grid;

@@ -4,7 +4,7 @@ import {
   AUTOMATION_TRIGGER_TYPES,
   createAutomationConfigJsonSchema,
 } from "@swizzle/config";
-import { RUN_STATUSES } from "@swizzle/db";
+import { RUN_STATES, RUN_STATUSES } from "@swizzle/db";
 import { Command, CommanderError } from "commander";
 import { registerAccessCommands } from "./access-commands.js";
 import { registerAdminCommands } from "./admin-commands.js";
@@ -382,6 +382,7 @@ function buildSchema(type: string): Record<string, unknown> {
       return {
         executionModes: [...AUTOMATION_RUNTIME_EXECUTION_MODES],
         languages: [...AUTOMATION_RUNTIME_LANGUAGES],
+        runStates: RUN_STATES,
         runStatuses: RUN_STATUSES,
         triggerStatuses: ["active", "paused", "missing", "invalid"],
         triggerTypes: [...AUTOMATION_TRIGGER_TYPES],

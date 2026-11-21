@@ -47,7 +47,7 @@ just check
 
 Keep explanations in names, types, tests, or commit messages. Put a hazard comment marked `HAZARD:` on the line it guards or directly above it.
 When you remove comments that count toward the [comment budget](scripts/conventions/comment-budget.json), lower the file's count or remove its entry at zero.
-`just check` checks the budget against tracked TypeScript source files and refuses increases from the merge base with `main`.
+`just check` checks tracked TypeScript, CSS, and HTML source files and refuses budget increases from the merge base with `main`.
 CI requires a committed baseline.
 Outside CI, if the checkout lacks a baseline, the check reports that it skipped the budget growth comparison.
 

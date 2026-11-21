@@ -1,11 +1,13 @@
 import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createDashboardStore, createPostgresWorkerRegistry } from "@swizzle/db/postgres";
 import type {
   DeploymentSummaryResponse,
   JudgedAutomationSummary,
 } from "@swizzle/runtime/http-contract";
 import type { PlatformServices } from "@swizzle/runtime/platform";
+import { Queue } from "bullmq";
 import { beforeEach, vi } from "vitest";
 import {
   type DashboardSecretStatus,
@@ -13,8 +15,12 @@ import {
   DEFAULT_PROJECT_ID,
 } from "../../../packages/db/src/index.js";
 import { testPlatform } from "../../../test/platform.js";
+import { testDatabase } from "../../../test/postgres.js";
 import { temporaryDirectory } from "../../../test/support.js";
-import type { DashboardDataProvider } from "../../api/src/dashboard.js";
+import {
+  createDashboardDataProvider,
+  type DashboardDataProvider,
+} from "../../api/src/dashboard.js";
 import { ownerToken } from "../../api/test/people.js";
 import { saveProfileConfig } from "../src/profile.js";
 
@@ -46,6 +52,16 @@ export async function createPlatformForStub(automationSlug: string): Promise<Pla
       ? { automationId: "stub-id", automationSlug, projectId: DEFAULT_PROJECT_ID }
       : null;
   return platform;
+}
+
+export function dashboardWithStoredRuns(platform: PlatformServices): DashboardDataProvider {
+  vi.spyOn(Queue.prototype, "getJobCounts").mockRejectedValue(new Error("no Valkey"));
+  const client = testDatabase();
+  return createDashboardDataProvider({
+    dashboardStore: createDashboardStore({ client }),
+    platform,
+    workerRegistry: createPostgresWorkerRegistry({ client }),
+  });
 }
 
 export function createDashboardStub(

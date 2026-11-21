@@ -1,7 +1,4 @@
-/* The track: stations on top of lanes. Every view that draws one imports components/track.tsx. */
 @layer components {
-  /* Dagre places each station; the SVG beneath draws the lanes. A station is an HTML box, so its
-     label wraps and an approval station holds real buttons. */
   .track-view {
     position: relative;
     min-width: 0;
@@ -12,7 +9,6 @@
     scrollbar-width: thin;
     scrollbar-color: var(--line-2) transparent;
   }
-  /* An edge that clips the track: a fade over the cut, and the button that moves past it. */
   .track-edge {
     position: absolute;
     z-index: 1;
@@ -101,7 +97,6 @@
   .track-wait {
     height: 120px;
   }
-  /* A step is a card: a state symbol, then its label over a meta line. */
   .station {
     position: absolute;
     display: grid;
@@ -144,8 +139,6 @@
     font-weight: 500;
     overflow-wrap: anywhere;
   }
-  /* One line always: a long item id is cut, and the title holds it whole. The card keeps room
-     for it, so a card without one centres its label. */
   .st-meta:empty {
     display: none;
   }
@@ -195,7 +188,6 @@
   .station.running .st-meta {
     color: var(--warn-text);
   }
-  /* The running ring: a quarter in the state colour on a faint track. */
   .st-sym.running circle {
     stroke: color-mix(in srgb, var(--run) 30%, transparent);
     stroke-width: 2;
@@ -204,7 +196,6 @@
     stroke: var(--run);
     stroke-width: 2;
   }
-  /* The halo blinks on opacity alone, so the layout never moves while a run is live. */
   .station.running::after {
     content: "";
     position: absolute;
@@ -250,8 +241,6 @@
     fill: var(--fail);
     stroke: var(--fail);
   }
-  /* A station the run can no longer reach recedes with the lanes that lead to it: outlined, in the
-     faintest ink that still reads, never faded below it. */
   .station.untaken {
     border-style: dashed;
     background: none;
@@ -259,7 +248,6 @@
   .station.untaken .st-label {
     color: var(--ink-3);
   }
-  /* A node that only narrates, such as the trigger, a decision or the end, is a quiet marker. */
   .station.narration {
     border-radius: var(--radius-full);
     background: var(--surface-2);
@@ -278,7 +266,6 @@
   .station.narration.done {
     color: var(--ink-2);
   }
-  /* A decision: a small diamond before the question, filled once the run passed it. */
   .station.narration.diamond {
     background: var(--surface);
   }
@@ -319,8 +306,6 @@
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
   }
-  /* The details are read whole before the decision, so nothing is cut; flow-track.tsx sizes the
-     station to the wrapped lines. */
   .station .st-act .st-details {
     width: 100%;
     text-align: left;

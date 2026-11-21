@@ -114,17 +114,19 @@ swizzle logs --run <run-id> --full         # no truncation (can be huge)
 swizzle logs --run <run-id> --follow
 swizzle logs my-automation --follow        # auto-picks the most recent active run
 
-# One run: status, result, attempts and a log tail
+# One run: state, result, attempts and a log tail
 swizzle runs inspect <run-id>
 swizzle runs inspect <run-id> --full       # every attempt and both streams whole
 
 # Run lists, newest first; `runs` alone is `runs list`
 swizzle runs list my-automation --status failed --limit 20
-swizzle runs --status failed,dead-lettered --since 1d --fields trigger,attempts
+swizzle runs --state failed,dead-lettered --since 1d --fields trigger,attempts
 
 # Aggregated statistics
 swizzle stats my-automation
 ```
+
+`--state` filters the derived run state. `--status` filters the stored status, which is `dead-lettered` for cancelled runs. JSON run records include both fields. `swizzle stats` counts cancelled runs separately and excludes them from the success rate and top errors.
 
 ## Waiting runs and durable resumes
 
@@ -148,9 +150,9 @@ Kill a stuck run or stop a noisy trigger without restarting the worker:
 
 ```bash
 # Cancel a queued or running run — sends SIGTERM to the child (SIGKILL after 5s),
-# marks dead-lettered with reason "user-cancelled". Idempotent.
+# stores status "dead-lettered" with reason "user-cancelled" and shows state "cancelled".
 swizzle runs cancel <run-id>
-swizzle runs cancel <run-id>                # again: state: already dead-lettered (no-op)
+swizzle runs cancel <run-id>                # again: state: already cancelled (no-op)
 
 # Pause / resume a trigger (automatic cron skips the slot, webhook ingress rejects with 409)
 swizzle trigger pause my-automation

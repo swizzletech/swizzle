@@ -1,4 +1,3 @@
-/* The flow band at the top of the run pane: a fold row, then the track in its window. */
 @layer components {
   .flow-band {
     flex: none;

@@ -4,7 +4,7 @@ import type {
   DashboardRunResponse,
   ResumeRunResponse,
   RunDiagnosisResponse,
-  RunStatus,
+  RunState,
   RunStepsResponse,
   RunsResponse,
   TriggerRunResponse,
@@ -79,10 +79,9 @@ export function runsCalls(environment: string) {
       readonly automation?: string;
       readonly cursor?: string;
       readonly environment?: string;
-      readonly failedOnly?: boolean;
       readonly limit?: number;
       readonly parentRunId?: string;
-      readonly statuses?: readonly RunStatus[];
+      readonly states?: readonly RunState[];
       readonly topLevelOnly?: boolean;
       readonly triggerType?: TriggerType;
     }) {
@@ -94,11 +93,8 @@ export function runsCalls(environment: string) {
       if (filters.approvalOnly === true) {
         query.set("approvalOnly", "true");
       }
-      if (filters.failedOnly === true) {
-        query.set("failedOnly", "true");
-      }
-      if (filters.statuses !== undefined && filters.statuses.length > 0) {
-        query.set("status", filters.statuses.join(","));
+      if (filters.states !== undefined && filters.states.length > 0) {
+        query.set("state", filters.states.join(","));
       }
       if (filters.triggerType) {
         query.set("triggerType", filters.triggerType);

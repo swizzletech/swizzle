@@ -1,4 +1,3 @@
-/* A small menu that opens under its button, on frosted glass. Only components/menu.tsx draws it. */
 @layer components {
   .menu {
     position: relative;

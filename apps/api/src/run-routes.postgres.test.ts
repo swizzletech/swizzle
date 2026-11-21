@@ -29,7 +29,13 @@ beforeEach(async () => {
   owner = await ownerHeaders();
 });
 
-const emptyRunFilters = { automationSlug: null, limit: 50, statuses: [], triggerType: null };
+const emptyRunFilters = {
+  automationSlug: null,
+  limit: 50,
+  states: [],
+  statuses: [],
+  triggerType: null,
+};
 
 function createDashboardStub(overrides: Partial<DashboardDataProvider>): DashboardDataProvider {
   const unused = async (): Promise<never> => {
@@ -362,7 +368,7 @@ describe("run routes", () => {
     const runs = await app.inject({
       headers: owner,
       method: "GET",
-      url: "/dashboard/runs?automation=hello-webhook&status=failed,dead-lettered&limit=5&topLevelOnly=true",
+      url: "/dashboard/runs?automation=hello-webhook&status=failed,dead-lettered&state=cancelled&limit=5&topLevelOnly=true",
     });
     expect(runs.statusCode).toBe(200);
     expect(runQueries).toEqual([
@@ -371,6 +377,7 @@ describe("run routes", () => {
         environment: "local",
         limit: 5,
         scope: { all: true },
+        states: ["cancelled"],
         statuses: ["failed", "dead-lettered"],
         topLevelOnly: true,
       },
@@ -381,6 +388,15 @@ describe("run routes", () => {
       url: "/dashboard/runs?status=broken",
     });
     expect(unknownStatus.statusCode).toBe(400);
+    expect(unknownStatus.json()).toMatchObject({ message: "Unknown run status: broken." });
+
+    const unknownState = await app.inject({
+      headers: owner,
+      method: "GET",
+      url: "/dashboard/runs?state=broken",
+    });
+    expect(unknownState.statusCode).toBe(400);
+    expect(unknownState.json()).toMatchObject({ message: "Unknown run state: broken." });
 
     const missingRun = await app.inject({
       headers: owner,
@@ -434,10 +450,11 @@ describe("run routes", () => {
     expect(cancelled.statusCode).toBe(200);
     const cancelBody = cancelled.json() as {
       alreadyTerminal: boolean;
-      run: { status: string; deadLetterReason: string | null };
+      run: { status: string; state: string; deadLetterReason: string | null };
     };
     expect(cancelBody.alreadyTerminal).toBe(false);
     expect(cancelBody.run.status).toBe("dead-lettered");
+    expect(cancelBody.run.state).toBe("cancelled");
     expect(cancelBody.run.deadLetterReason).toBe("user-cancelled");
 
     const cancelAgain = await app.inject({

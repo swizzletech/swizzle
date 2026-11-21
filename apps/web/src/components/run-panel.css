@@ -1,5 +1,3 @@
-/* The run panel: a head with the run's state and actions, its facts as one ruled row, what needs
-   reading first (the error, the approval), then the tabs of the run's output. */
 @layer components {
   .runpanel {
     min-width: 0;
@@ -45,7 +43,6 @@
     line-height: 20px;
     overflow-wrap: anywhere;
   }
-  /* A shrinkable column, so a long unbroken line scrolls in its own box instead of widening the pane. */
   .rp-body {
     display: grid;
     grid-template-columns: minmax(0, 1fr);

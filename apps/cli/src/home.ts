@@ -206,7 +206,7 @@ async function liveState(
               ? "no"
               : `v${deployed.activeDeployment.version} at ${deployed.activeDeployment.deployedAt}`,
           trigger: deployed?.trigger?.status ?? "none",
-          lastRun: deployed?.lastRun?.status ?? "never",
+          lastRun: deployed?.lastRun?.state ?? "never",
         },
       },
       help: [
@@ -221,7 +221,7 @@ async function liveState(
   const rows = automations.slice(0, HOME_ROWS).map((automation) => ({
     name: automation.automationSlug,
     status: automation.trigger?.status ?? "none",
-    lastRun: automation.lastRun?.status ?? "never",
+    lastRun: automation.lastRun?.state ?? "never",
   }));
   const needsYou = overview.needsYou.map((item) => attentionRow(item, env));
   const last24h = Object.entries(overview.last24h)

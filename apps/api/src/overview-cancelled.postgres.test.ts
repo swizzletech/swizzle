@@ -55,6 +55,16 @@ async function failingAutomation() {
       await send("POST", `/runs/${runId}/cancel`);
       return runId;
     },
+    cancelledWithParent: async () => {
+      const runId = await start();
+      await platform.store.updateRunState({
+        deadLetterReason: "parent-cancelled",
+        finishedAt: new Date().toISOString(),
+        runId,
+        status: "dead-lettered",
+      });
+      return runId;
+    },
     failed: async () => {
       const runId = await start();
       expect((await platform.processNextPlatformRun())?.status).toBe("dead-lettered");
@@ -130,4 +140,22 @@ it("tells the health strip which of an automation's runs a person cancelled", as
     "cancelled",
     "dead-lettered",
   ]);
+});
+
+it("reads either recorded cancellation as cancelled in detail, lists and overview counts", async () => {
+  const { cancelled, cancelledWithParent, failed, overview, send } = await failingAutomation();
+  const failedId = await failed();
+  const userCancelledId = await cancelled();
+  const parentCancelledId = await cancelledWithParent();
+
+  for (const runId of [userCancelledId, parentCancelledId]) {
+    expect(await send("GET", `/dashboard/runs/${runId}`)).toMatchObject({ state: "cancelled" });
+  }
+  const failures = await send("GET", "/dashboard/runs?failedOnly=true");
+  expect(failures.runs.map((run: { runId: string }) => run.runId)).toEqual([failedId]);
+  const result = await overview();
+  expect(result.last24h).toMatchObject({ cancelled: 2, "dead-lettered": 1 });
+  const hours: Record<string, number>[] = result.timetable.rows[0].hours;
+  expect(hours.reduce((sum, hour) => sum + (hour.cancelled ?? 0), 0)).toBe(2);
+  expect(hours.reduce((sum, hour) => sum + (hour["dead-lettered"] ?? 0), 0)).toBe(1);
 });

@@ -9,7 +9,7 @@ import {
   type TriggerRunResponse,
   WEBHOOK_PATH_PREFIX,
 } from "@swizzle/runtime/http-contract";
-import type { PlatformServices } from "@swizzle/runtime/platform";
+import { type PlatformServices, triggerRunResponse } from "@swizzle/runtime/platform";
 import type { FastifyReply, FastifyRequest } from "fastify";
 
 import {
@@ -70,12 +70,7 @@ export function registerWebhookIngressRoute(
         webhookContext: buildWebhookContext(request),
       });
 
-      return {
-        deploymentId: run.deploymentId,
-        queuedAt: run.queuedAt,
-        runId: run.runId,
-        status: run.status,
-      };
+      return triggerRunResponse(run);
     } catch (error) {
       return sanitizeWebhookIngressError(error);
     }

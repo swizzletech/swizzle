@@ -16,7 +16,7 @@ import type {
   TriggerRunResponse,
   TriggerStatusResponse,
 } from "@swizzle/runtime/http-contract";
-import type { PlatformServices } from "@swizzle/runtime/platform";
+import { type PlatformServices, triggerRunResponse } from "@swizzle/runtime/platform";
 
 import {
   type ApiServer,
@@ -340,13 +340,7 @@ export function registerAutomationRoutes(app: ApiServer, platform: PlatformServi
       payload: request.body ?? {},
     });
 
-    return {
-      deploymentId: run.deploymentId,
-      queuedAt: run.queuedAt,
-      runId: run.runId,
-      status: run.status,
-      ...(run.warning !== undefined ? { warning: run.warning } : {}),
-    };
+    return triggerRunResponse(run);
   });
 }
 

@@ -25,6 +25,7 @@ import type {
   ProjectRef,
   ProjectRole,
   RegisteredWorker,
+  RunState,
   SecretView,
   ServiceAccountView,
   SharedCredential,
@@ -83,7 +84,10 @@ export type DeploymentResponse = Pick<
   readonly vars: PlatformDeploymentRecord["config"]["vars"];
 };
 
-export type RunResponse = PlatformRunDetail & { readonly dashboardUrl: string | null };
+export type RunResponse = PlatformRunDetail & {
+  readonly dashboardUrl: string | null;
+  readonly state: RunState;
+};
 
 export type RunDiagnosisResponse = Diagnosis;
 
@@ -273,10 +277,13 @@ export interface DeleteStateResponse {
 export type TriggerRunResponse = Pick<
   ManualTriggerRunRecord,
   "deploymentId" | "queuedAt" | "runId" | "status" | "warning"
->;
+> &
+  Pick<RunResponse, "state">;
 export type TriggerStatusResponse = StoredTrigger;
 export type RunsResponse = DashboardRunsResult;
-export type CancelRunResponse = CancelRunResult;
+export type CancelRunResponse = Omit<CancelRunResult, "run"> & {
+  readonly run: CancelRunResult["run"] & Pick<RunResponse, "state">;
+};
 export interface ResumeRunResponse {
   readonly resumed: true;
   readonly runId: string;

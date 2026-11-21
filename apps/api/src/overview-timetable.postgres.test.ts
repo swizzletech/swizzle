@@ -75,10 +75,18 @@ async function reportAutomation() {
       await send("POST", `/runs/${runId}/cancel`);
       await queuedAt(runId, iso);
     },
-    deployedAt: async (iso: string) => {
+    deploy: async (name: string) => {
+      const fixture = await createAutomationFixture({
+        mainJs: "console.log('{}');",
+        name,
+        path: `/${name}`,
+      });
+      expect((await deployFixture(app, fixture, {}, { headers: owner })).statusCode).toBe(200);
+    },
+    deployedAt: async (iso: string, slug = "report") => {
       await testDatabase().pool.query(
-        "update audit_events set occurred_at = $1 where change->>'kind' = 'deployment'",
-        [iso],
+        "update audit_events set occurred_at = $1 where change->>'kind' = 'deployment' and automation_slug = $2",
+        [iso, slug],
       );
     },
     failed: async (iso: string) => await run({ fail: true }, iso),
@@ -121,4 +129,30 @@ it("marks a deploy inside the window at its time and leaves out one before it", 
 
   await report.deployedAt(at(-1));
   expect((await report.timetable()).rows).toEqual([]);
+});
+
+it("keeps another automation's deployment marker when one automation has over 500 changes", async () => {
+  const report = await reportAutomation();
+  await report.deployedAt(at(1));
+  await report.deploy("busy");
+  await report.deployedAt(at(24), "busy");
+  await testDatabase().pool.query(
+    `insert into audit_events
+       (actor_kind, action, automation_id, automation_slug, project_id, environment,
+        deployment_id, change, occurred_at, request_id)
+     select 'system', action, automation_id, automation_slug, project_id, environment,
+            deployment_id, change, $1::timestamptz + n * interval '1 second', request_id
+     from audit_events cross join generate_series(1, 501) as n
+     where automation_slug = 'busy' and change->>'kind' = 'deployment'`,
+    [at(2)],
+  );
+
+  const { rows } = await report.timetable();
+  expect(rows.find((row) => row.automationSlug === "report")?.deployments).toEqual([
+    { at: at(1), version: "1.0.0" },
+  ]);
+  const busy = rows.find((row) => row.automationSlug === "busy")?.deployments;
+  expect(busy).toHaveLength(24);
+  expect(busy?.at(0)).toEqual({ at: "2026-11-05T17:47:58.000Z", version: "1.0.0" });
+  expect(busy?.at(-1)).toEqual({ at: "2026-11-05T17:48:21.000Z", version: "1.0.0" });
 });

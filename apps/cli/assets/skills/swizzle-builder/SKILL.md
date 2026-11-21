@@ -447,7 +447,7 @@ If you are testing a cron automation, pause the trigger once, iterate with `swiz
 Use the CLI over `docker logs` / `docker exec` — everything the dashboard sees is reachable via CLI. **Start compact, widen only when needed:**
 
 ```bash
-swizzle runs inspect <runId>          # status, result and a log tail: the cheapest useful view
+swizzle runs inspect <runId>          # state, result and a log tail: the cheapest useful view
 swizzle diagnose <runId>              # root-cause analysis for a failed run
 swizzle logs --run <runId> --full     # raw log bodies, can be large: last resort
 ```

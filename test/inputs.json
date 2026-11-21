@@ -19,15 +19,15 @@
     "packages/db/{rebase-migrations,migration-files,drizzle.config}.ts"
   ],
   "scripts/dev-stack-descendants.test.ts": [
-    "scripts/{dev-stack.mts,dev-stack-supervisor.mts,dev-stack-timeout.ts,env-file.ts,process-identity.ts}"
+    "scripts/{dev-stack.mts,dev-stack-ports.ts,dev-stack-supervisor.mts,dev-stack-timeout.ts,env-file.ts,process-identity.ts}"
   ],
   "scripts/dev-stack-ownership.test.ts": [
-    "scripts/{dev-stack.mts,dev-stack-supervisor.mts,dev-stack-timeout.ts,env-file.ts,process-identity.ts}"
+    "scripts/{dev-stack.mts,dev-stack-ports.ts,dev-stack-supervisor.mts,dev-stack-timeout.ts,env-file.ts,process-identity.ts}"
   ],
   "scripts/init-env.test.ts": ["scripts/{init-env,env-file}.ts"],
   "scripts/conventions/rules/comment-budget.test.ts": [
     "scripts/conventions/comment-budget.json",
-    "{apps,packages,scripts,test}/**/*.{ts,mts,cts,tsx}"
+    "{apps,packages,scripts,test}/**/*.{ts,mts,cts,tsx,css,html}"
   ],
   "scripts/export-public.test.ts": [
     "scripts/{export-public.mts,private-paths.ts}",

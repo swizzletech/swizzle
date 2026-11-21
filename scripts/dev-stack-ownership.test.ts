@@ -96,7 +96,6 @@ for (const mismatch of ["incarnation", "worktree"]) {
     `just down refuses a live process with a stale ${mismatch}`,
     async () => {
       const f = await fixture();
-      // The substring used by the old owner check is present, just as for a reused orchestrator PID.
       const childRoot =
         mismatch === "worktree" ? await temporaryDirectory("swizzle-other-") : f.root;
       const owner = await ownedProcess(childRoot);
@@ -125,6 +124,52 @@ for (const mismatch of ["incarnation", "worktree"]) {
     },
   );
 }
+
+test.skipIf(process.platform !== "linux")(
+  "just dev-down leaves dev running when the fresh stack fails its ownership check",
+  async ({ signal }) => {
+    const f = await fixture();
+    const devOwner = await ownedProcess(
+      f.root,
+      `const { writeFileSync } = require("node:fs");
+process.on("SIGTERM", () => {
+  writeFileSync("dev-received-sigterm", "");
+  process.exit(0);
+});
+writeFileSync("dev-ready", "");
+setInterval(() => {}, 1000);`,
+    );
+    const freshOwner = await ownedProcess(f.root);
+    const devState = path.join(f.root, ".git/swizzle-dev");
+    await mkdir(devState);
+    await writeFile(
+      path.join(devState, "stack.json"),
+      JSON.stringify({
+        pid: devOwner.pid,
+        root: f.root,
+        incarnation: devOwner.incarnation,
+        groups: [],
+      }),
+    );
+    await writeFile(
+      path.join(f.state, "stack.json"),
+      JSON.stringify({
+        pid: freshOwner.pid,
+        root: f.root,
+        incarnation: "previous-process",
+        groups: [],
+      }),
+    );
+    await waitFor(signal, () => existsSync(path.join(f.root, "dev-ready")));
+
+    const result = await invoke("just", ["dev-down"], { cwd: f.root, env: f.env });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`Stack ownership mismatch for pid ${freshOwner.pid}`);
+    expect(existsSync(path.join(f.root, "dev-received-sigterm"))).toBe(false);
+    expect(processAlive(devOwner.pid)).toBe(true);
+  },
+);
 
 test.skipIf(process.platform !== "linux")(
   "just dev-down refuses cleanup when the recorded orchestrator ignores SIGTERM",

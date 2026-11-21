@@ -5,9 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Swizzle</title>
-    <!-- The cascade layers in their order, before any stylesheet. A shared chunk's stylesheet
-         (a component's @layer components) can load ahead of styles.css, and the first sheet to
-         name a layer would otherwise put components below base. -->
+    <!-- HAZARD: Declare layer order before stylesheets. A shared chunk can load before styles.css,
+         so its components layer would otherwise precede base. -->
     <style>
       @layer properties, theme, base, components, utilities;
     </style>

@@ -370,6 +370,7 @@ export interface DashboardRunsQuery {
   readonly limit?: number;
   readonly parentRunId?: string;
   readonly scope: ReadScope;
+  readonly states?: readonly RunState[];
   readonly statuses?: readonly DashboardRunListItem["status"][];
   readonly topLevelOnly?: boolean;
   readonly triggerType?: DashboardRunListItem["triggerType"];
@@ -380,6 +381,7 @@ export interface DashboardRunsResult {
   readonly filters: {
     readonly automationSlug: string | null;
     readonly limit: number;
+    readonly states: readonly RunState[];
     readonly statuses: readonly DashboardRunListItem["status"][];
     readonly triggerType: DashboardRunListItem["triggerType"] | null;
   };

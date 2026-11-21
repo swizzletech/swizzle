@@ -120,7 +120,7 @@ function run(
     projectId: PROJECT_ID,
     queuedAt: ago(5 * MINUTE),
     startedAt: ago(5 * MINUTE),
-    state: overrides.deadLetterReason === "user-cancelled" ? "cancelled" : overrides.status,
+    state: overrides.status,
     triggerType: "webhook",
     version: "1.1.0",
     versionId: "version-1",
@@ -701,26 +701,31 @@ export async function mockDashboardApi(
       }
       if (is("GET", /^\/automation-folders$/u)) return json(route, state.folders);
       if (is("GET", /^\/dashboard\/runs$/u)) {
-        const statuses = url.searchParams.get("status")?.split(",") ?? [];
         const slug = url.searchParams.get("automation");
         const parent = url.searchParams.get("parentRunId");
         const topLevelOnly = url.searchParams.get("topLevelOnly") === "true";
         const approvalOnly = url.searchParams.get("approvalOnly") === "true";
-        const failedOnly = url.searchParams.get("failedOnly") === "true";
+        const states = url.searchParams.get("state")?.split(",") ?? [];
         const runs = state.runs.filter(
           (item) =>
-            (statuses.length === 0 || statuses.includes(item.status)) &&
+            (states.length === 0 || states.includes(item.state)) &&
             (slug === null || item.automationSlug === slug) &&
             (parent === null || item.parentRunId === parent) &&
             (!topLevelOnly || item.parentRunId === null) &&
-            (!approvalOnly || item.approval !== null) &&
-            (!failedOnly || failed(item)),
+            (!approvalOnly || item.approval !== null),
         );
         const from = Number(url.searchParams.get("cursor") ?? 0);
-        const to = from + Number(url.searchParams.get("limit") ?? 100);
+        const limit = Number(url.searchParams.get("limit") ?? 100);
+        const to = from + limit;
         return json(route, {
           environment: "staging",
-          filters: {},
+          filters: {
+            automationSlug: slug,
+            limit,
+            states,
+            statuses: [],
+            triggerType: url.searchParams.get("triggerType"),
+          },
           nextCursor: to < runs.length ? String(to) : null,
           runs: runs.slice(from, to),
         });

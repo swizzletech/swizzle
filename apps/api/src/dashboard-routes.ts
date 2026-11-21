@@ -2,11 +2,12 @@ import {
   CodedError,
   type DashboardAutomationRefusals,
   type DashboardRunDetail,
-  type DashboardRunListItem,
   decodeRunCursor,
   getRunApproval,
+  RUN_STATES,
   RUN_STATUSES,
   type RunCursor,
+  type RunState,
   type RunTriggerType,
   runState,
 } from "@swizzle/db";
@@ -34,11 +35,15 @@ import {
 } from "./http-shared.js";
 import { objectSchema, queryBoolean, queryInteger, urlText, uuid } from "./request-validation.js";
 
-function parseRunStatuses(raw: string): DashboardRunListItem["status"][] {
+function parseRunStates<State extends RunState>(
+  raw: string,
+  field: "state" | "status",
+  allowed: readonly State[],
+): State[] {
   return raw.split(",").map((value) => {
-    const status = RUN_STATUSES.find((known) => known === value.trim());
+    const status = allowed.find((known) => known === value.trim());
     if (status === undefined) {
-      return requestValidationError(`Unknown run status: ${value}.`);
+      return requestValidationError(`Unknown run ${field}: ${value}.`);
     }
     return status;
   });
@@ -236,6 +241,7 @@ export function registerDashboardRoutes(
         cursor: urlText,
         limit: queryInteger,
         parentRunId: uuid,
+        state: urlText,
         status: urlText,
         topLevelOnly: queryBoolean,
         triggerType: { enum: ["chain", "cron", "manual", "webhook"], type: "string" },
@@ -257,7 +263,12 @@ export function registerDashboardRoutes(
       ...(query?.limit !== undefined ? { limit: Number(query.limit) } : {}),
       ...(query?.parentRunId !== undefined ? { parentRunId: query.parentRunId } : {}),
       scope: await request.access.scope(environment),
-      ...(query?.status !== undefined ? { statuses: parseRunStatuses(query.status) } : {}),
+      ...(query?.state !== undefined
+        ? { states: parseRunStates(query.state, "state", RUN_STATES) }
+        : {}),
+      ...(query?.status !== undefined
+        ? { statuses: parseRunStates(query.status, "status", RUN_STATUSES) }
+        : {}),
       ...(query?.topLevelOnly !== undefined ? { topLevelOnly: query.topLevelOnly === "true" } : {}),
       ...(query?.triggerType !== undefined
         ? { triggerType: query.triggerType as RunTriggerType }
