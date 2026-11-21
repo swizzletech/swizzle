@@ -1,12 +1,7 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
-import {
-  APPROVAL_RUN_ID,
-  mockDashboardApi,
-  OK_RUN_ID,
-  seededState,
-  serveWideFlow,
-} from "./dashboard-mock";
+import { APPROVAL_RUN_ID, mockDashboardApi, OK_RUN_ID, seededState } from "./dashboard-mock";
+import { serveWideFlow } from "./flow-track-fixture";
 
 for (const [syntax, source] of [
   ["front matter", (nodes: string) => `---\ntitle: Steps\n---\nflowchart LR\n ${nodes}\n`],

@@ -1,6 +1,13 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { addOlderRuns, mockDashboardApi, seededState } from "./dashboard-mock";
+import {
+  addOlderRuns,
+  allRunPage,
+  mockDashboardApi,
+  seededState,
+  setAllRunPage,
+  setRunPages,
+} from "./dashboard-mock";
 
 test.use({ viewport: { height: 900, width: 1440 } });
 
@@ -8,11 +15,11 @@ const MANY = 450;
 
 async function seeded(page: Page, path: string) {
   const state = seededState();
-  addOlderRuns(state, MANY);
+  const runs = addOlderRuns(state, MANY);
   await mockDashboardApi(page, state);
   await page.goto(path);
   await expect(page.getByTestId("run-row").first()).toBeVisible();
-  return state;
+  return runs;
 }
 
 for (const [name, path] of [
@@ -94,8 +101,8 @@ test.describe("at midday", () => {
 test("Load older runs reaches every run of the filter, and only then says all", async ({
   page,
 }) => {
-  const state = await seeded(page, "/runs");
-  const total = state.runs.length;
+  const runs = await seeded(page, "/runs");
+  const total = runs.length;
   const count = page.getByTestId("run-count");
   await expect(count).toHaveText("100 newest runs loaded");
   await expect(page.getByTestId("page-head")).toContainText("100 newest · live");
@@ -144,9 +151,9 @@ test("the live refresh leaves 30 loaded pages in place and requests only the new
     await expectLoaded(loaded);
   }
   const lastLoaded = await rows.last().getAttribute("data-run-id");
-  const first = state.runs[0];
+  const [first, ...rest] = allRunPage(state).runs;
   if (first === undefined) throw new Error("Expected a newest run");
-  state.runs[0] = { ...first, automationName: "refreshed-automation" };
+  setAllRunPage(state, [{ ...first, automationName: "refreshed-automation" }, ...rest]);
   const refreshStart = state.requests.length;
 
   await page.clock.runFor(5_000);
@@ -178,8 +185,17 @@ test("Load older runs can reach every run after a burst moves the newest page pa
   page,
 }) => {
   const state = seededState();
-  state.runs.length = 0;
-  addOlderRuns(state, 250);
+  setAllRunPage(state, []);
+  const initial = addOlderRuns(state, 250);
+  const [first] = initial;
+  if (first === undefined) throw new Error("Expected a newest run");
+  const now = Date.now();
+  const burst = Array.from({ length: 150 }, (_, index) => ({
+    ...first,
+    queuedAt: new Date(now - index * 1_000).toISOString(),
+    runId: `80000000-aaaa-4bbb-8ccc-${String(index).padStart(12, "0")}`,
+  }));
+  const runs = [...burst, ...initial];
   await mockDashboardApi(page, state);
   await page.goto("/runs");
 
@@ -208,15 +224,7 @@ test("Load older runs can reach every run after a burst moves the newest page pa
     await older.click();
     await obsoleteRequest;
 
-    const first = state.runs[0];
-    if (first === undefined) throw new Error("Expected a newest run");
-    const now = Date.now();
-    const burst = Array.from({ length: 150 }, (_, index) => ({
-      ...first,
-      queuedAt: new Date(now - index * 1_000).toISOString(),
-      runId: `80000000-aaaa-4bbb-8ccc-${String(index).padStart(12, "0")}`,
-    }));
-    state.runs.unshift(...burst);
+    setRunPages(state, runs);
 
     await expect(rows.first()).toHaveAttribute(
       "data-run-id",
@@ -245,7 +253,7 @@ test("Load older runs can reach every run after a burst moves the newest page pa
   await expect(page.getByTestId("run-count")).toHaveText("400 runs, that is all of them");
   expect(
     await rows.evaluateAll((elements) => elements.map((row) => row.getAttribute("data-run-id"))),
-  ).toEqual(state.runs.map((run) => run.runId));
+  ).toEqual(runs.map((run) => run.runId));
 });
 
 test("the arrow keys walk the list and keep the selected row in view", async ({ page }) => {
@@ -273,8 +281,8 @@ test("the arrow keys walk the list and keep the selected row in view", async ({ 
 
 test("the run a link names shows selected in the list, however far down", async ({ page }) => {
   const state = seededState();
-  addOlderRuns(state, 80);
+  const runs = addOlderRuns(state, 80);
   await mockDashboardApi(page, state);
-  await page.goto(`/runs?selected=${state.runs.at(-1)?.runId}`);
+  await page.goto(`/runs?selected=${runs.at(-1)?.runId}`);
   await expect(page.locator('.rrow[aria-current="true"]')).toBeInViewport({ ratio: 1 });
 });

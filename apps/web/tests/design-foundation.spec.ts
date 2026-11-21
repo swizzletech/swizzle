@@ -575,7 +575,7 @@ test.describe("every page", () => {
 
   test("the Overview shows a day with failures, and links to them", async ({ page }) => {
     const state = seededState();
-    state.needsYou = [];
+    state.overview = { ...state.overview, needsYou: [] };
     await asOwner(page, state);
     await page.goto("/");
     const status = page.getByTestId("status-card");

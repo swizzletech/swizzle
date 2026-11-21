@@ -156,12 +156,19 @@ export function mapApiErrorToAgentError(
   status: number,
   body: ApiErrorBody | undefined,
   url: string,
+  retryAfter: string | null = null,
 ): AgentError {
   const code = body?.error ?? `HTTP_${status}`;
   const message = body?.message ?? `HTTP ${status} from ${url}`;
   const exitCode =
     code === "CONFIRMATION_REQUIRED" ? EXIT_CODES.usage : exitCodeForError(code, status);
-  let hint = instanceRoleHint(code, body?.details) ?? runtimeHint(code, message);
+  const retryAfterSeconds =
+    status === 429 && /^\d+$/u.test(retryAfter ?? "") ? Number(retryAfter) : undefined;
+  const waitSeconds = Number.isSafeInteger(retryAfterSeconds) ? retryAfterSeconds : undefined;
+  let hint =
+    (status === 429 ? rateLimitHint(waitSeconds) : undefined) ??
+    instanceRoleHint(code, body?.details) ??
+    runtimeHint(code, message);
   if (hint === undefined) {
     if (code === "CONFIRMATION_REQUIRED") hint = "";
     else if (code === "PROJECT_NOT_EMPTY" && typeof body?.details?.project === "string")
@@ -181,8 +188,17 @@ export function mapApiErrorToAgentError(
     ...(fixCommand === undefined
       ? { hint: hint || fallbackHint(exitCode) }
       : { fixCommand, ...(hint.length > 0 ? { hint } : {}) }),
-    details: { ...compactDetails(body?.details), httpStatus: status },
+    details: {
+      ...compactDetails(body?.details),
+      httpStatus: status,
+      ...(waitSeconds === undefined ? {} : { retryAfterSeconds: waitSeconds }),
+    },
   });
+}
+
+function rateLimitHint(seconds: number | undefined): string {
+  if (seconds === undefined) return "Wait for the rate limit to reset, then rerun the command.";
+  return `Wait ${seconds} ${seconds === 1 ? "second" : "seconds"}, then rerun the command.`;
 }
 
 function instanceRoleHint(

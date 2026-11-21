@@ -2,7 +2,11 @@ import path from "node:path";
 
 import { AutomationRuntimeError } from "./errors.js";
 import { createLocalArtifactStorage, DEFAULT_ARTIFACTS_DIRECTORY } from "./storage/local.js";
-import { createS3ArtifactStorage, createS3ReadinessTarget } from "./storage/s3.js";
+import {
+  createS3ArtifactStorage,
+  createS3ReadinessTarget,
+  trimS3KeySlashes,
+} from "./storage/s3.js";
 import type {
   ArtifactStorage,
   ArtifactStorageBackend,
@@ -104,7 +108,7 @@ function normalizeOptionalString(value: string | undefined): string | null {
 
 function normalizeOptionalPathPrefix(value: string | undefined): string | null {
   const normalized = normalizeOptionalString(value);
-  return normalized ? normalized.replace(/^\/+|\/+$/g, "") : null;
+  return normalized ? trimS3KeySlashes(normalized) : null;
 }
 
 function normalizeArtifactBackend(value: string | undefined): ArtifactStorageBackend {

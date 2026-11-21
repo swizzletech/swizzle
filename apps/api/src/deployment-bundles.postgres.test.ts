@@ -1,6 +1,6 @@
 import { Header } from "tar";
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { testPlatform } from "../../../test/platform.js";
 
@@ -17,6 +17,25 @@ beforeEach(async () => {
 });
 
 describe("deployment bundles", () => {
+  it("shares one upload budget across deploy and check requests", async () => {
+    vi.stubEnv("SWIZZLE_DEPLOYMENT_UPLOAD_RATE_LIMIT", "2/min");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const app = await buildTestServer();
+    onTestFinished(async () => await app.close());
+    const submit = async (url: string) => await app.inject({ headers: owner, method: "POST", url });
+
+    expect((await submit("/deployment-checks")).statusCode).toBe(400);
+    expect((await submit("/deployments")).statusCode).toBe(400);
+    for (const route of ["/deployments", "/deployment-checks"]) {
+      const limited = await submit(route);
+      expect(limited.statusCode).toBe(429);
+      expect(limited.json()).toMatchObject({ error: "DEPLOYMENT_UPLOAD_RATE_LIMITED" });
+      expect(limited.headers["retry-after"]).toBe("60");
+    }
+    vi.advanceTimersByTime(60_000);
+    expect((await submit("/deployment-checks")).statusCode).toBe(400);
+  });
+
   it.each([
     ["FST_REQ_FILE_TOO_LARGE", 413, [{ file: true, value: Buffer.alloc(MAX_BUNDLE_BYTES + 1) }]],
     ["FST_FILES_LIMIT", 413, Array.from({ length: 2 }, () => ({ file: true, value: "bundle" }))],

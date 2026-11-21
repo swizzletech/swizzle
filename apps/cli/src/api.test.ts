@@ -44,6 +44,45 @@ describe("mapApiErrorToAgentError", () => {
 });
 
 describe("apiRequest response parsing", () => {
+  it.each(["AUTH_RATE_LIMITED", "DEPLOYMENT_UPLOAD_RATE_LIMITED", "WEBHOOK_RATE_LIMITED"])(
+    "reports the retry delay from a %s response",
+    async (error) => {
+      vi.stubGlobal(
+        "fetch",
+        vi
+          .fn()
+          .mockResolvedValue(
+            Response.json(
+              { error, details: { limit: 3 } },
+              { status: 429, headers: { "Retry-After": "17" } },
+            ),
+          ),
+      );
+      await expect(apiRequest("http://localhost/api/deployments")).rejects.toMatchObject({
+        code: error,
+        details: { httpStatus: 429, limit: 3, retryAfterSeconds: 17 },
+        exitCode: 7,
+        hint: "Wait 17 seconds, then rerun the command.",
+        retryable: true,
+      });
+    },
+  );
+
+  it("offers wait guidance when a rate-limited response omits Retry-After", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue(
+          Response.json({ error: "DEPLOYMENT_UPLOAD_RATE_LIMITED" }, { status: 429 }),
+        ),
+    );
+    await expect(apiRequest("http://localhost/api/deployments")).rejects.toMatchObject({
+      details: { httpStatus: 429 },
+      hint: "Wait for the rate limit to reset, then rerun the command.",
+    });
+  });
+
   it.each(["<!doctype html><html>Dashboard</html>", "{broken", "null", '"dashboard"'])(
     "rejects a successful non-API response with body %s",
     async (body) => {

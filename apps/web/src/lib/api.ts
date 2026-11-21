@@ -183,6 +183,7 @@ export class ApiError extends Error {
     public readonly code?: ApiErrorCode,
     public readonly details?: unknown,
     public readonly fixCommand?: string,
+    public readonly retryAfter?: string | null,
   ) {
     super(message);
     this.name = "ApiError";

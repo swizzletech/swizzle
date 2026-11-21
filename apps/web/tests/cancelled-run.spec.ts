@@ -1,21 +1,30 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { mockDashboardApi, OK_RUN_ID, seededState } from "./dashboard-mock";
+import {
+  allRunPage,
+  mockDashboardApi,
+  OK_RUN_ID,
+  seededState,
+  setAllRunPage,
+  withRunOutcome,
+} from "./dashboard-mock";
 
 const CANCELLED_RUN_ID = "9d2f7a10-aaaa-4bbb-8ccc-000000000009";
 
 async function seeded(page: Page, path: string, deadLetterReason: string) {
   const state = seededState();
-  const ok = state.runs.find((run) => run.runId === OK_RUN_ID);
+  const { runs } = allRunPage(state);
+  const ok = runs.find((run) => run.runId === OK_RUN_ID);
   const probe = state.automations.find((item) => item.automationSlug === "verify-probe");
   if (ok === undefined || probe?.recentRuns[0] === undefined) throw new Error("Seed changed.");
   const cancelled = {
+    ...ok,
     deadLetterReason,
     runId: CANCELLED_RUN_ID,
     state: "cancelled",
     status: "dead-lettered",
   } as const;
-  state.runs.push({ ...ok, ...cancelled });
+  setAllRunPage(state, [...runs, cancelled]);
   state.automations = state.automations.map((item) =>
     item === probe
       ? {
@@ -32,6 +41,7 @@ async function seeded(page: Page, path: string, deadLetterReason: string) {
         }
       : item,
   );
+  state.overview = withRunOutcome(state.overview, cancelled);
   await mockDashboardApi(page, state);
   await page.goto(path);
 }

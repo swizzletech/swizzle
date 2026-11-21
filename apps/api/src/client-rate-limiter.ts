@@ -1,10 +1,32 @@
 import { AutomationRuntimeError, parseRateLimitSpec, type RateLimitConfig } from "@swizzle/runtime";
-import type { FastifyRequest } from "fastify";
+import type { FastifyReply, FastifyRequest } from "fastify";
 
 import { normalizeClientIp } from "./http-shared.js";
 
 export interface ClientRateLimiter {
   check(clientKey: string): RateLimitDecision;
+}
+
+interface RouteRateLimitPolicy {
+  readonly limiter: ClientRateLimiter;
+  readonly client: (request: FastifyRequest) => string;
+  readonly error: "AUTH_RATE_LIMITED" | "DEPLOYMENT_UPLOAD_RATE_LIMITED";
+  readonly message: string;
+}
+
+export interface RateLimitedRouteConfig {
+  readonly rateLimit: RouteRateLimitPolicy;
+}
+
+export async function enforceRouteRateLimit(
+  request: FastifyRequest & { readonly routeOptions: { readonly config: RateLimitedRouteConfig } },
+  reply: FastifyReply,
+): Promise<void> {
+  const policy = request.routeOptions.config.rateLimit;
+  const result = policy.limiter.check(policy.client(request));
+  if (result.allowed) return;
+  reply.header("Retry-After", String(Math.ceil(result.retryAfterMs / 1_000)));
+  throw new AutomationRuntimeError(policy.error, policy.message);
 }
 
 interface RateLimitDecision {

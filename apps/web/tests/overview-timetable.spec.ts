@@ -1,38 +1,16 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
-import type { RunListItem } from "../src/lib/api";
 import {
-  type MockState,
   mockDashboardApi,
-  OK_RUN_ID,
   PROJECT_ID,
   seededState,
+  timetableRow,
+  withRunOutcome,
 } from "./dashboard-mock";
 
 const HOUR = 60 * 60_000;
-const hoursAgo = (hours: number) => new Date(Date.now() - hours * HOUR).toISOString();
-
-function runOf(
-  state: MockState,
-  slug: string,
-  queuedAt: string,
-  outcome: "succeeded" | "failed" | "cancelled",
-): RunListItem {
-  const ok = state.runs.find((run) => run.runId === OK_RUN_ID);
-  if (ok === undefined) throw new Error("Seed changed.");
-  return {
-    ...ok,
-    automationName: slug,
-    automationSlug: slug,
-    deadLetterReason: outcome === "cancelled" ? "user-cancelled" : null,
-    finishedAt: queuedAt,
-    queuedAt,
-    runId: crypto.randomUUID(),
-    startedAt: queuedAt,
-    state: outcome,
-    status: outcome === "cancelled" ? "dead-lettered" : outcome,
-  };
-}
+const atHour = (from: string, hour: number) =>
+  new Date(Date.parse(from) + hour * HOUR).toISOString();
 
 const row = (page: Page, name: string) =>
   page.getByTestId("automation-row").filter({ has: page.getByRole("link", { name, exact: true }) });
@@ -48,34 +26,45 @@ async function cellAt(page: Page, strip: Locator, iso: string): Promise<Locator>
 
 test("an hour draws its runs, and its hover names the hour and the counts", async ({ page }) => {
   const state = seededState();
-  const [ok, mixed, cancelled, quiet] = [3, 6, 9, 12].map((hours) => hoursAgo(hours + 0.5));
-  state.runs.push(
-    runOf(state, "verify-vault", ok as string, "succeeded"),
-    runOf(state, "verify-vault", ok as string, "succeeded"),
-    runOf(state, "verify-vault", mixed as string, "failed"),
-    runOf(state, "verify-vault", mixed as string, "succeeded"),
-    runOf(state, "verify-vault", cancelled as string, "cancelled"),
-  );
+  const { timetable } = state.overview;
+  const ok = atHour(timetable.from, 20);
+  const mixed = atHour(timetable.from, 17);
+  const cancelled = atHour(timetable.from, 14);
+  const quiet = atHour(timetable.from, 11);
+  for (const [at, outcome] of [
+    [cancelled, "cancelled"],
+    [mixed, "failed"],
+    [mixed, "succeeded"],
+    [ok, "succeeded"],
+    [ok, "succeeded"],
+  ] as const) {
+    state.overview = withRunOutcome(state.overview, {
+      automationSlug: "verify-vault",
+      finishedAt: at,
+      queuedAt: at,
+      state: outcome,
+    });
+  }
   await mockDashboardApi(page, state);
   await page.goto("/");
   const strip = row(page, "verify-vault").locator(".hour-strip");
   await expect(strip.locator(".hour-cells i")).toHaveCount(24);
 
-  const succeeded = await cellAt(page, strip, ok as string);
+  const succeeded = await cellAt(page, strip, ok);
   await expect(succeeded).toHaveClass(/\bshort\b.*\bok\b/u);
   await expect(succeeded).toHaveAttribute("data-tip", /· 2 succeeded$/u);
 
-  const failing = await cellAt(page, strip, mixed as string);
+  const failing = await cellAt(page, strip, mixed);
   await expect(failing).toHaveClass(/\bfull\b/u);
   await expect(failing).toHaveAttribute("data-tip", /· 1 succeeded, 1 failed$/u);
   expect(await failing.getAttribute("style")).toContain("var(--fail) max(4px, 50%)");
   expect(await failing.getAttribute("style")).toContain("var(--ok) calc(max(4px, 50%) + 2px)");
 
-  const neutral = await cellAt(page, strip, cancelled as string);
+  const neutral = await cellAt(page, strip, cancelled);
   await expect(neutral).toHaveClass(/\bshort\b.*\bidle\b/u);
   await expect(neutral).toHaveAttribute("data-tip", /· 1 cancelled$/u);
 
-  const empty = await cellAt(page, strip, quiet as string);
+  const empty = await cellAt(page, strip, quiet);
   await expect(empty).toHaveClass(/\bempty\b/u);
   await expect(empty).toHaveAttribute("data-tip", /· No runs$/u);
 
@@ -90,11 +79,10 @@ test("an hour draws its runs, and its hover names the hour and the counts", asyn
   });
 });
 
-test("a deploy inside the window marks its version at its time, one before it none", async ({
-  page,
-}) => {
-  const seeded = seededState();
-  const [change] = seeded.recentChanges;
+test("a deploy inside the window marks its version at its time", async ({ page }) => {
+  const state = seededState();
+  const { recentChanges, timetable } = state.overview;
+  const [change] = recentChanges;
   if (change === undefined) throw new Error("Seed changed.");
   const deploy = (occurredAt: string, version: string) => ({
     ...change,
@@ -105,21 +93,24 @@ test("a deploy inside the window marks its version at its time, one before it no
     automationName: "verify-vault",
     automationSlug: "verify-vault",
   });
-  const into = (hours: number, minutes: number) => {
-    const at = new Date(Date.now() - hours * HOUR);
-    at.setMinutes(minutes, 0, 0);
-    return at.toISOString();
-  };
   const marks = [
-    { at: into(9, 45), version: "2.0.0", within: 0.75 },
-    { at: into(5, 15), version: "2.1.0", within: 0.25 },
+    { at: atHour(timetable.from, 14.75), version: "2.0.0", within: 0.75 },
+    { at: atHour(timetable.from, 18.25), version: "2.1.0", within: 0.25 },
   ];
-  const state: MockState = {
-    ...seeded,
-    recentChanges: [
-      ...marks.map((mark) => deploy(mark.at, mark.version)),
-      deploy(hoursAgo(30), "1.9.0"),
-    ],
+  state.overview = {
+    ...state.overview,
+    recentChanges: marks.map((mark) => deploy(mark.at, mark.version)),
+    timetable: {
+      ...timetable,
+      rows: [
+        ...timetable.rows,
+        timetableRow(
+          "verify-vault",
+          {},
+          marks.map(({ at, version }) => ({ at, version })),
+        ),
+      ],
+    },
   };
   await mockDashboardApi(page, state);
   await page.goto("/");
@@ -138,7 +129,13 @@ test("automations with a failure come first, and a folder still narrows the list
   page,
 }) => {
   const state = seededState();
-  state.runs.push(runOf(state, "verify-ticker", hoursAgo(2), "failed"));
+  const failedAt = atHour(state.overview.timetable.from, 21);
+  state.overview = withRunOutcome(state.overview, {
+    automationSlug: "verify-ticker",
+    finishedAt: failedAt,
+    queuedAt: failedAt,
+    state: "failed",
+  });
   const now = new Date().toISOString();
   state.folders = {
     create: null,

@@ -167,7 +167,7 @@ function parseNotice(event: Record<string, unknown>, at: string): ApiNoticeObser
 }
 
 function noticeLink(header: string): string | null {
-  for (const match of header.matchAll(/<([^>]*)>([^,]*)/gu)) {
+  for (const match of header.matchAll(/<([^<>]*)>([^,]*)/gu)) {
     const rel = /\brel\s*=\s*"?([^";]*)"?/iu.exec(match[2] ?? "")?.[1] ?? "";
     if (/\b(?:deprecation|sunset)\b/iu.test(rel))
       return match[1]?.slice(0, MAX_TEXT_LENGTH) ?? null;

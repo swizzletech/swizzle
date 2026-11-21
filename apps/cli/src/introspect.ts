@@ -81,7 +81,7 @@ export function describeOption(option: Option): CommandOptionDescriptor {
 }
 
 function extractArgName(flags: string): string | null {
-  const match = /<([^>]+)>|\[([^\]]+)\]/.exec(flags);
+  const match = /<([^<>]+)>|\[([^[\]]+)\]/u.exec(flags);
   return match ? (match[1] ?? match[2] ?? null) : null;
 }
 

@@ -432,9 +432,13 @@ function guessContentType(filePath: string): string | undefined {
 
 function joinS3Key(...segments: readonly string[]): string {
   return segments
-    .map((segment) => segment.replace(/^\/+|\/+$/g, ""))
+    .map(trimS3KeySlashes)
     .filter((segment) => segment.length > 0)
     .join("/");
+}
+
+export function trimS3KeySlashes(key: string): string {
+  return key.replace(/^\/+/u, "").replace(/(?<!\/)\/+$/u, "");
 }
 
 export function createS3ReadinessTarget(bucket: string, prefix: string | null): string {

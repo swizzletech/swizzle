@@ -274,7 +274,7 @@ describe("artifact storage", () => {
       vi.stubEnv("SWIZZLE_ARTIFACT_S3_BUCKET", "swizzle-test");
       vi.stubEnv("SWIZZLE_ARTIFACT_S3_ENDPOINT", "http://minio:9000");
       vi.stubEnv("SWIZZLE_ARTIFACT_S3_FORCE_PATH_STYLE", "true");
-      vi.stubEnv("SWIZZLE_ARTIFACT_S3_PREFIX", "artifacts");
+      vi.stubEnv("SWIZZLE_ARTIFACT_S3_PREFIX", "artifacts///");
       vi.stubEnv("SWIZZLE_ARTIFACT_S3_REGION", "us-east-1");
 
       const automationDirectory = await temporaryDirectory("swizzle-s3-entrypoint-");

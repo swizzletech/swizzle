@@ -1,5 +1,6 @@
 import { type QueryClient, useQuery } from "@tanstack/react-query";
 
+import { ApiError } from "./api";
 import { sessionApi } from "./api/account";
 import { useDashboardClient, useDashboardSession } from "./dashboard-client";
 
@@ -49,12 +50,25 @@ export function useProjects() {
   });
 }
 
+const AUTH_STATUS_INTERVAL_MS = 60_000;
+
+export function isAuthStatusRateLimited(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.status === 429;
+}
+
 export function useAuthStatus() {
   const { authRevision } = useDashboardSession();
   return useQuery({
-    queryFn: () => sessionApi.getAuthStatus(),
+    queryFn: ({ signal }) => sessionApi.getAuthStatus(signal),
     queryKey: ["auth-status", authRevision],
-    refetchInterval: 60_000,
+    refetchInterval: AUTH_STATUS_INTERVAL_MS,
+    retry: (failureCount, error) => isAuthStatusRateLimited(error) || failureCount < 1,
+    retryDelay: (_failureCount, error) => {
+      if (!isAuthStatusRateLimited(error)) return 1_000;
+      const header = error.retryAfter ?? "";
+      if (!/^\d+$/u.test(header)) return AUTH_STATUS_INTERVAL_MS;
+      return Math.min(Math.max(Number(header) * 1_000, 1_000), 2_147_483_647);
+    },
     staleTime: 30_000,
   });
 }

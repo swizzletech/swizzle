@@ -73,6 +73,25 @@ describe("ApiContactLog", () => {
       },
     });
   });
+
+  it("keeps a valid notice link after an unfinished link target", () => {
+    const log = new ApiContactLog();
+    const at = "2026-10-24T06:00:00.000Z";
+    log.record(
+      {
+        deprecation: "true",
+        host: "api.example.com",
+        link: '<unfinished, <https://example.com/notice>; rel="deprecation"',
+        status: 200,
+        type: "api_contact",
+      },
+      at,
+    );
+
+    expect(log.observations(createOutputRedactor([]))[0]?.notice?.url).toBe(
+      "https://example.com/notice",
+    );
+  });
 });
 
 describe("contractChangeFailure", () => {

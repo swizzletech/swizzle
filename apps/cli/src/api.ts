@@ -137,7 +137,12 @@ export async function apiRequest<T = unknown>(
   }
 
   if (!response.ok) {
-    throw mapApiErrorToAgentError(response.status, body as ApiErrorBody | undefined, url);
+    throw mapApiErrorToAgentError(
+      response.status,
+      body as ApiErrorBody | undefined,
+      url,
+      response.headers.get("Retry-After"),
+    );
   }
   if (bodyText.length === 0) {
     return undefined as T;

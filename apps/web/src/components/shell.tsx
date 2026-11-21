@@ -9,7 +9,13 @@ import {
   useDashboardClient,
   useDashboardSession,
 } from "../lib/dashboard-client";
-import { useAuthStatus, useMe, useOverview, useProjects } from "../lib/queries";
+import {
+  isAuthStatusRateLimited,
+  useAuthStatus,
+  useMe,
+  useOverview,
+  useProjects,
+} from "../lib/queries";
 import { passwordAccepted } from "../lib/words/access";
 import {
   AuthScreen,
@@ -45,7 +51,15 @@ export function AppShell({ children }: { readonly children: ReactNode }) {
 
   if (onboarding !== null) return <TwoFactorOnboarding onDone={enter} start={onboarding} />;
 
-  if (authQuery.isLoading) return <Connecting />;
+  if (authQuery.isPending) {
+    return (
+      <Connecting
+        label={
+          isAuthStatusRateLimited(authQuery.failureReason) ? "Waiting to check sign-in" : undefined
+        }
+      />
+    );
+  }
 
   if (!signedIn) {
     return (
@@ -96,12 +110,12 @@ function Frame({ children }: { readonly children: ReactNode }) {
   );
 }
 
-function Connecting() {
+function Connecting({ label = "Connecting to Swizzle" }: { readonly label?: string | undefined }) {
   return (
     <div className="grid min-h-screen place-items-center">
       <div className="grid w-64 gap-3">
         <Logo className="brand justify-self-center" />
-        <Skeleton label="Connecting to Swizzle" lines={2} />
+        <Skeleton label={label} lines={2} />
       </div>
     </div>
   );

@@ -167,6 +167,8 @@ services:
       SWIZZLE_WEBHOOK_INGRESS_RATE_LIMIT: ${SWIZZLE_WEBHOOK_INGRESS_RATE_LIMIT:-60/min}
       SWIZZLE_APPROVAL_RATE_LIMIT: ${SWIZZLE_APPROVAL_RATE_LIMIT:-30/min}
       SWIZZLE_EVENT_CALLBACK_RATE_LIMIT: ${SWIZZLE_EVENT_CALLBACK_RATE_LIMIT:-60/min}
+      SWIZZLE_AUTH_STATUS_RATE_LIMIT: ${SWIZZLE_AUTH_STATUS_RATE_LIMIT:-120/min}
+      SWIZZLE_DEPLOYMENT_UPLOAD_RATE_LIMIT: ${SWIZZLE_DEPLOYMENT_UPLOAD_RATE_LIMIT:-30/min}
       # This stack sits behind the bundled Caddy reverse proxy, so the API's socket
       # peer is Caddy. The API publishes no port, so every peer sits on the stack's
       # private networks: trusting those (proxy-addr's `uniquelocal`) lets the webhook

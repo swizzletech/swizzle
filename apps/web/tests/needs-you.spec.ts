@@ -132,9 +132,12 @@ test("approval details without a heading read as labelled fields", async ({ page
     "Office cleaning for October 2026, invoice 4711 from the cleaning service, paid from the business account";
   const details = { what: "Testzahlung", amount_eur: 12, reason };
   const state = seededState();
-  state.needsYou = state.needsYou.map((item) =>
-    item.kind === "approval" ? { ...item, details } : item,
-  );
+  state.overview = {
+    ...state.overview,
+    needsYou: state.overview.needsYou.map((item) =>
+      item.kind === "approval" ? { ...item, details } : item,
+    ),
+  };
   const waiting = state.runDetails.get(APPROVAL_RUN_ID);
   if (waiting === undefined || waiting.approval === null)
     throw new Error("Missing approval fixture");

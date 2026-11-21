@@ -33,6 +33,7 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
       errorBody?.error,
       errorBody?.details,
       errorBody?.fixCommand,
+      response.headers.get("Retry-After"),
     );
   }
 
