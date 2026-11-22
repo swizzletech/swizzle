@@ -29,6 +29,17 @@ export const ciUsesVerifyLanes: Rule = {
     );
     const lineCounter = new LineCounter();
     const workflow = parseDocument(hasWorkflow ? repo.read(CI) : "", { lineCounter });
+    const resolve = (node: unknown) => (isAlias(node) ? node.resolve(workflow) : node);
+    const shellValue = (node: unknown) => {
+      const scalar = resolve(node);
+      return isScalar(scalar) && typeof scalar.value === "string" ? scalar.value : undefined;
+    };
+    const defaultShell = (owner: unknown) => {
+      const defaults = isMap(owner) ? resolve(owner.get("defaults")) : undefined;
+      const run = isMap(defaults) ? resolve(defaults.get("run")) : undefined;
+      return isMap(run) ? shellValue(run.get("shell", true)) : undefined;
+    };
+    const workflowShell = defaultShell(workflow.contents);
     const definitions = workflow.get("jobs");
     const jobs = isMap(definitions) ? definitions.items : [];
     const needs = workflow.getIn(["jobs", "verify", "needs"]);
@@ -44,24 +55,28 @@ export const ciUsesVerifyLanes: Rule = {
       const id = key.value;
       const line = lineCounter.linePos(key.range?.[0] ?? 0).line;
       const report = (message: string) => findings.push({ file: CI, line, message });
-      const rawSteps = job.get("steps");
-      const steps = isAlias(rawSteps) ? rawSteps.resolve(workflow) : rawSteps;
+      const steps = resolve(job.get("steps"));
       const required = requiredJobs.includes(id);
+      const jobShell = defaultShell(job) ?? workflowShell;
       const calls = isSeq(steps)
         ? steps.items.flatMap((step) => {
-            const run = isMap(step) ? step.get("run") : undefined;
+            if (!isMap(step)) return [];
+            const run = step.get("run");
             if (
               required &&
               (allowsFailure(step) || (typeof run === "string" && masksFailure(parseShell(run))))
             ) {
               report(`Job ${id} must preserve required step failures.`);
             }
-            const shardEnv =
-              (isMap(step) ? step.getIn(["env", "SHARD"]) : undefined) ??
-              job.getIn(["env", "SHARD"]);
-            return typeof run === "string"
-              ? shellCommands(run).map((call) => ({ ...call, shardEnv }))
-              : [];
+            if (typeof run !== "string") return [];
+            const shell = shellValue(step.get("shell", true)) ?? jobShell;
+            if (required && shell !== undefined && bashLacksErrexit(shell)) {
+              report(
+                `Job ${id} uses Bash without errexit. Use \`shell: bash\` or enable errexit in the shell template.`,
+              );
+            }
+            const shardEnv = step.getIn(["env", "SHARD"]) ?? job.getIn(["env", "SHARD"]);
+            return shellCommands(run).map((call) => ({ ...call, shardEnv }));
           })
         : [];
       if (required && allowsFailure(job)) report(`Job ${id} must preserve required failures.`);
@@ -121,6 +136,23 @@ export const ciUsesVerifyLanes: Rule = {
     return findings;
   },
 };
+
+function bashLacksErrexit(shell: string): boolean {
+  const [command, ...options] = shell.trim().split(/\s+/u);
+  if (
+    !command ||
+    !/(^|[/\\])bash(?:\.exe)?$/iu.test(command) ||
+    (command === "bash" && options.length === 0)
+  ) {
+    return false;
+  }
+
+  return !options.some(
+    (option, index) =>
+      /^-[a-zA-Z]*e[a-zA-Z]*$/u.test(option) ||
+      (option === "-o" && options[index + 1] === "errexit"),
+  );
+}
 
 function allowsFailure(node: unknown): boolean {
   if (!isMap(node)) return false;

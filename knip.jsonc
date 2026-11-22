@@ -13,7 +13,7 @@
         "scripts/conventions/main.ts"
       ],
       "ignoreDependencies": ["@biomejs/biome", "turbo"],
-      "ignoreBinaries": ["just", "tailscale", "script", "dpkg-query"]
+      "ignoreBinaries": ["just", "lefthook", "tailscale", "script", "dpkg-query"]
     },
     "apps/cli": {
       "entry": ["assets/sdk/swizzle-sdk.ts"]

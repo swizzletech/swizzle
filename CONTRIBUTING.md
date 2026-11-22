@@ -59,6 +59,8 @@ just verify
 
 `just verify` checks documentation, migrations, Compose files, and tracked files for secrets. It tests against a disposable PostgreSQL database, builds the packages, and exercises the dashboard.
 CI runs the same verification lanes in parallel. `just check` checks that the required CI jobs cover every lane in `just verify`.
+Use the built-in `bash` shell for required CI steps, or enable errexit in a custom Bash shell template.
+Errexit keeps a later successful command from hiding a failed verification command.
 Tests must own their files, processes, ports, and data. Update the documentation page that owns any behavior you change; [the documentation index](docs/README.md) names each owner.
 
 Edit [the logo source](docs/assets/logo-dark.svg) when the brand artwork changes. Run `just gen` to regenerate the dashboard, approval page, and light README variants.
@@ -68,6 +70,9 @@ Edit [the logo source](docs/assets/logo-dark.svg) when the brand artwork changes
 Keep a pull request focused on one problem. Explain the resulting behavior, how you tested it, and any limits reviewers need to know.
 Use a Conventional Commits title, such as `fix(cli): explain a refused deployment` or `feat(runtime): add a trigger`.
 CI accepts the types `feat`, `fix`, `perf`, `test`, `docs`, `refactor`, `build`, `ci`, and `chore`; the scope is optional.
+
+If your commit uses `Public-Title:` or `Public-Change:` trailers, place them in the final trailer block.
+Keep other trailers such as `Co-Authored-By:` in the same block without blank lines between them. The commit hook rejects public trailer lines outside that block.
 
 The maintainers squash pull requests, so the title becomes the commit subject.
 Pull requests must pass verification, dependency review, and security checks before merge.
