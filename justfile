@@ -156,13 +156,14 @@ e2e *args: build
 audit:
     pnpm audit --audit-level=moderate
 
-# Raise every dependency to the newest release its range allows, so no major changes, and rewrite the lockfile (reads the live registry).
+# Update workspace dependencies within their ranges and refresh the runner CLI pins within their majors (reads the live registry).
 deps-update:
     pnpm update -r
+    node scripts/runner-agent-clis.mts update
 
-# List every dependency with a newer release, holds included; the catalog in pnpm-workspace.yaml says why each is held (reads the live registry, exits 1 while it lists one).
+# List newer workspace and runner CLI releases, holds included. The catalog in pnpm-workspace.yaml explains workspace holds (reads the live registry, exits 1 while it lists one).
 deps-outdated:
-    pnpm outdated -r
+    status=0; pnpm outdated -r || status=$?; node scripts/runner-agent-clis.mts outdated || status=$?; exit "$status"
 
 # Write the migration for a change to packages/db/src/schema.ts, named for what it changes (`just db-generate run_wait_details`); commit it with that change.
 db-generate name:
