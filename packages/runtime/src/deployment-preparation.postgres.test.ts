@@ -67,6 +67,7 @@ describe("run images of prepared deployments", () => {
 
     await deploy("kept");
     await waitFor(signal, async () => (await docker.commits()).length === 1);
+    const [kept] = await docker.commits();
     await docker.age(25 * HOUR_MS);
     await deploy("churn");
     await waitFor(signal, async () => (await docker.commits()).length === 2);
@@ -77,13 +78,14 @@ describe("run images of prepared deployments", () => {
     expect([first, second]).toEqual([{ image: undefined }, { image: undefined }]);
 
     for (const version of [2, 3]) {
+      const replaced = (await docker.commits()).at(-1);
       await docker.age(11 * MINUTE_MS);
       await deploy("churn", `console.log('{"v":${version}}');\n`);
       await waitFor(signal, async () => (await docker.commits()).length === version + 1);
       await waitFor(signal, async () => (await docker.totalMiB()) <= budgetMiB);
+      await waitFor(signal, async () => !(await docker.imageIds()).includes(replaced ?? ""));
     }
-    const [kept, , replaced, churn] = await docker.commits();
-    await waitFor(signal, async () => !(await docker.imageIds()).includes(replaced ?? ""));
+    const churn = (await docker.commits()).at(-1);
 
     await waitFor(signal, async () => (await docker.totalMiB()) <= budgetMiB);
     expect(await docker.tagged()).toEqual(new Set([kept, churn]));
