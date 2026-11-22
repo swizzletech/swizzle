@@ -14,6 +14,29 @@ const execute = promisify(execFile);
 const fixture = new URL("../test/fixtures/runner-upgrade/", import.meta.url);
 const driver = new URL("prepare.mjs", fixture).pathname;
 
+async function savedRunnerInventory(
+  image: string,
+  directory: string,
+  signal: AbortSignal,
+): Promise<string> {
+  const archive = path.join(directory, "image.tar");
+  await execute("docker", ["image", "save", "--output", archive, image], { signal });
+  const { stdout: manifestJson } = await execute("tar", ["-xOf", archive, "manifest.json"], {
+    signal,
+  });
+  const manifest: unknown = JSON.parse(manifestJson);
+  const layers: unknown = Array.isArray(manifest) ? manifest[0]?.Layers : undefined;
+  const layer: unknown = Array.isArray(layers) ? layers.at(-1) : undefined;
+  if (typeof layer !== "string") throw new Error("Saved fixture image has no filesystem layer.");
+  await execute("tar", ["-xf", archive, "-C", directory, layer], { signal });
+  const { stdout } = await execute(
+    "tar",
+    ["-xOf", path.join(directory, layer), "etc/swizzle/runner-tools.json"],
+    { signal },
+  );
+  return stdout;
+}
+
 async function prepareFixture(
   root: string,
   output: string,
@@ -78,12 +101,18 @@ it.concurrent.for([
         path.join(root, "scripts/stack-images.ts"),
       );
       await copyFile(new URL("interleaved/Dockerfile", fixture), path.join(root, "Dockerfile"));
+      for (const release of ["a", "b"]) {
+        await writeFile(
+          path.join(root, `jq-${release}.json`),
+          JSON.stringify({ binaries: [{ name: `runner-${release}`, version: null }] }),
+        );
+      }
       const extension = path.join(root, "infra/docker/Dockerfile.runner");
       await copyFile(new URL("interleaved/Dockerfile.runner", fixture), extension);
       if (identity === "a" && outcome === "build-error") {
         await writeFile(
           extension,
-          `${await readFile(extension, "utf8")}\nRUN echo runner-package-build-failure >&2; exit 23\n`,
+          `${await readFile(extension, "utf8")}\nCOPY missing-package /missing-package\n`,
         );
       }
       await writeFile(path.join(root, ".env"), "");
@@ -117,6 +146,7 @@ it.concurrent.for([
     const cleanupCalls = path.join(directory, "cleanup-calls");
     const preparation = prepareFixture(roots[0], first, signal, tags, {
       ...process.env,
+      BUILDX_NO_DEFAULT_ATTESTATIONS: "1",
       PATH: `${bin}${path.delimiter}${process.env.PATH}`,
       INTERLEAVE_TARGET: target,
       INTERLEAVE_PREPARE: driver,
@@ -159,16 +189,7 @@ it.concurrent.for([
                 image,
               ),
             ).toBe(identity);
-            const inventory = await command(
-              "run",
-              "--rm",
-              "--network",
-              "none",
-              "--entrypoint",
-              "cat",
-              image,
-              "/etc/swizzle/runner-tools.json",
-            );
+            const inventory = await savedRunnerInventory(image, directory, signal);
             expect(JSON.parse(inventory).binaries).toContainEqual({
               name: `runner-${identity}`,
               version: null,
