@@ -5,7 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { gzipSync } from "node:zlib";
 import { create as tarCreate } from "tar";
-import { expect, it, vi } from "vitest";
+import { expect, inject, it, vi } from "vitest";
 import { z } from "zod";
 import { removeDockerImages, removeImagesWithLabel } from "../../../test/docker-images.js";
 import { heldDeadlines, temporaryDirectory } from "../../../test/support.js";
@@ -188,6 +188,7 @@ it("measures partially shared bases independently of excluded images, untagged i
   const ownedImages = new Set<string>();
   let loadingArchive = false;
   const imageLabels = (name: string, scope: string) => ({
+    "swizzle.test.run": inject("dockerRun").run,
     "swizzle.stack": scope,
     "swizzle.verify-image-disk": marker,
     "swizzle.verify-image-name": name,

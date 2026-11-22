@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { it } from "vitest";
+import { inject, it } from "vitest";
 import { temporaryDirectory, waitFor } from "../test/support.js";
 import { ensureEnvFile, packagedStackValues } from "./env-file.ts";
 import { readCompose } from "./stack-images.ts";
@@ -34,6 +34,8 @@ for (const authentication of ["correct", "wrong", "empty"] as const) {
         "--detach",
         "--name",
         container,
+        "--label",
+        inject("dockerRun").label,
         "--network",
         "none",
         "--env",
