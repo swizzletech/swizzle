@@ -2,7 +2,7 @@ ARG NODE_VERSION=26.12.1-alpine3.24
 
 # ---------- shared foundation ----------
 FROM node:${NODE_VERSION} AS base
-RUN apk add --no-cache python3 py3-pip poppler-utils fontconfig ttf-freefont ttf-liberation font-noto wget git bash
+RUN apk add --no-cache python3 py3-pip wget git bash
 ENV PNPM_HOME=/pnpm
 ENV PATH=$PNPM_HOME:$PATH
 # npm installs pnpm's native binary at build time. Corepack would download it on first

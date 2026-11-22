@@ -1,8 +1,7 @@
 import { StringDecoder } from "node:string_decoder";
 import { z } from "zod";
 import { BoundedOutput } from "./bounded-output.js";
-import type { DockerScope } from "./docker-cli.js";
-import { AutomationRuntimeError } from "./errors.js";
+import { DockerDeadlineError, type DockerScope } from "./docker-cli.js";
 
 const descriptor = z.object({ digest: z.string().regex(/^sha256:[a-f0-9]{64}$/u) });
 const metadata = z.union([
@@ -76,8 +75,7 @@ export async function readImageLayerHistory(
     if (histories.size !== images.length) parser.end();
   } catch (error) {
     if (owner.signal.aborted) throw error;
-    if (!(error instanceof AutomationRuntimeError && error.code === "DOCKER_TRANSFER_TIMEOUT"))
-      throw error;
+    if (!(error instanceof DockerDeadlineError && error.kind === "transfer")) throw error;
     unreadable = true;
   }
   owner.signal.throwIfAborted();

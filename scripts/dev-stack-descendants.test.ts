@@ -2,6 +2,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
 import { existsSync } from "node:fs";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, onTestFailed, onTestFinished, test } from "vitest";
@@ -47,6 +48,47 @@ async function stackRoot(turboScript: string) {
   });
   return { root, bin };
 }
+
+test("keeps the advertised ports bound during seed and service startup", async ({ signal }) => {
+  const { root, bin } = await stackRoot("#!/bin/sh\nexit 1\n");
+  await writeFile(
+    path.join(bin, "pnpm"),
+    `#!/usr/bin/env node
+require("node:fs").writeFileSync("seed-started", "");
+setInterval(() => {}, 1000);
+`,
+  );
+  const env = {
+    ...process.env,
+    PATH: `${bin}:${process.env.PATH}`,
+    XDG_CONFIG_HOME: path.join(root, "config"),
+  };
+  const stack = spawn(process.execPath, ["scripts/dev-stack.mts", "fresh"], {
+    cwd: root,
+    env,
+    stdio: "ignore",
+  });
+  const exited = once(stack, "exit");
+  onTestFinished(async () => {
+    stack.kill("SIGTERM");
+    await exited;
+  });
+  await waitFor(signal, () => existsSync(path.join(root, "seed-started")));
+  const record = JSON.parse(
+    await readFile(path.join(root, ".git/swizzle-dev-fresh/stack.json"), "utf8"),
+  );
+
+  for (const key of ["api", "localWorker", "web"]) {
+    const competitor = createServer();
+    const listening = once(competitor, "listening");
+    competitor.listen(record.ports[key], "127.0.0.1");
+    try {
+      await expect(listening).rejects.toMatchObject({ code: "EADDRINUSE" });
+    } finally {
+      competitor.close();
+    }
+  }
+});
 
 test.skipIf(process.platform !== "linux").for(["slow", "stuck"] as const)(
   "just dev-down handles %s Compose teardown",

@@ -5,6 +5,7 @@ import {
   configureOutboundHttpProxy,
   createLogger,
   createSmtpMailer,
+  publishDevPort,
   readMailSettings,
   readWorkerConcurrency,
   shutdownTracing,
@@ -127,6 +128,7 @@ async function main() {
     });
     app.addHook("onClose", async () => await dashboardStore.close());
     await app.listen({ host, port });
+    publishDevPort(app.server, process.env.SWIZZLE_DEV_API_PORT_FILE);
     if (localWorkerId !== null && localHost) {
       const address = await lookup(localHost);
       localApp = buildLocalWorkerServer(
@@ -140,6 +142,7 @@ async function main() {
         host: address.address,
         port: Number(process.env.SWIZZLE_LOCAL_WORKER_API_PORT ?? 19821),
       });
+      publishDevPort(localApp.server, process.env.SWIZZLE_DEV_LOCAL_WORKER_PORT_FILE);
     }
   } catch (error) {
     if (app !== undefined) {

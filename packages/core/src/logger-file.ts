@@ -1,14 +1,14 @@
 import { writeSync } from "node:fs";
-import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import pino from "pino";
 import ThreadStream from "thread-stream";
+import type fileTransport from "./logger-file-worker.js";
 
 interface FileThreadStream extends ThreadStream {
   readonly writableErrored: Error | null;
   unref(): void;
 }
 
-const require = createRequire(import.meta.url);
 const sinks = new Map<string, ReturnType<typeof openFileLogSink>>();
 
 export function createStdoutLogSink(): ReturnType<typeof pino.destination> {
@@ -24,16 +24,21 @@ export function fileLogSink(file: string) {
 }
 
 function openFileLogSink(file: string) {
+  const stall = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
+  const source = import.meta.url.endsWith(".ts")
+    ? "./logger-file-worker.ts"
+    : "./logger-file-worker.js";
+  const settings = {
+    file,
+    frequency: process.env.SWIZZLE_LOG_FILE_FREQUENCY ?? "daily",
+    limit: { count: Number(process.env.SWIZZLE_LOG_FILE_COUNT ?? 10) },
+    size: process.env.SWIZZLE_LOG_FILE_SIZE ?? "20M",
+    stall,
+  } satisfies Parameters<typeof fileTransport>[0];
   const stream = new ThreadStream({
-    filename: require.resolve("pino-roll"),
+    filename: fileURLToPath(new URL(source, import.meta.url)),
     sync: true,
-    workerData: {
-      file,
-      frequency: process.env.SWIZZLE_LOG_FILE_FREQUENCY ?? "daily",
-      limit: { count: Number(process.env.SWIZZLE_LOG_FILE_COUNT ?? 10) },
-      mkdir: true,
-      size: process.env.SWIZZLE_LOG_FILE_SIZE ?? "20M",
-    },
+    workerData: settings,
     workerOpts: { execArgv: [] },
   }) as FileThreadStream;
   let stdout: ReturnType<typeof createStdoutLogSink> | undefined;
@@ -41,10 +46,11 @@ function openFileLogSink(file: string) {
   function fail(error = stream.writableErrored ?? new Error("File log worker exited")) {
     if (stdout !== undefined) return stdout;
     stdout = createStdoutLogSink();
+    const cause = Atomics.load(new Int32Array(stall), 0) ? "File log sink stalled" : error.message;
     try {
       writeSync(
         2,
-        `Swizzle switched file logging to stdout after ${JSON.stringify(file)} failed. Cause ${JSON.stringify(error.message)}\n`,
+        `Swizzle switched file logging to stdout after ${JSON.stringify(file)} failed. Cause ${JSON.stringify(cause)}\n`,
       );
     } catch {
       return stdout;

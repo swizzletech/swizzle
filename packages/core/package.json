@@ -12,6 +12,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.js"
+    },
+    "./dev-port": {
+      "swizzle-source": "./src/dev-port.ts",
+      "default": "./src/dev-port.ts"
     }
   },
   "scripts": {

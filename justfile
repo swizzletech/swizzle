@@ -54,7 +54,7 @@ dev: setup
 dev-fresh: setup
     exec node scripts/dev-stack.mts fresh
 
-# Stop this worktree's dev stacks and remove fresh and verification data. Persistent dev data stays.
+# Stop this worktree's dev stacks and remove fresh and abandoned verification data. Persistent dev data stays.
 dev-down:
     node scripts/dev-stack.mts down
 

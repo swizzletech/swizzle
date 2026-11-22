@@ -18,10 +18,48 @@ interface Release {
   readonly commit: string;
   readonly version: string;
 }
-const compose = ["compose", "--env-file", ".env", "-f", "infra/docker/compose.yml"];
+const startStack = ["--profile", "stack", "up", "--no-build", "--pull", "never", "-d", "--wait"];
+
+function preparedCompose(file: string): string[] {
+  return ["compose", "-f", file];
+}
 
 function quote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function shellCommand(args: readonly string[]): string {
+  return args.map((arg) => (/^[a-zA-Z0-9-]+$/u.test(arg) ? arg : quote(arg))).join(" ");
+}
+
+function verifyVersion(compose: readonly string[], expected: string): void {
+  const output = capture("docker", [
+    ...compose,
+    "exec",
+    "-T",
+    "api",
+    "wget",
+    "-T",
+    "5",
+    "-qO-",
+    "http://127.0.0.1:19820/health",
+  ]);
+  let health: unknown;
+  try {
+    health = JSON.parse(output);
+  } catch {
+    health = undefined;
+  }
+  if (
+    health === null ||
+    typeof health !== "object" ||
+    !("status" in health) ||
+    health.status !== "ok" ||
+    !("version" in health) ||
+    health.version !== expected
+  ) {
+    throw new Error(`Expected /health version ${expected}; saw ${output}`);
+  }
 }
 
 function resolveRelease(requestedTag: string | undefined): Release {
@@ -132,19 +170,21 @@ async function upgrade(requestedTag: string | undefined): Promise<void> {
   }
   const rollbackFile = path.join(directory, "rollback.json");
   writeCompose(rollback, rollbackFile);
-  const oldCompose = `docker compose -f ${quote(rollbackFile)}`;
-  const restore = `git checkout --detach ${previous} && cp ${quote(envBackup)} .env && ${oldCompose} --profile stack stop api scheduler worker && tar -C ${quote(backup)} -cf - . | ${oldCompose} --profile tools run --pull never --rm -T --volume /backup --entrypoint sh backup -ec 'tar -xf - -C /backup; exec node dist/bin.js backup restore --input-dir /backup --yes' && ${oldCompose} --profile stack up --no-build --pull never -d --wait`;
+  const rollbackCompose = ["docker", ...preparedCompose(rollbackFile)];
+  const oldCompose = shellCommand(rollbackCompose);
+  const restart = shellCommand([...rollbackCompose, ...startStack]);
+  const restore = `git checkout --detach ${previous} && cp ${quote(envBackup)} .env && ${oldCompose} --profile stack stop api scheduler worker && tar -C ${quote(backup)} -cf - . | ${oldCompose} --profile tools run --pull never --rm -T --volume /backup --entrypoint sh backup -ec 'tar -xf - -C /backup; exec node dist/bin.js backup restore --input-dir /backup --yes' && ${restart}`;
   process.stdout.write(
     `Upgrading ${previous} to ${release.tag} (${release.commit}).\nBackup directory: ${directory}\n`,
   );
   try {
-    run("docker", [...compose, "--profile", "stack", "stop", "api", "scheduler", "worker"]);
+    run("docker", [...composeArgs(source), "stop", "api", "scheduler", "worker"]);
     const recipes = await readFile("justfile", "utf8");
     if (recipes.includes("_backup dir config:")) run("just", ["_backup", backup, rollbackFile]);
     else run("just", ["--set", "compose", oldCompose, "backup", backup]);
   } catch (error) {
     process.stdout.write(
-      `Backup did not complete. Checkout is still ${previous}.\nRestart it with: ${oldCompose} --profile stack up --no-build --pull never -d --wait\nBackup directory: ${directory}\n`,
+      `Backup did not complete. Checkout is still ${previous}.\nRestart it with: ${restart}\nBackup directory: ${directory}\n`,
     );
     throw error;
   }
@@ -153,46 +193,10 @@ async function upgrade(requestedTag: string | undefined): Promise<void> {
     run("git", ["checkout", "--detach", release.commit]);
     await copyFile(target.envFile, source.envFile);
     await chmod(source.envFile, 0o600);
-    run("docker", [
-      "compose",
-      "-f",
-      prepared.file,
-      "--profile",
-      "stack",
-      "up",
-      "--no-build",
-      "--pull",
-      "never",
-      "-d",
-      "--wait",
-    ]);
-    run("docker", [
-      ...compose,
-      "exec",
-      "-T",
-      "api",
-      "node",
-      "--input-type=module",
-      "-e",
-      `
-      const expected = ${JSON.stringify(release.version)};
-      const deadline = Date.now() + 180000;
-      let observed = 'no response';
-      for (;;) {
-        try {
-          const response = await fetch('http://127.0.0.1:19820/health', { signal: AbortSignal.timeout(5000) });
-          const health = await response.json();
-          observed = JSON.stringify(health);
-          if (response.ok && health.status === 'ok' && health.version === expected) {
-            console.log('/health reports ' + expected);
-            break;
-          }
-        } catch (error) { observed = String(error); }
-        if (Date.now() >= deadline) throw new Error('Expected /health version ' + expected + '; saw ' + observed);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    `,
-    ]);
+    const compose = preparedCompose(prepared.file);
+    run("docker", [...compose, ...startStack]);
+    verifyVersion(compose, release.version);
+    process.stdout.write(`/health reports ${release.version}\n`);
   } catch (error) {
     process.stdout.write(`Upgrade failed. Backup: ${backup}\nRestore with: ${restore}\n`);
     throw error;

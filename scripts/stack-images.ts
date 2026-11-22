@@ -91,8 +91,13 @@ export function readCompose(source: StackSource): Compose {
     if (strings(raw.environment)) service.environment = raw.environment;
     if (raw.build !== undefined) {
       const build = raw.build;
+      if (!object(build)) throw new Error(`Invalid Compose build for ${name}.`);
+      for (const key of Object.keys(build)) {
+        if (!["context", "dockerfile", "target", "args"].includes(key)) {
+          throw new Error(`Unsupported Compose build field ${name}.build.${key}.`);
+        }
+      }
       if (
-        !object(build) ||
         typeof build.context !== "string" ||
         typeof build.dockerfile !== "string" ||
         typeof build.target !== "string" ||
@@ -110,6 +115,35 @@ export function readCompose(source: StackSource): Compose {
     services[name] = service;
   }
   return { ...value, name: value.name, services };
+}
+
+interface ServiceBuild {
+  readonly name: string;
+  readonly service: Service;
+  readonly build: Build;
+}
+
+export function composeBuilds(config: Compose, root: string): ServiceBuild[] {
+  const decodeComposeValue = (value: string) => value.replaceAll("$$", "$");
+  return Object.entries(config.services).flatMap(([name, service]) => {
+    const build = service.build;
+    return build === undefined
+      ? []
+      : [
+          {
+            name,
+            service,
+            build: {
+              context: path.resolve(root, decodeComposeValue(build.context)),
+              dockerfile: decodeComposeValue(build.dockerfile),
+              target: decodeComposeValue(build.target),
+              args: Object.fromEntries(
+                Object.entries(build.args).map(([key, value]) => [key, decodeComposeValue(value)]),
+              ),
+            },
+          },
+        ];
+  });
 }
 
 export function releaseVersion(source: StackSource): string | undefined {
@@ -207,13 +241,156 @@ export function writeCompose(config: Compose, file: string): void {
   writeFileSync(file, JSON.stringify(config), { mode: 0o600 });
 }
 
+type ImagePreparation = ServiceBuild &
+  (
+    | { readonly kind: "build"; readonly tag: string }
+    | { readonly kind: "pull"; readonly image: string }
+  );
+
+function planImages(
+  builds: readonly ServiceBuild[],
+  project: string,
+  suffix: string,
+  version: string | undefined,
+): ImagePreparation[] {
+  return builds.map((entry) => {
+    const apiUrl = entry.build.args.VITE_API_BASE_URL;
+    return version === undefined ||
+      (entry.name === "web" && apiUrl !== undefined && apiUrl !== "/api")
+      ? { ...entry, kind: "build", tag: `${project}-${entry.name}:${suffix}` }
+      : { ...entry, kind: "pull", image: registryImage(entry.name, version) };
+  });
+}
+
+function pullReleaseImages(
+  plan: readonly ImagePreparation[],
+  version: string,
+): "pulled" | "absent" {
+  const pulls = plan.filter((entry) => entry.kind === "pull");
+  for (const [index, { image }] of pulls.entries()) {
+    process.stdout.write(`Pulling ${image} before service shutdown.\n`);
+    try {
+      process.stdout.write(`${capture("docker", ["pull", image])}\n`);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      if (index !== 0 || !/manifest unknown|not found|name unknown/iu.test(detail)) {
+        throw new Error(
+          `Cannot pull ${image}. Services are unchanged. Check registry access and publication.\n${detail}`,
+        );
+      }
+      for (const { image: reference } of pulls.slice(1)) {
+        try {
+          capture("docker", ["pull", reference]);
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          if (/manifest unknown|not found|name unknown/iu.test(reason)) continue;
+          throw new Error(`Cannot check ${reference}. Services are unchanged.\n${reason}`);
+        }
+        throw new Error(
+          `Release ${version} has an incomplete image publication. Services are unchanged. Wait for the release image workflow to finish.`,
+        );
+      }
+      process.stdout.write(`Release ${version} has no published images; building sequentially.\n`);
+      return "absent";
+    }
+  }
+  return "pulled";
+}
+
+function serialDockerfile(build: Build, directory: string, files: Map<string, string>): string {
+  const original = path.resolve(build.context, build.dockerfile);
+  const cached = files.get(original);
+  if (cached !== undefined) return cached;
+
+  const text = readFileSync(original, "utf8");
+  const serial = text.replace(
+    /^RUN pnpm exec turbo run build(?: --concurrency=\d+)?$/mu,
+    "RUN pnpm exec turbo run build --concurrency=1",
+  );
+  const file = serial === text ? original : path.join(directory, `Dockerfile.serial-${files.size}`);
+  if (serial !== text) writeFileSync(file, serial, { mode: 0o600 });
+  files.set(original, file);
+  return file;
+}
+
+function buildImage(
+  build: Build,
+  options: {
+    readonly project: string;
+    readonly service: string;
+    readonly imageFile: string;
+    readonly tag?: string;
+  },
+): string {
+  run("docker", [
+    "buildx",
+    "build",
+    "--load",
+    "--iidfile",
+    options.imageFile,
+    "--file",
+    build.dockerfile,
+    "--target",
+    build.target,
+    ...(options.tag === undefined ? [] : ["--tag", options.tag]),
+    "--label",
+    `com.docker.compose.project=${options.project}`,
+    "--label",
+    `com.docker.compose.service=${options.service}`,
+    ...Object.entries(build.args).flatMap(([key, value]) => ["--build-arg", `${key}=${value}`]),
+    build.context,
+  ]);
+  return readFileSync(options.imageFile, "utf8").trim();
+}
+
+function executeImagePlan(
+  project: string,
+  directory: string,
+  plan: readonly ImagePreparation[],
+): Record<string, string> {
+  const dockerfiles = new Map<string, string>();
+  if (plan.some((entry) => entry.kind === "build")) {
+    checkDisk(true);
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+  }
+  return Object.fromEntries(
+    plan.map((entry) => {
+      const { name, service } = entry;
+      let reference: string;
+      if (entry.kind === "pull") {
+        reference = entry.image;
+      } else {
+        const dockerfile = serialDockerfile(entry.build, directory, dockerfiles);
+        process.stdout.write(`Building ${name} sequentially before service shutdown.\n`);
+        reference = buildImage(
+          { ...entry.build, dockerfile },
+          {
+            project,
+            service: name,
+            imageFile: path.join(directory, `${name}.iid`),
+            tag: entry.tag,
+          },
+        );
+      }
+      const id = capture("docker", ["image", "inspect", "--format", "{{.Id}}", reference]);
+      service.image = id;
+      delete service.build;
+      service.pull_policy = "never";
+      return [name, id];
+    }),
+  );
+}
+
 export function prepareImages(
   source: StackSource,
   output: string,
   options: { readonly services?: readonly string[]; readonly tag?: "local" } = {},
 ): PreparedStack {
   const config = readCompose(source);
-  const packages = (config.services["runner-base"]?.build?.args.SWIZZLE_RUNNER_APT_PACKAGES ?? "")
+  const builds = composeBuilds(config, source.root);
+  const packages = (
+    builds.find(({ name }) => name === "runner-base")?.build.args.SWIZZLE_RUNNER_APT_PACKAGES ?? ""
+  )
     .trim()
     .split(/ +/u)
     .filter(Boolean);
@@ -223,180 +400,60 @@ export function prepareImages(
         `Invalid SWIZZLE_RUNNER_APT_PACKAGES entry ${JSON.stringify(entry)}. Use space-separated Debian package names.`,
       );
   }
-  const builds = Object.entries(config.services).filter(
-    ([name, service]) =>
-      service.build !== undefined &&
-      (options.services === undefined || options.services.includes(name)),
+  const selected = builds.filter(
+    ({ name }) => options.services === undefined || options.services.includes(name),
   );
   const version = releaseVersion(source);
   const publishesImages = existsSync(path.join(source.root, ".github/workflows/images.yml"));
-  const fromSource = new Set(
-    builds
-      .filter(
-        ([name, service]) =>
-          version === undefined ||
-          !publishesImages ||
-          (name === "web" &&
-            service.build?.args.VITE_API_BASE_URL !== undefined &&
-            service.build.args.VITE_API_BASE_URL !== "/api"),
-      )
-      .map(([name]) => name),
-  );
-  checkDisk(fromSource.size > 0);
-  if (version !== undefined) {
-    for (const [index, [name]] of builds.filter(([name]) => !fromSource.has(name)).entries()) {
-      const image = registryImage(name, version);
-      process.stdout.write(`Pulling ${image} before service shutdown.\n`);
-      try {
-        process.stdout.write(`${capture("docker", ["pull", image])}\n`);
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        if (index !== 0 || !/manifest unknown|not found|name unknown/iu.test(detail)) {
-          throw new Error(
-            `Cannot pull ${image}. Services are unchanged. Check registry access and publication.\n${detail}`,
-          );
-        }
-        for (const [other] of builds.filter(([service]) => !fromSource.has(service)).slice(1)) {
-          const reference = registryImage(other, version);
-          try {
-            capture("docker", ["pull", reference]);
-          } catch (error) {
-            const reason = error instanceof Error ? error.message : String(error);
-            if (/manifest unknown|not found|name unknown/iu.test(reason)) continue;
-            throw new Error(`Cannot check ${reference}. Services are unchanged.\n${reason}`);
-          }
-          throw new Error(
-            `Release ${version} has an incomplete image publication. Services are unchanged. Wait for the release image workflow to finish.`,
-          );
-        }
-        process.stdout.write(
-          `Release ${version} has no published images; building sequentially.\n`,
-        );
-        for (const [service] of builds) fromSource.add(service);
-        break;
-      }
-    }
-  }
-  if (fromSource.size > 0) {
-    checkDisk(true);
-    const suffix =
-      options.tag ??
-      `${path.basename(path.dirname(output))}-${path.basename(output, ".json")}`.replaceAll(
-        /[^a-zA-Z0-9_.-]/gu,
-        "-",
-      );
-    for (const [name, service] of builds) {
-      if (fromSource.has(name)) service.image = `${config.name}-${name}:${suffix}`;
-    }
-    const dockerfiles = new Map<string, string>();
-    mkdirSync(path.dirname(output), { recursive: true, mode: 0o700 });
-    for (const [name, service] of builds.filter(([name]) => fromSource.has(name))) {
-      const build = service.build;
-      if (build === undefined) throw new Error(`No source build for ${name}.`);
-      const original = path.resolve(
-        source.root,
-        build.context.replaceAll("$$", "$"),
-        build.dockerfile.replaceAll("$$", "$"),
-      );
-      let file = dockerfiles.get(original);
-      if (file === undefined) {
-        const text = readFileSync(original, "utf8");
-        const serial = text.replace(
-          /^RUN pnpm exec turbo run build(?: --concurrency=\d+)?$/mu,
-          "RUN pnpm exec turbo run build --concurrency=1",
-        );
-        file = original;
-        if (serial !== text) {
-          file = path.join(path.dirname(output), `Dockerfile.serial-${dockerfiles.size}`);
-          writeFileSync(file, serial, { mode: 0o600 });
-        }
-        dockerfiles.set(original, file);
-      }
-      service.build = { ...build, dockerfile: file };
-    }
-    for (const [name, service] of builds.filter(([name]) => fromSource.has(name))) {
-      process.stdout.write(`Building ${name} sequentially before service shutdown.\n`);
-      const build = service.build;
-      if (build === undefined || service.image === undefined)
-        throw new Error(`No source image for ${name}.`);
-      const imageFile = path.join(path.dirname(output), `${name}.iid`);
-      run("docker", [
-        "buildx",
-        "build",
-        "--load",
-        "--iidfile",
-        imageFile,
-        "--file",
-        build.dockerfile,
-        "--target",
-        build.target,
-        "--tag",
-        service.image,
-        "--label",
-        `com.docker.compose.project=${config.name}`,
-        "--label",
-        `com.docker.compose.service=${name}`,
-        ...Object.entries(build.args).flatMap(([key, value]) => [
-          "--build-arg",
-          `${key}=${value.replaceAll("$$", "$")}`,
-        ]),
-        build.context.replaceAll("$$", "$"),
-      ]);
-      service.image = readFileSync(imageFile, "utf8").trim();
-    }
-  }
-  const images: Record<string, string> = {};
-  for (const [name, service] of builds) {
-    if (!fromSource.has(name) && version !== undefined)
-      service.image = registryImage(name, version);
-    if (service.image === undefined) throw new Error(`No prepared image for ${name}.`);
-    service.image = capture("docker", ["image", "inspect", "--format", "{{.Id}}", service.image]);
-    images[name] = service.image;
-    delete service.build;
-    service.pull_policy = "never";
-  }
+  const directory = path.dirname(output);
+  const suffix =
+    options.tag ??
+    `${path.basename(directory)}-${path.basename(output, ".json")}`.replaceAll(
+      /[^a-zA-Z0-9_.-]/gu,
+      "-",
+    );
+  const plan = planImages(selected, config.name, suffix, publishesImages ? version : undefined);
+  checkDisk(plan.some((entry) => entry.kind === "build"));
+  const finalPlan =
+    version !== undefined && pullReleaseImages(plan, version) === "absent"
+      ? planImages(selected, config.name, suffix, undefined)
+      : plan;
+  const images = executeImagePlan(config.name, directory, finalPlan);
   if (packages.length > 0 && options.services === undefined) {
     mkdirSync(path.dirname(output), { recursive: true, mode: 0o700 });
     const suffix =
       options.tag ?? path.basename(path.dirname(output)).replaceAll(/[^a-zA-Z0-9_.-]/gu, "-");
-    const bases: Record<string, string> = {};
+    const stockTags: string[] = [];
+    const tagStockImage = (name: string): string => {
+      const image = images[name];
+      if (image === undefined) throw new Error(`No prepared ${name} image for runner packages.`);
+      const tag = `${config.name}-${name}:stock-${randomUUID()}`;
+      run("docker", ["tag", image, tag]);
+      stockTags.push(tag);
+      return tag;
+    };
     try {
-      for (const name of ["runner-base", "worker"]) {
-        const image = images[name];
-        if (image === undefined) throw new Error(`No prepared ${name} image for runner packages.`);
-        const tag = `${config.name}-${name}:stock-${randomUUID()}`;
-        run("docker", ["tag", image, tag]);
-        bases[name] = tag;
-      }
+      const runnerBase = tagStockImage("runner-base");
+      const workerBase = tagStockImage("worker");
       for (const [name, target] of [
         ["runner-base", "runner"],
         ["worker", "worker"],
       ] as const) {
         const imageFile = path.join(path.dirname(output), `${name}-packages.iid`);
         process.stdout.write(`Adding runner packages to ${name}: ${packages.join(" ")}.\n`);
-        run("docker", [
-          "buildx",
-          "build",
-          "--load",
-          "--iidfile",
-          imageFile,
-          "--file",
-          path.join(source.root, "infra/docker/Dockerfile.runner"),
-          "--target",
-          target,
-          "--label",
-          `com.docker.compose.project=${config.name}`,
-          "--label",
-          `com.docker.compose.service=${name}`,
-          "--build-arg",
-          `RUNNER_BASE=${bases["runner-base"]}`,
-          "--build-arg",
-          `WORKER_BASE=${bases.worker}`,
-          "--build-arg",
-          `SWIZZLE_RUNNER_APT_PACKAGES=${packages.join(" ")}`,
-          source.root,
-        ]);
-        const image = readFileSync(imageFile, "utf8").trim();
+        const image = buildImage(
+          {
+            context: source.root,
+            dockerfile: path.join(source.root, "infra/docker/Dockerfile.runner"),
+            target,
+            args: {
+              RUNNER_BASE: runnerBase,
+              WORKER_BASE: workerBase,
+              SWIZZLE_RUNNER_APT_PACKAGES: packages.join(" "),
+            },
+          },
+          { project: config.name, service: name, imageFile },
+        );
         run("docker", ["tag", image, `${config.name}-${name}:${suffix}-packages`]);
         const service = config.services[name];
         if (service === undefined) throw new Error(`No ${name} service.`);
@@ -404,7 +461,7 @@ export function prepareImages(
         images[name] = image;
       }
     } finally {
-      for (const tag of Object.values(bases)) {
+      for (const tag of stockTags) {
         try {
           capture("docker", ["image", "rm", tag]);
         } catch (error) {

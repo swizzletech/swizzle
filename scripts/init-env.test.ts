@@ -221,6 +221,25 @@ describe("init-env", () => {
     expect(await readFile(target, "utf8")).toBe(quoted);
   });
 
+  it.each(["SWIZZLE_WORKER_CPUS", "SWIZZLE_MAX_RUN_CPUS"])(
+    "uses the valid shell override for %s and preserves the saved value",
+    async (name) => {
+      const directory = await checkoutWithExampleEnv();
+      expect(initEnv(directory, 1).status).toBe(0);
+      const target = path.join(directory, ".env");
+      const saved = (await readFile(target, "utf8")).replace(
+        new RegExp(`^${name}=.*$`, "mu"),
+        `${name}=2`,
+      );
+      await writeFile(target, saved);
+
+      const result = initEnv(directory, 1, { [name]: "1" });
+
+      expect(result.status, result.stderr).toBe(0);
+      expect(await readFile(target, "utf8")).toBe(saved);
+    },
+  );
+
   it("keeps a 1.0.2 .env's own SWIZZLE_MAX_RUN_CPUS and refuses it above the host", async () => {
     const directory = await checkoutWithExampleEnv();
     expect(initEnv(directory).status).toBe(0);

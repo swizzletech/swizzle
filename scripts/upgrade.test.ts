@@ -129,7 +129,12 @@ case " $* " in
       *) echo sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa ;;
     esac ;;
   *" up "*) test "\u0024{UPGRADE_TEST_FAILURE:-}" != migrate; git rev-parse HEAD > .git/stack-head ;;
-  *" exec "*) test "\u0024{UPGRADE_TEST_FAILURE:-}" != health ;;
+  *" exec "*)
+    case "\u0024{UPGRADE_TEST_FAILURE:-}" in
+      health) case "$*" in *" wget "*) echo '{"status":"ok","version":"1.0.2"}' ;; *) exit 1 ;; esac ;;
+      malformed-health) case "$*" in *" wget "*) echo 'unreadable API response' ;; *) exit 1 ;; esac ;;
+      *) echo '{"status":"ok","version":"1.0.3"}' ;;
+    esac ;;
 esac
 `,
     { mode: 0o755 },
@@ -163,6 +168,32 @@ it.each(["upgrade", "stack"].flatMap((command) => [1, 8].map((gib) => ({ command
     const calls = await readFile(path.join(installed.checkout, ".git/docker-calls"), "utf8");
     expect(calls).not.toContain(" stop ");
     expect(calls).not.toContain(" build ");
+  },
+);
+
+it.each([
+  { failure: "health", output: '{"status":"ok","version":"1.0.2"}' },
+  { failure: "malformed-health", output: "unreadable API response" },
+])(
+  "reports the $failure response from the running API after Compose reports readiness",
+  async ({ failure, output }) => {
+    const installed = await installedCheckout();
+    vi.stubEnv("UPGRADE_TEST_FAILURE", failure);
+
+    await expect(installed.upgrade("v1.0.3")).rejects.toMatchObject({
+      stderr: expect.stringContaining(`Expected /health version 1.0.3; saw ${output}`),
+      stdout: expect.stringContaining(`Restore with: git checkout --detach ${installed.previous}`),
+    });
+
+    const calls = (
+      await readFile(path.join(installed.checkout, ".git/docker-calls"), "utf8")
+    ).split("\n");
+    const commands = calls.filter((call) => call.includes(" exec "));
+    expect(commands).toHaveLength(1);
+    expect(commands[0]).toMatch(/exec -T api wget -T 5 -qO- http:\/\/127\.0\.0\.1:19820\/health$/u);
+    expect(calls.indexOf(commands[0] ?? "")).toBeGreaterThan(
+      calls.findIndex((call) => call.includes(" up ") && call.endsWith("--wait")),
+    );
   },
 );
 

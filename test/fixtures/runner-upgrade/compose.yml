@@ -41,6 +41,11 @@ services:
           res.setHeader('content-type', 'application/json');
           res.end(JSON.stringify({status: 'ok', version: process.env.RELEASE_VERSION}));
         }).listen(19820, '0.0.0.0');
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:19820/ready"]
+      interval: 1s
+      timeout: 2s
+      retries: 5
   backup:
     network_mode: none
     profiles: [tools]
