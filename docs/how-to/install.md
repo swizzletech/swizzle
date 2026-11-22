@@ -156,6 +156,8 @@ Set either value in `.env` using a count per `sec`, `min`, or `hour`. Set it to 
 
 ## Add a tool to the runner image
 
+Deployed automations run in containers based on the runner image. The runner includes Poppler and DejaVu fonts for PDFs. The worker reads the runner's tool inventory to check automation requirements.
+
 To add Debian packages to the runner, set a space-separated list in `.env`:
 
 ```dotenv
@@ -189,6 +191,8 @@ Compose allows the API and scheduler 45 seconds to stop, covering their default 
 A webhook with a generated path such as `/hooks/hello-<random>` answers at `<SWIZZLE_PUBLIC_URL>/hooks/hello-<random>`, by default `http://api.localhost:19826/hooks/hello-<random>`. The scaffold adds a random suffix and verifies the request signature. See [check webhook input](write-an-automation.md#check-webhook-input) for the signature setup.
 
 Run `just smoke` on a development machine to check the packaged stack. The recipe writes `.env` and installs the development dependencies first. Do not run it on the server. It starts a throwaway stack with its own credentials, Compose project, and free ports. The recipe deploys `infra/examples/hello-webhook`, posts to its webhook URL, and checks the successful run and exported trace. It deploys Python and TypeScript automations that check public HTTPS access and attempt a loopback HTTP request. For each loopback request, the recipe checks the runner egress proxy's access log for a 403 denial of the CONNECT request. It also deploys the shipped skill's PDF recipe and checks that its run renders a page with `pdftoppm`. The recipe removes the project's labelled containers, networks, volumes, and images, including resources left by a failed start. At startup, `just smoke` and `just perf` remove old throwaways when their recorded process identity no longer matches. [The local stack guide](run-a-local-stack.md) explains how cleanup checks process ownership.
+
+The GitHub smoke workflow saves the Docker pnpm store and Buildx layers between runs. When the workflow has no exact store cache match, it rebuilds the images and fetches any dependencies missing from the restored store. It saves the updated store and layers for the next run.
 
 If another service uses a default host port, change that port to a free value. Set `SWIZZLE_HTTP_PORT` for HTTP, `SWIZZLE_HTTPS_PORT` for HTTPS, and `SWIZZLE_LINK_PORT` for the public listener. Keep all three ports distinct. When you change HTTP or HTTPS, put the new port in `SWIZZLE_DASHBOARD_SITE` and `SWIZZLE_API_SITE`. If a site setting is empty, put its port in the matching origin instead. The CLI's default API URL is `http://api.localhost:19826`, so also set `SWIZZLE_API_URL` to the new address, or register a profile with `swizzle profile add <name> --url <api origin>`.
 

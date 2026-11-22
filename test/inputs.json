@@ -54,6 +54,8 @@
   ],
   "scripts/agent-reference-drift.test.ts": ["apps/cli/assets/skills/**"],
   "scripts/runner-tools.test.ts": ["infra/docker/runner-tools.mjs"],
+  "scripts/docker-build-context.docker.test.ts": [".dockerignore"],
+  "scripts/stack-image-plan.test.ts": ["scripts/{release-images,stack-images}.ts"],
   "scripts/stack-images.docker.test.ts": [
     "justfile",
     "mise.toml",

@@ -27,7 +27,12 @@ const imageFile = path.join(process.env.FIXTURE_DIRECTORY, "images.json");
 let images = JSON.parse(fs.readFileSync(imageFile, "utf8"));
 let networks = JSON.parse(fs.readFileSync(state, "utf8"));
 if (args[0] === "info") console.log(8);
+if (args[0] === "compose" && args.includes("config")) {
+  console.log(JSON.stringify({ services: { web: { build: {} }, postgres: { image: "postgres:18" } } }));
+}
 if (args[0] === "compose" && args.includes("up")) {
+  const files = args.flatMap((arg, index) => arg === "-f" ? [args[index + 1]] : []);
+  if (files[1] !== undefined) fs.copyFileSync(files[1], path.join(process.env.FIXTURE_DIRECTORY, "up-override.json"));
   const project = args[args.indexOf("--project-name") + 1];
   networks.push(project);
   images.push(project + "-image");
@@ -81,6 +86,28 @@ test("a failed packaged up leaves no project networks", async () => {
   await expect(startPackagedStack("smoke", () => {}, f.root)).rejects.toThrow("exited with 1");
   expect(JSON.parse(await readFile(f.state, "utf8"))).toEqual([]);
 });
+
+test.each([
+  { mode: "gha", importLayers: { cache_from: ["type=gha,scope=swizzle-smoke-web"] } },
+  { mode: "gha-export", importLayers: {} },
+])(
+  "passes $mode cache settings to the smoke stack's Compose build",
+  async ({ mode, importLayers }) => {
+    const f = await dockerFixture([]);
+    vi.stubEnv("SWIZZLE_SMOKE_BUILD_CACHE", mode);
+    await expect(startPackagedStack("smoke", () => {}, f.root)).rejects.toThrow("exited with 1");
+    expect(JSON.parse(await readFile(path.join(f.root, "up-override.json"), "utf8"))).toEqual({
+      services: {
+        web: {
+          build: {
+            ...importLayers,
+            cache_to: ["type=gha,scope=swizzle-smoke-web,mode=max,ignore-error=true"],
+          },
+        },
+      },
+    });
+  },
+);
 
 test("packaged sweeping rejects a reused PID and preserves a genuinely live owner", async () => {
   const other = await temporaryDirectory("swizzle-other-owner-");

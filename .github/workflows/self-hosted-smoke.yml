@@ -25,5 +25,33 @@ jobs:
       - name: Install the toolchain
         uses: ./.github/actions/toolchain
 
+      - name: Set up Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Restore the Docker pnpm store
+        id: pnpm-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/swizzle-buildkit-pnpm
+          key: smoke-buildkit-pnpm-${{ runner.arch }}-${{ hashFiles('infra/docker/Dockerfile', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
+          restore-keys: smoke-buildkit-pnpm-${{ runner.arch }}-
+
+      - name: Load the pnpm store into BuildKit
+        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3.4.0
+        with:
+          builder: ${{ steps.buildx.outputs.name }}
+          cache-map: '{"${{ runner.temp }}/swizzle-buildkit-pnpm":{"id":"pnpm-amd64","target":"/pnpm/store"}}'
+          scratch-dir: ${{ runner.temp }}/swizzle-buildkit-scratch
+          skip-extraction: ${{ steps.pnpm-cache.outputs.cache-hit == 'true' }}
+          utility-image: alpine:3.24.3
+
+      - name: Enable the GitHub Actions build cache
+        uses: crazy-max/ghaction-github-runtime@04d248b84655b509d8c44dc1d6f990c879747487 # v4.0.0
+
       - name: Run self-hosted compose smoke
+        env:
+          BUILDX_BUILDER: ${{ steps.buildx.outputs.name }}
+          COMPOSE_BAKE: "true"
+          SWIZZLE_SMOKE_BUILD_CACHE: ${{ steps.pnpm-cache.outputs.cache-hit == 'true' && 'gha' || 'gha-export' }}
         run: just smoke

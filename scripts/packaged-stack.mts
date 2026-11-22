@@ -1,11 +1,12 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { runCli } from "@swizzle/cli";
+import { z } from "zod";
 import { dockerCpus, ensureEnvFile, packagedStackValues, sizeCpuLimits } from "./env-file.ts";
 import { processOwnerState, readProcessIdentity } from "./process-identity.ts";
 
@@ -257,6 +258,7 @@ export async function startPackagedStack(
   const [httpPort, httpsPort, linkPort] = await freePorts();
   const dashboard = `http://localhost:${httpPort}`;
   const api = `http://api.localhost:${httpPort}`;
+  const composeFiles = [path.join(root, "infra/docker/compose.yml")];
 
   const compose = (...args: string[]) =>
     run(
@@ -269,8 +271,7 @@ export async function startPackagedStack(
         envFile,
         "--profile",
         "stack",
-        "-f",
-        path.join(root, "infra/docker/compose.yml"),
+        ...composeFiles.flatMap((file) => ["-f", file]),
         ...args,
       ],
       args[0] !== "up" && args[0] !== "down",
@@ -308,6 +309,30 @@ export async function startPackagedStack(
     await sizeCpuLimits(envFile, dockerCpus());
     const environmentName = initialized.values.SWIZZLE_ENVIRONMENT;
     if (!environmentName) throw new Error("Packaged stack has no default environment.");
+    const cacheMode = process.env.SWIZZLE_SMOKE_BUILD_CACHE;
+    if (name === "smoke" && (cacheMode === "gha" || cacheMode === "gha-export")) {
+      const { services } = z
+        .object({ services: z.record(z.string(), z.object({ build: z.unknown().optional() })) })
+        .parse(JSON.parse(await compose("config", "--format", "json")));
+      const caches = Object.entries(services).flatMap(([service, config]) => {
+        if (config.build === undefined) return [];
+        const cache = `type=gha,scope=swizzle-smoke-${service}`;
+        return [
+          [
+            service,
+            {
+              build: {
+                ...(cacheMode === "gha" ? { cache_from: [cache] } : {}),
+                cache_to: [`${cache},mode=max,ignore-error=true`],
+              },
+            },
+          ],
+        ];
+      });
+      const override = path.join(directory, "build-cache.json");
+      await writeFile(override, JSON.stringify({ services: Object.fromEntries(caches) }));
+      composeFiles.push(override);
+    }
     log(`starting ${project} at ${dashboard}`);
     await compose("up", "--build", "--detach", "--wait", "--quiet-pull");
 
