@@ -319,7 +319,7 @@ function buildImage(
     readonly project: string;
     readonly service: string;
     readonly imageFile: string;
-    readonly tag?: string;
+    readonly tag: string;
   },
 ): string {
   run("docker", [
@@ -332,7 +332,6 @@ function buildImage(
     build.dockerfile,
     "--target",
     build.target,
-    ...(options.tag === undefined ? [] : ["--tag", options.tag]),
     "--label",
     `com.docker.compose.project=${options.project}`,
     "--label",
@@ -340,7 +339,9 @@ function buildImage(
     ...Object.entries(build.args).flatMap(([key, value]) => ["--build-arg", `${key}=${value}`]),
     build.context,
   ]);
-  return readFileSync(options.imageFile, "utf8").trim();
+  const image = readFileSync(options.imageFile, "utf8").trim();
+  run("docker", ["tag", image, options.tag]);
+  return image;
 }
 
 function executeImagePlan(
@@ -452,9 +453,13 @@ export function prepareImages(
               SWIZZLE_RUNNER_APT_PACKAGES: packages.join(" "),
             },
           },
-          { project: config.name, service: name, imageFile },
+          {
+            project: config.name,
+            service: name,
+            imageFile,
+            tag: `${config.name}-${name}:${suffix}-packages`,
+          },
         );
-        run("docker", ["tag", image, `${config.name}-${name}:${suffix}-packages`]);
         const service = config.services[name];
         if (service === undefined) throw new Error(`No ${name} service.`);
         service.image = image;

@@ -515,6 +515,62 @@ it("preserves literal dollars and shell variables when starting a resolved Compo
   }
 });
 
+it("retains the first prepared source image after a rebuild moves its local tag", async ({
+  signal,
+}) => {
+  const directory = await temporaryDirectory("swizzle-source-image-retention-");
+  const root = path.join(directory, "source");
+  const project = `swizzle-source-retention-${randomUUID()}`;
+  await mkdir(path.join(root, "infra/docker"), { recursive: true });
+  await mkdir(path.join(root, "scripts"));
+  await copyFile(
+    new URL("stack-images.ts", import.meta.url),
+    path.join(root, "scripts/stack-images.ts"),
+  );
+  await writeFile(path.join(root, ".env"), "");
+  await writeFile(
+    path.join(root, "infra/docker/compose.yml"),
+    JSON.stringify({
+      name: project,
+      services: { probe: { build: { context: root, dockerfile: "Dockerfile", target: "probe" } } },
+    }),
+  );
+  const prepare = async (revision: string): Promise<string> => {
+    await writeFile(
+      path.join(root, "Dockerfile"),
+      `FROM scratch AS probe\nLABEL fixture.revision=${revision}\n`,
+    );
+    const output = path.join(directory, revision, "compose.json");
+    await prepareFixture(root, output, signal, "local");
+    const prepared = JSON.parse(await readFile(output, "utf8"));
+    expect(prepared.services.probe.image).toMatch(/^sha256:[a-f0-9]{64}$/u);
+    return prepared.services.probe.image;
+  };
+  const inspect = async (reference: string) =>
+    (
+      await execute(
+        "docker",
+        [
+          "image",
+          "inspect",
+          "--format",
+          '{{.Id}} {{index .Config.Labels "fixture.revision"}}',
+          reference,
+        ],
+        { signal },
+      )
+    ).stdout.trim();
+  try {
+    const first = await prepare("first");
+    expect(await inspect(first)).toBe(`${first} first`);
+    const second = await prepare("second");
+    expect(await inspect(`${project}-probe:local`)).toBe(`${second} second`);
+    expect(await inspect(first)).toBe(`${first} first`);
+  } finally {
+    await removeImagesWithLabel(`com.docker.compose.project=${project}`);
+  }
+});
+
 it("reuses development image tags and preserves prepared upgrade images with serial builds", async ({
   signal,
 }) => {

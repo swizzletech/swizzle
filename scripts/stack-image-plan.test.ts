@@ -63,6 +63,7 @@ case "$1 $2" in
   "info --format") echo /tmp ;;
   "pull registry.invalid/swizzle-api:${version}") printf '%s\\n' pulled ;;
   "image inspect") printf '%s\\n' '${imageId}' ;;
+  "tag ${imageId}") ;;
   "buildx build")
     while [ "$1" != --iidfile ]; do shift; done
     printf '%s\\n' '${imageId}' > "$2" ;;
@@ -115,8 +116,11 @@ it("pulls stock images and builds a dashboard with its custom API URL", async ()
   expect(commands.filter((call) => call.startsWith("pull "))).toEqual([
     "pull registry.invalid/swizzle-api:1.0.3",
   ]);
-  expect(commands.filter((call) => call.startsWith("buildx build "))).toEqual([
-    `buildx build --load --iidfile ${root}/prepared/web.iid --file ${root}/infra/docker/Dockerfile --target web --tag fixture-web:prepared-compose --label com.docker.compose.project=fixture --label com.docker.compose.service=web --build-arg VITE_API_BASE_URL=https://dashboard.invalid/\${project} ${root}`,
+  expect(
+    commands.filter((call) => call.startsWith("buildx build ") || call.startsWith("tag ")),
+  ).toEqual([
+    `buildx build --load --iidfile ${root}/prepared/web.iid --file ${root}/infra/docker/Dockerfile --target web --label com.docker.compose.project=fixture --label com.docker.compose.service=web --build-arg VITE_API_BASE_URL=https://dashboard.invalid/\${project} ${root}`,
+    `tag ${imageId} fixture-web:prepared-compose`,
   ]);
   expect(JSON.parse(await readFile(output, "utf8")).services).toEqual({
     api: { image: imageId, pull_policy: "never" },

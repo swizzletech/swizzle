@@ -150,7 +150,7 @@ it("lets a healthy run finish when another run exceeds its shared assembly log b
   }
 });
 
-it("measures partially shared bases independently of excluded images, orphan commits and inventory size", async ({
+it("measures partially shared bases independently of excluded images, untagged images and inventory size", async ({
   signal,
 }) => {
   heldDeadlines();
@@ -158,23 +158,19 @@ it("measures partially shared bases independently of excluded images, orphan com
   const marker = randomUUID();
   const stack = `image-disk-${marker}`;
   const label = `swizzle.verify-image-disk=${marker}`;
-  const dockerUntil =
-    (stop?: AbortSignal) =>
-    async (...args: string[]) => {
-      try {
-        return (await exec("docker", args, { maxBuffer: 8 * MIB, signal: stop })).stdout;
-      } catch (error) {
-        if (error instanceof Error && error.message.includes("lease does not exist")) {
-          throw new Error(
-            `docker ${args[0]} ${args[1] ?? ""} lost its containerd lease: a concurrent \`docker image prune\` on this daemon removed it. Rerun once no prune runs.`,
-            { cause: error },
-          );
-        }
-        throw error;
+  const docker = async (...args: string[]) => {
+    try {
+      return (await exec("docker", args, { maxBuffer: 8 * MIB, signal })).stdout;
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("lease does not exist")) {
+        throw new Error(
+          `docker ${args[0]} ${args[1] ?? ""} lost its containerd lease: a concurrent \`docker image prune\` on this daemon removed it. Rerun once no prune runs.`,
+          { cause: error },
+        );
       }
-    };
-  const docker = dockerUntil(signal);
-  const cleanup = dockerUntil();
+      throw error;
+    }
+  };
   const inspect = async (reference: string) =>
     z.array(inspectedImage).parse(JSON.parse(await docker("image", "inspect", reference)))[0] ??
     (() => {
@@ -189,27 +185,17 @@ it("measures partially shared bases independently of excluded images, orphan com
   const tag = (name: string) =>
     `swizzle-run:${createHash("sha256").update(`${marker}:${name}`).digest("hex").slice(0, 24)}`;
   const baseCommon = tag("common");
-  const baseA = tag("base-a");
   const ownedImages = new Set<string>();
-  let committingUntaggedImage = false;
-  const add = async (
-    name: string,
-    layers: readonly LayerDescriptor[],
-    scope: string,
-    created = old,
-  ) => {
+  let loadingArchive = false;
+  const imageLabels = (name: string, scope: string) => ({
+    "swizzle.stack": scope,
+    "swizzle.verify-image-disk": marker,
+    "swizzle.verify-image-name": name,
+  });
+  const add = async (name: string, layers: readonly LayerDescriptor[], scope: string) => {
     const reference = tag(name);
     ownedImages.add(reference);
-    await fixture.image(
-      reference,
-      layers,
-      {
-        "swizzle.stack": scope,
-        "swizzle.verify-image-disk": marker,
-        "swizzle.verify-image-name": name,
-      },
-      created,
-    );
+    await fixture.image(reference, layers, imageLabels(name, scope), old);
     return reference;
   };
   const closeToDisk = (actual: number, expected: number) => {
@@ -230,13 +216,11 @@ it("measures partially shared bases independently of excluded images, orphan com
       "a",
       [common, zero, customA, await fixture.layer("a", Buffer.alloc(MIB, "d"))],
       stack,
-      old,
     );
     await add(
       "b",
       [common, zero, customB, await fixture.layer("b", Buffer.alloc(MIB, "e"))],
       stack,
-      old,
     );
     await add(
       "excluded",
@@ -244,22 +228,30 @@ it("measures partially shared bases independently of excluded images, orphan com
       `${stack}-excluded`,
     );
     const largeStack = `${stack}-large`;
-    const inventory = Array.from({ length: 20 }, (_, i) => tag(`inventory-${i}`));
-    for (const [i] of inventory.entries()) {
-      await add(
-        `inventory-${i}`,
-        [common, zero, customA, await fixture.layer(`inventory-${i}`, Buffer.from(`source ${i}`))],
-        largeStack,
-        old,
-      );
+    const inventory = new Set<string>();
+    for (let i = 0; i < 20; i++) {
+      inventory.add(await add(`inventory-${i}`, [common, zero, customA], largeStack));
     }
     const cached = await add(
       "cached",
       [common, zero, customA, await fixture.layer("cached", Buffer.alloc(MIB, "g"))],
       stack,
-      old,
     );
-    await docker("image", "load", "--input", await fixture.archive());
+    const orphan = await fixture.layer("untagged", Buffer.alloc(MIB, "h"));
+    const orphanReferences = await fixture.image(
+      null,
+      [common, zero, customA, orphan],
+      imageLabels("untagged", stack),
+      new Date().toISOString(),
+    );
+    const archive = await fixture.archive();
+    loadingArchive = true;
+    const loaded = await docker("image", "load", "--input", archive);
+    const loadedImages = new Set(loaded.split("\n"));
+    const orphanId = orphanReferences.find((id) => loadedImages.has(`Loaded image ID: ${id}`));
+    if (!orphanId) throw new Error("The fixture archive did not load its untagged image.");
+    ownedImages.add(orphanId);
+    loadingArchive = false;
     const imageA = await inspect(a);
     const imageB = await inspect(b);
     expect(imageA.RootFS.Layers.filter((id) => imageB.RootFS.Layers.includes(id))).toEqual(
@@ -273,30 +265,6 @@ it("measures partially shared bases independently of excluded images, orphan com
     console.log(`Active union: measured=${active.disk.activeBytes}, independent=${expectedActive}`);
     closeToDisk(active.disk.activeBytes, expectedActive);
 
-    const source = path.join(directory, "untagged.bin");
-    await writeFile(source, Buffer.alloc(MIB, "h"));
-    const assembly = (
-      await docker(
-        "create",
-        "--network",
-        "none",
-        "--label",
-        `swizzle.stack=${stack}`,
-        "--label",
-        "swizzle.verify-image-name=untagged",
-        "--entrypoint",
-        "/unused",
-        baseA,
-      )
-    ).trim();
-    try {
-      await docker("cp", source, `${assembly}:/untagged`);
-      committingUntaggedImage = true;
-      ownedImages.add((await docker("commit", assembly)).trim());
-      committingUntaggedImage = false;
-    } finally {
-      await cleanup("container", "rm", assembly);
-    }
     const cachedId = (await inspect(cached)).Id;
     const expectedRetained = expectedActive + 2 * MIB;
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", String(Math.ceil(expectedRetained / MIB) + 1));
@@ -310,11 +278,11 @@ it("measures partially shared bases independently of excluded images, orphan com
 
     vi.stubEnv("SWIZZLE_STACK", largeStack);
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "100");
-    const large = await pruneRunImages({ keep: new Set(inventory), signal });
+    const large = await pruneRunImages({ keep: inventory, signal });
     expect(large.removed).toBe(0);
     closeToDisk(large.disk.activeBytes, 12 * MIB);
   } finally {
-    if (committingUntaggedImage) await removeImagesWithLabel(label);
+    if (loadingArchive) await removeImagesWithLabel(label);
     else await removeDockerImages(ownedImages);
   }
 });
@@ -362,7 +330,7 @@ async function imageArchive(directory: string, marker: string) {
       return { diffId: digest(bytes), blob: await blob("layer.v1.tar+gzip", gzipSync(bytes)) };
     },
     image: async (
-      tag: string,
+      tag: string | null,
       layers: readonly LayerDescriptor[],
       labels: Record<string, string>,
       created: string,
@@ -382,13 +350,14 @@ async function imageArchive(directory: string, marker: string) {
       });
       manifests.push({
         ...manifest,
-        annotations: { "io.containerd.image.name": `docker.io/library/${tag}` },
+        annotations: tag === null ? {} : { "io.containerd.image.name": `docker.io/library/${tag}` },
       });
       legacy.push({
         Config: file(config),
-        RepoTags: [tag],
+        RepoTags: tag === null ? [] : [tag],
         Layers: layers.map((layer) => file(layer.blob)),
       });
+      return [manifest.digest, config.digest];
     },
     archive: async () => {
       await writeFile(

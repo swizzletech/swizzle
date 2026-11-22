@@ -60,7 +60,7 @@ export default async function setup(project: TestProject) {
     stop();
     throw error;
   }
-  return stop;
+  project.vitest.onClose(async () => stop());
 }
 
 declare module "vitest" {
