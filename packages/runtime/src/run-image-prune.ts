@@ -95,11 +95,12 @@ export function planPrune(
   readonly disk: RunImageDisk;
 } {
   const active: RunImage[] = [];
-  const fresh: RunImage[] = [];
+  const reserved: RunImage[] = [];
   const candidates: RunImage[] = [];
   for (const image of inventory.images) {
     if (image.tags.some((tag) => keep.has(tag))) active.push(image);
-    else if (now - image.createdAt < FRESH_IMAGE_MS) fresh.push(image);
+    else if (now - image.createdAt < FRESH_IMAGE_MS || inventory.refused.has(image.id))
+      reserved.push(image);
     else candidates.push(image);
   }
 
@@ -109,9 +110,9 @@ export function planPrune(
   const images = unmeasured
     .slice(0, RUN_IMAGE_DISK_DETAILS_LIMIT)
     .map(({ id, tags }) => ({ id, tag: tags.find((tag) => keep.has(tag)) ?? null }));
-  let bytes = activeBytes + countRetainedBytes(fresh, retained);
-  let hasUnmeasured =
-    unmeasured.length > 0 || fresh.some((image) => image.footprint.state === "unmeasured");
+  let bytes = activeBytes + countRetainedBytes(reserved, retained);
+  const hasUnmeasured =
+    unmeasured.length > 0 || reserved.some((image) => image.footprint.state === "unmeasured");
 
   const removals: ImageRemoval[] = [];
   candidates.sort((left, right) => right.createdAt - left.createdAt);
@@ -119,17 +120,13 @@ export function planPrune(
     const additional =
       footprint.state === "measured" ? unretainedLayers(footprint.layers, retained) : null;
     if (
-      inventory.refused.has(id) ||
-      (additional !== null &&
-        !hasUnmeasured &&
-        now - createdAt < retentionMs &&
-        bytes + additional.bytes <= budgetBytes)
+      additional !== null &&
+      !hasUnmeasured &&
+      now - createdAt < retentionMs &&
+      bytes + additional.bytes <= budgetBytes
     ) {
-      if (additional === null) hasUnmeasured = true;
-      else {
-        bytes += additional.bytes;
-        for (const chain of additional.chains) retained.add(chain);
-      }
+      bytes += additional.bytes;
+      for (const chain of additional.chains) retained.add(chain);
       continue;
     }
     removals.push({ id, references: tags.length === 0 ? [id] : [...tags].sort(runTagLast) });

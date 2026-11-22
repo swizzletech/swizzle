@@ -75,6 +75,7 @@ async function failingAutomation() {
         (item: { kind: string }) => item.kind === "failing",
       ),
     overview: async () => await send("GET", "/dashboard/overview"),
+    start,
     send,
   };
 }
@@ -158,4 +159,29 @@ it("reads either recorded cancellation as cancelled in detail, lists and overvie
   const hours: Record<string, number>[] = result.timetable.rows[0].hours;
   expect(hours.reduce((sum, hour) => sum + (hour.cancelled ?? 0), 0)).toBe(2);
   expect(hours.reduce((sum, hour) => sum + (hour["dead-lettered"] ?? 0), 0)).toBe(1);
+});
+
+it("drills down to the same recent top-level failures the Overview counts", async () => {
+  const { failed, overview, send, start } = await failingAutomation();
+  const recent = await failed();
+  const older = await start();
+  const child = await start();
+  await testDatabase().pool.query(
+    "update runs set status = 'dead-lettered', queued_at = now() - interval '25 hours' where id = $1",
+    [older],
+  );
+  await testDatabase().pool.query(
+    "update runs set status = 'dead-lettered', parent_run_id = $2 where id = $1",
+    [child, recent],
+  );
+
+  const result = await overview();
+  expect(result.last24h["dead-lettered"]).toBe(1);
+  const href = "/dashboard/runs?state=failed,dead-lettered&topLevelOnly=true";
+  const recentFailures = await send("GET", `${href}&queuedSince=${result.last24hFrom}`);
+  expect(recentFailures.runs.map((run: { runId: string }) => run.runId)).toEqual([recent]);
+  const allFailures = await send("GET", "/dashboard/runs?state=failed,dead-lettered");
+  expect(new Set(allFailures.runs.map((run: { runId: string }) => run.runId))).toEqual(
+    new Set([recent, older, child]),
+  );
 });

@@ -30,7 +30,7 @@ export {
 export type { AutomationRunFailure } from "./run-result.js";
 export { runAutomation, runAutomationCheck } from "./runner.js";
 export {
-  addCredentialIssues,
+  activeDeploymentReadiness,
   collectWorkerCapabilities,
   createQueueNameForProfile,
   evaluateAutomationReadiness,

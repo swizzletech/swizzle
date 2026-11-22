@@ -16,7 +16,24 @@ export interface ApiRequestOptions extends RequestInit {
   readonly token?: BearerToken | null;
   readonly debug?: boolean;
   readonly debugLogger?: (message: string) => void;
-  readonly acceptNotFound?: boolean;
+}
+
+export const INVALID_BODY = Symbol("invalid API response body");
+
+export interface ResponseDecoder<T> {
+  readonly decode: (body: unknown) => T | typeof INVALID_BODY;
+  readonly notFound?: () => T;
+}
+
+export const noContent: ResponseDecoder<undefined> = {
+  decode: (body) => (body === undefined ? undefined : INVALID_BODY),
+};
+
+export function whenFound<T>(decoder: ResponseDecoder<T>): ResponseDecoder<T | undefined> {
+  return {
+    decode: decoder.decode,
+    notFound: () => undefined,
+  };
 }
 
 export interface ApiAmbientContext {
@@ -37,8 +54,9 @@ export function resetApiAmbientContext(): void {
   ambientContext = defaultContext;
 }
 
-export async function apiRequest<T = unknown>(
+export async function apiRequest<T>(
   url: string,
+  decoder: ResponseDecoder<T>,
   init: ApiRequestOptions = {},
 ): Promise<T> {
   const {
@@ -47,7 +65,6 @@ export async function apiRequest<T = unknown>(
     token: tokenOverride,
     debug: debugOverride,
     debugLogger: debugLoggerOverride,
-    acceptNotFound = false,
     ...requestInit
   } = init;
 
@@ -90,14 +107,19 @@ export async function apiRequest<T = unknown>(
   }
 
   let response: Response;
+  let bodyText: string;
   try {
     response = await fetch(url, {
       ...requestInit,
       headers: baseHeaders,
       signal: controller.signal,
     });
+    if (response.status === 404 && decoder.notFound !== undefined) {
+      void response.body?.cancel().catch(() => undefined);
+      return decoder.notFound();
+    }
+    bodyText = await response.text();
   } catch (error) {
-    clearTimeout(timer);
     const message = error instanceof Error ? error.message : String(error);
     if (controller.signal.aborted) {
       throw new AgentError({
@@ -119,20 +141,17 @@ export async function apiRequest<T = unknown>(
       hint: "Set --api-url or SWIZZLE_API_URL. The Caddy stack serves http://api.localhost:19826 (default); the dev stack prints its API URL. `swizzle profile list` shows saved profiles.",
       details: { url },
     });
-  }
-  clearTimeout(timer);
-
-  if (response.status === 204 || (response.status === 404 && acceptNotFound)) {
-    return undefined as T;
+  } finally {
+    clearTimeout(timer);
   }
 
-  const bodyText = await response.text();
   let body: unknown;
   if (bodyText.length > 0) {
     try {
       body = JSON.parse(bodyText);
     } catch {
-      if (!response.ok) body = { error: "INVALID_API_RESPONSE", message: bodyText };
+      if (response.ok) throw invalidApiResponse(apiUrl, response.status);
+      body = { error: "INVALID_API_RESPONSE", message: bodyText };
     }
   }
 
@@ -144,23 +163,28 @@ export async function apiRequest<T = unknown>(
       response.headers.get("Retry-After"),
     );
   }
-  if (bodyText.length === 0) {
-    return undefined as T;
+  const decoded = decoder.decode(body);
+  if (decoded === INVALID_BODY) {
+    throw invalidApiResponse(
+      apiUrl,
+      response.status,
+      "The body did not match the requested endpoint.",
+    );
   }
-  if (typeof body !== "object" || body === null) {
-    throw invalidApiResponse(apiUrl, response.status);
-  }
-
-  return body as T;
+  return decoded;
 }
 
-function invalidApiResponse(apiUrl: string, httpStatus: number): AgentError {
+function invalidApiResponse(
+  apiUrl: string,
+  httpStatus: number,
+  expectation = "Expected a JSON response.",
+): AgentError {
   const suggestedUrl = new URL(apiUrl);
   const basePath = suggestedUrl.pathname.replace(/\/$/u, "");
   if (!basePath.endsWith("/api")) suggestedUrl.pathname = `${basePath}/api`;
   return new AgentError({
     code: "INVALID_API_RESPONSE",
-    message: `${apiUrl} does not answer as a Swizzle API. Expected a JSON response.`,
+    message: `${apiUrl} does not answer as a Swizzle API. ${expectation}`,
     exitCode: EXIT_CODES.backend,
     retryable: false,
     hint: `Check the profile URL with \`swizzle profile list\`. The dashboard serves the API at ${suggestedUrl.toString()}. Set --api-url to the API URL.`,

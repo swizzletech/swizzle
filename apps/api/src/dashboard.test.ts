@@ -223,12 +223,37 @@ describe("withReadiness", () => {
     expect((await withReadiness(a, context())).activeDeployment.readiness.status).toBe("ready");
     expect((await withReadiness(b, context())).activeDeployment.readiness.status).toBe("not-ready");
   });
+
+  it("does not attach a newer deployment's trigger error to an older deployment", async () => {
+    const trigger = {
+      deploymentId: "deployment-2",
+      errorCode: "TRIGGER_CHAIN_SOURCE_DELETED",
+      errorMessage: "Chain source automation was deleted: source",
+      triggerType: "chain",
+    };
+    const older = deployed("  language: node", { trigger });
+    const newer = {
+      ...older,
+      activeDeployment: { ...older.activeDeployment, deploymentId: trigger.deploymentId },
+    };
+
+    expect(await readinessOf(older)).toEqual({ errors: [], status: "ready" });
+    expect(await readinessOf(newer)).toMatchObject({
+      errors: [{ code: "TRIGGER_CONFIGURATION_INVALID" }],
+      status: "not-ready",
+    });
+  });
+
   function deployed(runtime: string, overrides: Record<string, unknown> = {}) {
     const config = parseAutomationConfig(
       `name: demo\nversion: 1.0.0\nentrypoint: main.js\ntrigger:\n  type: webhook\nruntime:\n${runtime}\n`,
     );
     return {
-      activeDeployment: { runtimeSnapshot: config.runtime, sourceDirectory: "/nowhere" },
+      activeDeployment: {
+        deploymentId: "deployment-1",
+        runtimeSnapshot: config.runtime,
+        sourceDirectory: "/nowhere",
+      },
       projectId: "project-a",
       automationId: "automation-1",
       requiredConnections: [],

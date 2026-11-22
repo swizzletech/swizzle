@@ -17,7 +17,9 @@ stdout and stderr are each limited to 1 MiB. For deployed runs, the API replaces
 
 For container runs, image preparation logs and process stderr share that limit. A run that exceeds its preparation log allowance stops waiting and fails on its own. Other runs and background preparation can finish the shared assembly. The assembly itself stops at its shared 1 MiB log limit. Process overflow stops the process. Captured output keeps the longest complete UTF-8 prefix that fits, including an initial byte order mark; stdout keeps its separate 1 MiB allowance.
 
-If the runtime cannot deliver process output, it stops collecting output and shuts down the process. A host process that ignores SIGTERM receives SIGKILL.
+If the runtime cannot deliver process output, it stops collecting output and shuts down the process. A host process that ignores SIGTERM receives SIGKILL. Once the process exits or starts stopping, the runtime cancels pending output delivery after five seconds without a completed delivery. Each completion restarts that deadline.
+
+When more than one stop reason arrives before the execution settles, cancellation takes precedence over a timeout, and a timeout takes precedence over output overflow. A delivery failure preserves any of those stop reasons.
 
 | Failure code | Cause |
 |---|---|
@@ -34,7 +36,7 @@ If the runtime cannot deliver process output, it stops collecting output and shu
 | `PROCESS_TIMEOUT` | The run exceeded `runtime.timeout`. The worker sends `SIGTERM`, then `SIGKILL`. |
 | `PROCESS_SIGNAL` | A signal terminated the process. |
 | `PROCESS_OUTPUT_LIMIT_EXCEEDED` | stdout or stderr exceeded 1 MiB. |
-| `RUN_CANCELLED` | Someone cancelled the run (`swizzle runs cancel`, the API or the dashboard). The API refuses further lease renewals and output after cancellation. The worker stops when a renewal or output request is refused, normally within two seconds, or before its last acknowledged expiry if the network is unavailable. |
+| `RUN_CANCELLED` | Someone cancelled the run (`swizzle runs cancel`, the API or the dashboard), its parent was cancelled, or its parent reached another terminal outcome while the child was being created. The API refuses further lease renewals and output after cancellation. The worker stops when a renewal or output request is refused, normally within two seconds, or before its last acknowledged expiry if the network is unavailable. |
 | `AUTOMATION_STATE_LIMIT_EXCEEDED` | A state event broke a state limit. |
 | `AUTOMATION_STEP_LIMIT_EXCEEDED` | A step event broke a step limit. |
 | `UPSTREAM_CONTRACT_CHANGED` | The process exited with a code other than `0` after a `contract_changed` event. The message names the API and the field. The run is not retried, because the next attempt meets the same answer. |

@@ -56,9 +56,13 @@ function step(key: string, startedMs: number | null, finishedMs: number | null):
 
 function run(
   overrides: Partial<RunDetail>,
-): Pick<RunDetail, "approval" | "finishedAt" | "startedAt" | "state" | "status" | "wait"> {
+): Pick<
+  RunDetail,
+  "approval" | "cancelledWaitStepKey" | "finishedAt" | "startedAt" | "state" | "status" | "wait"
+> {
   return {
     approval: null,
+    cancelledWaitStepKey: null,
     finishedAt: null,
     startedAt: at(0),
     state: overrides.status ?? "running",
@@ -83,6 +87,7 @@ describe("trackForRun", () => {
     const steps = new Map([["fetch", step("fetch", 100, null)]]);
     const track = trackForRun(FLOW, cancelled, { steps, waiting: null }, KEYS);
     expect(states(track.nodes)).toMatchObject({ fetch: "cancelled", done: "idle" });
+    expect(lanes(track.edges)).toMatchObject({ "trigger>fetch": "done" });
     expect(activeStep(track)).toBe("fetch");
   });
 
@@ -398,6 +403,7 @@ describe("step families", () => {
       upload: "idle",
     });
     expect(runPass(position, LOOP_FAMILIES)).toEqual({ index: 2, item: "b", of: null });
+    expect(lanes(track.edges)).toMatchObject({ "fetch>classify": "failed" });
     expect(track.nodes.find((node) => node.id === "classify")?.meta).toBe("failed at item 2 · b");
     const replay = buildReplay(dead, [...died.values()], LOOP_SITES);
     expect(replayPass(replay, replay.length)).toEqual({ index: 1, item: "a", of: null });
@@ -485,6 +491,15 @@ describe("step families", () => {
       item: "a",
       of: null,
     });
+  });
+
+  it("reads a cancelled first wait as a step the run reached", () => {
+    const cancelled = run({
+      cancelledWaitStepKey: "review",
+      finishedAt: at(1_000),
+      status: "dead-lettered",
+    });
+    expect(buildReplay(cancelled, [], []).didNoStep).toBe(false);
   });
 
   it("does not call a run that failed in its first step a run that did no step", () => {

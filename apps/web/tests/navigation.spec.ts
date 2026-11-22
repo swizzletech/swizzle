@@ -288,3 +288,16 @@ test("About shows the webhook URL the API names for the trigger", async ({ page 
     }),
   ).toBeVisible();
 });
+
+test("the phone sidebar loads a head-only logo", async ({ page }) => {
+  await mockDashboardApi(page, seededState());
+  await page.goto("/");
+  const logo = page.getByRole("link", { name: "Swizzle overview" }).getByRole("img");
+  await expect(logo).toBeVisible();
+  const desktop = await logo.boundingBox();
+  expect(desktop?.width).toBeGreaterThan(100);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(async () => (await logo.boundingBox())?.width ?? 0).toBeLessThan(30);
+  await expect(logo).toBeInViewport({ ratio: 1 });
+});

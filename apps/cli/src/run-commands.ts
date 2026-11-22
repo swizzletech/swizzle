@@ -1,15 +1,9 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { isFailedState, isFinishedRun, RUN_STATES, RUN_STATUSES } from "@swizzle/db";
-import type {
-  CancelRunResponse,
-  ResumeRunResponse,
-  RunDiagnosisResponse,
-  RunsResponse,
-  TriggerRunResponse,
-} from "@swizzle/runtime/http-contract";
 import { type Command, Option } from "commander";
 import { apiRequest } from "./api.js";
+import { responses } from "./api-responses.js";
 import { resolveAutomationNameOrDie } from "./automation-api.js";
 import {
   type ApiCommandOptions,
@@ -67,11 +61,12 @@ async function fetchRuns(
   query: Record<string, string | number | boolean>,
   limit: number,
 ): Promise<{ readonly runs: readonly RunSummaryRecord[]; readonly more: boolean }> {
-  const response = await apiRequest<RunsResponse>(
+  const response = await apiRequest(
     buildApiUrl("/dashboard/runs", options, {
       ...query,
       limit: Math.min(limit + 1, API_RUN_LIMIT),
     }),
+    responses.runs,
   );
   return {
     more: response.runs.length > limit || response.runs.length === API_RUN_LIMIT,
@@ -121,8 +116,9 @@ function registerLogs(program: Command, io: CliIO, runHandler: RunHandler): void
         const options = await targeted(inputOptions);
         const runId = options.run ?? (await latestRunId(automationName, options));
         if (options.follow === true) await followRunLogs(io, options, runId);
-        const run = await apiRequest<RunDetailRecord>(
+        const run = await apiRequest(
           buildApiUrl(`/runs/${encodeURIComponent(runId)}`, options),
+          responses.run,
         );
         const stdout = windowLog(run.stdout ?? "", options);
         const stderr = windowLog(runStderr(run), options);
@@ -325,8 +321,9 @@ function registerRuns(program: Command, io: CliIO, runHandler: RunHandler): void
     async (runId: string, inputOptions: ApiCommandOptions & { readonly full?: boolean }) => {
       await runHandler(async () => {
         const options = await targeted(inputOptions);
-        const run = await apiRequest<RunDetailRecord>(
+        const run = await apiRequest(
           buildApiUrl(`/runs/${encodeURIComponent(runId)}`, options),
+          responses.run,
         );
         respond(io, { run: runView(run, options.full === true) }, inspectHelp(run, options.full));
       });
@@ -344,8 +341,9 @@ function registerRuns(program: Command, io: CliIO, runHandler: RunHandler): void
   replay.action(async (runId: string, inputOptions: ApiCommandOptions) => {
     await runHandler(async () => {
       const options = await targeted(inputOptions);
-      const started = await apiRequest<TriggerRunResponse>(
+      const started = await apiRequest(
         buildApiUrl(`/runs/${encodeURIComponent(runId)}/replay`, options),
+        responses.triggerRun,
         { method: "POST" },
       );
       respond(
@@ -371,8 +369,9 @@ function registerRuns(program: Command, io: CliIO, runHandler: RunHandler): void
   cancel.action(async (runId: string, inputOptions: ApiCommandOptions) => {
     await runHandler(async () => {
       const options = await targeted(inputOptions);
-      const response = await apiRequest<CancelRunResponse>(
+      const response = await apiRequest(
         buildApiUrl(`/runs/${encodeURIComponent(runId)}/cancel`, options),
+        responses.cancelRun,
         { method: "POST" },
       );
       const run = response.run;
@@ -408,11 +407,12 @@ function registerRuns(program: Command, io: CliIO, runHandler: RunHandler): void
       await runHandler(async () => {
         const options = await targeted(inputOptions);
         const value = await resolveEventPayload(options);
-        const result = await apiRequest<ResumeRunResponse>(
+        const result = await apiRequest(
           buildApiUrl(
             `/runs/${encodeURIComponent(runId)}/events/${encodeURIComponent(stepKey)}`,
             options,
           ),
+          responses.resumeRun,
           {
             body: JSON.stringify({ value }),
             headers: { "content-type": "application/json" },
@@ -580,8 +580,9 @@ function registerDiagnose(program: Command, io: CliIO, runHandler: RunHandler): 
   command.action(async (runId: string, inputOptions: ApiCommandOptions) => {
     await runHandler(async () => {
       const options = await targeted(inputOptions);
-      const diagnosis = await apiRequest<RunDiagnosisResponse>(
+      const diagnosis = await apiRequest(
         buildApiUrl(`/runs/${encodeURIComponent(runId)}/diagnosis`, options),
+        responses.runDiagnosis,
       );
       respond(
         io,
@@ -642,7 +643,7 @@ function registerStats(program: Command, io: CliIO, runHandler: RunHandler): voi
             .filter((run) => isFailedState(run.state))
             .slice(0, 20)
             .map((run) =>
-              apiRequest<RunDetailRecord>(buildApiUrl(`/runs/${run.runId}`, options)).catch(
+              apiRequest(buildApiUrl(`/runs/${run.runId}`, options), responses.run).catch(
                 () => null,
               ),
             ),

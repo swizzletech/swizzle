@@ -9,7 +9,12 @@ import { AutomationRuntimeError, getErrorMessage } from "./errors.js";
 import type { ExecutedScript } from "./executed-script.js";
 import { withLocalLlmAccess } from "./local-llm-access.js";
 import { createOutputRedactor, redactRunResult } from "./output-redaction.js";
-import { executeProcess, parseProcessResult, requireProcessExit } from "./process-execution.js";
+import {
+  type ExecutionOutputCallback,
+  executeProcess,
+  parseProcessResult,
+  requireProcessExit,
+} from "./process-execution.js";
 import { ensureRunImage, type RunImageRecipe, runImageRecipe, runImageTag } from "./run-image.js";
 import { pruneRunImages } from "./run-image-prune.js";
 import type { AutomationRunFailure, AutomationRunResult, RunPhases } from "./run-result.js";
@@ -32,8 +37,8 @@ export interface RunContainerAutomationOptions {
   readonly definition: AutomationDefinition;
   readonly environment: Record<string, string>;
   readonly onReady?: () => Promise<void>;
-  readonly onStderrChunk?: (chunk: string) => void | Promise<void>;
-  readonly onStdoutChunk?: (chunk: string) => void | Promise<void>;
+  readonly onStderrChunk?: ExecutionOutputCallback;
+  readonly onStdoutChunk?: ExecutionOutputCallback;
   readonly outputLimitBytes?: number;
   readonly platformRun: boolean;
   readonly policyEnvironment?: NodeJS.ProcessEnv;
@@ -115,8 +120,13 @@ async function executeContainerAutomation(
             ...runtimeEnvironment(options.script),
           },
           inputDirectory,
-          onStderrChunk: (chunk) => options.onStderrChunk?.(stderr.push(chunk)),
-          onStdoutChunk: (chunk) => options.onStdoutChunk?.(stdout.push(chunk)),
+          onStderrChunk: (chunk, delivery) => options.onStderrChunk?.(stderr.push(chunk), delivery),
+          onStdoutChunk: (chunk, delivery) => options.onStdoutChunk?.(stdout.push(chunk), delivery),
+          flushOutput: async (delivery) => {
+            await options.onStderrChunk?.(stderr.end(), delivery);
+            delivery.throwIfAborted();
+            await options.onStdoutChunk?.(stdout.end(), delivery);
+          },
           outputLimitBytes,
           stderrLimitBytes: outputLimitBytes - Buffer.byteLength(preparationStderr.value),
           sandbox,
@@ -124,8 +134,6 @@ async function executeContainerAutomation(
         });
         phases.process = Date.now() - processStartedAt;
 
-        await options.onStderrChunk?.(stderr.end());
-        await options.onStdoutChunk?.(stdout.end());
         const result = parseProcessResult({
           durationMs: Date.now() - startedAt,
           execution,
@@ -289,8 +297,9 @@ async function executeInSandbox(input: {
   readonly command: readonly string[];
   readonly environment: Record<string, string>;
   readonly inputDirectory: string;
-  readonly onStderrChunk?: (chunk: string) => void | Promise<void>;
-  readonly onStdoutChunk?: (chunk: string) => void | Promise<void>;
+  readonly flushOutput: (signal: AbortSignal) => Promise<void>;
+  readonly onStderrChunk?: ExecutionOutputCallback;
+  readonly onStdoutChunk?: ExecutionOutputCallback;
   readonly outputLimitBytes: number;
   readonly stderrLimitBytes: number;
   readonly sandbox: Sandbox;
@@ -304,6 +313,7 @@ async function executeInSandbox(input: {
     );
   const execution = await executeProcess({
     abortSignal: input.abortSignal,
+    flushOutput: input.flushOutput,
     onStderrChunk: input.onStderrChunk,
     onStdoutChunk: input.onStdoutChunk,
     outputLimitBytes: input.outputLimitBytes,

@@ -28,7 +28,7 @@ import type {
 } from "./platform-records.js";
 import { getDeploymentSecretHealth } from "./platform-secrets.js";
 import {
-  addCredentialIssues,
+  activeDeploymentReadiness,
   createQueueNameForProfile,
   evaluateAutomationReadiness,
   gapsInWords,
@@ -302,7 +302,7 @@ export async function enrichDeploymentRecord(
   deployment: StoredDeployment,
   workers: readonly ReadinessWorker[],
 ): Promise<PlatformDeploymentRecord> {
-  const [secretHealth, connectionHealth, timeoutGrant] = await Promise.all([
+  const [secretHealth, connectionHealth, timeoutGrant, trigger] = await Promise.all([
     getDeploymentSecretHealth({
       deployment,
       store,
@@ -315,19 +315,24 @@ export async function enrichDeploymentRecord(
       automationId: deployment.automationId,
       environment: deployment.environment,
     }),
+    store.getAutomationTriggerBySlug(deployment.automationSlug, deployment.environment),
   ]);
 
+  const runtime = evaluateAutomationReadiness(
+    { config: deployment.config, directory: deployment.sourceDirectory },
+    workers,
+    { grantMaxTimeoutMs: timeoutGrant?.maxTimeoutMs ?? null },
+  );
   return {
     ...deployment,
     connectionHealth,
-    readiness: addCredentialIssues(
-      evaluateAutomationReadiness(
-        { config: deployment.config, directory: deployment.sourceDirectory },
-        workers,
-        { grantMaxTimeoutMs: timeoutGrant?.maxTimeoutMs ?? null },
-      ),
-      { connections: connectionHealth, environment: deployment.environment, secrets: secretHealth },
-    ),
+    readiness: activeDeploymentReadiness(runtime, {
+      connections: connectionHealth,
+      deploymentId: deployment.deploymentId,
+      environment: deployment.environment,
+      secrets: secretHealth,
+      trigger,
+    }),
     secretHealth,
   };
 }

@@ -36,17 +36,14 @@ export const commentBudget: Rule = {
     if (!repo.exists(BUDGET)) return invalidBudget("Restore the committed comment budget.");
     const budget = readBudget(repo.read(BUDGET));
     if (budget === undefined) return invalidBudget("Use source paths and positive integer counts.");
-    const baseText = repo.readBaseline?.(BUDGET);
+    const baselineSource = repo.readBaseline?.(BUDGET);
     const violations: Violation[] = [];
-    if (baseText === undefined) {
-      if (repo.readBaseline !== undefined && process.env.CI === "true") {
-        return invalidBudget(
-          "CI requires a committed comment budget baseline. Fetch the history of main.",
-        );
-      }
+    if (baselineSource === undefined || "reason" in baselineSource) {
+      if (baselineSource !== undefined && process.env.CI === "true")
+        return invalidBudget(baselineSource.reason);
       notice("comment-budget: growth check skipped. No committed baseline is available.");
     } else {
-      const baseline = readBudget(baseText);
+      const baseline = readBudget(baselineSource.text);
       if (baseline === undefined) return invalidBudget("The committed baseline budget is invalid.");
       for (const [file, count] of budget) {
         const previous = baseline.get(file) ?? 0;

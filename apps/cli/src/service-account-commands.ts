@@ -1,11 +1,8 @@
-import type {
-  CreateServiceAccountResponse as CreateServiceAccountResult,
-  DeleteServiceAccountResponse as DeleteServiceAccountResult,
-  ServiceAccountsResponse,
-} from "@swizzle/runtime/http-contract";
+import type { ServiceAccountsResponse } from "@swizzle/runtime/http-contract";
 import type { Command } from "commander";
 
 import { apiRequest } from "./api.js";
+import { responses } from "./api-responses.js";
 import {
   type ApiCommandOptions,
   type RunHandler,
@@ -36,8 +33,9 @@ async function listServiceAccounts(
   options: ApiCommandOptions,
 ): Promise<readonly ServiceAccount[]> {
   return (
-    await apiRequest<ServiceAccountsResponse>(
+    await apiRequest(
       url(`/projects/${segment(project)}/service-accounts`, options),
+      responses.serviceAccounts,
     )
   ).serviceAccounts;
 }
@@ -106,8 +104,9 @@ export function registerServiceAccounts(program: Command, io: CliIO, runHandler:
         `Run \`swizzle projects grant ${project} --service-account ${name} --role editor\` to give it a role`,
         `Sign in to the dashboard and open ${project} > Service accounts > ${name} to mint its token`,
       ];
-      const created = await apiRequest<CreateServiceAccountResult>(
+      const created = await apiRequest(
         url(`/projects/${segment(project)}/service-accounts`, options),
+        responses.createServiceAccount,
         {
           body: JSON.stringify({ name }),
           headers: { "content-type": "application/json" },
@@ -144,8 +143,9 @@ export function registerServiceAccounts(program: Command, io: CliIO, runHandler:
         `swizzle service-accounts delete ${name} --project ${project}`,
         `this deletes service account ${name} of ${project}; every agent using its tokens stops at once.`,
       );
-      const result = await apiRequest<DeleteServiceAccountResult>(
+      const result = await apiRequest(
         url(`/projects/${segment(project)}/service-accounts/${segment(name)}`, options),
+        responses.deleteServiceAccount,
         { method: "DELETE" },
       );
       respond(io, {

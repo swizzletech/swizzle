@@ -110,7 +110,11 @@ function StatusCard({ overview }: { readonly overview: Overview }) {
           {failures === null ? null : ` ${failures}`}
         </p>
         {failures === null ? null : (
-          <Link className="btn quiet small" search={{ status: "failed" }} to="/runs">
+          <Link
+            className="btn quiet small"
+            search={{ failureWindowStart: overview.last24hFrom, status: "failed" }}
+            to="/runs"
+          >
             Show failed runs
           </Link>
         )}

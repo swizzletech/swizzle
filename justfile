@@ -112,12 +112,14 @@ docs-check: _reference-current
     @# conventions-allow no-private-paths: the private repository's own checks; the export has none.
     @if test -f .agents/checks/main.ts; then {{ tsx }} .agents/checks/main.ts; fi
 
-# Regenerate docs/reference from the config schema, the CLI command tree and the API routes.
+# Regenerate the reference pages and logo variants.
 gen:
     {{ tsx }} scripts/gen-reference.mts
+    {{ tsx }} scripts/gen-logo.mts
 
 _reference-current:
     @{{ tsx }} scripts/gen-reference.mts --check
+    @{{ tsx }} scripts/gen-logo.mts --check
 
 # Build every package and app; turbo replays unchanged outputs from its cache.
 build:

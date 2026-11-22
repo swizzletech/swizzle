@@ -1,5 +1,6 @@
 import type { EnvironmentsResponse } from "@swizzle/runtime/http-contract";
 import { apiRequest, DEFAULT_API_URL, resolveApiUrl } from "./api.js";
+import { responses } from "./api-responses.js";
 import type { ApiCommandOptions } from "./command-support.js";
 import { AgentError, EXIT_CODES } from "./output.js";
 import { loadProfileConfig, resolveEnvironment, resolveProfile } from "./profile.js";
@@ -8,44 +9,9 @@ export type EnvironmentLiveness = Pick<
   EnvironmentsResponse["environments"][number],
   "name" | "hasData" | "liveServices"
 >;
-type InstanceEnvironments = {
-  readonly environments: readonly EnvironmentLiveness[];
-};
-
-async function fetchEnvironments(options: ApiCommandOptions): Promise<InstanceEnvironments> {
+async function fetchEnvironments(options: ApiCommandOptions) {
   const url = resolveApiUrl(options.apiUrl ?? DEFAULT_API_URL, "/environments").toString();
-  const response = await apiRequest<unknown>(url, { timeoutMs: 5_000 });
-  const invalid = () =>
-    new AgentError({
-      code: "API_RESPONSE_INVALID",
-      message: `The API at ${url} returned invalid environment information.`,
-      exitCode: EXIT_CODES.backend,
-      fixCommand: "swizzle doctor",
-      hint: "The URL may point at something other than a Swizzle API; check --api-url or the profile.",
-    });
-  if (
-    typeof response !== "object" ||
-    response === null ||
-    !("environments" in response) ||
-    !Array.isArray(response.environments)
-  )
-    throw invalid();
-  const environments = response.environments.map((entry: unknown): EnvironmentLiveness => {
-    if (
-      typeof entry !== "object" ||
-      entry === null ||
-      !("name" in entry) ||
-      typeof entry.name !== "string" ||
-      !("hasData" in entry) ||
-      typeof entry.hasData !== "boolean" ||
-      !("liveServices" in entry) ||
-      !Array.isArray(entry.liveServices) ||
-      !entry.liveServices.every((service: unknown) => typeof service === "string")
-    )
-      throw invalid();
-    return { name: entry.name, hasData: entry.hasData, liveServices: entry.liveServices };
-  });
-  return { environments };
+  return apiRequest(url, responses.environments, { timeoutMs: 5_000 });
 }
 
 export async function resolveCommandEnvironment(

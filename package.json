@@ -26,12 +26,14 @@
     "marked": "^18.2.1",
     "pg": "catalog:",
     "postcss": "^8.5.33",
+    "postcss-value-parser": "^4.2.0",
     "rimraf": "^6.1.4",
     "tsx": "catalog:",
     "turbo": "^2.11.13",
     "typescript": "catalog:",
     "unbash": "^6.0.4",
     "vitest": "^5.1.1",
-    "yaml": "catalog:"
+    "yaml": "catalog:",
+    "zod": "catalog:"
   }
 }

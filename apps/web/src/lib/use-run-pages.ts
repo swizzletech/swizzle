@@ -14,6 +14,8 @@ type RunHistory = InfiniteData<RunsResponse>;
 export interface RunPagesFilter {
   readonly approvalOnly?: boolean;
   readonly automation?: string;
+  readonly queuedSince?: string;
+  readonly topLevelOnly?: boolean;
   readonly states?: readonly RunState[];
 }
 

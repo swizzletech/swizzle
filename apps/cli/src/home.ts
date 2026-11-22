@@ -1,13 +1,10 @@
 import os from "node:os";
 import path from "node:path";
 
-import type {
-  AutomationsResponse,
-  OverviewResponse as DashboardOverview,
-  EnvironmentsResponse,
-} from "@swizzle/runtime/http-contract";
+import type { OverviewResponse as DashboardOverview } from "@swizzle/runtime/http-contract";
 
-import { apiRequest, resolveApiUrl } from "./api.js";
+import { apiRequest, type ResponseDecoder, resolveApiUrl } from "./api.js";
+import { responses } from "./api-responses.js";
 import type { ApiCommandOptions } from "./command-support.js";
 import { detectCwdAutomation } from "./context.js";
 import { buildEnvironmentNotPinnedError } from "./environment-guard.js";
@@ -79,10 +76,12 @@ async function resolveTarget(options: ApiCommandOptions): Promise<HomeTarget> {
     profileName: profile.name,
   });
   if (resolved.source === "unpinned") {
-    const instance = await apiRequest<EnvironmentsResponse>(
-      resolveApiUrl(profile.url, "/environments").toString(),
-      { apiUrl: profile.url, timeoutMs: HOME_TIMEOUT_MS, token: profile.token },
-    );
+    const url = resolveApiUrl(profile.url, "/environments").toString();
+    const instance = await apiRequest(url, responses.environments, {
+      apiUrl: profile.url,
+      timeoutMs: HOME_TIMEOUT_MS,
+      token: profile.token,
+    });
     throw await buildEnvironmentNotPinnedError({
       profileName: profile.name,
       options,
@@ -180,18 +179,19 @@ async function liveState(
   target: HomeTarget,
   folderSlug: string | undefined,
 ): Promise<{ readonly output: Output; readonly help: string[] }> {
-  const get = <T>(pathname: string) =>
-    apiRequest<T>(
+  const get = <T>(pathname: string, decoder: ResponseDecoder<T>) =>
+    apiRequest(
       (() => {
         const url = resolveApiUrl(target.url, pathname);
         url.searchParams.set("environment", target.environment);
         return url.toString();
       })(),
+      decoder,
       { apiUrl: target.url, timeoutMs: HOME_TIMEOUT_MS, token: target.token },
     );
   const [{ automations }, overview] = await Promise.all([
-    get<AutomationsResponse>("/dashboard/automations"),
-    get<DashboardOverview>("/dashboard/overview"),
+    get("/dashboard/automations", responses.automations),
+    get("/dashboard/overview", responses.overview),
   ]);
   const env = `-e ${target.environment}`;
 

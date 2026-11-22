@@ -120,6 +120,32 @@ function stationSize(node: TrackNode, extra: StationExtra | null) {
   return { height: CARD_FRAME + lines * CARD_LINE + CARD_META + (extra?.height ?? 0), width };
 }
 
+const LANE_LABEL_HEIGHT = 16;
+const LANE_LABEL_PAD = 4;
+
+function laneLabelWidth(label: string): number {
+  if (ruler === null) return label.length * 7 + 2 * LANE_LABEL_PAD;
+  ruler.font = sansFont(MARK_TYPE);
+  return Math.ceil(ruler.measureText(label).width) + 2 * LANE_LABEL_PAD;
+}
+
+function verticalLabelX(
+  label: { readonly x: number; readonly y: number },
+  points: Routed["points"],
+  width: number,
+): number {
+  const halfHeight = LANE_LABEL_HEIGHT / 2;
+  const atLabel = points.filter((point, index) => {
+    const previous = points[index - 1]?.y ?? point.y;
+    const next = points[index + 1]?.y ?? point.y;
+    return (
+      Math.min(previous, point.y, next) <= label.y + halfHeight &&
+      Math.max(previous, point.y, next) >= label.y - halfHeight
+    );
+  });
+  return Math.max(label.x, ...atLabel.map((point) => point.x + width / 2 + LANE_LABEL_PAD));
+}
+
 function layoutTrack(
   lib: Dagre,
   track: TrackGraph,
@@ -139,15 +165,16 @@ function layoutTrack(
   for (const node of track.nodes) {
     graph.setNode(node.id, stationSize(node, extras.get(node.id) ?? null));
   }
+  const widths = track.edges.map((edge) => (edge.label ? laneLabelWidth(edge.label) : 0));
   track.edges.forEach((edge, index) => {
-    const label = edge.label ?? "";
+    const width = widths[index] ?? 0;
     graph.setEdge(
       edge.from,
       edge.to,
       {
-        height: label === "" ? 0 : 16,
-        labelpos: "c",
-        width: label === "" ? 0 : label.length * 7 + 8,
+        height: width === 0 ? 0 : LANE_LABEL_HEIGHT,
+        labelpos: direction === "TB" ? "r" : "c",
+        width,
       },
       `lane-${index}`,
     );
@@ -158,22 +185,23 @@ function layoutTrack(
     const placed = graph.node(node.id) as { x: number; y: number; width: number; height: number };
     return { height: placed.height, node, width: placed.width, x: placed.x, y: placed.y };
   });
+  let width = size.width ?? 0;
   const lanes = track.edges.map((edge, index) => {
     const routed = graph.edge({ name: `lane-${index}`, v: edge.from, w: edge.to }) as {
       points: { x: number; y: number }[];
       x?: number;
       y?: number;
     };
-    return {
-      edge,
-      label:
-        edge.label === null || routed.x === undefined || routed.y === undefined
-          ? null
-          : { x: routed.x, y: routed.y },
-      points: routed.points,
-    };
+    const { x, y, points } = routed;
+    if (edge.label === null || x === undefined || y === undefined) {
+      return { edge, label: null, points };
+    }
+    const labelWidth = widths[index] ?? 0;
+    const labelX = direction === "TB" ? verticalLabelX({ x, y }, points, labelWidth) : x;
+    width = Math.max(width, labelX + labelWidth / 2 + LANE_LABEL_PAD);
+    return { edge, label: { x: labelX, y }, points };
   });
-  return { height: size.height ?? 0, lanes, stations, width: size.width ?? 0 };
+  return { height: size.height ?? 0, lanes, stations, width };
 }
 
 function lanePath(points: readonly { readonly x: number; readonly y: number }[]): string {
@@ -239,6 +267,7 @@ export function StationFace(props: {
 const LANE_CLASS: Record<LaneState, string> = {
   active: "active",
   done: "done",
+  failed: "failed",
   idle: "",
   untaken: "untaken",
 };

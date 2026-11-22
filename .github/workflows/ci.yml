@@ -31,6 +31,8 @@ jobs:
         uses: ./.github/actions/toolchain
 
       - name: Static gate
+        env:
+          SWIZZLE_COMMENT_BUDGET_BASE: ${{ github.event_name == 'push' && github.event.before || '' }}
         run: just _verify-static
 
       - name: Audit dependencies
@@ -89,6 +91,8 @@ jobs:
     name: Build and E2E
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      SWIZZLE_E2E_OUTPUT_DIR: ${{ github.workspace }}/swizzle-e2e-artifacts
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -104,7 +108,15 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('node_modules/.pnpm/playwright-core@*/node_modules/playwright-core/package.json') }}
 
       - name: Set up, build and run the dashboard flows
+        id: e2e
         run: just _verify-e2e
+
+      - name: Upload Playwright failure evidence
+        if: ${{ failure() && steps.e2e.outcome == 'failure' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: playwright-failure
+          path: ${{ env.SWIZZLE_E2E_OUTPUT_DIR }}
 
   # Branch protection requires this job by its name, `Verify`, so adding, splitting or
   # resharding a job above needs no change to the protection rules: list it under `needs`.

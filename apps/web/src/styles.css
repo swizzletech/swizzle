@@ -236,15 +236,6 @@
     width: auto;
     flex: none;
   }
-  .logo-edge {
-    display: none;
-  }
-  @media (prefers-color-scheme: dark) {
-    .logo-edge {
-      display: inline;
-    }
-  }
-
   .icon {
     width: 16px;
     height: 16px;

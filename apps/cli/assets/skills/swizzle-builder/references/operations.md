@@ -289,10 +289,12 @@ Process exit codes are typed by failure class, so scripts and agents can branch 
 | 2 | usage | unknown command, bad flags, a missing `--yes`, fuzzy name on a destructive command |
 | 3 | validation | invalid config.yaml, bad payload JSON, 400/422 |
 | 4 | auth | missing/invalid Bearer token, 401/403 |
-| 5 | backend | API unreachable, timeout, 5xx |
+| 5 | backend | API unreachable, request timeout, invalid API response, 5xx |
 | 6 | not found | automation/run/deployment/secret, 404 |
 | 7 | rate limit | 429 |
 | 8 | conflict | `SECRET_ALREADY_EXISTS`, `AUTOMATION_NOT_PAUSED`, `TRIGGER_WEBHOOK_PATH_CONFLICT`, 409 |
+
+`API_TIMEOUT` means the request deadline expired while waiting for the headers or reading the body. `API_UNREACHABLE` also covers a connection that breaks during the read. Both are retryable. `INVALID_API_RESPONSE` also covers invalid environment discovery responses. It can mean the profile points at the dashboard or another service. Check the URL with `swizzle profile list` and use the API URL shown in the error's help.
 
 ## Secret management
 

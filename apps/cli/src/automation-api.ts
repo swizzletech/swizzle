@@ -3,14 +3,14 @@ import type {
   AutomationDeploymentResponse as ActiveDeploymentRecord,
   ApplyResponse,
   AutomationSummaryResponse as AutomationSummaryRecord,
-  AutomationsResponse,
   DeploymentCheckResponse,
 } from "@swizzle/runtime/http-contract";
 
 export type ReadinessRecord = ActiveDeploymentRecord["readiness"];
 export type { AutomationSummaryResponse as AutomationSummaryRecord } from "@swizzle/runtime/http-contract";
 
-import { apiRequest, resolveApiUrl } from "./api.js";
+import { apiRequest, type ResponseDecoder, resolveApiUrl } from "./api.js";
+import { responses } from "./api-responses.js";
 import {
   type ApiCommandOptions,
   buildApiUrl,
@@ -87,8 +87,9 @@ export async function resolveAutomationNameOrDie(
 export async function listAutomations(
   options: ApiCommandOptions,
 ): Promise<readonly AutomationSummaryRecord[]> {
-  const response = await apiRequest<AutomationsResponse>(
+  const response = await apiRequest(
     buildApiUrl("/dashboard/automations", options),
+    responses.automations,
   );
   return response.automations;
 }
@@ -136,20 +137,21 @@ export async function postDeployment(
   packed: PackedAutomation,
   request: DeploymentRequest,
 ): Promise<ApplyResponse> {
-  return await postBundle("/deployments", packed, request, 120_000);
+  return await postBundle("/deployments", packed, request, responses.apply, 120_000);
 }
 
 export async function postDeploymentCheck(
   packed: PackedAutomation,
   request: DeploymentRequest,
 ): Promise<DeploymentCheckResponse> {
-  return await postBundle("/deployment-checks", packed, request, 30_000);
+  return await postBundle("/deployment-checks", packed, request, responses.deploymentCheck, 30_000);
 }
 
 async function postBundle<T>(
   route: "/deployments" | "/deployment-checks",
   packed: PackedAutomation,
   request: DeploymentRequest,
+  decoder: ResponseDecoder<T>,
   timeoutMs: number,
 ): Promise<T> {
   const form = new FormData();
@@ -167,7 +169,7 @@ async function postBundle<T>(
       ...(request.project !== undefined ? { project: request.project } : {}),
     }),
   );
-  return await apiRequest<T>(resolveApiUrl(request.apiUrl, route).toString(), {
+  return await apiRequest(resolveApiUrl(request.apiUrl, route).toString(), decoder, {
     body: form,
     method: "POST",
     timeoutMs,

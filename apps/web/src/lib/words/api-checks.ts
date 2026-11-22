@@ -114,7 +114,7 @@ function runsLine(item: ApiCheckItem): string {
   const run = item.latestRun;
   if (run === null) return "None of its recent runs has finished.";
   if (run.status !== "succeeded") {
-    return `Its runs fail too; the last run ended ${run.status} at ${utcTime(run.queuedAt)}.`;
+    return `Its last run failed at ${utcTime(run.queuedAt)}.`;
   }
   return ranSinceFailing(item)
     ? `Its last run, queued at ${utcTime(run.queuedAt)} after the check started failing, succeeded.`

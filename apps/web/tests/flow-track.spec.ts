@@ -1,6 +1,12 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
-import { APPROVAL_RUN_ID, mockDashboardApi, OK_RUN_ID, seededState } from "./dashboard-mock";
+import {
+  APPROVAL_RUN_ID,
+  FAILED_RUN_ID,
+  mockDashboardApi,
+  OK_RUN_ID,
+  seededState,
+} from "./dashboard-mock";
 import { serveWideFlow } from "./flow-track-fixture";
 
 for (const [syntax, source] of [
@@ -410,4 +416,69 @@ test.describe("a flow wider than its band", () => {
     ).toBeLessThanOrEqual(1);
     expect(await labels(rail)).toEqual({ cut: [], smallest: 12, split: [] });
   });
+});
+
+test("a vertical branch label sits clear of its lane", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const state = seededState();
+  const [fetch, , notify] = state.runSteps.get(OK_RUN_ID) ?? [];
+  if (fetch === undefined || notify === undefined) throw new Error("Missing recorded steps");
+  state.runSteps.set(FAILED_RUN_ID, [fetch, { ...notify, finishedAt: null }]);
+  await mockDashboardApi(page, state);
+  await page.route("**/dashboard/automations/verify-probe/mermaid?*", (route) =>
+    route.fulfill({
+      json: {
+        available: true,
+        content:
+          "flowchart TB\n start([Webhook]) --> fetch[Fetch]\n fetch --> branch{Ready}\n branch -->|yes| notify[Publish]\n branch -->|no| skip[Skip]",
+        error: null,
+      },
+    }),
+  );
+  await page.goto(`/automations/verify-probe?run=${FAILED_RUN_ID}`);
+  const track = page.getByTestId("flow-track").locator('[data-direction="TB"]');
+  const label = track.locator("svg.lanes .lane.failed text").filter({ hasText: /^yes$/u });
+  await expect(label).toBeVisible();
+  expect(
+    await label.evaluate((text: SVGGraphicsElement) => {
+      const path = text.parentElement?.querySelector("path");
+      if (path === null || path === undefined) throw new Error("Missing branch lane");
+      const box = text.getBBox();
+      const length = path.getTotalLength();
+      for (let at = 0; at <= length; at += 1) {
+        const { x, y } = path.getPointAtLength(at);
+        if (x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height) {
+          return true;
+        }
+      }
+      return false;
+    }),
+  ).toBe(false);
+});
+
+test("a cancelled approval marks its station without offering a decision", async ({ page }) => {
+  const state = seededState();
+  const waiting = state.runDetails.get(APPROVAL_RUN_ID);
+  if (waiting === undefined) throw new Error("Missing approval fixture");
+  state.runDetails.set(APPROVAL_RUN_ID, {
+    ...waiting,
+    approval: null,
+    cancelledWaitStepKey: "gate",
+    deadLetterReason: "user-cancelled",
+    finishedAt: new Date().toISOString(),
+    state: "cancelled",
+    status: "dead-lettered",
+    wait: null,
+  });
+  await mockDashboardApi(page, state);
+  await page.goto(`/automations/verify-probe?run=${APPROVAL_RUN_ID}`);
+  const gate = page.getByTestId("flow-track").locator('[data-testid="station"][data-step="gate"]');
+  await expect(gate).toHaveAttribute("data-state", "cancelled");
+  await expect(gate.getByRole("button", { name: "Approve" })).toHaveCount(0);
+
+  await page.goto(`/automations/verify-probe?tab=play&run=${APPROVAL_RUN_ID}`);
+  await expect(page.getByTestId("play-track").locator('[data-step="gate"]')).toHaveAttribute(
+    "data-state",
+    "cancelled",
+  );
 });

@@ -6,17 +6,12 @@ import { formatRuntimeTimeoutMs } from "@swizzle/runtime";
 import type {
   AutomationDetailResponse as AutomationDetailRecord,
   CronNextRun,
-  DeleteStateResponse,
-  SetStateResponse,
-  StateListResponse,
-  StateValueResponse,
   TimeoutGrantResponse,
-  TriggerRunResponse,
-  TriggerStatusResponse,
 } from "@swizzle/runtime/http-contract";
 import type { Command } from "commander";
 
-import { apiRequest } from "./api.js";
+import { apiRequest, whenFound } from "./api.js";
+import { responses } from "./api-responses.js";
 import {
   type AutomationSummaryRecord,
   listAutomations,
@@ -132,12 +127,13 @@ function registerInspect(program: Command, io: CliIO, runHandler: RunHandler): v
       await runHandler(async () => {
         const options = await targeted(inputOptions);
         const resolved = await resolveAutomationNameOrDie(automationName, options);
-        const detail = await apiRequest<AutomationDetailRecord>(
+        const detail = await apiRequest(
           buildApiUrl(`/dashboard/automations/${resolved.slug}`, options),
+          responses.automationDetail,
         );
-        const timeoutGrantResponse = await apiRequest<TimeoutGrantResponse>(
+        const timeoutGrantResponse = await apiRequest(
           buildApiUrl(`/automations/${resolved.slug}/timeout-grant`, options),
-          { acceptNotFound: true },
+          whenFound(responses.timeoutGrant),
         );
         const automation = automationDetail(detail, timeoutGrantResponse?.grant ?? null);
         respond(
@@ -311,8 +307,9 @@ function registerState(program: Command, io: CliIO, runHandler: RunHandler): voi
     await runHandler(async () => {
       const options = await targeted(inputOptions);
       const resolved = await resolveAutomationNameOrDie(automationName, options);
-      const data = await apiRequest<StateListResponse>(
+      const data = await apiRequest(
         buildApiUrl(`/automations/${resolved.slug}/state`, options),
+        responses.stateList,
       );
       respond(
         io,
@@ -351,8 +348,9 @@ function registerState(program: Command, io: CliIO, runHandler: RunHandler): voi
     await runHandler(async () => {
       const options = await targeted(inputOptions);
       const resolved = await resolveAutomationNameOrDie(automationName, options);
-      const data = await apiRequest<StateValueResponse>(
+      const data = await apiRequest(
         buildApiUrl(`/automations/${resolved.slug}/state`, options, { key }),
+        responses.stateValue,
       );
       if (data.state === null) {
         respond(io, { automation: resolved.slug, key, state: "absent: no value under this key" }, [
@@ -386,8 +384,9 @@ function registerState(program: Command, io: CliIO, runHandler: RunHandler): voi
         const options = await targeted(inputOptions);
         const resolved = await resolveAutomationNameOrDie(automationName, options);
         const value = parsePayloadJson(rawJson, "inline");
-        const data = await apiRequest<SetStateResponse>(
+        const data = await apiRequest(
           buildApiUrl(`/automations/${resolved.slug}/state`, options),
+          responses.setState,
           {
             body: JSON.stringify({ key, value }),
             headers: { "content-type": "application/json" },
@@ -420,8 +419,9 @@ function registerState(program: Command, io: CliIO, runHandler: RunHandler): voi
       const resolved = await resolveAutomationNameOrDie(automationName, options, {
         destructive: true,
       });
-      const data = await apiRequest<DeleteStateResponse>(
+      const data = await apiRequest(
         buildApiUrl(`/automations/${resolved.slug}/state`, options, { key }),
+        responses.deleteState,
         { method: "DELETE" },
       );
       respond(io, {
@@ -473,8 +473,9 @@ function registerTrigger(program: Command, io: CliIO, runHandler: RunHandler): v
           payload = parsePayloadJson(raw, options.payloadFile);
         }
 
-        const result = await apiRequest<TriggerRunResponse>(
+        const result = await apiRequest(
           buildApiUrl(`/automations/${resolved.slug}/runs`, options),
+          responses.triggerRun,
           {
             body: JSON.stringify(payload),
             headers: { "content-type": "application/json" },
@@ -523,8 +524,9 @@ function registerTrigger(program: Command, io: CliIO, runHandler: RunHandler): v
         const before = (await listAutomations(options)).find(
           (automation) => automation.automationSlug === resolved.slug,
         )?.trigger?.status;
-        const result = await apiRequest<TriggerStatusResponse>(
+        const result = await apiRequest(
           buildApiUrl(`/automations/${resolved.slug}/trigger/${action}`, options),
+          responses.triggerStatus,
           { method: "POST" },
         );
         respond(io, {

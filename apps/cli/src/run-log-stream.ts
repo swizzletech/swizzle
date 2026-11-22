@@ -1,5 +1,5 @@
-import type { RunLogsResponse as PollLogsResponse } from "@swizzle/runtime/http-contract";
 import { apiRequest } from "./api.js";
+import { responses } from "./api-responses.js";
 import { type ApiCommandOptions, buildApiUrl } from "./command-support.js";
 import { type CliIO, outputFormat } from "./output.js";
 
@@ -13,8 +13,9 @@ export async function followRunLogs(
   let cursor = "0:0";
   let endsWithNewline = true;
   for (;;) {
-    const batch = await apiRequest<PollLogsResponse>(
+    const batch = await apiRequest(
       buildApiUrl(`/runs/${encodeURIComponent(runId)}/logs`, options, { after: cursor }),
+      responses.runLogs,
     );
     cursor = batch.cursor;
     for (const chunk of batch.chunks) {

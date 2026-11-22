@@ -204,7 +204,7 @@ function Sidebar() {
   return (
     <aside className="side">
       <Link aria-label="Swizzle overview" className="brand side-brand" to="/">
-        <Logo />
+        <Logo compactOnPhone />
       </Link>
       <nav aria-label="Dashboard" className="side-nav">
         {DESTINATIONS.map((destination) => (

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { runState } from "@swizzle/db";
 import { describe, expect, it, vi } from "vitest";
 import {
   commitDeploymentFixture,
@@ -195,6 +196,69 @@ async function createRun() {
 }
 
 it("skips child creation when cancellation wins during the waiting transition", async () => {
+  const { store, runId, suspend } = await childSuspension();
+  const update = store.updateRunState.bind(store);
+  const waiting = vi.spyOn(store, "updateRunState").mockImplementation(async (change) => {
+    if (change.status === "waiting") {
+      expect((await store.getRun(runId))?.executions[0]?.status).toBe("suspended");
+      await store.cancelRun({ cause: "user", runId, finishedAt: new Date().toISOString() });
+    }
+    await update(change);
+  });
+  const outcome = await suspend();
+  expect(waiting.mock.calls.some(([change]) => change.status === "waiting")).toBe(true);
+  expect(outcome.run).toMatchObject({ status: "dead-lettered", errorCode: "RUN_CANCELLED" });
+  expect(await store.listChildRuns({ parentRunId: runId })).toEqual([]);
+});
+
+it.each([
+  {
+    parentOutcome: "failed",
+    deadLetterReason: "parent-finished",
+    errorMessage: "Parent run finished before the child could complete.",
+  },
+  {
+    parentOutcome: "cancelled",
+    deadLetterReason: "parent-cancelled",
+    errorMessage: "Parent run was cancelled.",
+  },
+] as const)("closes a child created while its parent $parentOutcome", async (expected) => {
+  const { store, runId, suspend } = await childSuspension();
+  const createRun = store.createRun.bind(store);
+  vi.spyOn(store, "createRun").mockImplementation(async (input) => {
+    const finishedAt = new Date().toISOString();
+    if (expected.parentOutcome === "cancelled") {
+      await store.cancelRun({ cause: "user", finishedAt, runId });
+    } else {
+      await store.updateRunState({
+        errorCode: "PROCESS_TIMEOUT",
+        finishedAt,
+        runId,
+        status: "failed",
+        wait: null,
+      });
+    }
+    return await createRun(input);
+  });
+
+  const outcome = await suspend();
+
+  expect(runState(outcome.run)).toBe(expected.parentOutcome);
+  const [child] = await store.listChildRuns({ parentRunId: runId });
+  if (child === undefined) throw new Error("Child was never created");
+  const run = await store.getRun(child.runId);
+  expect(run).toMatchObject({
+    deadLetterReason: expected.deadLetterReason,
+    errorCode: "RUN_CANCELLED",
+    errorMessage: expected.errorMessage,
+    status: "dead-lettered",
+    wait: null,
+  });
+  if (run === null) throw new Error("Child run was not found");
+  expect(runState(run)).toBe("cancelled");
+});
+
+async function childSuspension() {
   const store = testControlPlaneStore();
   const deployment = await commitDeploymentFixture(store, "suspend-parent");
   await commitDeploymentFixture(store, "suspend-child");
@@ -211,51 +275,42 @@ it("skips child creation when cancellation wins during the waiting transition", 
     status: "running",
   });
   await store.updateRunState({ runId, status: "running", attemptsMade: 1 });
-  const update = store.updateRunState.bind(store);
-  const waiting = vi.spyOn(store, "updateRunState").mockImplementation(async (change) => {
-    if (change.status === "waiting") {
-      expect((await store.getRun(runId))?.executions[0]?.status).toBe("suspended");
-      await store.cancelRun({ runId, finishedAt: new Date().toISOString() });
-    }
-    await update(change);
-  });
-  const outcome = await finishRunExecution({
-    execution: {
-      durationMs: 1,
-      exitCode: 0,
-      payload: {},
-      runId,
-      stderr: "",
-      stdout: "",
-      success: true,
-      result: {
-        $swizzle: {
-          suspend: {
-            reason: "child",
-            stepKey: "invoke",
-            automation: "suspend-child",
-            payload: {},
+  const suspend = () =>
+    finishRunExecution({
+      execution: {
+        durationMs: 1,
+        exitCode: 0,
+        payload: {},
+        runId,
+        stderr: "",
+        stdout: "",
+        success: true,
+        result: {
+          $swizzle: {
+            suspend: {
+              reason: "child",
+              stepKey: "invoke",
+              automation: "suspend-child",
+              payload: {},
+            },
           },
         },
       },
-    },
-    lease: {
-      runId,
-      checkId: null,
-      dueAt: null,
-      taskId: runId,
-      workerId: randomUUID(),
-      generation: 1,
-      executionNumber: 1,
-      expiresAt: "2099-01-01T00:00:00.000Z",
-      remainingMs: 90_000,
-    },
-    line: "",
-    signals: NO_SIGNALS,
-    redactor: createOutputRedactor([]),
-    store,
-  });
-  expect(waiting.mock.calls.some(([change]) => change.status === "waiting")).toBe(true);
-  expect(outcome.run).toMatchObject({ status: "dead-lettered", errorCode: "RUN_CANCELLED" });
-  expect(await store.listChildRuns({ parentRunId: runId })).toEqual([]);
-});
+      lease: {
+        runId,
+        checkId: null,
+        dueAt: null,
+        taskId: runId,
+        workerId: randomUUID(),
+        generation: 1,
+        executionNumber: 1,
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        remainingMs: 90_000,
+      },
+      line: "",
+      signals: NO_SIGNALS,
+      redactor: createOutputRedactor([]),
+      store,
+    });
+  return { store, runId, suspend };
+}

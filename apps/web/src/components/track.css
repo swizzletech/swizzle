@@ -76,6 +76,10 @@
     stroke: var(--run);
     stroke-width: 2;
   }
+  .lane.failed path {
+    stroke: var(--fail);
+    stroke-width: 2;
+  }
   .lane.untaken path {
     stroke: var(--idle);
     stroke-dasharray: 3 5;
@@ -91,6 +95,7 @@
     fill: var(--ink-3);
   }
   .lane.done text,
+  .lane.failed text,
   .lane.active text {
     fill: var(--ink-2);
   }

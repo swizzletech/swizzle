@@ -112,6 +112,7 @@ export interface ControlPlaneStore {
   markRunTerminalPending(runId: string): Promise<void>;
   recordRunEnqueueError(runId: string, message: string): Promise<void>;
   cancelRun(input: {
+    readonly cause: "parent" | "parent-finished" | "user";
     readonly runId: string;
     readonly finishedAt: string;
   }): Promise<{ readonly alreadyTerminal: boolean; readonly run: StoredRun }>;

@@ -1,12 +1,8 @@
-import type {
-  CreateTeamResponse as CreateTeamResult,
-  DeleteTeamResponse as DeleteTeamResult,
-  TeamMembershipResponse as MembershipResult,
-  TeamsResponse,
-} from "@swizzle/runtime/http-contract";
+import type { TeamsResponse } from "@swizzle/runtime/http-contract";
 import type { Command } from "commander";
 
 import { apiRequest } from "./api.js";
+import { responses } from "./api-responses.js";
 import {
   type ApiCommandOptions,
   type RunHandler,
@@ -22,7 +18,7 @@ type Team = TeamsResponse["teams"][number];
 const segment = encodeURIComponent;
 
 async function listTeams(options: ApiCommandOptions): Promise<readonly Team[]> {
-  return (await apiRequest<TeamsResponse>(url("/teams", options))).teams;
+  return (await apiRequest(url("/teams", options), responses.teams)).teams;
 }
 
 async function findTeam(reference: string, options: ApiCommandOptions): Promise<Team | undefined> {
@@ -75,7 +71,7 @@ export function registerTeams(program: Command, io: CliIO, runHandler: RunHandle
   withExamples(create, ["swizzle teams create Developers", "swizzle teams create Release --json"]);
   create.action(async (name: string, options: ApiCommandOptions) => {
     await runHandler(async () => {
-      const created = await apiRequest<CreateTeamResult>(url("/teams", options), {
+      const created = await apiRequest(url("/teams", options), responses.createTeam, {
         body: JSON.stringify({ name }),
         headers: { "content-type": "application/json" },
         method: "POST",
@@ -108,8 +104,9 @@ export function registerTeams(program: Command, io: CliIO, runHandler: RunHandle
           `swizzle teams delete ${reference}`,
           `this deletes team ${reference}; its members lose every role the team's grants give them.`,
         );
-        const result = await apiRequest<DeleteTeamResult>(
+        const result = await apiRequest(
           url(`/teams/${segment(reference)}`, options),
+          responses.deleteTeam,
           { method: "DELETE" },
         );
         respond(io, {
@@ -165,8 +162,9 @@ export function registerTeams(program: Command, io: CliIO, runHandler: RunHandle
     command.action(
       async (teamReference: string, personReference: string, options: ApiCommandOptions) => {
         await runHandler(async () => {
-          const result = await apiRequest<MembershipResult>(
+          const result = await apiRequest(
             url(`/teams/${segment(teamReference)}/members/${segment(personReference)}`, options),
+            responses.teamMembership,
             { method: member ? "PUT" : "DELETE" },
           );
           let state: string;

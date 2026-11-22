@@ -3,6 +3,7 @@ import type { IdentityResponse as Identity } from "@swizzle/runtime/http-contrac
 import type { Command } from "commander";
 
 import { apiRequest } from "./api.js";
+import { responses } from "./api-responses.js";
 import {
   type ApiCommandOptions,
   buildApiUrl,
@@ -217,12 +218,13 @@ function registerWhoami(program: Command, io: CliIO, runHandler: RunHandler): vo
       });
       const environment = pinned.source === "unpinned" ? null : pinned.environment;
       const { environment: _flag, ...target } = options;
-      const identity = await apiRequest<Identity>(
+      const identity = await apiRequest(
         buildApiUrl(
           "/auth/identity",
           environment === null ? target : { ...target, environment },
           options.project === undefined ? undefined : { project: options.project },
         ),
+        responses.identity,
       );
       const source = projectSource(command);
       respond(

@@ -1,3 +1,4 @@
+import { forEachChild, parse as parseShell, type SyntaxNode } from "unbash";
 import { isAlias, isMap, isScalar, isSeq, LineCounter, parseDocument } from "yaml";
 import type { Rule, Violation } from "../lint.js";
 import { shellCommands } from "../parse.js";
@@ -35,6 +36,7 @@ export const ciUsesVerifyLanes: Rule = {
       ? needs.items.map((id) => (isScalar(id) ? id.value : id))
       : [needs];
     const scheduled = new Set<string>();
+    const testShards: (string | undefined)[] = [];
     const findings: Violation[] = [];
 
     for (const { key, value: job } of jobs) {
@@ -44,21 +46,41 @@ export const ciUsesVerifyLanes: Rule = {
       const report = (message: string) => findings.push({ file: CI, line, message });
       const rawSteps = job.get("steps");
       const steps = isAlias(rawSteps) ? rawSteps.resolve(workflow) : rawSteps;
+      const required = requiredJobs.includes(id);
       const calls = isSeq(steps)
         ? steps.items.flatMap((step) => {
             const run = isMap(step) ? step.get("run") : undefined;
-            return typeof run === "string" ? shellCommands(run) : [];
+            if (
+              required &&
+              (allowsFailure(step) || (typeof run === "string" && masksFailure(parseShell(run))))
+            ) {
+              report(`Job ${id} must preserve required step failures.`);
+            }
+            const shardEnv =
+              (isMap(step) ? step.getIn(["env", "SHARD"]) : undefined) ??
+              job.getIn(["env", "SHARD"]);
+            return typeof run === "string"
+              ? shellCommands(run).map((call) => ({ ...call, shardEnv }))
+              : [];
           })
         : [];
+      if (required && allowsFailure(job)) report(`Job ${id} must preserve required failures.`);
       let laneCount = 0;
       let hasUnknownRecipe = false;
       for (const {
         words: [command, recipe, ...args],
+        shardEnv,
       } of calls) {
         if (command !== "just" || recipe === undefined) continue;
         if (lanes.has(recipe)) {
           laneCount += 1;
           if (id !== "verify") scheduled.add(recipe);
+          if (required && recipe === "test") {
+            const flag = args.findIndex((arg) => arg === "--shard" || arg.startsWith("--shard="));
+            const value = flag < 0 ? undefined : (args[flag]?.split("=")[1] ?? args[flag + 1]);
+            const shard = /^\$(?:SHARD|\{SHARD\})$/u.test(value ?? "") ? shardEnv : value;
+            testShards.push(typeof shard === "string" ? shard : flag < 0 ? undefined : "");
+          }
         } else if (!CI_ONLY.has(recipe)) {
           hasUnknownRecipe = true;
           report(
@@ -77,7 +99,7 @@ export const ciUsesVerifyLanes: Rule = {
       if (!hasUnknownRecipe && laneCount !== 1) {
         report(`Job ${id} must run exactly one recipe listed in \`just verify\`.`);
       }
-      if (!requiredJobs.includes(id)) {
+      if (!required) {
         report(`Add job ${id} to Verify's needs so its result is required.`);
       }
     }
@@ -89,6 +111,51 @@ export const ciUsesVerifyLanes: Rule = {
         message: `Missing CI job for verify lane ${lane}. Run \`just ${lane}\` in a job listed in Verify's needs.`,
       });
     }
+    if (!coversTestShards(testShards)) {
+      findings.push({
+        file: CI,
+        line: 1,
+        message: "Required test jobs must cover every shard index once with a common denominator.",
+      });
+    }
     return findings;
   },
 };
+
+function allowsFailure(node: unknown): boolean {
+  if (!isMap(node)) return false;
+  const value = node.get("continue-on-error");
+  return value !== undefined && value !== false;
+}
+
+function masksFailure(node: SyntaxNode): boolean {
+  if (
+    node.type === "AndOr" &&
+    node.operators.some((operator, index) => {
+      const fallback = node.commands[index + 1];
+      return (
+        operator === "||" &&
+        fallback?.type === "Command" &&
+        (fallback.name?.value === "true" || fallback.name?.value === ":")
+      );
+    })
+  )
+    return true;
+  let found = false;
+  forEachChild(node, (child) => {
+    if (!found) found = masksFailure(child);
+  });
+  return found;
+}
+
+function coversTestShards(shards: readonly (string | undefined)[]): boolean {
+  if (shards.length === 0 || (shards.length === 1 && shards[0] === undefined)) return true;
+  const indices = shards.map((shard) => {
+    const match = /^([1-9][0-9]*)\/([1-9][0-9]*)$/u.exec(shard ?? "");
+    return Number(match?.[2]) === shards.length ? Number(match?.[1]) : NaN;
+  });
+  return (
+    new Set(indices).size === shards.length &&
+    indices.every((index) => Number.isSafeInteger(index) && index <= shards.length)
+  );
+}

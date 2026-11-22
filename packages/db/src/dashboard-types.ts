@@ -353,6 +353,7 @@ export interface DashboardTimetable {
 export interface DashboardOverview {
   readonly environment: string;
   readonly last24h: Readonly<Record<RunState, number>>;
+  readonly last24hFrom: string;
   readonly lastFailureAt: string | null;
   readonly needsYou: readonly DashboardAttentionItem[];
   readonly complete: boolean;
@@ -369,6 +370,7 @@ export interface DashboardRunsQuery {
   readonly failedOnly?: boolean;
   readonly limit?: number;
   readonly parentRunId?: string;
+  readonly queuedSince?: Date;
   readonly scope: ReadScope;
   readonly states?: readonly RunState[];
   readonly statuses?: readonly DashboardRunListItem["status"][];

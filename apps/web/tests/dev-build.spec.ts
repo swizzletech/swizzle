@@ -38,7 +38,9 @@ test("moving between pages in the dev build logs no React diagnostic", async ({ 
   });
   await mockDashboardApi(page, seededState());
   await page.goto(server?.resolvedUrls?.local[0] ?? "");
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  const initialHeading = page.getByRole("heading", { level: 1 });
+  await initialHeading.waitFor({ state: "visible" });
+  await expect(initialHeading).toBeVisible();
 
   const nav = page.getByRole("navigation", { name: "Dashboard" });
   for (const [place, heading] of [

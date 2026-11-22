@@ -306,7 +306,7 @@ it.each([
   },
 );
 
-it("replans after a refused removal and preserves the newer cache decisions", async () => {
+it("reserves space for a refused older image before keeping newer images", async () => {
   const oversized = `swizzle-run:${"d".repeat(24)}`;
   const newest = `swizzle-run:${"a".repeat(24)}`;
   const refused = `swizzle-run:${"b".repeat(24)}`;
@@ -329,7 +329,7 @@ it("replans after a refused removal and preserves the newer cache decisions", as
   expect((await readFile(removed, "utf8")).trim().split("\n")).toEqual([
     oversized,
     refused,
-    oldest,
+    newest,
   ]);
 });
 

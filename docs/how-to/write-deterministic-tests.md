@@ -10,7 +10,7 @@ Do not write sleeps or polling loops in test bodies. Do not set per-test timeout
 
 ## Drive clock behavior directly
 
-When code reads the clock, use `vi.useFakeTimers()`, `vi.setSystemTime()`, or `page.clock`, then assert the exact value. Advance fake timers only after an event proves the code armed its timer. Await the event that proves the timer's work finished.
+When code reads the clock, use `vi.useFakeTimers()`, `vi.setSystemTime()`, or `page.clock`, then assert the exact value. The check follows direct Node clock calls in the test and its inline `beforeEach` hooks. A clock used in an elapsed assertion must be controlled on every path to the read. Advance fake timers only after an event proves the code armed its timer. Await the event that proves the timer's work finished.
 
 When a test proves a real deadline, use `heldDeadlines(ms)` from `test/support.ts` and expire the deadline after the stall is in place. Do not shorten a real deadline to make the test finish sooner. A loaded runner may reach that deadline before the test has set up the stall.
 
@@ -28,6 +28,6 @@ Tests may run beside other worktrees against the same host. Give each test its o
 
 When a test exercises a host resource measurement, control the measurement instead of reading the runner's current state. For disk checks, call `diskSpace(gib)` from `test/disk-space.ts`. It sets `statfsSync` in the test process and in Node child processes, so recipe tests can check low-space failures and sufficient-space paths on any runner.
 
-The runner timeout is a hang limit, not a performance target. Keep timeouts in `vitest.config.ts` and `playwright.config.ts`. A slow test that needs more room belongs in a separate runner project with a reason for its ceiling. Fix a flaky test at the race. Do not retry it.
+The runner timeout is a hang limit, not a performance target. Keep timeouts in `vitest.config.ts` and `playwright.config.ts`. The check reports overrides in call options, including browser and API request helpers. Configure an automation's own timeout under `runtime.timeout`. A slow test that needs more room belongs in a separate runner project with a reason for its ceiling. Fix a flaky test at the race. Do not retry it.
 
 Sources: [`tests-wait-on-state.ts`](../../scripts/conventions/rules/tests-wait-on-state.ts), [`test/support.ts`](../../test/support.ts), [`test/postgres.ts`](../../test/postgres.ts), [`test/disk-space.ts`](../../test/disk-space.ts), [`disk-space.mjs`](../../test/fixtures/disk-space.mjs), [`vitest.config.ts`](../../vitest.config.ts), [`playwright.config.ts`](../../playwright.config.ts)

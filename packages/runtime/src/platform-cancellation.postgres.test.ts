@@ -152,6 +152,7 @@ describe("platform cancellation", () => {
     expect(await platform.processNextPlatformRun()).toBeNull();
     const cancelledChild = await platform.getPlatformRun(waitingChild?.runId ?? "");
     expect(cancelledChild).toMatchObject({
+      deadLetterReason: "parent-cancelled",
       errorCode: "RUN_CANCELLED",
       status: "dead-lettered",
       wait: null,
@@ -172,6 +173,46 @@ describe("platform cancellation", () => {
       wait: null,
     });
     expect(cancelledParent.resumeCount).toBe(0);
+  });
+
+  it("records which approval was cancelled without keeping the wait open", async () => {
+    const platform = await testPlatform();
+    const automationDirectory = await createAutomationFixture({
+      mainJs:
+        "console.log(JSON.stringify({ $swizzle: { suspend: { reason: 'event', stepKey: 'review', approval: true } } }));",
+      name: "cancelled-review",
+      triggerLines: ["  type: webhook", "  path: /cancelled-review"],
+    });
+    await platform.deployAutomationToPlatform({ automationDirectory, environment: "local" });
+    const { runId } = await platform.startManualRun({
+      automationName: "cancelled-review",
+      environment: "local",
+      payload: {},
+    });
+    expect(await platform.processNextPlatformRun()).toMatchObject({
+      status: "waiting",
+      wait: { reason: "approval", stepKey: "review" },
+    });
+
+    await platform.cancelPlatformRun(runId);
+
+    expect(await platform.getPlatformRun(runId)).toMatchObject({
+      cancelledWaitStepKey: "review",
+      deadLetterReason: "user-cancelled",
+      status: "dead-lettered",
+      wait: null,
+    });
+    expect(
+      await platform.decideApproval({
+        approved: true,
+        assignee: null,
+        comment: null,
+        decidedBy: { kind: "link" },
+        runId,
+        stepKey: "review",
+      }),
+    ).toMatchObject({ status: "not-waiting" });
+    expect(await platform.processNextPlatformRun()).toBeNull();
   });
 
   it("stops a running attempt at its next heartbeat when another process cancels its run", async ({

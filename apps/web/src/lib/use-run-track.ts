@@ -29,6 +29,11 @@ export function useRunPosition(run: RunDetail): {
       position: {
         steps: new Map(steps.map((step) => [step.stepKey, step])),
         waiting: waitingStep(run),
+        ...(run.cancelledWaitStepKey == null || run.finishedAt === null
+          ? {}
+          : {
+              cancelledWait: { stepKey: run.cancelledWaitStepKey, at: Date.parse(run.finishedAt) },
+            }),
       },
       ready: stepsQuery.data !== undefined,
       steps,

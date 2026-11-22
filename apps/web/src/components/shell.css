@@ -237,11 +237,4 @@
       margin-left: 0;
     }
   }
-  @media (max-width: 420px) {
-    /* HAZARD: At 28px logo height, the head ends at 25.2px and the wordmark starts at 32.9px. */
-    .side-brand {
-      width: 26px;
-      overflow: hidden;
-    }
-  }
 }

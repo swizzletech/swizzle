@@ -98,8 +98,11 @@ it("prints the API's disk warning for a worker whose active run images pass its 
   const worker = {
     id: "worker-1",
     name: "gpu-home",
+    kind: "remote",
     state: "online",
     draining: false,
+    lastSeenAt: "2026-01-01T00:00:00Z",
+    tokenExpiresAt: null,
     services: [],
     localLlm: null,
     profiles: ["gpu"],

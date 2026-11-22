@@ -2,15 +2,10 @@ import { randomBytes } from "node:crypto";
 import { open, unlink } from "node:fs/promises";
 import { LOCAL_LLM_SERVICE } from "@swizzle/config";
 import { DEFAULT_PROJECT_ID } from "@swizzle/db";
-import type {
-  WorkerResponse as RegisteredWorker,
-  WorkerCredentialResponse as WorkerCredential,
-  WorkerEnrollmentResponse as WorkerEnrollment,
-  WorkerGroupsResponse,
-  WorkersResponse,
-} from "@swizzle/runtime/http-contract";
+import type { WorkerGroupsResponse } from "@swizzle/runtime/http-contract";
 import type { Command } from "commander";
 import { apiRequest, DEFAULT_API_URL } from "./api.js";
+import { responses } from "./api-responses.js";
 import {
   type ApiCommandOptions,
   addFieldsOption,
@@ -58,11 +53,12 @@ export function registerWorkerCommands(program: Command, io: CliIO, runHandler: 
     runHandler(async () => {
       const environment = await resolveCommandEnvironment(options);
       const project = options.project ?? DEFAULT_PROJECT_ID;
-      const data = await apiRequest<WorkerGroupsResponse>(
+      const data = await apiRequest(
         buildApiUrl(`/projects/${encodeURIComponent(project)}/worker-groups`, {
           ...options,
           environment,
         }),
+        responses.workerGroups,
       );
       if (data.groups.length === 0) {
         respond(
@@ -94,7 +90,7 @@ export function registerWorkerCommands(program: Command, io: CliIO, runHandler: 
   withExamples(list, ["swizzle worker list", "swizzle worker list --fields slots,runs --json"]);
   list.action(async (options: ApiCommandOptions & FieldsCommandOptions) =>
     runHandler(async () => {
-      const { workers } = await apiRequest<WorkersResponse>(instanceUrl("/workers", options));
+      const { workers } = await apiRequest(instanceUrl("/workers", options), responses.workers);
       if (workers.length === 0) {
         respond(io, { workers: "0 workers registered" }, [
           "Run `swizzle worker create <name> --project <project-id>` to enroll one",
@@ -146,8 +142,9 @@ export function registerWorkerCommands(program: Command, io: CliIO, runHandler: 
     ) =>
       runHandler(async () => {
         const environment = await resolveCommandEnvironment(input);
-        const data = await apiRequest<WorkerEnrollment>(
+        const data = await apiRequest(
           instanceUrl("/workers/enrollments", input),
+          responses.workerEnrollment,
           {
             method: "POST",
             headers: { "content-type": "application/json" },
@@ -189,13 +186,14 @@ export function registerWorkerCommands(program: Command, io: CliIO, runHandler: 
         `swizzle worker revoke ${id}`,
         `worker ${id} loses its credential at once and stops taking runs; it needs a new enrollment to return.`,
       );
-      const { workers } = await apiRequest<WorkersResponse>(instanceUrl("/workers", options));
+      const { workers } = await apiRequest(instanceUrl("/workers", options), responses.workers);
       if (workers.find((worker) => worker.id === id)?.state === "revoked") {
         respond(io, { worker: id, state: "already revoked (no-op)" });
         return;
       }
-      const data = await apiRequest<RegisteredWorker>(
+      const data = await apiRequest(
         instanceUrl(`/workers/${encodeURIComponent(id)}`, options),
+        responses.worker,
         { method: "DELETE" },
       );
       respond(io, { worker: data.id, name: data.name, state: "revoked" });
@@ -277,7 +275,7 @@ export function registerWorkerCommands(program: Command, io: CliIO, runHandler: 
       const file = await open(options.credentialFile, "wx", 0o600);
       let saved = false;
       try {
-        const data = await apiRequest<WorkerCredential>(url, {
+        const data = await apiRequest(url, responses.workerCredential, {
           apiUrl,
           token: null,
           method: "POST",

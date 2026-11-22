@@ -27,7 +27,7 @@ Swizzle ships as a Docker Compose stack with a dashboard and the `swizzle` CLI.
 Use it for scheduled jobs, incoming webhooks, and workflows that need to pause for approval or an external event.
 Keep the code in your editor and use the dashboard to inspect runs, manage access, and retry failures.
 
-![Dark-mode Play view of document-scanner with its Python code, step diagram, and a successful run that includes an approval step](docs/assets/dashboard.png)
+![Dark-mode dashboard showing document-scanner’s Python code and Play track after a successful approval run](docs/assets/dashboard.png)
 
 ## Why I built this
 

@@ -55,6 +55,12 @@ describe("API check handoffs", () => {
       ].join("\n"),
     );
     expect(apiCheckRunsInWords(item)).toBeNull();
+    expect(
+      apiCheckHandoff({
+        ...item,
+        latestRun: { queuedAt: "2026-10-23T06:00:00.000Z", status: "dead-lettered" },
+      }).split("\n")[0],
+    ).toContain("Its last run failed at 2026-10-23 06:00 UTC.");
     const credentials = { ...item, check: { ...item.check, status: "credentials" as const } };
     expect(apiCheckInWords(credentials)).toBe("crm-export's API check credentials failed");
     expect(apiCheckHandoff(credentials)).toContain(

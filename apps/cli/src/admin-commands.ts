@@ -1,23 +1,12 @@
 import { formatRuntimeTimeoutMs, parseRuntimeTimeout } from "@swizzle/runtime";
 import type {
-  AutomationsResponse,
-  ConnectionsResponse,
-  HealthResponse,
-  NotificationDeliveriesResponse,
   NotificationRuleResponse as NotificationRuleRecord,
-  NotificationRulesResponse,
-  OperationsSummaryResponse as OperationsSummary,
-  ReadyResponse,
-  SecretResponse as SecretMetadata,
-  SecretsResponse,
-  SetSecretResponse,
-  SetTimeoutGrantResponse,
   TimeoutGrantResponse,
-  TimeoutGrantsResponse,
 } from "@swizzle/runtime/http-contract";
 import { type Command, Option } from "commander";
 
-import { apiRequest, DEFAULT_API_URL } from "./api.js";
+import { apiRequest, DEFAULT_API_URL, noContent } from "./api.js";
+import { responses } from "./api-responses.js";
 import { resolveAutomationNameOrDie } from "./automation-api.js";
 import {
   type ApiCommandOptions,
@@ -80,7 +69,10 @@ function registerStatus(program: Command, io: CliIO, runHandler: RunHandler): vo
           if (unserved !== null) warn(unserved);
         }),
       };
-      const summary = await apiRequest<OperationsSummary>(buildApiUrl("/ops/summary", options));
+      const summary = await apiRequest(
+        buildApiUrl("/ops/summary", options),
+        responses.operationsSummary,
+      );
       respond(
         io,
         {
@@ -133,20 +125,20 @@ function registerDoctor(program: Command, io: CliIO, runHandler: RunHandler): vo
 
       checks.push(
         await runDoctorCheck("api", "API reachable", async () => {
-          const health = await apiRequest<HealthResponse>(buildApiUrl("/health", options));
+          const health = await apiRequest(buildApiUrl("/health", options), responses.health);
           serverVersion = health.version ?? null;
         }),
         await runDoctorCheck("ready", "platform ready (database, queue, artifact storage)", () =>
-          apiRequest<ReadyResponse>(buildApiUrl("/ready", options)),
+          apiRequest(buildApiUrl("/ready", options), responses.ready),
         ),
         await runDoctorCheck("auth", "auth accepted by the control plane", () =>
-          apiRequest<AutomationsResponse>(buildApiUrl("/dashboard/automations", options)),
+          apiRequest(buildApiUrl("/dashboard/automations", options), responses.automations),
         ),
         await runDoctorCheck("secrets", "secret store usable (encryption key configured)", () =>
-          apiRequest<SecretsResponse>(buildApiUrl("/secrets", options)),
+          apiRequest(buildApiUrl("/secrets", options), responses.secrets),
         ),
         await runDoctorCheck("connections", "connection store usable", () =>
-          apiRequest<ConnectionsResponse>(buildApiUrl("/connections", options)),
+          apiRequest(buildApiUrl("/connections", options), responses.connections),
         ),
       );
 
@@ -230,8 +222,9 @@ function registerSecret(program: Command, io: CliIO, runHandler: RunHandler): vo
   list.action(async (inputOptions: ApiCommandOptions & ProjectOption) => {
     await runHandler(async () => {
       const options = await inEnvironment(inputOptions);
-      const response = await apiRequest<SecretsResponse>(
+      const response = await apiRequest(
         buildApiUrl("/secrets", options, inProject(options)),
+        responses.secrets,
       );
       if (response.secrets.length === 0) {
         respond(io, { secrets: `0 secrets in ${response.environment}` }, [
@@ -264,8 +257,9 @@ function registerSecret(program: Command, io: CliIO, runHandler: RunHandler): vo
   inspect.action(async (name: string, inputOptions: ApiCommandOptions & ProjectOption) => {
     await runHandler(async () => {
       const options = await inEnvironment(inputOptions);
-      const metadata = await apiRequest<SecretMetadata>(
+      const metadata = await apiRequest(
         buildApiUrl(`/secrets/${encodeURIComponent(name)}`, options, inProject(options)),
+        responses.secret,
       );
       respond(io, {
         secret: {
@@ -335,11 +329,12 @@ function registerSecret(program: Command, io: CliIO, runHandler: RunHandler): vo
           });
         }
         const options = await inEnvironment(inputOptions);
-        const response = await apiRequest<SetSecretResponse>(
+        const response = await apiRequest(
           buildApiUrl(`/secrets/${encodeURIComponent(name)}`, options, {
             ...inProject(options),
             overwrite: options.overwrite === true ? "true" : "false",
           }),
+          responses.setSecret,
           {
             body: JSON.stringify({ value }),
             headers: { "content-type": "application/json" },
@@ -388,6 +383,7 @@ function registerSecret(program: Command, io: CliIO, runHandler: RunHandler): vo
           "SECRET_NOT_FOUND",
           apiRequest(
             buildApiUrl(`/secrets/${encodeURIComponent(name)}`, options, inProject(options)),
+            noContent,
             { method: "DELETE" },
           ),
         );
@@ -422,8 +418,9 @@ function registerTimeoutGrant(program: Command, io: CliIO, runHandler: RunHandle
   list.action(async (inputOptions: ApiCommandOptions) => {
     await runHandler(async () => {
       const options = await inEnvironment(inputOptions);
-      const response = await apiRequest<TimeoutGrantsResponse>(
+      const response = await apiRequest(
         buildApiUrl("/timeout-grants", options),
+        responses.timeoutGrants,
       );
       if (response.grants.length === 0) {
         respond(
@@ -457,8 +454,9 @@ function registerTimeoutGrant(program: Command, io: CliIO, runHandler: RunHandle
       await runHandler(async () => {
         const options = await inEnvironment(inputOptions);
         const resolved = await resolveAutomationNameOrDie(name, options);
-        const response = await apiRequest<TimeoutGrantResponse>(
+        const response = await apiRequest(
           buildApiUrl(`/automations/${resolved.slug}/timeout-grant`, options),
+          responses.timeoutGrant,
         );
         respond(
           io,
@@ -501,7 +499,7 @@ function registerTimeoutGrant(program: Command, io: CliIO, runHandler: RunHandle
         const options = await inEnvironment(inputOptions);
         const resolved = await resolveAutomationNameOrDie(name, options);
         const url = buildApiUrl(`/automations/${resolved.slug}/timeout-grant`, options);
-        const { grant: current } = await apiRequest<TimeoutGrantResponse>(url);
+        const { grant: current } = await apiRequest(url, responses.timeoutGrant);
         if (
           current !== null &&
           current.maxTimeoutMs === maxTimeoutMs &&
@@ -510,7 +508,7 @@ function registerTimeoutGrant(program: Command, io: CliIO, runHandler: RunHandle
           respond(io, { ...grantRow(current), state: "already granted (no-op)" });
           return;
         }
-        const response = await apiRequest<SetTimeoutGrantResponse>(url, {
+        const response = await apiRequest(url, responses.setTimeoutGrant, {
           body: JSON.stringify({
             maxTimeoutMs,
             ...(options.note !== undefined ? { note: options.note } : {}),
@@ -557,9 +555,13 @@ function registerTimeoutGrant(program: Command, io: CliIO, runHandler: RunHandle
         );
         const removed = await removeUnlessAbsent(
           "TIMEOUT_GRANT_NOT_FOUND",
-          apiRequest(buildApiUrl(`/automations/${resolved.slug}/timeout-grant`, options), {
-            method: "DELETE",
-          }),
+          apiRequest(
+            buildApiUrl(`/automations/${resolved.slug}/timeout-grant`, options),
+            responses.deleteTimeoutGrant,
+            {
+              method: "DELETE",
+            },
+          ),
         );
         respond(io, {
           automation: resolved.slug,
@@ -621,8 +623,9 @@ function registerNotify(program: Command, io: CliIO, runHandler: RunHandler): vo
   list.action(async (inputOptions: ApiCommandOptions) => {
     await runHandler(async () => {
       const options = await inEnvironment(inputOptions);
-      const response = await apiRequest<NotificationRulesResponse>(
+      const response = await apiRequest(
         buildApiUrl("/notifications/rules", options),
+        responses.notificationRules,
       );
       if (response.rules.length === 0) {
         respond(io, { rules: `0 notification rules in ${response.environment}` }, [
@@ -675,8 +678,9 @@ function registerNotify(program: Command, io: CliIO, runHandler: RunHandler): vo
     ) => {
       await runHandler(async () => {
         const options = await inEnvironment(inputOptions);
-        const rule = await apiRequest<NotificationRuleRecord>(
+        const rule = await apiRequest(
           buildApiUrl("/notifications/rules", options),
+          responses.notificationRule,
           {
             body: JSON.stringify({
               ...(options.automation !== undefined ? { automationName: options.automation } : {}),
@@ -721,8 +725,9 @@ function registerNotify(program: Command, io: CliIO, runHandler: RunHandler): vo
         },
     ) => {
       await runHandler(async () => {
-        const rule = await apiRequest<NotificationRuleRecord>(
+        const rule = await apiRequest(
           instanceUrl(`/notifications/rules/${encodeURIComponent(ruleId)}`, options),
+          responses.notificationRule,
           {
             body: JSON.stringify({
               ...(options.chatId !== undefined ? { chatId: options.chatId } : {}),
@@ -768,12 +773,13 @@ function registerNotify(program: Command, io: CliIO, runHandler: RunHandler): vo
       await runHandler(async () => {
         const options = await inEnvironment(inputOptions);
         const limit = options.limit ?? 50;
-        const response = await apiRequest<NotificationDeliveriesResponse>(
+        const response = await apiRequest(
           buildApiUrl("/notifications/deliveries", options, {
             ...(options.automation !== undefined ? { automation: options.automation } : {}),
             ...(options.eventType !== undefined ? { eventType: options.eventType } : {}),
             limit: Math.min(limit + 1, API_DELIVERY_LIMIT),
           }),
+          responses.notificationDeliveries,
         );
         const shown = response.deliveries.slice(0, limit);
         if (shown.length === 0) {
@@ -816,9 +822,13 @@ function registerNotify(program: Command, io: CliIO, runHandler: RunHandler): vo
     await runHandler(async () => {
       const removed = await removeUnlessAbsent(
         "NOTIFICATION_RULE_NOT_FOUND",
-        apiRequest(instanceUrl(`/notifications/rules/${encodeURIComponent(ruleId)}`, options), {
-          method: "DELETE",
-        }),
+        apiRequest(
+          instanceUrl(`/notifications/rules/${encodeURIComponent(ruleId)}`, options),
+          noContent,
+          {
+            method: "DELETE",
+          },
+        ),
       );
       respond(io, { rule: ruleId, state: removed ? "deleted" : "already absent (no-op)" });
     });

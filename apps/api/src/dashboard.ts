@@ -32,7 +32,7 @@ import {
 } from "@swizzle/db";
 import { createDashboardStore } from "@swizzle/db/postgres";
 import {
-  addCredentialIssues,
+  activeDeploymentReadiness,
   createArtifactStorageForReference,
   createQueueNameForProfile,
   evaluateAutomationReadiness,
@@ -328,6 +328,7 @@ export function createDashboardDataProvider(
           environment,
           failedOnly: true,
           limit: 1,
+          queuedSince: dayAgo,
           scope,
           topLevelOnly: true,
         }),
@@ -395,6 +396,7 @@ export function createDashboardDataProvider(
       return {
         environment,
         last24h,
+        last24hFrom: dayAgo.toISOString(),
         lastFailureAt: lastFailureAt(lastFailed.runs[0]),
         needsYou: buildAttention({
           approvals,
@@ -528,27 +530,16 @@ export async function withReadiness(
   automation: DashboardAutomationSummary,
   context: ReadinessContext,
 ): Promise<JudgedAutomationSummary> {
-  let readiness = addCredentialIssues(
+  const readiness = activeDeploymentReadiness(
     await runtimeReadiness(automation, automation.activeDeployment, context),
     {
       connections: automation.requiredConnections,
+      deploymentId: automation.activeDeployment.deploymentId,
       environment: context.environment,
       secrets: automation.requiredSecrets,
+      trigger: automation.trigger,
     },
   );
-  if (automation.trigger?.errorCode !== null && automation.trigger?.errorCode !== undefined) {
-    readiness = {
-      ...readiness,
-      status: "not-ready",
-      errors: [
-        ...readiness.errors,
-        {
-          code: "TRIGGER_CONFIGURATION_INVALID",
-          message: automation.trigger.errorMessage ?? "The trigger configuration is invalid.",
-        },
-      ],
-    };
-  }
   return {
     ...automation,
     activeDeployment: { ...automation.activeDeployment, readiness },

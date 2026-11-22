@@ -21,6 +21,7 @@ import {
 } from "./executed-script.js";
 import {
   type ExecutionOutcome,
+  type ExecutionOutputCallback,
   executeProcess,
   parseProcessResult,
   requireProcessExit,
@@ -43,8 +44,8 @@ export interface ExecutionOptions {
   readonly executionNumber?: number;
   readonly grantMaxTimeoutMs?: number | null;
   readonly onReady?: () => Promise<void>;
-  readonly onStderrChunk?: (chunk: string) => void | Promise<void>;
-  readonly onStdoutChunk?: (chunk: string) => void | Promise<void>;
+  readonly onStderrChunk?: ExecutionOutputCallback;
+  readonly onStdoutChunk?: ExecutionOutputCallback;
   readonly outputLimitBytes?: number;
   readonly policyEnvironment?: NodeJS.ProcessEnv;
   readonly runId?: string;
@@ -444,8 +445,8 @@ export async function executeChildProcess(input: {
   readonly abortSignal?: AbortSignal | undefined;
   readonly command: ExecutionCommand;
   readonly environment: NodeJS.ProcessEnv;
-  readonly onStderrChunk?: ((chunk: string) => void | Promise<void>) | undefined;
-  readonly onStdoutChunk?: ((chunk: string) => void | Promise<void>) | undefined;
+  readonly onStderrChunk?: ExecutionOutputCallback | undefined;
+  readonly onStdoutChunk?: ExecutionOutputCallback | undefined;
   readonly outputLimitBytes: number;
   readonly payload: unknown;
   readonly scratchDirectory: string;

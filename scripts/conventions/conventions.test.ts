@@ -941,3 +941,240 @@ it("web-short-strings refuses a period on a short string and leaves running text
     }),
   ).toEqual(["apps/web/src/lib/words/runs.ts:1"]);
 });
+
+it("ci-uses-verify-lanes rejects a duplicated test shard", async () => {
+  expect(
+    await findingsFor("ci-uses-verify-lanes", {
+      justfile: "verify: test\ntest *args:",
+      ".github/workflows/ci.yml": [
+        "jobs:",
+        "  test-1:",
+        "    env: { SHARD: 1/2 }",
+        "    steps: &test-steps",
+        '      - run: just test --shard="$SHARD"',
+        "  test-2:",
+        "    env: { SHARD: 1/2 }",
+        "    steps: *test-steps",
+        "  verify:",
+        "    needs: [test-1, test-2]",
+      ].join("\n"),
+    }),
+  ).toMatchObject([{ line: 1, message: expect.stringContaining("shard") }]);
+});
+
+it.each([
+  ["    continue-on-error: true", "      - run: just check"],
+  ["", "      - run: just check\n        continue-on-error: true"],
+  ["", "      - run: just check || true"],
+])("ci-uses-verify-lanes refuses masked failures in a required lane", async (job, steps) => {
+  expect(
+    await reported("ci-uses-verify-lanes", {
+      justfile: "verify: check\ncheck:",
+      ".github/workflows/ci.yml": [
+        "jobs:",
+        "  check:",
+        job,
+        "    steps:",
+        steps,
+        "  verify:",
+        "    needs: [check]",
+      ].join("\n"),
+    }),
+  ).toEqual([".github/workflows/ci.yml:2"]);
+});
+
+it("review-config-paths identifies a malformed field", async () => {
+  expect(
+    await findingsFor("review-config-paths", {
+      ".coderabbit.yaml":
+        "reviews:\n  path_instructions:\n    - path: [apps]\n      instructions: Read this.\n",
+    }),
+  ).toMatchObject([
+    {
+      file: ".coderabbit.yaml",
+      line: 3,
+      message: expect.stringContaining("reviews.path_instructions.0.path"),
+    },
+  ]);
+});
+
+it("review-config-paths splits a list only outside nested glob groups", async () => {
+  expect(
+    await reported("review-config-paths", {
+      ".coderabbit.yaml":
+        'knowledge_base:\n  code_guidelines:\n    filePatterns: ["{a,{b,c}}/guide.md,docs/*.md"]\n',
+      "b/guide.md": "",
+      "docs/rules.md": "",
+    }),
+  ).toEqual([]);
+});
+
+it("tests-wait-on-state distinguishes automation settings from runner settings", async () => {
+  expect(
+    await reported("tests-wait-on-state", {
+      "apps/web/tests/config.spec.ts": [
+        'import { expect, test } from "@playwright/test";',
+        'test("checks config", async ({ page }) => {',
+        "  expect(config).toMatchObject({ runtime: { timeout } });",
+        '  await expect(page.getByRole("heading")).toBeVisible({ timeout });',
+        "});",
+      ].join("\n"),
+      "test/config.test.ts": [
+        'it("checks config", () => {',
+        "  deploy({ runtime: { timeout, retries: 2 } });",
+        "  expect(config).toMatchObject({ runtime: { timeout } });",
+        "});",
+        'it("overrides the runner", { timeout }, () => {});',
+        "test.configure({ retry: 1 });",
+      ].join("\n"),
+    }),
+  ).toEqual(["apps/web/tests/config.spec.ts:4", "test/config.test.ts:5", "test/config.test.ts:6"]);
+});
+
+it("tests-wait-on-state finds per-call runner budgets without a list of methods", async () => {
+  expect(
+    await reported("tests-wait-on-state", {
+      "apps/web/tests/api.spec.ts": [
+        'test("requests", async ({ page, request: api }) => {',
+        '  await page.request.get("/x", { timeout: 99000 });',
+        '  await page.request.post("/x", { timeout });',
+        '  await api.get("/x", { timeout });',
+        "  await page.waitForNavigation({ timeout });",
+        '  await api.post("/x", { data: { runtime: { timeout } } });',
+        "  await expect(page.getByText('Saved')).not.toBeHidden({ timeout });",
+        "});",
+      ].join("\n"),
+      "apps/web/tests/helpers.ts": [
+        'export const open = (page: Page) => page.click("a", { timeout });',
+        "export const ready = () => expect.poll(read, { timeout }).toBe(true);",
+        "export const wait = () => expect.poll(read).toBe(true);",
+      ].join("\n"),
+      "apps/web/tests/helpers/request.ts":
+        'export const probe = (api) => api.get("/x", { timeout });',
+      "test/api.test.ts": [
+        'const response = await api.get("/x", { timeout });',
+        "await deploy({ runtime: { timeout } });",
+      ].join("\n"),
+    }),
+  ).toEqual([
+    "apps/web/tests/api.spec.ts:2",
+    "apps/web/tests/api.spec.ts:3",
+    "apps/web/tests/api.spec.ts:4",
+    "apps/web/tests/api.spec.ts:5",
+    "apps/web/tests/api.spec.ts:7",
+    "apps/web/tests/helpers.ts:1",
+    "apps/web/tests/helpers.ts:2",
+    "apps/web/tests/helpers/request.ts:1",
+    "test/api.test.ts:1",
+  ]);
+});
+
+it("tests-wait-on-state follows clock changes through blocks and restores", async () => {
+  expect(
+    await reported("tests-wait-on-state", {
+      "test/restore.test.ts": [
+        'it("restores in finally", () => {',
+        "  vi.useFakeTimers();",
+        "  try { work(); } finally { vi.useRealTimers(); }",
+        "  const start = Date.now();",
+        "  expect(Date.now() - start).toBe(0);",
+        "});",
+        'it("can restore before the read", () => {',
+        "  vi.useFakeTimers();",
+        "  if (restore) { vi.useRealTimers(); }",
+        "  const start = Date.now();",
+        "  expect(Date.now() - start).toBe(0);",
+        "});",
+        'it("sets the clock in a block", () => {',
+        "  { vi.useFakeTimers(); }",
+        "  const restore = () => vi.useRealTimers();",
+        "  const start = Date.now();",
+        "  expect(Date.now() - start).toBe(0);",
+        "});",
+        'it("might set the clock", () => {',
+        "  if (fake) { vi.useFakeTimers(); }",
+        "  const start = Date.now();",
+        "  expect(Date.now() - start).toBe(0);",
+        "});",
+      ].join("\n"),
+    }),
+  ).toEqual(["test/restore.test.ts:11", "test/restore.test.ts:22", "test/restore.test.ts:5"]);
+});
+
+it("tests-wait-on-state uses the clock hooks of the test's own suites", async () => {
+  expect(
+    await reported("tests-wait-on-state", {
+      "test/hooks.test.ts": [
+        'describe("with a fixed date", () => {',
+        '  beforeEach(() => vi.useFakeTimers({ toFake: ["Date"] }));',
+        "  afterEach(() => vi.useRealTimers());",
+        '  describe("inherits the date hook", () => {',
+        '    test("date stays fixed", () => {',
+        "      const start = Date.now();",
+        "      expect(Date.now() - start).toBe(0);",
+        "      const tick = performance.now();",
+        "      expect(performance.now() - tick).toBe(0);",
+        "    });",
+        "  });",
+        '  describe("restores the date", () => {',
+        "    beforeEach(() => { vi.useRealTimers(); });",
+        '    test("uses a real date", () => {',
+        "      const start = Date.now();",
+        "      expect(Date.now() - start).toBe(0);",
+        "    });",
+        "  });",
+        "});",
+        'it("is outside the fake date suite", () => {',
+        "  const start = Date.now();",
+        "  expect(Date.now() - start).toBe(0);",
+        "});",
+      ].join("\n"),
+      "test/conditional-hooks.test.ts": [
+        'describe("may set the clock", () => {',
+        "  if (enabled) beforeEach(() => vi.useFakeTimers());",
+        '  it("could be real", () => {',
+        "    const start = Date.now();",
+        "    expect(Date.now() - start).toBe(0);",
+        "  });",
+        "});",
+      ].join("\n"),
+    }),
+  ).toEqual([
+    "test/conditional-hooks.test.ts:5",
+    "test/hooks.test.ts:16",
+    "test/hooks.test.ts:22",
+    "test/hooks.test.ts:9",
+  ]);
+});
+
+it("tests-wait-on-state checks real clocks alongside fake clocks", async () => {
+  expect(
+    await reported("tests-wait-on-state", {
+      "test/clock.test.ts": [
+        'it("sets Date", () => {',
+        '  vi.useFakeTimers({ toFake: ["Date"] });',
+        "  const start = Date.now();",
+        "  const observed = performance.now();",
+        "  expect(Date.now() - start).toBe(0);",
+        "  expect(performance.now() - observed).toBe(0);",
+        "  vi.useRealTimers();",
+        "  expect(Date.now() - start).toBe(0);",
+        "});",
+        'it("uses the real clock", () => {',
+        "  const start = Date.now();",
+        "  expect(Date.now() - start).toBe(0);",
+        "});",
+        "const startedOutside = performance.now();",
+        'it("uses an outer timestamp", () => {',
+        "  vi.useFakeTimers();",
+        "  expect(performance.now() - startedOutside).toBe(0);",
+        "});",
+      ].join("\n"),
+    }),
+  ).toEqual([
+    "test/clock.test.ts:12",
+    "test/clock.test.ts:17",
+    "test/clock.test.ts:6",
+    "test/clock.test.ts:8",
+  ]);
+});
