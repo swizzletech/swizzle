@@ -10,6 +10,11 @@ pre-commit:
     - name: secrets
       run: mise exec -- gitleaks git --pre-commit --staged --redact --no-banner --verbose
 
+commit-msg:
+  jobs:
+    - name: public-trailers
+      run: sh scripts/conventions/check-public-trailers.sh "{1}"
+
 # The static gate, so a branch reaches the remote only when `just check` is green.
 pre-push:
   jobs:

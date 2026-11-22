@@ -983,6 +983,41 @@ it.each([
   ).toEqual([".github/workflows/ci.yml:2"]);
 });
 
+it("ci-uses-verify-lanes requires errexit in the shell used by required run steps", async () => {
+  const workflow = ({ step = "", job = "", defaults = "" } = {}) => ({
+    justfile: "verify: check\ncheck:",
+    ".github/workflows/ci.yml": `${defaults}jobs:
+  check:
+${job}    steps:
+      - run: |
+          just check
+          echo finished
+${step}  verify:
+    needs: [check]`,
+  });
+  const step = "        shell: bash {0}\n";
+  const job = "    defaults: { run: { shell: 'bash {0}' } }\n";
+  const defaults = "defaults: { run: { shell: 'bash {0}' } }\n";
+  for (const input of [
+    { step },
+    { job },
+    { defaults },
+    { step: "        shell: /usr/bin/bash {0}\n" },
+  ]) {
+    expect
+      .soft(await findingsFor("ci-uses-verify-lanes", workflow(input)))
+      .toMatchObject([{ message: expect.stringContaining("errexit") }]);
+  }
+  for (const input of [
+    {},
+    { step: "        shell: bash -eo pipefail {0}\n", job, defaults },
+    { step: "        shell: bash -o errexit {0}\n" },
+    { job: "    defaults: { run: { shell: bash } }\n", defaults },
+  ]) {
+    expect(await findingsFor("ci-uses-verify-lanes", workflow(input))).toEqual([]);
+  }
+});
+
 it("review-config-paths identifies a malformed field", async () => {
   expect(
     await findingsFor("review-config-paths", {

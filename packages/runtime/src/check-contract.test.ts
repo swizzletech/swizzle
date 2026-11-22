@@ -304,7 +304,7 @@ it.each([
   ["HTTP 401K", { status: "drift" }],
   ["401 response 503", { status: "drift" }],
   ["401 response 403", { status: "error", failure: "credentials" }],
-  ["http".repeat(10_000) + " 401", { status: "error", failure: "credentials" }],
+  [`${"http".repeat(10_000)} 401`, { status: "error", failure: "credentials" }],
 ])("preserves credential marker order and status boundaries (case %#)", (stderr, expected) => {
   expect(
     checkOutcome({

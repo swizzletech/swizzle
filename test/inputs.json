@@ -31,6 +31,10 @@
     "scripts/conventions/comment-budget.json",
     "{apps,packages,scripts,test}/**/*.{ts,mts,cts,tsx,css,html}"
   ],
+  "scripts/conventions/public-trailers.test.ts": [
+    "lefthook.yml",
+    "scripts/conventions/check-public-trailers.sh"
+  ],
   "scripts/export-public.test.ts": [
     "scripts/{export-public.mts,private-paths.ts}",
     "knip.jsonc",
