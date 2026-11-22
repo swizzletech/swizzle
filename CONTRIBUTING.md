@@ -65,6 +65,11 @@ Tests must own their files, processes, ports, and data. Update the documentation
 
 Edit [the logo source](docs/assets/logo-dark.svg) when the brand artwork changes. Run `just gen` to regenerate the dashboard, approval page, and light README variants.
 
+## Refresh dependencies
+
+Run `just deps-update` to update workspace dependencies within their version ranges. The same command refreshes the exact Claude Code and Codex pins within their current major versions in the [runner Dockerfile](infra/docker/Dockerfile). A `0.x` pin can move to a newer `0.x` minor.
+Run `just deps-outdated` to list newer releases for workspace dependencies and the runner CLIs, including major upgrades. It exits with status 1 when it finds an outdated dependency.
+
 ## Propose a change
 
 Keep a pull request focused on one problem. Explain the resulting behavior, how you tested it, and any limits reviewers need to know.

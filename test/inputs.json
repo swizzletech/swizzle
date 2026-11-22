@@ -59,6 +59,7 @@
     "test/fixtures/disk-space.mjs"
   ],
   "scripts/agent-reference-drift.test.ts": ["apps/cli/assets/skills/**"],
+  "scripts/runner-agent-clis.test.ts": ["scripts/runner-agent-clis.mts"],
   "scripts/runner-tools.test.ts": ["infra/docker/runner-tools.mjs"],
   "test/docker-run-sweep.docker.test.ts": ["vitest.config.ts", "test/*.ts"],
   "scripts/docker-build-context.docker.test.ts": [".dockerignore"],

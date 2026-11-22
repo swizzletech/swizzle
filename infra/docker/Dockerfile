@@ -16,7 +16,7 @@ FROM node:26.12.1-trixie-slim AS runner-base
 RUN apt-get update \
   && apt-get install -y --no-install-recommends bash ca-certificates curl fontconfig fonts-dejavu-core git poppler-utils python3 python3-pip python3-venv \
   && rm -rf /var/lib/apt/lists/*
-RUN npm install --global --no-audit --no-fund @anthropic-ai/claude-code@2.1.309 @openai/codex@0.163.0
+RUN npm install --global --no-audit --no-fund @anthropic-ai/claude-code@2.1.330 @openai/codex@0.171.0
 RUN apt-get update \
   && apt-get install -y --no-install-recommends proxychains4 \
   && rm -rf /var/lib/apt/lists/*
