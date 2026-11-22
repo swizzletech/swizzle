@@ -30,7 +30,7 @@ swizzle projects delete old-experiments --move-to buero --yes
 swizzle projects delete old-experiments --delete-contents --yes
 ```
 
-Moving keeps the automations, credentials, and runs, but removes their folders and credential shares that no longer apply. A credential name already used in the target project and environment blocks the move. Deleting removes the automations and their runs, deletes secrets, and revokes connections at their providers. The delete choice fails while any run is queued, running, or waiting. Either choice removes the project's access grants and service accounts. Audit events stay after either choice. [The security model](../explanation/security-model.md#one-policy-decides-access) explains which history stays with a project.
+Moving keeps the automations, credentials, and runs, but removes their folders and credential shares that no longer apply. A credential name already used in the target project and environment blocks the move. Deleting removes the automations and their runs, deletes secrets, and revokes connections at their providers. The delete choice fails while any run is queued, running, or waiting. This includes a run queued for an automation that was deployed while the deletion was in progress. Either choice removes the project's access grants and service accounts. Audit events stay after either choice. [The security model](../explanation/security-model.md#one-policy-decides-access) explains which history stays with a project.
 
 ## Invite the people
 

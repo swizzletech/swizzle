@@ -19,8 +19,9 @@ export function isFinishedRun(status: PlatformRunStatus): boolean {
 
 export const USER_CANCELLED = "user-cancelled";
 export const PARENT_CANCELLED = "parent-cancelled";
+export const PARENT_FINISHED = "parent-finished";
 
-export const CANCELLED_RUN_REASONS = [USER_CANCELLED, PARENT_CANCELLED] as const;
+export const CANCELLED_RUN_REASONS = [USER_CANCELLED, PARENT_CANCELLED, PARENT_FINISHED] as const;
 
 export type RunState = PlatformRunStatus | "cancelled";
 

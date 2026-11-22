@@ -206,7 +206,7 @@ runtime:
   }
 });
 
-it("shows a deleted chain source as an invalid trigger and not ready in the dashboard", async () => {
+it("shows a deleted chain source as not ready through both deployment routes", async () => {
   const platform = await testPlatform();
   for (const name of ["source", "dependent"]) {
     const directory = await createAutomationFixture({
@@ -238,11 +238,18 @@ it("shows a deleted chain source as an invalid trigger and not ready in the dash
       url: "/dashboard/automations/dependent?environment=local",
       headers: owner,
     });
+  const deployment = () =>
+    app.inject({
+      method: "GET",
+      url: "/automations/dependent?environment=local",
+      headers: owner,
+    });
   try {
     expect((await detail()).json()).toMatchObject({
       trigger: { triggerType: "chain", status: "active" },
       activeDeployment: { readiness: { status: "ready" } },
     });
+    expect((await deployment()).json()).toMatchObject({ readiness: { status: "ready" } });
     await platform.pauseAutomationTrigger("source", "local");
     const deleted = await app.inject({
       method: "DELETE",
@@ -269,6 +276,8 @@ it("shows a deleted chain source as an invalid trigger and not ready in the dash
         },
       },
     });
+    const { status, errors } = (await detail()).json().activeDeployment.readiness;
+    expect((await deployment()).json().readiness).toMatchObject({ status, errors });
   } finally {
     await app.close();
   }

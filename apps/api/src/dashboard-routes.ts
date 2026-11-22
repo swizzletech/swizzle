@@ -241,6 +241,7 @@ export function registerDashboardRoutes(
         cursor: urlText,
         limit: queryInteger,
         parentRunId: uuid,
+        queuedSince: urlText,
         state: urlText,
         status: urlText,
         topLevelOnly: queryBoolean,
@@ -252,6 +253,10 @@ export function registerDashboardRoutes(
     const query = request.query as DashboardRunsQuery | undefined;
     const environment = getEnvironment(request);
     const approvalOnly = query?.approvalOnly === "true";
+    const queuedSince = query?.queuedSince === undefined ? undefined : new Date(query.queuedSince);
+    if (queuedSince !== undefined && !Number.isFinite(queuedSince.getTime())) {
+      requestValidationError("queuedSince must be an ISO timestamp.");
+    }
     const subjects = approvalOnly ? await request.access.subjects() : null;
     return await dashboard.listRuns({
       ...(query?.approvalOnly !== undefined ? { approvalOnly } : {}),
@@ -262,6 +267,7 @@ export function registerDashboardRoutes(
       ...(query?.failedOnly !== undefined ? { failedOnly: query.failedOnly === "true" } : {}),
       ...(query?.limit !== undefined ? { limit: Number(query.limit) } : {}),
       ...(query?.parentRunId !== undefined ? { parentRunId: query.parentRunId } : {}),
+      ...(queuedSince === undefined ? {} : { queuedSince }),
       scope: await request.access.scope(environment),
       ...(query?.state !== undefined
         ? { states: parseRunStates(query.state, "state", RUN_STATES) }

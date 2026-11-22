@@ -1,4 +1,5 @@
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
+import { addAbortListener } from "node:events";
 import type { Writable } from "node:stream";
 import { contractChangeFailure } from "./api-signals.js";
 import { killDockerProcess } from "./docker-cli.js";
@@ -35,6 +36,10 @@ type StopOutcome =
   | { readonly stoppedBy: ExitReason | null }
   | { readonly stoppedBy: "callback-failed"; readonly error: unknown };
 
+const OUTPUT_FLUSH_MS = 5_000;
+
+export type ExecutionOutputCallback = (chunk: string, signal?: AbortSignal) => void | Promise<void>;
+
 export type ExecutionOutcome = ProcessOutput & StopOutcome;
 type ProcessExit = Exclude<ExecutionOutcome, { stoppedBy: "callback-failed" }>;
 
@@ -45,8 +50,9 @@ export async function executeProcess(input: {
   readonly sendInput: (stdin: Writable, fail: (error: unknown) => void) => void;
   readonly inputError?: (error: NodeJS.ErrnoException) => Error;
   readonly termination: Termination;
-  readonly onStderrChunk?: ((chunk: string) => void | Promise<void>) | undefined;
-  readonly onStdoutChunk?: ((chunk: string) => void | Promise<void>) | undefined;
+  readonly onStderrChunk?: ExecutionOutputCallback | undefined;
+  readonly onStdoutChunk?: ExecutionOutputCallback | undefined;
+  readonly flushOutput?: (signal: AbortSignal) => void | Promise<void>;
   readonly outputLimitBytes: number;
   readonly stderrLimitBytes?: number;
   readonly timeoutMs: number;
@@ -60,6 +66,32 @@ export async function executeProcess(input: {
     let stopping = false;
     let settled = false;
     let forceKill: NodeJS.Timeout | undefined;
+    let flushTimer: NodeJS.Timeout | undefined;
+    const delivery = new AbortController();
+    const startFlushBudget = () => {
+      flushTimer ??= setTimeout(
+        () => delivery.abort(new Error("Execution output delivery timed out.")),
+        OUTPUT_FLUSH_MS,
+      );
+    };
+    const deliver = async (callback: (signal: AbortSignal) => void | Promise<void>) => {
+      if (delivery.signal.aborted) return;
+      let cancel = () => {};
+      const cancelled = new Promise<void>((resolve) => {
+        cancel = resolve;
+      });
+      const listener = addAbortListener(delivery.signal, cancel);
+      try {
+        await Promise.race([cancelled, callback(delivery.signal)]);
+        if (!delivery.signal.aborted) flushTimer?.refresh();
+      } finally {
+        listener[Symbol.dispose]();
+      }
+    };
+    const chunkDelivery = (callback: ExecutionOutputCallback | undefined) =>
+      callback === undefined
+        ? undefined
+        : (chunk: string) => deliver((signal) => callback(chunk, signal));
 
     const stop = (reason: NonNullable<StopOutcome["stoppedBy"]>) => {
       if (settled) return;
@@ -72,11 +104,12 @@ export async function executeProcess(input: {
       ) {
         stoppedBy = reason;
       }
-      if (stopping) return;
+      startFlushBudget();
+      if (stopping || child.exitCode !== null || child.signalCode !== null) return;
       stopping = true;
       if (termination.kind === "sandbox") {
         void termination.stopSandbox().then(() => {
-          if (!settled) {
+          if (!settled && child.exitCode === null && child.signalCode === null) {
             forceKill = setTimeout(() => killDockerProcess(child), termination.exitGraceMs);
           }
         });
@@ -94,8 +127,8 @@ export async function executeProcess(input: {
       stderr: child.stderr,
       stdoutLimitBytes: input.outputLimitBytes,
       stderrLimitBytes: input.stderrLimitBytes ?? input.outputLimitBytes,
-      onStdoutChunk: input.onStdoutChunk,
-      onStderrChunk: input.onStderrChunk,
+      onStdoutChunk: chunkDelivery(input.onStdoutChunk),
+      onStderrChunk: chunkDelivery(input.onStderrChunk),
       limitPolicy: "stop",
       onStop: (reason) => stop(reason.kind === "limit" ? { limit: reason.stream } : reason.kind),
     });
@@ -106,13 +139,19 @@ export async function executeProcess(input: {
       settled = true;
       clearTimeout(timeout);
       clearTimeout(forceKill);
+      clearTimeout(flushTimer);
+      delivery.abort();
       input.abortSignal?.removeEventListener("abort", abort);
       finish();
     };
     const fail = (error: unknown) => settle(() => reject(error));
 
     child.once("error", (error) => fail(input.startError(error)));
+    child.once("exit", startFlushBudget);
     child.once("close", (exitCode, signal) => {
+      clearTimeout(timeout);
+      clearTimeout(forceKill);
+      startFlushBudget();
       const complete = (stopOutcome: StopOutcome) => {
         settle(() =>
           resolve({
@@ -124,10 +163,16 @@ export async function executeProcess(input: {
           }),
         );
       };
-      void output.finished().then(
-        () => complete({ stoppedBy }),
-        (error: unknown) => complete({ stoppedBy: "callback-failed", error }),
-      );
+      void output
+        .finished()
+        .then(async () => {
+          if (input.flushOutput !== undefined) await deliver(input.flushOutput);
+          if (stoppedBy === null && delivery.signal.aborted) throw delivery.signal.reason;
+          complete({ stoppedBy });
+        })
+        .catch((error: unknown) =>
+          complete(stoppedBy === null ? { stoppedBy: "callback-failed", error } : { stoppedBy }),
+        );
     });
     child.stdin.on("error", (error: NodeJS.ErrnoException) => {
       if (error.code !== "EPIPE") fail(input.inputError?.(error) ?? error);

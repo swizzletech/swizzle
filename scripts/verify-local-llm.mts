@@ -76,7 +76,6 @@ const call = async (method: string, route: string, body?: unknown, bearer = owne
 };
 const workers: PlatformWorkerController[] = [];
 const workerIds: string[] = [];
-let ordinaryWorkerToken = "";
 const automate = async (name: string, services: readonly string[]) => {
   const automation = path.join(directory, name);
   await import("node:fs/promises").then(({ mkdir }) => mkdir(automation));
@@ -103,7 +102,7 @@ console.log(JSON.stringify({ status: response.status, answer: response.ok ? { mo
   await exec(path.join(scripts, "swizzle"), ["apply", automation, "--json"], { env: process.env });
   return automation;
 };
-const start = async (services: readonly string[]) => {
+const enroll = async (services: readonly string[]) => {
   const projects = await call("GET", "/projects");
   assert.ok(Array.isArray(projects.projects));
   const project = projects.projects.find(
@@ -124,23 +123,12 @@ const start = async (services: readonly string[]) => {
       typeof credential.worker.id === "string",
   );
   workerIds.push(credential.worker.id);
-  if (services.length === 0) {
-    ordinaryWorkerToken = credential.token;
-    await call(
-      "POST",
-      "/worker/runtime",
-      {
-        capabilities: await collectWorkerCapabilities([]),
-        services: { [LOCAL_LLM_SERVICE]: "healthy" },
-        runImageDisk: null,
-      },
-      credential.token,
-    );
-    return;
-  }
+  return credential.token;
+};
+const start = async (token: string) => {
   const worker = await startPlatformWorkerService({
     apiUrl,
-    credential: { kind: "configured", token: credential.token },
+    credential: { kind: "configured", token },
     concurrency: 1,
     environment: process.env,
     capabilities: await collectWorkerCapabilities([]),
@@ -221,7 +209,18 @@ try {
   const health = await localLlmHealth(process.env);
   console.log("Worker observed local-llm health:", health);
   assert.equal(health, "healthy");
-  await start([]);
+  const ordinaryWorkerToken = await enroll([]);
+  const approvedWorkerToken = await enroll([LOCAL_LLM_SERVICE]);
+  await call(
+    "POST",
+    "/worker/runtime",
+    {
+      capabilities: await collectWorkerCapabilities([]),
+      services: { [LOCAL_LLM_SERVICE]: "healthy" },
+      runImageDisk: null,
+    },
+    ordinaryWorkerToken,
+  );
   await automate(`${stack}-allowed`, [LOCAL_LLM_SERVICE]);
   const allowedId = await run(`${stack}-allowed`);
   const refused = await call("POST", "/worker/pull", {}, ordinaryWorkerToken);
@@ -233,7 +232,7 @@ try {
     "worker without the owner service grant must not claim it",
   );
   console.log("PASS owner service grant: ordinary worker leaves the authorized automation queued.");
-  await start([LOCAL_LLM_SERVICE]);
+  await start(approvedWorkerToken);
   const allowed = await waitRun(allowedId);
   assert.equal(allowed.status, "succeeded", JSON.stringify(allowed));
   const output: unknown = JSON.parse(String(allowed.stdout));

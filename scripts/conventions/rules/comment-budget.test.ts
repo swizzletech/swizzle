@@ -286,6 +286,31 @@ it("rejects committed comment budget increases from the branch baseline", async 
   ];
   expect(check()).toMatchObject(increases);
 
+  const beforePush = git("rev-parse", "HEAD^");
+  git("branch", "-f", "main", "HEAD");
+  vi.stubEnv("SWIZZLE_COMMENT_BUDGET_BASE", beforePush);
+  expect(check()).toMatchObject(increases);
+  vi.stubEnv("SWIZZLE_COMMENT_BUDGET_BASE", "0".repeat(40));
+  expect(check()).toMatchObject([
+    {
+      file: COMMENT_BUDGET,
+      line: 1,
+      message:
+        "This push creates main and has no previous commit for the comment budget. Push changes to an existing main branch with a committed budget.",
+    },
+  ]);
+  const missingTip = "1".repeat(40);
+  vi.stubEnv("SWIZZLE_COMMENT_BUDGET_BASE", missingTip);
+  expect(check()).toMatchObject([
+    {
+      file: COMMENT_BUDGET,
+      line: 1,
+      message: `The previous main commit ${missingTip} from this push is unavailable. Restore the prior tip before pushing again, or ask a maintainer how to proceed after a force push.`,
+    },
+  ]);
+  vi.stubEnv("SWIZZLE_COMMENT_BUDGET_BASE", "");
+  git("branch", "-f", "main", "HEAD^^");
+
   git("switch", "--detach", "main");
   git("-c", "core.hooksPath=/dev/null", "merge", "--no-ff", "--no-edit", "topic");
   expect(check()).toMatchObject(increases);

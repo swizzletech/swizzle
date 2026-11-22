@@ -92,7 +92,7 @@ describe("status commands", () => {
               status: "fail",
               detail:
                 status === 200
-                  ? `API_RESPONSE_INVALID: The API at ${address}/environments returned invalid environment information.`
+                  ? `INVALID_API_RESPONSE: ${address} does not answer as a Swizzle API. The body did not match the requested endpoint.`
                   : "ENVIRONMENT_LOOKUP_FAILED: Environment store unavailable.",
             },
             { name: "api", status: "pass", detail: "API reachable" },

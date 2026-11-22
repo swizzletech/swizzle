@@ -372,6 +372,7 @@ export function registerErrorHandler(app: ApiServer): void {
         error: error.code,
         message: error.message,
         ...(error.code === "ARTIFACT_STORAGE_NOT_WRITABLE" ? { retryable: false } : {}),
+        ...(error.code === "PROJECT_CONTENTS_CHANGED" ? { retryable: true } : {}),
         ...(error.code === "RUN_NOT_FOUND" && typeof error.details?.runId === "string"
           ? { runId: error.details.runId }
           : {}),

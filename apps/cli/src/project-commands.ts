@@ -7,18 +7,15 @@ import type {
 } from "@swizzle/db";
 import { PROJECT_ROLES, sameSubject } from "@swizzle/db";
 import type {
-  CreateProjectResponse as CreateProjectResult,
   DeleteProjectResponse,
-  RemoveGrantResponse as GrantRemovalResult,
-  SetGrantResponse as GrantWriteResult,
   ProjectAccessResponse as ProjectAccess,
   ProjectContentsResponse as ProjectContentCounts,
   ProjectsResponse,
-  EnvironmentProtectionResponse as ProtectionResult,
 } from "@swizzle/runtime/http-contract";
 import { type Command, Option } from "commander";
 
 import { apiRequest } from "./api.js";
+import { responses } from "./api-responses.js";
 import {
   type ApiCommandOptions,
   type RunHandler,
@@ -119,7 +116,7 @@ function contentsOutcome(
 }
 
 async function listProjects(options: ApiCommandOptions): Promise<readonly ListedProject[]> {
-  return (await apiRequest<ProjectsResponse>(url("/projects", options))).projects;
+  return (await apiRequest(url("/projects", options), responses.projects)).projects;
 }
 
 export function registerProjects(program: Command, io: CliIO, runHandler: RunHandler): void {
@@ -168,7 +165,7 @@ export function registerProjects(program: Command, io: CliIO, runHandler: RunHan
   ]);
   create.action(async (slug: string, options: ApiCommandOptions & { readonly name: string }) => {
     await runHandler(async () => {
-      const created = await apiRequest<CreateProjectResult>(url("/projects", options), {
+      const created = await apiRequest(url("/projects", options), responses.createProject, {
         body: JSON.stringify({ name: options.name, slug }),
         headers: { "content-type": "application/json" },
         method: "POST",
@@ -216,8 +213,9 @@ export function registerProjects(program: Command, io: CliIO, runHandler: RunHan
       } else if (options.deleteContents === true) query.contents = "delete";
       let result: DeleteProjectResponse;
       try {
-        result = await apiRequest<DeleteProjectResponse>(
+        result = await apiRequest(
           url(`/projects/${segment(reference)}`, options, query),
+          responses.deleteProject,
           { method: "DELETE" },
         );
       } catch (error) {
@@ -318,8 +316,9 @@ export function registerProjects(program: Command, io: CliIO, runHandler: RunHan
           ...placeBody(place),
           role: options.role,
         } satisfies SetGrantBody;
-        const result = await apiRequest<GrantWriteResult>(
+        const result = await apiRequest(
           url(`/projects/${segment(reference)}/grants`, options),
+          responses.setGrant,
           {
             body: JSON.stringify(body),
             headers: { "content-type": "application/json" },
@@ -359,11 +358,12 @@ export function registerProjects(program: Command, io: CliIO, runHandler: RunHan
       await runHandler(async () => {
         const subjectRef = subjectFromOptions(options);
         const place = placeFromOptions(options);
-        const result = await apiRequest<GrantRemovalResult>(
+        const result = await apiRequest(
           url(`/projects/${segment(reference)}/grants`, options, {
             ...subjectRef,
             ...placeBody(place),
           }),
+          responses.removeGrant,
           { method: "DELETE" },
         );
         respond(io, {
@@ -401,12 +401,13 @@ export function registerProjects(program: Command, io: CliIO, runHandler: RunHan
         options: ApiCommandOptions & { readonly yes?: boolean },
       ) => {
         await runHandler(async () => {
-          const result = await apiRequest<ProtectionResult>(
+          const result = await apiRequest(
             url(
               `/projects/${segment(reference)}/environments/${segment(environment)}/protection`,
               options,
               protect ? undefined : { confirm: String(options.yes === true) },
             ),
+            responses.environmentProtection,
             { method: protect ? "PUT" : "DELETE" },
           );
           let state: string;
@@ -436,7 +437,10 @@ async function projectAccess(
   reference: string,
   options: ApiCommandOptions,
 ): Promise<ProjectAccess> {
-  return await apiRequest<ProjectAccess>(url(`/projects/${segment(reference)}/access`, options));
+  return await apiRequest(
+    url(`/projects/${segment(reference)}/access`, options),
+    responses.projectAccess,
+  );
 }
 
 function holdLabel(hold: EnvironmentHold, kind: Subject["kind"]): string {

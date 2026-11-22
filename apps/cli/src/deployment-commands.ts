@@ -4,17 +4,11 @@ import {
   deployAutomation,
   loadAutomationDefinition,
 } from "@swizzle/runtime";
-import type {
-  AutomationDeletePreviewResponse,
-  DeleteAutomationResponse as DeleteAutomationResult,
-  DeploymentsResponse,
-  MoveAutomationResponse as MoveAutomationResult,
-  DeploymentResponse as RollbackResult,
-} from "@swizzle/runtime/http-contract";
 
 import type { Command } from "commander";
 
-import { apiRequest, DEFAULT_API_URL } from "./api.js";
+import { apiRequest, DEFAULT_API_URL, whenFound } from "./api.js";
+import { deleteAutomationResponse, responses } from "./api-responses.js";
 import {
   packAutomationOrThrow,
   postDeployment,
@@ -251,8 +245,9 @@ function registerDeployments(program: Command, io: CliIO, runHandler: RunHandler
         environment: await resolveCommandEnvironment(inputOptions),
       };
       const resolved = await resolveAutomationNameOrDie(automationName, options);
-      const response = await apiRequest<DeploymentsResponse>(
+      const response = await apiRequest(
         buildApiUrl(`/automations/${resolved.slug}/deployments`, options),
+        responses.deployments,
       );
       const deployments = response.deployments.map((deployment) => ({
         seq: deployment.seq,
@@ -305,8 +300,9 @@ function registerRollback(program: Command, io: CliIO, runHandler: RunHandler): 
           deployment,
           options,
         );
-        const result = await apiRequest<RollbackResult>(
+        const result = await apiRequest(
           buildApiUrl(`/automations/${resolved.slug}/rollback`, options),
+          responses.deployment,
           {
             body: JSON.stringify({ targetDeploymentId }),
             headers: { "content-type": "application/json" },
@@ -351,8 +347,9 @@ function registerDelete(program: Command, io: CliIO, runHandler: RunHandler): vo
         const resolved = await resolveAutomationNameOrDie(automationName, options, {
           destructive: true,
         });
-        const impact = await apiRequest<AutomationDeletePreviewResponse>(
+        const impact = await apiRequest(
           buildApiUrl(`/automations/${resolved.slug}/delete-preview`, options),
+          responses.automationDeletePreview,
         ).catch((error: unknown) => {
           if (error instanceof AgentError && error.code === "AUTOMATION_NOT_FOUND") return null;
           if (error instanceof AgentError && error.details?.httpStatus === 404) {
@@ -387,9 +384,10 @@ function registerDelete(program: Command, io: CliIO, runHandler: RunHandler): vo
         const result =
           impact === null
             ? undefined
-            : await apiRequest<DeleteAutomationResult | undefined>(
+            : await apiRequest(
                 buildApiUrl(`/automations/${resolved.slug}`, options),
-                { acceptNotFound: true, method: "DELETE" },
+                whenFound(deleteAutomationResponse),
+                { method: "DELETE" },
               );
         if (result === undefined) {
           respond(io, {
@@ -439,8 +437,9 @@ function registerMove(program: Command, io: CliIO, runHandler: RunHandler): void
         const resolved = await resolveAutomationNameOrDie(automationName, options, {
           destructive: true,
         });
-        const result = await apiRequest<MoveAutomationResult>(
+        const result = await apiRequest(
           buildApiUrl(`/automations/${resolved.slug}/project`, options),
+          responses.moveAutomation,
           {
             body: JSON.stringify({ project: options.project }),
             headers: { "content-type": "application/json" },
@@ -476,8 +475,9 @@ async function resolveDeploymentTargetId(
     return target;
   }
 
-  const response = await apiRequest<DeploymentsResponse>(
+  const response = await apiRequest(
     buildApiUrl(`/automations/${automationSlug}/deployments`, options),
+    responses.deployments,
   );
   const deployment = response.deployments.find((entry) => entry.seq === seq);
   if (!deployment) {

@@ -605,3 +605,51 @@ describe("docker-broker", () => {
     },
   );
 });
+
+it("rejects an oversized header before routing", async () => {
+  const { url, received } = await startBroker();
+  const request = (value: string) =>
+    rawExchange(
+      url,
+      `GET /v1.56/unknown HTTP/1.1\r\nHost: docker\r\nConnection: close\r\nX-Fixture: ${value}\r\n\r\n`,
+    );
+
+  expect(await request("small")).toMatch(/^HTTP\/1\.1 403 /u);
+  expect(await request("x".repeat(1_048_577))).toMatch(/^HTTP\/1\.1 431 /u);
+  expect(received).toEqual([]);
+});
+
+it("rejects an oversized create body before sending it to Docker", async () => {
+  const { url, received } = await startBroker();
+  const body = JSON.stringify(requests.sandbox);
+  const create = (size: number) =>
+    fetch(`${url}/v1.56/containers/create`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: body.padEnd(size, " "),
+    });
+
+  expect((await create(1_048_576)).status).toBe(201);
+  const excess = await create(1_048_577);
+  expect(excess.status).toBe(403);
+  expect(await excess.json()).toEqual({
+    message: "docker-broker refused the call: the create body is too large",
+  });
+  expect(received.map(({ method, url }) => `${method} ${url}`)).toEqual([
+    "POST /v1.56/containers/create",
+  ]);
+});
+
+it("rejects an oversized framed attach body before switching to a raw stream", async () => {
+  const { url, received } = await startBroker();
+  const size = 1_048_577;
+  const response = await rawExchange(
+    url,
+    `POST /v1.56/containers/swizzle-run-1/attach?stream=1 HTTP/1.1\r\nHost: docker\r\nConnection: Upgrade\r\nUpgrade: tcp\r\nContent-Length: ${size}\r\n\r\n${" ".repeat(size)}`,
+  );
+
+  expect(response).toMatch(/^HTTP\/1\.1 400 /u);
+  expect(received.map(({ method, url }) => `${method} ${url}`)).toEqual([
+    "GET /containers/swizzle-run-1/json",
+  ]);
+});

@@ -1,13 +1,10 @@
 import type { InstanceRole, ProjectRole } from "@swizzle/db";
 import { INSTANCE_ROLES, PROJECT_ROLES } from "@swizzle/db";
-import type {
-  PeopleResponse,
-  ResetLinkResponse,
-  SentInvitationResponse,
-} from "@swizzle/runtime/http-contract";
+import type { PeopleResponse } from "@swizzle/runtime/http-contract";
 import { type Command, InvalidArgumentError, Option } from "commander";
 
 import { apiRequest } from "./api.js";
+import { responses } from "./api-responses.js";
 import {
   type ApiCommandOptions,
   addFieldsOption,
@@ -23,7 +20,7 @@ type Person = PeopleResponse["users"][number];
 const segment = encodeURIComponent;
 
 export async function listPeople(options: ApiCommandOptions): Promise<readonly Person[]> {
-  return (await apiRequest<PeopleResponse>(url("/users", options))).users;
+  return (await apiRequest(url("/users", options), responses.people)).users;
 }
 
 async function findPerson(reference: string, options: ApiCommandOptions): Promise<Person> {
@@ -119,7 +116,7 @@ export function registerPeople(program: Command, io: CliIO, runHandler: RunHandl
       },
     ) => {
       await runHandler(async () => {
-        const sent = await apiRequest<SentInvitationResponse>(url("/invitations", options), {
+        const sent = await apiRequest(url("/invitations", options), responses.sentInvitation, {
           body: JSON.stringify({
             email: email.trim(),
             projects: options.project,
@@ -159,8 +156,9 @@ export function registerPeople(program: Command, io: CliIO, runHandler: RunHandl
   resetLink.action(async (reference: string, options: ApiCommandOptions) => {
     await runHandler(async () => {
       const person = await findPerson(reference.trim(), options);
-      const link = await apiRequest<ResetLinkResponse>(
+      const link = await apiRequest(
         url(`/users/${segment(person.id)}/reset-link`, options),
+        responses.resetLink,
         { method: "POST" },
       );
       respond(io, {

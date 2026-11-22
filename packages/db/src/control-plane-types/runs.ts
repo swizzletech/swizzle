@@ -161,6 +161,7 @@ export interface StoredRun {
   readonly chainOriginRunId: string | null;
   readonly chainSourceRunIds: readonly string[];
   readonly correlationId: string | null;
+  readonly cancelledWaitStepKey: string | null;
   readonly deadLetterReason: string | null;
   readonly deploymentId: string;
   readonly environment: string;

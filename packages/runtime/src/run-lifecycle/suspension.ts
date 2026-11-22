@@ -1,6 +1,6 @@
 import { createDisplayName } from "@swizzle/core";
 import type { AssigneeRequest, ControlPlaneStore, RunWait } from "@swizzle/db";
-import { CodedError, isFinishedRun, PARENT_CANCELLED } from "@swizzle/db";
+import { CodedError, isFinishedRun, runState } from "@swizzle/db";
 import {
   AutomationRuntimeError,
   type AutomationRuntimeErrorCode,
@@ -358,14 +358,10 @@ async function prepareChildSuspension(
         }
         const parentAfterChild = await getRunOrThrow(input.store, input.run.runId);
         if (isFinishedRun(parentAfterChild.status) && !isFinishedRun(childRun.status)) {
-          await input.store.updateRunState({
-            deadLetterReason: PARENT_CANCELLED,
-            errorClassification: "terminal",
-            errorCode: "RUN_CANCELLED",
-            errorMessage: "Parent run was cancelled while the child run was being created.",
+          await input.store.cancelRun({
+            cause: runState(parentAfterChild) === "cancelled" ? "parent" : "parent-finished",
             finishedAt: new Date().toISOString(),
             runId: childRun.runId,
-            status: "dead-lettered",
           });
         }
       } catch (error) {

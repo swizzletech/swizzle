@@ -1,7 +1,7 @@
-import type { SecurityAuditResponse } from "@swizzle/runtime/http-contract";
 import type { Command } from "commander";
 
 import { apiRequest } from "./api.js";
+import { responses } from "./api-responses.js";
 import {
   type ApiCommandOptions,
   buildApiUrl,
@@ -29,8 +29,9 @@ export function registerSecurityCommand(program: Command, io: CliIO, runHandler:
   audit.action(async (options: ApiCommandOptions & { readonly all?: boolean }) => {
     await runHandler(async () => {
       const { all, environment: _environment, ...target } = options;
-      const report = await apiRequest<SecurityAuditResponse>(
+      const report = await apiRequest(
         buildApiUrl("/security/audit", target),
+        responses.securityAudit,
         {
           method: "POST",
         },

@@ -78,6 +78,8 @@ describe("swizzle logs --full", () => {
           automationSlug: "log-probe",
           environment: "staging",
           status: "failed",
+          state: "failed",
+          placement: null,
           attemptsMade: 1,
           attemptsMax: 1,
           executions: [],

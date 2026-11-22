@@ -26,10 +26,12 @@ interface FoundCommand {
   readonly source: CommandSource;
 }
 
+type Baseline = { readonly text: string } | { readonly reason: string };
+
 export interface Repo {
   readonly files: readonly string[];
   read(file: string): string;
-  readBaseline?(file: string): string | undefined;
+  readBaseline?(file: string): Baseline;
   exists(target: string): boolean;
   recipes(): readonly Recipe[];
   commands(): readonly FoundCommand[];
@@ -102,7 +104,7 @@ export function gitRepo(root: string): Repo {
   return { ...readRepo(root, files), readBaseline: (file) => readBaseline(root, file) };
 }
 
-function readBaseline(root: string, file: string): string | undefined {
+function readBaseline(root: string, file: string): Baseline {
   const git = (args: string[]): string | undefined => {
     try {
       return execFileSync("git", args, {
@@ -114,12 +116,33 @@ function readBaseline(root: string, file: string): string | undefined {
       return undefined;
     }
   };
+  const pushBase = process.env.SWIZZLE_COMMENT_BUDGET_BASE;
+  if (pushBase && !/^[a-f0-9]{40}$/u.test(pushBase))
+    return {
+      reason: "The comment budget push base is invalid. Provide the previous main commit SHA.",
+    };
+  if (pushBase === "0".repeat(40))
+    return {
+      reason:
+        "This push creates main and has no previous commit for the comment budget. Push changes to an existing main branch with a committed budget.",
+    };
+  if (pushBase && git(["cat-file", "-e", `${pushBase}^{commit}`]) === undefined)
+    return {
+      reason: `The previous main commit ${pushBase} from this push is unavailable. Restore the prior tip before pushing again, or ask a maintainer how to proceed after a force push.`,
+    };
+
+  const missing = {
+    reason: pushBase
+      ? `No committed comment budget was found using the previous main commit ${pushBase}. Restore the budget on main before pushing again.`
+      : "CI requires a committed comment budget baseline. Fetch the history of main.",
+  };
   const base =
-    git(["merge-base", "HEAD", "refs/heads/main"])?.trim() ??
-    git(["merge-base", "HEAD", "refs/remotes/origin/main"])?.trim();
-  if (!base) return undefined;
+    pushBase ||
+    (git(["merge-base", "HEAD", "refs/heads/main"])?.trim() ??
+      git(["merge-base", "HEAD", "refs/remotes/origin/main"])?.trim());
+  if (!base) return missing;
   const baseline = git(["show", `${base}:${file}`]);
-  if (baseline !== undefined) return baseline;
+  if (baseline !== undefined) return { text: baseline };
   const [introduced] =
     git([
       "log",
@@ -132,5 +155,6 @@ function readBaseline(root: string, file: string): string | undefined {
       "--",
       file,
     ])?.split("\n") ?? [];
-  return introduced ? git(["show", `${introduced}:${file}`]) : undefined;
+  const firstBudget = introduced ? git(["show", `${introduced}:${file}`]) : undefined;
+  return firstBudget === undefined ? missing : { text: firstBudget };
 }

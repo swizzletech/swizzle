@@ -73,3 +73,19 @@ test("Failed leaves a cancelled run out and All keeps it, labelled", async ({ pa
   await page.getByRole("tab", { name: "All" }).click();
   await expect(page.getByTestId("run-list-pane")).toContainText("Cancelled");
 });
+
+test("Overview opens Failed with its recorded cutoff and top-level scope", async ({ page }) => {
+  const state = seededState();
+  const from = "2026-11-20T20:00:00.000Z";
+  state.overview = { ...state.overview, last24hFrom: from };
+  await mockDashboardApi(page, state);
+  await page.goto("/");
+  const request = page.waitForRequest((request) =>
+    new URL(request.url()).pathname.endsWith("/dashboard/runs"),
+  );
+  await page.getByRole("link", { name: "Show failed runs" }).click();
+  const query = new URL((await request).url()).searchParams;
+  expect(query.get("state")).toBe("failed,dead-lettered");
+  expect(query.get("queuedSince")).toBe(from);
+  expect(query.get("topLevelOnly")).toBe("true");
+});

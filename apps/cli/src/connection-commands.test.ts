@@ -21,7 +21,17 @@ async function authorizeAndOpen(authorizationUrl: string) {
   vi.stubGlobal("fetch", async () =>
     Response.json({
       authorizationUrl,
-      connection: { name: "example", project: { slug: "default" }, status: "pending" },
+      expiresAt: "2027-01-23T00:00:00Z",
+      redirectUri: "https://example.com/oauth/callback/google",
+      connection: {
+        name: "example",
+        project: { slug: "default" },
+        provider: "google",
+        environment: "staging",
+        status: "pending",
+        authorizationPending: true,
+        lastErrorCode: null,
+      },
     }),
   );
   const stderr: string[] = [];

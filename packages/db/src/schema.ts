@@ -499,6 +499,7 @@ export const runs = pgTable(
     webhookContext: jsonb("webhook_context"),
     result: jsonb("result"),
     wait: jsonb("wait").$type<RunWait>(),
+    cancelledWaitStepKey: varchar("cancelled_wait_step_key", { length: 255 }),
     parentRunId: uuid("parent_run_id").references((): AnyPgColumn => runs.id, {
       onDelete: "set null",
     }),

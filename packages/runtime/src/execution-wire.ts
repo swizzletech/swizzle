@@ -31,7 +31,7 @@ export interface ExecutionChannel {
   source(): Promise<ExecutionSource>;
   start(): Promise<ExecutionSecrets>;
   ready(): Promise<void>;
-  output(stream: "stdout" | "stderr", chunk: string): Promise<void>;
+  output(stream: "stdout" | "stderr", chunk: string, signal?: AbortSignal): Promise<void>;
 }
 const reportExecution = (result: AutomationRunResult): ExecutionReport => ({
   exitCode: result.exitCode,
@@ -208,8 +208,10 @@ export async function executeAssignment(input: {
                   policyEnvironment: input.environment,
                   abortSignal: input.signal,
                   onReady: () => input.channel.ready(),
-                  onStdoutChunk: (chunk) => input.channel.output("stdout", chunk),
-                  onStderrChunk: (chunk) => input.channel.output("stderr", chunk),
+                  onStdoutChunk: (chunk, delivery) =>
+                    input.channel.output("stdout", chunk, delivery),
+                  onStderrChunk: (chunk, delivery) =>
+                    input.channel.output("stderr", chunk, delivery),
                 };
                 return reportExecution(await input.executor[input.assignment.script](options));
               },

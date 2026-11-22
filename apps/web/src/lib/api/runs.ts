@@ -81,6 +81,7 @@ export function runsCalls(environment: string) {
       readonly environment?: string;
       readonly limit?: number;
       readonly parentRunId?: string;
+      readonly queuedSince?: string;
       readonly states?: readonly RunState[];
       readonly topLevelOnly?: boolean;
       readonly triggerType?: TriggerType;
@@ -107,6 +108,9 @@ export function runsCalls(environment: string) {
       }
       if (filters.parentRunId) {
         query.set("parentRunId", filters.parentRunId);
+      }
+      if (filters.queuedSince !== undefined) {
+        query.set("queuedSince", filters.queuedSince);
       }
       if (filters.topLevelOnly !== undefined) {
         query.set("topLevelOnly", String(filters.topLevelOnly));

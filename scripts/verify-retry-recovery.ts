@@ -5,6 +5,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { isFinishedRun } from "@swizzle/db";
 import { createQueueNameForProfile } from "@swizzle/runtime";
 import type { PlatformServices } from "@swizzle/runtime/platform";
 import { Queue } from "bullmq";
@@ -12,6 +13,7 @@ import { Queue } from "bullmq";
 export async function verifyRetryRecovery(
   platform: PlatformServices,
   profile: string,
+  signal: AbortSignal,
 ): Promise<void> {
   const url = new URL(process.env.VALKEY_URL ?? "redis://localhost:6379");
   const queue = new Queue(createQueueNameForProfile(profile), {
@@ -84,11 +86,10 @@ export async function verifyRetryRecovery(
         runId,
       });
       if (resumed) {
-        await waitForStatus(platform, runId, "waiting");
+        await waitForStatus(platform, runId, "waiting", signal);
         await platform.resumeDueWaitingRuns({ environment: "local" });
       }
       const jobId = resumed ? `${runId}--s1` : runId;
-      const deadline = Date.now() + 10_000;
       for (;;) {
         const run = await platform.getPlatformRun(runId);
         const job = await queue.getJob(jobId);
@@ -107,7 +108,10 @@ export async function verifyRetryRecovery(
           await job.remove();
           break;
         }
-        assert.ok(Date.now() < deadline, `Did not find queued retry for ${name}`);
+        assert.ok(
+          !signal.aborted && !isFinishedRun(run.status),
+          `Expected a queued retry for ${name}, got run ${run.status} and job ${state}.`,
+        );
         await new Promise((resolve) => setTimeout(resolve, 20));
       }
       const recovery = await platform.reconcileQueuedRuns({ environment: "local" });
@@ -119,8 +123,7 @@ export async function verifyRetryRecovery(
       assert.equal(recoveredJob?.attemptsMade, 0);
       assert.equal(recoveredJob?.opts.attempts, 2);
       await queue.resume();
-      await waitForStatus(platform, runId, "dead-lettered");
-      const terminal = await platform.getPlatformRun(runId);
+      const terminal = await waitForStatus(platform, runId, "dead-lettered", signal);
       assert.equal(terminal.attemptsMade, 3);
       assert.deepEqual(
         terminal.executions.map((execution) => execution.status),
@@ -161,13 +164,13 @@ async function waitForStatus(
   platform: PlatformServices,
   runId: string,
   status: "waiting" | "dead-lettered",
-): Promise<void> {
-  const deadline = Date.now() + 10_000;
+  signal: AbortSignal,
+) {
   for (;;) {
     const run = await platform.getPlatformRun(runId);
-    if (run.status === status) return;
+    if (run.status === status) return run;
     assert.ok(
-      Date.now() < deadline,
+      !signal.aborted && !isFinishedRun(run.status),
       `Expected ${status}, got ${run.status}: ${run.executions.map((execution) => execution.status)}`,
     );
     await new Promise((resolve) => setTimeout(resolve, 50));

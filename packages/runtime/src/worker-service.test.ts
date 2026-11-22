@@ -26,6 +26,7 @@ interface Faults {
   readonly refusedRenewal?: boolean;
   readonly renewalStatusAfterStart?: number;
   readonly outputStatus?: number;
+  readonly stalledOutput?: boolean;
   readonly hostSlept?: boolean;
   readonly onAssignment?: () => void;
 }
@@ -45,6 +46,10 @@ async function api(script: string, faults: Faults = {}, expiresAt = lease.expire
   let started = false;
   let accepted = false;
   const outputs: string[] = [];
+  let disconnectOutput = () => {};
+  const outputDisconnected = new Promise<void>((resolve) => {
+    disconnectOutput = resolve;
+  });
   const reports: string[] = [];
   let finishTest = () => {};
   const testFinished = new Promise<void>((resolve) => {
@@ -129,6 +134,10 @@ async function api(script: string, faults: Faults = {}, expiresAt = lease.expire
     }
     if (req.url === "/worker/output") {
       outputs.push(raw);
+      if (faults.stalledOutput) {
+        res.once("close", disconnectOutput);
+        return;
+      }
       if (faults.outputStatus !== undefined) res.statusCode = faults.outputStatus;
       else if (outputs.length === 1) res.statusCode = 503;
     }
@@ -188,6 +197,7 @@ async function api(script: string, faults: Faults = {}, expiresAt = lease.expire
   onTestFinished(() => worker.close());
   return {
     outputs,
+    outputDisconnected,
     reports,
     tokenProbe,
     executionHeld,
@@ -266,6 +276,16 @@ it("loses the lease when the server refuses a renewal during the run", async () 
   });
   expect((await client.failure).message).toBe("Execution lease was lost.");
   expect(client.reports).toEqual([]);
+});
+
+it("cancels a stalled output request and reports the execution after exit", async ({ signal }) => {
+  const client = await api("console.log('{}')", { stalledOutput: true });
+  await waitFor(signal, client.accepted);
+  await client.outputDisconnected;
+  expect(client.outputs).toHaveLength(1);
+  expect(JSON.parse(client.reports[1] ?? "{}").report).toMatchObject({
+    failure: { code: "UNEXPECTED_RUNTIME_ERROR", message: "Execution output delivery timed out." },
+  });
 });
 
 it("reports a refused output as its request failure, not as a lost lease", async () => {

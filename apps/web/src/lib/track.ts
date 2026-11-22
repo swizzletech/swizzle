@@ -31,7 +31,7 @@ export type StationState =
   | "cancelled"
   | "untaken";
 
-export type LaneState = "idle" | "done" | "active" | "untaken";
+export type LaneState = "idle" | "done" | "active" | "failed" | "untaken";
 
 export interface TrackNode {
   readonly id: string;
@@ -56,7 +56,13 @@ export interface TrackGraph {
   readonly edges: readonly TrackEdge[];
 }
 
+interface CancelledWait {
+  readonly stepKey: string;
+  readonly at: number;
+}
+
 export interface RunPosition {
+  readonly cancelledWait?: CancelledWait;
   readonly steps: ReadonlyMap<string, TrackStep>;
   readonly waiting: WaitingStep | null;
 }
@@ -103,8 +109,13 @@ export function runPass(position: RunPosition, families: ReadonlySet<string>): I
     if (last === null || at >= last.at) last = { at, item };
     if (step.finishedAt === null && (open === null || at >= open.at)) open = { at, item };
   }
+  const cancelledWait = position.cancelledWait;
+  const cancelled = cancelledWait === undefined ? null : itemOf(cancelledWait.stepKey);
+  if (cancelled !== null && cancelledWait !== undefined && !firstStart.has(cancelled)) {
+    firstStart.set(cancelled, cancelledWait.at);
+  }
   const waited = position.waiting === null ? null : itemOf(position.waiting.stepKey);
-  const item = waited ?? open?.item ?? last?.item ?? null;
+  const item = cancelled ?? waited ?? open?.item ?? last?.item ?? null;
   if (item === null) return null;
   const order = [...firstStart].sort((a, b) => a[1] - b[1]).map(([id]) => id);
   return { index: order.indexOf(item) + 1, item, of: null };
@@ -126,15 +137,7 @@ export function trackForRun(
   for (const node of flow.nodes) {
     states.set(
       node.id,
-      stationFor(
-        node,
-        run.state,
-        byFamily.get(node.id) ?? [],
-        position.waiting,
-        families,
-        startOf,
-        shown,
-      ),
+      stationFor(node, run.state, byFamily.get(node.id) ?? [], position, families, startOf, shown),
     );
   }
   const started = run.startedAt !== null;
@@ -286,13 +289,13 @@ function stationFor(
   node: FlowNode,
   runState: RunState,
   steps: readonly TrackStep[],
-  runWaiting: WaitingStep | null,
+  position: RunPosition,
   families: ReadonlySet<string>,
   startOf: (step: TrackStep) => number | null,
   pass: ItemPass | null,
 ): TrackNode {
-  const waitingHere = runWaiting !== null && stepFamily(runWaiting.stepKey) === node.id;
-  const waiting = waitingHere ? runWaiting : null;
+  const waiting = position.waiting;
+  const cancelledWait = position.cancelledWait;
   const key = node.id;
   const base = {
     at: null,
@@ -303,8 +306,28 @@ function stationFor(
     shape: node.shape,
     state: "idle" as const,
   };
-  const waitedStep = steps.find((step) => step.stepKey === waiting?.stepKey);
-  if (waiting !== null && (waitedStep === undefined || waitedStep.finishedAt === null)) {
+  if (
+    runState === "cancelled" &&
+    cancelledWait !== undefined &&
+    stepFamily(cancelledWait.stepKey) === key
+  ) {
+    const item =
+      pass !== null && stepItem(cancelledWait.stepKey) === pass.item
+        ? `${itemInWords(pass)} · ${pass.item}`
+        : null;
+    return {
+      ...base,
+      at: cancelledWait.at,
+      key,
+      meta: item === null ? "cancelled" : `cancelled at ${item}`,
+      state: "cancelled",
+    };
+  }
+  if (
+    waiting !== null &&
+    stepFamily(waiting.stepKey) === key &&
+    !steps.some((step) => step.stepKey === waiting.stepKey && step.finishedAt !== null)
+  ) {
     return { ...base, key, meta: waitingInWords(waiting), state: "waiting" };
   }
   if (steps.length === 0) return base;
@@ -373,7 +396,7 @@ function lanesFor(
     if (from === "done" && siblings.some((other) => reachedAt(other) < reachedAt(edge))) {
       state = "untaken";
     } else if (from === "done" && REACHED.has(to) && (!branch || evidenceAt.get(edge) !== null)) {
-      state = to === "done" ? "done" : "active";
+      state = laneInto(to);
     } else if (
       from === "done" &&
       to === "idle" &&
@@ -383,6 +406,18 @@ function lanesFor(
     }
     return { dashed: false, from: edge.from, label: edge.label, state, to: edge.to };
   });
+}
+
+function laneInto(station: StationState): LaneState {
+  switch (station) {
+    case "done":
+    case "cancelled":
+      return "done";
+    case "failed":
+      return "failed";
+    default:
+      return "active";
+  }
 }
 
 export function staticTrack(
@@ -455,7 +490,7 @@ const WAIT_KINDS = new Set<StepSite["kind"]>(["sleep", "child", "event", "approv
 type RealSpan = Omit<ReplaySpan, "playFrom" | "playTo"> & { readonly started: number };
 
 export function buildReplay(
-  run: Pick<RunDetail, "startedAt" | "finishedAt" | "status">,
+  run: Pick<RunDetail, "cancelledWaitStepKey" | "startedAt" | "finishedAt" | "status">,
   steps: readonly TrackStep[],
   sites: readonly StepSite[],
 ): Replay {
@@ -498,7 +533,7 @@ export function buildReplay(
   const length = playCursor + Math.min(tail, GAP_PLAY_MS);
   return {
     compressed,
-    didNoStep: steps.length === 0,
+    didNoStep: steps.length === 0 && run.cancelledWaitStepKey == null,
     items: [...new Set(ordered.flatMap((span) => (span.item === null ? [] : [span.item])))],
     length: spans.length === 0 ? Math.max(length, EMPTY_PLAY_MS) : length,
     spans,

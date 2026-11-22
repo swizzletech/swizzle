@@ -3,10 +3,9 @@ import {
   CodedError,
   type ControlPlaneStore,
   deploymentChanges,
-  isFinishedRun,
-  isOpenRun,
   placementInWords,
   type RunPlacement,
+  runState,
   type StoredRun,
 } from "@swizzle/db";
 import { enqueueDueChecks } from "./api-checks.js";
@@ -108,22 +107,18 @@ export function createPlatformServiceFacade(
 ): PlatformServices {
   const { queue, store } = options;
   const cancelRunRecursively = async (runId: string, depth = 0): Promise<CancelRunResult> => {
-    const run = await getRunOrThrow(store, runId);
-    if (isFinishedRun(run.status)) {
-      return { alreadyTerminal: true, run };
-    }
-
-    if (depth < 8) {
+    const result = await store.cancelRun({
+      cause: depth === 0 ? "user" : "parent",
+      runId,
+      finishedAt: new Date().toISOString(),
+    });
+    if (!result.alreadyTerminal) await options.onRunCancelled?.(runId);
+    if (depth < 8 && runState(result.run) === "cancelled") {
       const children = await store.listChildRuns({ parentRunId: runId });
       for (const child of children) {
-        if (isOpenRun(child.status)) {
-          await cancelRunRecursively(child.runId, depth + 1);
-        }
+        await cancelRunRecursively(child.runId, depth + 1);
       }
     }
-
-    const result = await store.cancelRun({ runId, finishedAt: new Date().toISOString() });
-    if (!result.alreadyTerminal) await options.onRunCancelled?.(runId);
     return result;
   };
 
@@ -360,22 +355,6 @@ export function createPlatformServiceFacade(
     getAutomationDeployment: async (automationName, environment) => {
       const deployment = await getDeploymentOrThrow(store, automationName, environment);
 
-      const workers = await options.listReadinessWorkers({
-        config: deployment.config,
-        projectId: deployment.projectId,
-        environment: deployment.environment,
-      });
-      return await enrichDeploymentRecord(store, deployment, workers);
-    },
-
-    getDeploymentById: async (deploymentId) => {
-      const deployment = await store.getDeploymentById(deploymentId);
-      if (deployment === null) {
-        throw new AutomationRuntimeError(
-          "DEPLOYMENT_NOT_FOUND",
-          `Deployment not found: ${deploymentId}`,
-        );
-      }
       const workers = await options.listReadinessWorkers({
         config: deployment.config,
         projectId: deployment.projectId,

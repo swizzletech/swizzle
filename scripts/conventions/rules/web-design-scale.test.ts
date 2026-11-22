@@ -177,3 +177,65 @@ it("web-design-scale reports a Tailwind arbitrary font size with a length hint",
     }),
   ).toEqual(["apps/web/src/page.tsx:1", "apps/web/src/page.tsx:2", "apps/web/src/page.tsx:3"]);
 });
+
+it("web-design-scale only measures the font size in Tailwind tokens and font shorthands", async () => {
+  expect(
+    await reported("web-design-scale", {
+      "apps/web/design-scale.json": DESIGN_SCALE,
+      "apps/web/src/page.css": [
+        "@theme { --text-sm: 14px; --text-sm--line-height: 19px; }",
+        ':root { --line: 19px; --family: "Example 7px"; }',
+        "p { font: 500 16px / var(--line) var(--family); }",
+        'i { font: 90% / 16px "Example 7px"; }',
+        'b { font: 16px "Example 7px"; }',
+        'em { font: 400 var(--text-sm) / 19px "Example 7px"; }',
+        'strong { font: oblique 15deg 16px "Example 7px"; }',
+      ].join("\n"),
+    }),
+  ).toEqual(["apps/web/src/page.css:4"]);
+});
+
+it("web-design-scale checks Tailwind math and custom property fallbacks", async () => {
+  expect(
+    await reported("web-design-scale", {
+      "apps/web/design-scale.json": DESIGN_SCALE,
+      "apps/web/src/page.tsx": [
+        '<i className="p-[var(--g,7px)]" />',
+        '<i className="text-[length:calc(7px+2px)]" />',
+        '<i className="text-[color:var(--ink,#123456)] p-[var(--g,8px)]" />',
+      ].join("\n"),
+    }),
+  ).toEqual(["apps/web/src/page.tsx:1", "apps/web/src/page.tsx:2"]);
+});
+
+it("web-design-scale checks logical and scroll spacing utilities", async () => {
+  expect(
+    await reported("web-design-scale", {
+      "apps/web/design-scale.json": DESIGN_SCALE,
+      "apps/web/src/page.tsx": [
+        '<i className="ps-[7px]" />',
+        '<i className="pe-[7px]" />',
+        '<i className="ms-[7px]" />',
+        '<i className="me-[7px]" />',
+        '<i className="scroll-m-[7px]" />',
+        '<i className="scroll-p-[7px]" />',
+        '<i className="hover:-scroll-ms-[7px]!" />',
+        '<i className="scroll-pe-[var(--g,7px)]" />',
+        '<i className="ps-3.5" />',
+        '<i className="scroll-py-3.5" />',
+        '<i className="ps-[8px] -ms-[8px] scroll-mt-[8px] scroll-ps-2" />',
+      ].join("\n"),
+    }),
+  ).toEqual([
+    "apps/web/src/page.tsx:1",
+    "apps/web/src/page.tsx:10",
+    "apps/web/src/page.tsx:2",
+    "apps/web/src/page.tsx:3",
+    "apps/web/src/page.tsx:4",
+    "apps/web/src/page.tsx:5",
+    "apps/web/src/page.tsx:6",
+    "apps/web/src/page.tsx:7",
+    "apps/web/src/page.tsx:8",
+    "apps/web/src/page.tsx:9",
+  ]);
+});

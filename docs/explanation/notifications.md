@@ -7,7 +7,7 @@ Notification rules send Telegram alerts when an automation dead-letters a run. T
 A rule ([`notificationRules`](../../packages/db/src/schema.ts)) names its person, a project, an environment, a Telegram chat, one of two events and, optionally, an automation of that project. A rule without an automation covers every automation of its project in the environment, including ones deployed later. The dashboard's Settings switch "Message me on Telegram when a run finally fails" is such a rule for `dead-lettered` in the `default` project.
 
 - `dead-lettered` fires for every run that ends dead-lettered.
-- `repeated-failures` fires when the number of dead-lettered failures in a time window reaches a threshold. Runs cancelled by a user or because their parent was cancelled do not count.
+- `repeated-failures` fires when the number of dead-lettered failures in a time window reaches a threshold. Cancelled runs do not count, including children cancelled because their parent finished.
 
 Each rule also has a cooldown. Manage rules with `swizzle notify` or the dashboard ([`notification-routes.ts`](../../apps/api/src/notification-routes.ts)). Creating a rule needs read access to the automation or project it names, and a person: a session or an agent token. A service account has no person, so it makes no rules. Each person lists, changes and deletes only their own rules; another person's rule answers `404`. The bot token is the platform secret `SWIZZLE_TELEGRAM_BOT_TOKEN` ([`TELEGRAM_BOT_TOKEN_SECRET`](../../packages/runtime/src/notifications.ts)) of the environment, stored write-only like every other secret.
 

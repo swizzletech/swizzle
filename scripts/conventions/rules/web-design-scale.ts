@@ -1,4 +1,5 @@
 import { CssSyntaxError, parse, type Root } from "postcss";
+import valueParser from "postcss-value-parser";
 import type { Rule, Violation } from "../lint.js";
 import type { Repo } from "../repo.js";
 
@@ -19,11 +20,6 @@ interface Declaration {
   readonly line: number;
   readonly property: string;
   readonly value: string;
-}
-
-interface Measure {
-  readonly kind: Kind;
-  readonly shorthand: boolean;
 }
 
 type Tokens = ReadonlyMap<string, readonly Declaration[]>;
@@ -50,24 +46,27 @@ const RADII: Readonly<Record<string, number>> = {
   xs: 2,
 };
 
-const SPACING_UTILITY = "(?:p[xytrbl]?|m[xytrbl]?|gap(?:-[xy])?|space-[xy])";
+const SPACING_UTILITY = "(?:(?:scroll-)?[mp][xytrblse]?|gap(?:-[xy])?|space-[xy])";
 const CLASS_START = "(?<![\\w-])-?";
 const SIZE_HINT = "(?:length|size|percentage|absolute-size|relative-size):";
 const ARBITRARY = new RegExp(
-  `${CLASS_START}(text|rounded(?:-[a-z]+)?|${SPACING_UTILITY})-\\[(?:${SIZE_HINT})?(-?[\\d.]+)(px|em|rem|%)?\\]`,
+  `${CLASS_START}(text|rounded(?:-[a-z]+)?|${SPACING_UTILITY})-(?:\\[([^\\]\\s]+)\\]|\\(((?:${SIZE_HINT})?--[\\w-]+)\\))`,
   "gu",
 );
 const NUMERIC = new RegExp(
   `${CLASS_START}(${SPACING_UTILITY})-(\\d+(?:\\.\\d+)?)(?![\\w.-])`,
   "gu",
 );
-const TOKEN_CLASS = new RegExp(
-  `${CLASS_START}(text(?=-[\\[(]${SIZE_HINT})|rounded(?:-[a-z]+)?|${SPACING_UTILITY})-[\\[(](?:${SIZE_HINT})?(?:var\\()?(--[\\w-]+)`,
-  "gu",
-);
+const HINT = new RegExp(`^${SIZE_HINT}`, "u");
+const DIMENSION = /^-?(?:\d*\.\d+|\d+)(?:[a-z]+|%)?$/iu;
+const CALC_TERM = /[+-]?(?:\d*\.\d+|\d+)(?:[a-z]+|%)/giu;
+const SIZE_KEYWORD =
+  /^(?:xx-small|x-small|small|medium|large|x-large|xx-large|xxx-large|smaller|larger|math)$/u;
+const ANGLE = /^-?(?:\d*\.\d+|\d+)(?:deg|rad|grad|turn)$/iu;
+const FONT_PREFIX =
+  /^(?:normal|italic|oblique|small-caps|bold|bolder|lighter|(?:ultra-|extra-|semi-)?(?:condensed|expanded)|\d+(?:\.\d+)?(?:%)?)$/u;
 const NAMED_TEXT = /(?<![\w-])text-(xs|sm|base|lg|xl|[2-5]xl)(?![\w-])/gu;
 const NAMED_RADIUS = /(?<![\w-])rounded(?:-(xs|sm|md|lg|xl|2xl|3xl))?(?![\w-])/gu;
-const TOKEN_READ = /var\(\s*(--[\w-]+)/gu;
 
 export const webDesignScale: Rule = {
   id: "web-design-scale",
@@ -80,8 +79,10 @@ export const webDesignScale: Rule = {
       ...syntaxViolations,
       ...declarations.flatMap((declaration) => {
         const kind = kindOf(declaration.property);
-        const shorthand = declaration.property === "font";
-        return kind === undefined ? [] : measure(declaration, { kind, shorthand }, tokens, scale);
+        if (kind === undefined) return [];
+        const nodes = valueParser(declaration.value).nodes;
+        const size = declaration.property === "font" ? fontSize(nodes) : nodes;
+        return measure(declaration, size, kind, tokens, scale);
       }),
       ...repo.files
         .filter((file) => TSX.test(file))
@@ -107,7 +108,7 @@ function outside(kind: Kind, value: string, file: string, line: number, scale: S
 }
 
 function kindOf(property: string): Kind | undefined {
-  if (property === "font-size" || property === "font" || property.startsWith("--text-")) {
+  if (property === "font-size" || property === "font" || /^--text-(?!.*--)/u.test(property)) {
     return "font size";
   }
   if (property.endsWith("radius") || property.startsWith("--radius-")) return "radius";
@@ -156,42 +157,85 @@ function tokensOf(declarations: readonly Declaration[]): Tokens {
   return tokens;
 }
 
-function lengthsIn(value: string, shorthand: boolean): readonly string[] {
-  const written = value.replace(/var\(\s*--[\w-]+\s*,?/gu, "");
-  const lengths = shorthand
-    ? written.match(/-?\d*\.?\d+(?:px|em|rem)/u)
-    : written.match(/-?\d*\.?\d+(?:px|em|rem|%)?/gu);
-  return lengths ?? [];
+function fontSize(nodes: readonly valueParser.Node[]): valueParser.Node[] {
+  let variable: valueParser.FunctionNode | undefined;
+  const parts = nodes.filter(({ type }) => type !== "space" && type !== "comment");
+  for (const [index, node] of parts.entries()) {
+    const next = parts[index + 1];
+    if (next === undefined || node.type === "string" || node.type === "div") break;
+    if (node.type === "function") {
+      if (node.value === "var") variable = node;
+      else return [node];
+    } else if (node.type === "word") {
+      if (ANGLE.test(node.value)) continue;
+      if (
+        node.value.endsWith("%") &&
+        next.type === "word" &&
+        (SIZE_KEYWORD.test(next.value) || DIMENSION.test(next.value))
+      )
+        continue;
+      if (
+        SIZE_KEYWORD.test(node.value) ||
+        (DIMENSION.test(node.value) && !/^[1-9]\d*(?:\.\d+)?$/u.test(node.value))
+      )
+        return [node];
+      if (!FONT_PREFIX.test(node.value)) break;
+    }
+  }
+  return variable === undefined ? [] : [variable];
 }
 
 function measure(
   declaration: Declaration,
-  as: Measure,
+  nodes: readonly valueParser.Node[],
+  kind: Kind,
   tokens: Tokens,
   scale: Scale,
   followed: ReadonlySet<string> = new Set(),
+  label?: string,
+  inMath = false,
 ): Violation[] {
-  const { file, line, value } = declaration;
-  return [
-    ...lengthsIn(value, as.shorthand)
-      .filter((length) => !onScale(as.kind, length, scale))
-      .map((length) => outside(as.kind, length, file, line, scale)),
-    ...[...value.matchAll(TOKEN_READ)].flatMap(([, name = ""]) =>
-      followed.has(name) ? [] : measureToken(name, as, tokens, scale, followed),
-    ),
-  ];
-}
-
-function measureToken(
-  name: string,
-  as: Measure,
-  tokens: Tokens,
-  scale: Scale,
-  followed: ReadonlySet<string> = new Set(),
-): Violation[] {
-  return (tokens.get(name) ?? []).flatMap((declaration) =>
-    measure(declaration, as, tokens, scale, new Set([...followed, name])),
-  );
+  const { file, line } = declaration;
+  return nodes.flatMap((node) => {
+    if (node.type === "word") {
+      const values = inMath
+        ? (node.value.match(CALC_TERM) ?? [])
+        : DIMENSION.test(node.value)
+          ? [node.value]
+          : [];
+      return values
+        .filter((value) => !onScale(kind, value.replace(/^\+/u, ""), scale))
+        .map((value) => outside(kind, label ?? value, file, line, scale));
+    }
+    if (node.type !== "function") return [];
+    if (node.value === "var") {
+      const name = node.nodes.find((part) => part.type === "word")?.value ?? "";
+      const definitions = followed.has(name) ? [] : (tokens.get(name) ?? []);
+      return [
+        ...measure(declaration, node.nodes, kind, tokens, scale, followed, label),
+        ...definitions.flatMap((definition) =>
+          measure(
+            definition,
+            valueParser(definition.value).nodes,
+            kind,
+            tokens,
+            scale,
+            new Set([...followed, name]),
+          ),
+        ),
+      ];
+    }
+    return measure(
+      declaration,
+      node.nodes,
+      kind,
+      tokens,
+      scale,
+      followed,
+      label,
+      inMath || /^(?:calc|min|max|clamp)$/u.test(node.value),
+    );
+  });
 }
 
 function onScale(kind: Kind, length: string, scale: Scale): boolean {
@@ -212,13 +256,28 @@ function checkClasses(repo: Repo, file: string, tokens: Tokens, scale: Scale): V
       const line = index + 1;
       const report = (kind: Kind, name: string) =>
         violations.push(outside(kind, name, file, line, scale));
-      for (const [name, utility = "", value = "", unit = ""] of text.matchAll(ARBITRARY)) {
-        const kind = utilityKind(utility);
-        if (!onScale(kind, `${value}${unit}`, scale)) report(kind, name);
-      }
-      for (const [, utility = "", token = ""] of text.matchAll(TOKEN_CLASS)) {
-        const as = { kind: utilityKind(utility), shorthand: false };
-        violations.push(...measureToken(token, as, tokens, scale));
+      for (const [name, utility = "", arbitrary, property] of text.matchAll(ARBITRARY)) {
+        const value = arbitrary ?? property ?? "";
+        const hint = HINT.exec(value);
+        const size = value.replace(HINT, "").replaceAll("_", " ");
+        if (
+          utility === "text" &&
+          !hint &&
+          !/^(?:-?(?:[0-9]|\.[0-9])|calc\(|min\(|max\(|clamp\()/u.test(size)
+        )
+          continue;
+        const css = property === undefined ? size : `var(${size})`;
+        violations.push(
+          ...measure(
+            { file, line, value: css, property: utility },
+            valueParser(css).nodes,
+            utilityKind(utility),
+            tokens,
+            scale,
+            undefined,
+            name,
+          ),
+        );
       }
       for (const [name, , steps = ""] of text.matchAll(NUMERIC)) {
         if (!scale.spacing.includes(Number(steps) * 4)) report("spacing", name);

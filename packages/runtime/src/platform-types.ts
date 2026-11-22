@@ -369,7 +369,6 @@ export interface PlatformServices {
     environment: string,
   ): Promise<PlatformDeploymentRecord>;
   getAutomationTrigger(automationName: string, environment: string): Promise<PlatformTriggerRecord>;
-  getDeploymentById(deploymentId: string): Promise<PlatformDeploymentRecord>;
   getLatestMaintenanceRun(environment: string): Promise<PlatformMaintenanceRunRecord | null>;
   getPlatformRun(runId: string): Promise<PlatformRunDetail>;
   listAutomationState(

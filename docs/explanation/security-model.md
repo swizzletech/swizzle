@@ -115,6 +115,8 @@ Deleting a project moves its automations, credentials and runs to another projec
 - `contents=delete` deletes the automations with their runs and the credentials, and revokes each connection at its provider. It refuses while a run is unfinished (`409 AUTOMATION_RUNS_ACTIVE`).
 - Without `contents` only an empty project goes. Otherwise the API answers `409 PROJECT_NOT_EMPTY` with the counts that `GET /projects/:project/contents` also returns.
 
+If the project's set of automations changes during each of the three deletion attempts, the API returns `409 PROJECT_CONTENTS_CHANGED` with `retryable: true`. Retry the same request once the changes settle.
+
 Either way the project's grants, service accounts, folders and protected environments go with it, and its audit events stay. The delete's own event records the choice in `details`: `contents`, and `to` for a move. The default project cannot be deleted (`409 PROJECT_PROTECTED`).
 
 The API assigns every route a rule in [`ROUTE_ACCESS`](../../packages/runtime/src/http-contract.ts). A route is public, signed-in, instance-only, or resource-scoped. The API refuses to start if a route has no rule. With authentication enabled, an instance-only route requires an owner or admin. A resource route must check the named automation, run, or project through `request.access`; otherwise the API fails the response with `500`. The [API reference](../reference/api.md) lists the route rules.

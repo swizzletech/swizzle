@@ -99,7 +99,11 @@ export async function listRuns(
   }
 
   if (query.topLevelOnly === true) {
-    filters.push(sql`${runs.parentRunId} is null`);
+    filters.push(isNull(runs.parentRunId));
+  }
+
+  if (query.queuedSince !== undefined) {
+    filters.push(gte(runs.queuedAt, query.queuedSince));
   }
 
   if (query.approvalOnly === true) {

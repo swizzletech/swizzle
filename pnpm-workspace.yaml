@@ -20,6 +20,7 @@ catalog:
   # which TypeScript 7 no longer ships.
   typescript: ^6.0.3
   yaml: ^2.9.1
+  zod: ^4.6.7
 
 # Only `just setup` installs, from the frozen lockfile. pnpm's default would make every
 # `pnpm exec` (the git hooks included) run a non-frozen install that rewrites the lockfile.

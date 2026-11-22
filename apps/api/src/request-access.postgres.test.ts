@@ -8,9 +8,15 @@ import {
 import { type AutomationFolderStore, createPostgresWorkerRegistry } from "@swizzle/db/postgres";
 import { ROUTE_ACCESS, type RouteAccess } from "@swizzle/runtime/http-contract";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { commitDeploymentFixture } from "../../../scripts/verify-state-fixtures.js";
 import { testPlatform } from "../../../test/platform.js";
 import { testDatabase } from "../../../test/postgres.js";
-import { testAccessStore, testApiTokenStore, testFolderStore } from "../../../test/stores.js";
+import {
+  testAccessStore,
+  testApiTokenStore,
+  testControlPlaneStore,
+  testFolderStore,
+} from "../../../test/stores.js";
 import { TEST_ENCRYPTION_KEY, temporaryDirectory, waitFor } from "../../../test/support.js";
 import { createAutomationFixture, deployFixture } from "../test/automations.js";
 import { ownerHeaders, testPeople } from "../test/people.js";
@@ -140,6 +146,7 @@ function recordingDashboard(
       return {
         environment,
         last24h: {} as never,
+        last24hFrom: "2026-01-01T00:00:00.000Z",
         complete: true,
         lastFailureAt: null,
         needsYou: [],
@@ -812,6 +819,74 @@ describe("access over HTTP", () => {
       )?.details,
     ).toEqual({ contents: "move", to: finance.id });
     await app.close();
+  });
+
+  it("returns a retryable conflict when deployments keep changing a project during deletion", async ({
+    signal,
+  }) => {
+    const app = await buildTestServer();
+    const database = testDatabase();
+    const accessStore = testAccessStore();
+    const store = testControlPlaneStore();
+    const source = await accessStore.createProject({ name: "Busy project", slug: "busy" });
+    const target = await accessStore.createProject({ name: "Destination", slug: "destination" });
+    const headers = await ownerHeaders();
+    const remove = () =>
+      app.inject({
+        headers,
+        method: "DELETE",
+        url: "/projects/busy?contents=move&to=destination",
+      });
+    const first = await commitDeploymentFixture(store, "first-automation", source.id);
+    let holder = await database.pool.connect();
+    let nextHolder = await database.pool.connect();
+    const lockAutomation = async (connection: typeof holder, id: string) => {
+      await connection.query("BEGIN");
+      const result = await connection.query<{ pid: number }>(
+        "SELECT pg_backend_pid() AS pid FROM automations WHERE id = $1 FOR UPDATE",
+        [id],
+      );
+      return result.rows[0]?.pid;
+    };
+    let deletion: ReturnType<typeof remove> | undefined;
+    try {
+      let blocker = await lockAutomation(holder, first.automationId);
+      deletion = remove();
+      for (const name of ["second-automation", "third-automation", "fourth-automation"]) {
+        await waitFor(signal, async () => {
+          const state = await database.pool.query<{ blocked: boolean }>(
+            `SELECT EXISTS (
+              SELECT 1 FROM pg_stat_activity WHERE datname = current_database()
+                AND $1 = ANY(pg_blocking_pids(pid))
+            ) AS blocked`,
+            [blocker],
+          );
+          return state.rows[0]?.blocked === true;
+        });
+        const deployed = await commitDeploymentFixture(store, name, source.id);
+        blocker = await lockAutomation(nextHolder, deployed.automationId);
+        await holder.query("COMMIT");
+        [holder, nextHolder] = [nextHolder, holder];
+      }
+      await holder.query("COMMIT");
+
+      const conflict = await deletion;
+      expect(conflict.statusCode).toBe(409);
+      expect(conflict.json()).toMatchObject({ code: "PROJECT_CONTENTS_CHANGED", retryable: true });
+      expect(await store.countProjectContents(source.id)).toMatchObject({ automations: 4 });
+
+      const retried = await remove();
+      expect(retried.statusCode).toBe(200);
+      expect(retried.json()).toMatchObject({ contents: "move", counts: { automations: 4 } });
+      expect(await store.countProjectContents(target.id)).toMatchObject({ automations: 4 });
+    } finally {
+      await holder.query("ROLLBACK");
+      await nextHolder.query("ROLLBACK");
+      holder.release();
+      nextHolder.release();
+      await Promise.allSettled([deletion]);
+      await app.close();
+    }
   });
 
   it("tells the dashboard which controls a role refuses, and why", async () => {

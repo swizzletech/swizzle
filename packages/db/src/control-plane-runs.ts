@@ -21,6 +21,7 @@ import { getRunById } from "./control-plane-read-models.js";
 import { writeStepResult } from "./control-plane-steps.js";
 import type {
   CompleteRunExecutionInput,
+  ControlPlaneStore,
   CreateChainJoinRunInput,
   CreateRunExecutionInput,
   CreateRunInput,
@@ -43,6 +44,8 @@ import {
   FINISHED_RUN_STATUSES,
   isFinishedRun,
   OPEN_RUN_STATUSES,
+  PARENT_CANCELLED,
+  PARENT_FINISHED,
   USER_CANCELLED,
 } from "./run-status.js";
 import { isCancelledRunSql } from "./run-status-query.js";
@@ -670,14 +673,30 @@ export async function updateRunState(
     .where(
       and(
         eq(runs.id, input.runId),
+        not(isCancelledRunSql()),
         or(notInArray(runs.status, FINISHED_RUN_STATUSES), eq(runs.status, input.status)),
       ),
     );
 }
 
+const cancellation = {
+  parent: {
+    deadLetterReason: PARENT_CANCELLED,
+    errorMessage: "Parent run was cancelled.",
+  },
+  "parent-finished": {
+    deadLetterReason: PARENT_FINISHED,
+    errorMessage: "Parent run finished before the child could complete.",
+  },
+  user: {
+    deadLetterReason: USER_CANCELLED,
+    errorMessage: "Run cancelled by user.",
+  },
+};
+
 export async function cancelRun(
   client: DatabaseClient,
-  input: { readonly runId: string; readonly finishedAt: string },
+  input: Parameters<ControlPlaneStore["cancelRun"]>[0],
 ) {
   return await client.db.transaction(async (tx) => {
     const [row] = await tx.select().from(runs).where(eq(runs.id, input.runId)).for("update");
@@ -689,6 +708,7 @@ export async function cancelRun(
       return { alreadyTerminal: true, run };
     }
     const finishedAt = new Date(input.finishedAt);
+    const { deadLetterReason, errorMessage } = cancellation[input.cause];
     await tx
       .update(runExecutions)
       .set({
@@ -696,20 +716,24 @@ export async function cancelRun(
         finishedAt,
         errorClassification: "terminal",
         errorCode: "RUN_CANCELLED",
-        errorMessage: "Run cancelled by user.",
+        errorMessage,
         durationMs: sql`greatest(0, floor(extract(epoch from (${finishedAt}::timestamptz - ${runExecutions.startedAt})) * 1000))::int`,
       })
       .where(and(eq(runExecutions.runId, row.id), eq(runExecutions.status, "running")));
-    await updateRunState(scoped, {
-      runId: row.id,
-      status: "dead-lettered",
-      finishedAt: input.finishedAt,
-      errorCode: "RUN_CANCELLED",
-      errorClassification: "terminal",
-      errorMessage: "Run cancelled by user.",
-      deadLetterReason: USER_CANCELLED,
-      wait: null,
-    });
+    await tx
+      .update(runs)
+      .set({
+        cancelledWaitStepKey: row.status === "waiting" ? (row.wait?.stepKey ?? null) : null,
+        deadLetterReason,
+        errorClassification: "terminal",
+        errorCode: "RUN_CANCELLED",
+        errorMessage,
+        finishedAt,
+        status: "dead-lettered",
+        updatedAt: finishedAt,
+        wait: null,
+      })
+      .where(eq(runs.id, row.id));
     const run = await getRunById(scoped, row.id);
     if (run === null) throw new Error("Locked run disappeared.");
     return { alreadyTerminal: false, run };

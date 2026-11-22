@@ -43,6 +43,7 @@ function detail(item: RunListItem, extra: Partial<RunDetail> = {}): RunDetail {
     ...item,
     approval:
       item.approval === null ? null : { ...item.approval, may: { decide: true, reassign: true } },
+    cancelledWaitStepKey: null,
     executions: [],
     payload: { order: 4411 },
     placement: null,

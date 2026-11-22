@@ -128,6 +128,8 @@ export async function countProjectContents(
   return await countContents(client.db, projectId);
 }
 
+const PROJECT_DELETE_ATTEMPTS = 3;
+
 export async function deleteProject(
   client: DatabaseClient,
   input: DeleteProjectInput,
@@ -139,51 +141,68 @@ export async function deleteProject(
   if (contents?.kind === "move" && contents.projectId === projectId) {
     throw new CodedError("REQUEST_INVALID", "Move the contents to another project.");
   }
-  return await client.db.transaction(async (tx) => {
-    await lockAutomationsOf(tx, projectId);
-    const locks: [string, "share" | "update"][] = [[projectId, "update"]];
-    if (contents?.kind === "move") locks.push([contents.projectId, "share"]);
-    for (const [id, strength] of locks.sort(([left], [right]) => left.localeCompare(right))) {
-      await lockProject(tx, id, strength);
+  for (let attempt = 0; attempt < PROJECT_DELETE_ATTEMPTS; attempt++) {
+    try {
+      return await client.db.transaction((tx) => deleteProjectAttempt(tx, input));
+    } catch (error) {
+      if (error !== projectAutomationsChanged) throw error;
     }
-    const automationIds = await lockAutomationsOf(tx, projectId);
-    const counts = await countContents(tx, projectId);
-    const empty = counts.automations + counts.credentials + counts.runs === 0;
-    const result = {
-      counts,
-      deletedAutomations: [] as DeleteProjectResult["deletedAutomations"],
-      deletedConnections: [] as DeleteProjectResult["deletedConnections"],
-      projectId,
-    };
+  }
+  throw new CodedError(
+    "PROJECT_CONTENTS_CHANGED",
+    "The project's automations changed during deletion. Retry the deletion.",
+  );
+}
 
-    if (contents === null) {
-      if (!empty) throw projectNotEmpty(counts);
-    } else if (contents.kind === "move") {
-      await moveProjectContents(tx, projectId, contents.projectId, automationIds);
-    } else {
-      const unfinished = await countUnfinishedRuns(
-        tx,
-        or(eq(runs.projectId, projectId), inArray(runs.automationId, automationIds)),
-      );
-      if (unfinished > 0) {
-        throw new CodedError(
-          "AUTOMATION_RUNS_ACTIVE",
-          `The project has ${unfinished} unfinished runs. Cancel them or let them finish, then delete it.`,
-          { details: { unfinishedRuns: unfinished } },
-        );
-      }
-      result.deletedAutomations = await artifactReferencesOf(tx, automationIds);
-      await removeAutomations(tx, automationIds);
-      await tx.delete(runs).where(eq(runs.projectId, projectId));
-      result.deletedConnections = await deleteConnectionsWhere(
-        tx,
-        eq(environmentConnections.projectId, projectId),
+const projectAutomationsChanged = new Error("Project automations changed while acquiring locks.");
+
+async function deleteProjectAttempt(
+  tx: Transaction,
+  { contents, projectId }: DeleteProjectInput,
+): Promise<DeleteProjectResult> {
+  const automationIds = await lockAutomationsOf(tx, projectId);
+  const locks: [string, "share" | "update"][] = [[projectId, "update"]];
+  if (contents?.kind === "move") locks.push([contents.projectId, "share"]);
+  for (const [id, strength] of locks.sort(([left], [right]) => left.localeCompare(right))) {
+    await lockProject(tx, id, strength);
+  }
+  const counts = await countContents(tx, projectId);
+  if (counts.automations !== automationIds.length) throw projectAutomationsChanged;
+  const empty = counts.automations + counts.credentials + counts.runs === 0;
+  const result = {
+    counts,
+    deletedAutomations: [] as DeleteProjectResult["deletedAutomations"],
+    deletedConnections: [] as DeleteProjectResult["deletedConnections"],
+    projectId,
+  };
+
+  if (contents === null) {
+    if (!empty) throw projectNotEmpty(counts);
+  } else if (contents.kind === "move") {
+    await moveProjectContents(tx, projectId, contents.projectId, automationIds);
+  } else {
+    const unfinished = await countUnfinishedRuns(
+      tx,
+      or(eq(runs.projectId, projectId), inArray(runs.automationId, automationIds)),
+    );
+    if (unfinished > 0) {
+      throw new CodedError(
+        "AUTOMATION_RUNS_ACTIVE",
+        `The project has ${unfinished} unfinished runs. Cancel them or let them finish, then delete it.`,
+        { details: { unfinishedRuns: unfinished } },
       );
     }
+    result.deletedAutomations = await artifactReferencesOf(tx, automationIds);
+    await removeAutomations(tx, automationIds);
+    await tx.delete(runs).where(eq(runs.projectId, projectId));
+    result.deletedConnections = await deleteConnectionsWhere(
+      tx,
+      eq(environmentConnections.projectId, projectId),
+    );
+  }
 
-    await tx.delete(projects).where(eq(projects.id, projectId));
-    return { ...result, contents: contents === null ? "empty" : contents.kind };
-  });
+  await tx.delete(projects).where(eq(projects.id, projectId));
+  return { ...result, contents: contents === null ? "empty" : contents.kind };
 }
 
 async function moveProjectContents(

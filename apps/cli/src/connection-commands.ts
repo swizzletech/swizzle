@@ -1,13 +1,11 @@
 import { spawn } from "node:child_process";
 import type {
-  AuthorizeConnectionResponse as AuthorizeResponse,
   ConnectionAuthorizationRequest,
   ConnectionResponse as ConnectionMetadata,
-  ConnectionsResponse,
-  TestConnectionResponse as TestResponse,
 } from "@swizzle/runtime/http-contract";
 import type { Command } from "commander";
-import { apiRequest } from "./api.js";
+import { apiRequest, noContent } from "./api.js";
+import { responses } from "./api-responses.js";
 import {
   type ApiCommandOptions,
   buildApiUrl,
@@ -105,8 +103,9 @@ function registerList(connections: Command, io: CliIO, runHandler: RunHandler): 
   ]);
   list.action(async (options: ConnectionOptions) => {
     await runHandler(async () => {
-      const response = await apiRequest<ConnectionsResponse>(
+      const response = await apiRequest(
         await connectionUrl("/connections", options),
+        responses.connections,
       );
       if (response.connections.length === 0) {
         respond(io, { connections: `0 connections in ${response.environment}` }, [
@@ -141,8 +140,9 @@ function registerInspect(connections: Command, io: CliIO, runHandler: RunHandler
   ]);
   inspect.action(async (name: string, options: ConnectionOptions) => {
     await runHandler(async () => {
-      const connection = await apiRequest<ConnectionMetadata>(
+      const connection = await apiRequest(
         await connectionUrl(`/connections/${encodeURIComponent(name)}`, options),
+        responses.connection,
       );
       respond(
         io,
@@ -230,8 +230,9 @@ function registerAuthorize(connections: Command, io: CliIO, runHandler: RunHandl
   ]);
   authorize.action(async (name: string, options: AuthorizeCommandOptions) => {
     await runHandler(async () => {
-      const started = await apiRequest<AuthorizeResponse>(
+      const started = await apiRequest(
         await connectionUrl(`/connections/${encodeURIComponent(name)}/authorize`, options),
+        responses.authorizeConnection,
         {
           body: JSON.stringify(buildAuthorizeBody(options)),
           headers: { "content-type": "application/json" },
@@ -278,8 +279,9 @@ function registerTest(connections: Command, io: CliIO, runHandler: RunHandler): 
   ]);
   test.action(async (name: string, options: ConnectionOptions) => {
     await runHandler(async () => {
-      const response = await apiRequest<TestResponse>(
+      const response = await apiRequest(
         await connectionUrl(`/connections/${encodeURIComponent(name)}/test`, options),
+        responses.testConnection,
         { method: "POST" },
       );
       respond(io, {
@@ -315,7 +317,7 @@ function registerDelete(connections: Command, io: CliIO, runHandler: RunHandler)
       );
       const removed = await removeUnlessAbsent(
         "CONNECTION_NOT_FOUND",
-        apiRequest(url, { method: "DELETE" }),
+        apiRequest(url, noContent, { method: "DELETE" }),
       );
       respond(io, {
         connection: name,
@@ -396,14 +398,14 @@ async function pollUntilResolved(input: {
 }): Promise<{ readonly connection: ConnectionMetadata; readonly timedOut: boolean }> {
   const deadline = Date.now() + input.timeoutMs;
   const url = await connectionUrl(`/connections/${encodeURIComponent(input.name)}`, input.options);
-  let connection = await apiRequest<ConnectionMetadata>(url);
+  let connection = await apiRequest(url, responses.connection);
 
   while (connection.status === "pending" || connection.authorizationPending) {
     if (Date.now() >= deadline) {
       return { connection, timedOut: true };
     }
     await delay(POLL_INTERVAL_MS);
-    connection = await apiRequest<ConnectionMetadata>(url);
+    connection = await apiRequest(url, responses.connection);
   }
 
   return { connection, timedOut: false };

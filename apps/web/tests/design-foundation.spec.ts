@@ -585,7 +585,12 @@ test.describe("every page", () => {
     );
     await expect(status).not.toContainText("All good");
     await status.getByRole("link", { name: "Show failed runs" }).click();
-    await expect(page).toHaveURL(/\/runs\?status=failed/u);
+    await expect(page).toHaveURL(
+      (url) =>
+        url.pathname === "/runs" &&
+        url.searchParams.get("status") === "failed" &&
+        url.searchParams.get("failureWindowStart") === state.overview.last24hFrom,
+    );
   });
 
   test("a credential row shows one action, its menu the rest, and Delete still confirms", async ({

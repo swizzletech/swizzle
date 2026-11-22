@@ -37,7 +37,7 @@ swizzle trigger pause my-automation -e staging
 
 ## One scheduler serves every environment
 
-The scheduler discovers environments from the instance on every pass. It starts cron runs and checks due APIs in each environment, including environments added after it starts. A busy environment skips its own next poll while its previous pass finishes. Other environments continue polling, even while that environment drains a cron backlog. `SWIZZLE_ENVIRONMENT` selects the API default. It does not limit scheduler coverage. Workers execute runs only in environments their grants allow.
+The scheduler discovers environments from the instance on every pass. It starts cron runs and checks due APIs in each environment, including environments added after it starts. A busy environment skips its own next poll while its previous pass finishes. Other environments continue polling, even while that environment drains a cron backlog. `SWIZZLE_ENVIRONMENT` selects the API default. It does not limit scheduler coverage. Workers execute runs only in environments their grants allow. With leader locking on, [the local lease deadline](durability.md#cron-resumes-at-the-next-future-occurrence) governs when a scheduler can start a pass.
 
 Runtime operations require an explicit environment, so a missing argument cannot select a different namespace. A local `swizzle run` names `local` explicitly.
 

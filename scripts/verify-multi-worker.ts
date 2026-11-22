@@ -55,6 +55,7 @@ function formatLogValue(value: unknown): string {
 }
 
 async function main(client: DatabaseClient): Promise<void> {
+  const verificationDeadline = AbortSignal.timeout(10 * 60_000);
   const smokeProfile = `multi-worker-smoke-${process.pid}`;
   const cleanups: (() => Promise<unknown>)[] = [];
   const failures: unknown[] = [];
@@ -204,7 +205,7 @@ async function main(client: DatabaseClient): Promise<void> {
       ]);
     }
 
-    await verifyRetryRecovery(platform, smokeProfile);
+    await verifyRetryRecovery(platform, smokeProfile, verificationDeadline);
 
     process.stdout.write(
       `Multi-worker verification passed with ${completedRuns.length} runs, one suspend/resume round-trip, and ${workerHeartbeats.length} worker heartbeats (${workerInstanceIds.join(", ")}).\n`,

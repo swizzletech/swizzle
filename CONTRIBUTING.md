@@ -47,7 +47,7 @@ just check
 
 Keep explanations in names, types, tests, or commit messages. Put a hazard comment marked `HAZARD:` on the line it guards or directly above it.
 When you remove comments that count toward the [comment budget](scripts/conventions/comment-budget.json), lower the file's count or remove its entry at zero.
-`just check` checks tracked TypeScript, CSS, and HTML source files and refuses budget increases from the merge base with `main`.
+`just check` checks tracked TypeScript, CSS, and HTML source files and refuses budget increases. Locally and on pull requests, it compares the budget with the merge base with `main`. On a CI push to `main`, it compares with the previous branch tip.
 CI requires a committed baseline.
 Outside CI, if the checkout lacks a baseline, the check reports that it skipped the budget growth comparison.
 
@@ -61,6 +61,8 @@ just verify
 CI runs the same verification lanes in parallel. `just check` checks that the required CI jobs cover every lane in `just verify`.
 Tests must own their files, processes, ports, and data. Update the documentation page that owns any behavior you change; [the documentation index](docs/README.md) names each owner.
 
+Edit [the logo source](docs/assets/logo-dark.svg) when the brand artwork changes. Run `just gen` to regenerate the dashboard, approval page, and light README variants.
+
 ## Propose a change
 
 Keep a pull request focused on one problem. Explain the resulting behavior, how you tested it, and any limits reviewers need to know.
@@ -69,4 +71,4 @@ CI accepts the types `feat`, `fix`, `perf`, `test`, `docs`, `refactor`, `build`,
 
 The maintainers squash pull requests, so the title becomes the commit subject.
 Pull requests must pass verification, dependency review, and security checks before merge.
-An automated review comments on every pull request against the rules that [`.coderabbit.yaml`](.coderabbit.yaml) points at. Resolve each of its threads with a fix or a reply, as you would a maintainer's.
+An automated review comments on every pull request against the rules that [`.coderabbit.yaml`](.coderabbit.yaml) points at. The static gate reports malformed path settings and paths that match no tracked file. Resolve each of its threads with a fix or a reply, as you would a maintainer's.

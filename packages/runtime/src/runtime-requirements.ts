@@ -18,6 +18,7 @@ import type {
   CredentialState,
   DeclaredConnectionStatus,
   StoredBuildSnapshot,
+  StoredTrigger,
   WorkerCapabilities,
 } from "@swizzle/db";
 import { z } from "zod";
@@ -463,36 +464,45 @@ function gapIssue(worker: ReadinessWorker, gap: WorkerGap): RuntimeRequirementIs
   }
 }
 
-export function addCredentialIssues(
+export function activeDeploymentReadiness(
   readiness: RuntimeReadinessReport,
-  credentials: {
+  deployment: {
+    readonly deploymentId: string;
     readonly environment: string;
     readonly connections: readonly {
       readonly name: string;
       readonly status: DeclaredConnectionStatus;
     }[];
     readonly secrets: readonly { readonly name: string; readonly state: CredentialState }[];
+    readonly trigger: Pick<StoredTrigger, "deploymentId" | "errorCode" | "errorMessage"> | null;
   },
 ): RuntimeReadinessReport {
   const issues: RuntimeRequirementIssue[] = [
-    ...credentials.secrets
+    ...deployment.secrets
       .filter((secret) => secret.state !== "bound")
       .map((secret) => ({
         code: "SECRET_MISSING" as const,
         message:
           secret.state === "missing"
-            ? `Secret ${secret.name} is not set in ${credentials.environment}. Set it and deploy again.`
-            : `Secret ${secret.name} was set again in ${credentials.environment} after this deploy. Deploy again to use it.`,
+            ? `Secret ${secret.name} is not set in ${deployment.environment}. Set it and deploy again.`
+            : `Secret ${secret.name} was set again in ${deployment.environment} after this deploy. Deploy again to use it.`,
         subject: secret.name,
       })),
-    ...credentials.connections
+    ...deployment.connections
       .filter((connection) => connection.status !== "active")
       .map((connection) => ({
         code: "CONNECTION_NOT_ACTIVE" as const,
-        message: connectionIssue(connection.name, connection.status, credentials.environment),
+        message: connectionIssue(connection.name, connection.status, deployment.environment),
         subject: connection.name,
       })),
   ];
+  const { trigger } = deployment;
+  if (trigger?.deploymentId === deployment.deploymentId && trigger.errorCode !== null) {
+    issues.push({
+      code: "TRIGGER_CONFIGURATION_INVALID",
+      message: trigger.errorMessage ?? "The trigger configuration is invalid.",
+    });
+  }
   if (issues.length === 0) return readiness;
   return { ...readiness, errors: [...readiness.errors, ...issues], status: "not-ready" };
 }

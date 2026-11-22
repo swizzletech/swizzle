@@ -70,6 +70,7 @@
     "scripts/{upgrade,stack,stack-images}.ts",
     "test/fixtures/disk-space.mjs"
   ],
+  "packages/runtime/src/leader-lock.docker.test.ts": ["infra/docker/databases.yml"],
   "scripts/valkey-health.docker.test.ts": [
     ".env.example",
     "infra/docker/{compose,databases,execution}.yml",

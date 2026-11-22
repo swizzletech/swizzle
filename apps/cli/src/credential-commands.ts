@@ -1,12 +1,9 @@
 import type { CredentialKind, CredentialRight } from "@swizzle/db";
-import type {
-  CredentialAccessResponse as CredentialAccessView,
-  CredentialShareResponse,
-  CredentialSharesResponse,
-} from "@swizzle/runtime/http-contract";
+import type { CredentialAccessResponse as CredentialAccessView } from "@swizzle/runtime/http-contract";
 import { Argument, type Command, Option } from "commander";
 
-import { apiRequest } from "./api.js";
+import { apiRequest, noContent } from "./api.js";
+import { responses } from "./api-responses.js";
 import {
   type ApiCommandOptions,
   buildApiUrl,
@@ -81,7 +78,10 @@ export function registerCredentialCommands(
     );
 
   const readAccess = async (kind: CredentialKind, name: string, options: CommandOptions) =>
-    await apiRequest<CredentialAccessView>(await credentialUrl(kind, name, options, "/access"));
+    await apiRequest(
+      await credentialUrl(kind, name, options, "/access"),
+      responses.credentialAccess,
+    );
 
   const projectFlag = (options: ProjectOption) =>
     options.project === undefined ? "" : ` --project ${options.project}`;
@@ -149,7 +149,7 @@ export function registerCredentialCommands(
         const subject = subjectOf(options);
         const shown = { credential: `${kind} ${name}`, subject: subjectLabel(subject) };
         const held = grantedRight(await readAccess(kind, name, options), subject);
-        await apiRequest(await credentialUrl(kind, name, options, "/grants"), {
+        await apiRequest(await credentialUrl(kind, name, options, "/grants"), noContent, {
           body: JSON.stringify({ ...subject, right: options.right }),
           headers: { "content-type": "application/json" },
           method: "PUT",
@@ -176,7 +176,7 @@ export function registerCredentialCommands(
       const subject = subjectOf(options);
       const removed = await removeUnlessAbsent(
         "GRANT_NOT_FOUND",
-        apiRequest(await credentialUrl(kind, name, options, "/grants", subject), {
+        apiRequest(await credentialUrl(kind, name, options, "/grants", subject), noContent, {
           method: "DELETE",
         }),
       );
@@ -204,8 +204,9 @@ export function registerCredentialCommands(
         options: CommandOptions & { readonly to: string },
       ) => {
         await runHandler(async () => {
-          const share = await apiRequest<CredentialShareResponse>(
+          const share = await apiRequest(
             await credentialUrl(kind, name, options, `/shares/${encodeURIComponent(options.to)}`),
+            responses.credentialShare,
             { method: "PUT" },
           );
           const accepted = share.acceptedAt !== null;
@@ -247,6 +248,7 @@ export function registerCredentialCommands(
             "SHARE_NOT_FOUND",
             apiRequest(
               await credentialUrl(kind, name, options, `/shares/${encodeURIComponent(options.to)}`),
+              noContent,
               { method: "DELETE" },
             ),
           );
@@ -277,8 +279,9 @@ export function registerCredentialCommands(
   ]);
   shares.action(async (options: ReceivingOptions) => {
     await runHandler(async () => {
-      const { shares: offered } = await apiRequest<CredentialSharesResponse>(
+      const { shares: offered } = await apiRequest(
         sharesUrl(options.project, options),
+        responses.credentialShares,
       );
       if (offered.length === 0) {
         respond(io, { shares: `0 credentials offered to ${options.project}` });
@@ -324,8 +327,9 @@ export function registerCredentialCommands(
     ],
   ).action(async (shareId: string, options: ReceivingOptions) => {
     await runHandler(async () => {
-      const share = await apiRequest<CredentialShareResponse>(
+      const share = await apiRequest(
         sharesUrl(options.project, options, shareId),
+        responses.credentialShare,
         { method: "PUT" },
       );
       respond(
@@ -353,7 +357,7 @@ export function registerCredentialCommands(
     await runHandler(async () => {
       const removed = await removeUnlessAbsent(
         "SHARE_NOT_FOUND",
-        apiRequest(sharesUrl(options.project, options, shareId), { method: "DELETE" }),
+        apiRequest(sharesUrl(options.project, options, shareId), noContent, { method: "DELETE" }),
       );
       respond(io, {
         share: shareId,

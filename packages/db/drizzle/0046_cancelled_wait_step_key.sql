@@ -1,0 +1,1 @@
+ALTER TABLE "runs" ADD COLUMN "cancelled_wait_step_key" varchar(255);

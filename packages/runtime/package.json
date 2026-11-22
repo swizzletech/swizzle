@@ -48,6 +48,6 @@
     "esbuild": "^0.28.2",
     "ioredis": "^6.0.0",
     "tar": "catalog:",
-    "zod": "^4.6.7"
+    "zod": "catalog:"
   }
 }

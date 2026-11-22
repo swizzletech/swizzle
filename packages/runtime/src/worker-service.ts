@@ -148,7 +148,6 @@ export async function startPlatformWorkerService(
     const abort = new AbortController();
     const loseLease = () => abort.abort(new Error("Execution lease was lost."));
     let sequence = 0;
-    let output: Promise<unknown> = Promise.resolve();
     let renewing = false;
     let expiration: NodeJS.Timeout | undefined;
     let deadline = 0;
@@ -159,15 +158,16 @@ export async function startPlatformWorkerService(
     const callOwned = async <Request, Reply>(
       route: WorkerRoute<Request, Reply>,
       body: () => Request,
+      signal = abort.signal,
     ): Promise<Reply> => {
       for (let attempt = 0; ; attempt++) {
         if (performance.now() >= deadline) loseLease();
-        abort.signal.throwIfAborted();
+        signal.throwIfAborted();
         try {
-          return await call(route, body(), abort.signal);
+          return await call(route, body(), signal);
         } catch (error) {
           if (refused(error)) throw error;
-          await delay(backoff(attempt), undefined, { signal: abort.signal });
+          await delay(backoff(attempt), undefined, { signal });
         }
       }
     };
@@ -224,20 +224,23 @@ export async function startPlatformWorkerService(
       ready: async () => {
         await callOwned(WORKER_ROUTES.ready, owned);
       },
-      output: (stream, chunk) => {
-        for (const part of chunk.match(OUTPUT_CHUNKS) ?? []) {
-          const index = ++sequence;
-          output = output.then(() =>
-            callOwned(WORKER_ROUTES.output, () => ({
-              ...owned(),
-              sequence: index,
-              stream,
-              chunk: part,
-            })),
-          );
-          void output.catch((error: unknown) => abort.abort(error));
+      output: async (stream, chunk, delivery) => {
+        const parts = chunk.match(OUTPUT_CHUNKS);
+        if (parts === null) return;
+        const signal = AbortSignal.any([abort.signal, delivery ?? AbortSignal.timeout(10_000)]);
+        try {
+          for (const part of parts) {
+            const index = ++sequence;
+            await callOwned(
+              WORKER_ROUTES.output,
+              () => ({ ...owned(), sequence: index, stream, chunk: part }),
+              signal,
+            );
+          }
+        } catch (error) {
+          if (delivery?.aborted !== true) abort.abort(error);
+          throw error;
         }
-        return output.then(() => {});
       },
     };
     const timer = setInterval(
@@ -261,7 +264,6 @@ export async function startPlatformWorkerService(
         executor: localExecutionProtocol,
         signal: abort.signal,
       });
-      await output;
       await callOwned(WORKER_ROUTES.complete, () => ({ ...owned(), report }));
     } catch (error) {
       abort.signal.throwIfAborted();
@@ -270,7 +272,6 @@ export async function startPlatformWorkerService(
       clearInterval(timer);
       clearTimeout(expiration);
       abort.abort();
-      await output.catch(() => {});
     }
   };
   const loop = async () => {

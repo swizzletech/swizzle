@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { apiRequest, resolveApiUrl } from "./api.js";
+import { apiRequest, noContent, resolveApiUrl, whenFound } from "./api.js";
+import { responses } from "./api-responses.js";
 import { mapApiErrorToAgentError } from "./errors.js";
 
 describe("resolveApiUrl", () => {
@@ -58,7 +59,9 @@ describe("apiRequest response parsing", () => {
             ),
           ),
       );
-      await expect(apiRequest("http://localhost/api/deployments")).rejects.toMatchObject({
+      await expect(
+        apiRequest("http://localhost/api/deployments", responses.deployments),
+      ).rejects.toMatchObject({
         code: error,
         details: { httpStatus: 429, limit: 3, retryAfterSeconds: 17 },
         exitCode: 7,
@@ -77,7 +80,9 @@ describe("apiRequest response parsing", () => {
           Response.json({ error: "DEPLOYMENT_UPLOAD_RATE_LIMITED" }, { status: 429 }),
         ),
     );
-    await expect(apiRequest("http://localhost/api/deployments")).rejects.toMatchObject({
+    await expect(
+      apiRequest("http://localhost/api/deployments", responses.deployments),
+    ).rejects.toMatchObject({
       details: { httpStatus: 429 },
       hint: "Wait for the rate limit to reset, then rerun the command.",
     });
@@ -88,7 +93,9 @@ describe("apiRequest response parsing", () => {
     async (body) => {
       const fetch = vi.fn().mockResolvedValue(new Response(body, { status: 200 }));
       vi.stubGlobal("fetch", fetch);
-      await expect(apiRequest("http://localhost/api/items")).rejects.toMatchObject({
+      await expect(
+        apiRequest("http://localhost/api/items", responses.notificationRules),
+      ).rejects.toMatchObject({
         code: "INVALID_API_RESPONSE",
         exitCode: 5,
         retryable: false,
@@ -102,7 +109,7 @@ describe("apiRequest response parsing", () => {
       "fetch",
       vi
         .fn()
-        .mockResolvedValueOnce(Response.json({ rules: [] }))
+        .mockResolvedValueOnce(Response.json({ environment: "staging", rules: [] }))
         .mockResolvedValueOnce(
           Response.json({ error: "FORBIDDEN", message: "Token revoked" }, { status: 403 }),
         )
@@ -110,20 +117,25 @@ describe("apiRequest response parsing", () => {
         .mockResolvedValueOnce(new Response(null, { status: 204 })),
     );
     const url = "http://localhost/api/items";
-    await expect(apiRequest(url)).resolves.toEqual({ rules: [] });
-    await expect(apiRequest(url)).rejects.toMatchObject({
+    await expect(apiRequest(url, responses.notificationRules)).resolves.toEqual({
+      environment: "staging",
+      rules: [],
+    });
+    await expect(apiRequest(url, responses.notificationRules)).rejects.toMatchObject({
       code: "FORBIDDEN",
       message: "Token revoked",
       exitCode: 4,
     });
-    await expect(apiRequest(url, { acceptNotFound: true })).resolves.toBeUndefined();
-    await expect(apiRequest(url)).resolves.toBeUndefined();
+    await expect(apiRequest(url, whenFound(responses.notificationRules))).resolves.toBeUndefined();
+    await expect(apiRequest(url, noContent)).resolves.toBeUndefined();
   });
 
   it("keeps an HTML 502 retryable with the server-failure hint", async () => {
     const body = "<html>Bad Gateway</html>";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(body, { status: 502 })));
-    await expect(apiRequest("http://localhost/api/items")).rejects.toMatchObject({
+    await expect(
+      apiRequest("http://localhost/api/items", responses.notificationRules),
+    ).rejects.toMatchObject({
       code: "INVALID_API_RESPONSE",
       message: body,
       exitCode: 5,
@@ -133,18 +145,18 @@ describe("apiRequest response parsing", () => {
     });
   });
 
-  it("accepts a non-JSON 404 when acceptNotFound is set", async () => {
+  it("accepts a non-JSON 404 when the endpoint accepts not-found", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(new Response("<html>Dashboard</html>", { status: 404 })),
     );
     await expect(
-      apiRequest("http://localhost/api/items", { acceptNotFound: true }),
+      apiRequest("http://localhost/api/items", whenFound(responses.notificationRules)),
     ).resolves.toBeUndefined();
   });
 
-  it("returns undefined when a successful response has an empty body", async () => {
+  it("returns undefined when a bodyless endpoint returns an empty body", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 200 })));
-    await expect(apiRequest("http://localhost/api/items")).resolves.toBeUndefined();
+    await expect(apiRequest("http://localhost/api/items", noContent)).resolves.toBeUndefined();
   });
 });

@@ -11,6 +11,7 @@ export type RunFilter = (typeof RUN_FILTERS)[number];
 
 export interface RunsSearch {
   readonly automation?: string | undefined;
+  readonly failureWindowStart?: string | undefined;
   readonly selected?: string | undefined;
   readonly status?: Exclude<RunFilter, "all"> | undefined;
 }
@@ -58,6 +59,7 @@ export function parseAutomationSearch(search: RawSearch): AutomationSearch {
 export function parseRunsSearch(search: RawSearch): RunsSearch {
   return {
     automation: text(search.automation),
+    failureWindowStart: text(search.failureWindowStart),
     selected: text(search.selected),
     status: oneOf(
       RUN_FILTERS.filter((filter) => filter !== "all"),

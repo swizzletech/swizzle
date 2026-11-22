@@ -29,7 +29,11 @@ export function RunsPage() {
   const search = useSearch({ from: "/runs" });
   const navigate = useNavigate({ from: "/runs" });
   const filter: RunFilter = search.status ?? "all";
+  const failureWindowStart = filter === "failed" ? search.failureWindowStart : undefined;
   const pages = useRunPages({
+    ...(failureWindowStart === undefined
+      ? {}
+      : { queuedSince: failureWindowStart, topLevelOnly: true }),
     approvalOnly: FILTER[filter].approvalOnly === true,
     states: FILTER[filter].states,
     ...(search.automation === undefined ? {} : { automation: search.automation }),
@@ -66,9 +70,9 @@ export function RunsPage() {
           <AutomationFilter
             onChange={(automation) =>
               void navigate({
-                search: (previous) => ({
-                  ...(previous.status === undefined ? {} : { status: previous.status }),
-                  ...(automation === undefined ? {} : { automation }),
+                search: ({ selected: _selected, ...previous }) => ({
+                  ...previous,
+                  automation,
                 }),
               })
             }
@@ -79,7 +83,7 @@ export function RunsPage() {
       note={
         pages.runs === undefined
           ? undefined
-          : `${runCountInWords(pages.runs.length, pages.complete)} · live`
+          : `${runCountInWords(pages.runs.length, pages.complete)} · ${failureWindowStart === undefined ? "live" : "Overview window"}`
       }
       title="Runs"
       type="workbench"
