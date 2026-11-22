@@ -81,7 +81,7 @@ case " $* " in
     image=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     if [ "\u0024{UPGRADE_TEST_FAILURE:-}" = moved-tag ]; then
       case "$*" in
-        *"test-upgrade-backup:local"*) image=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ;;
+        *"com.docker.compose.service=backup"*) image=sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb ;;
       esac
     fi
     while [ "$#" -gt 0 ]; do
