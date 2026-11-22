@@ -4,7 +4,7 @@ import { once } from "node:events";
 import { readFile } from "node:fs/promises";
 import { type AddressInfo, createConnection, createServer, type Socket } from "node:net";
 import { promisify } from "node:util";
-import { expect, it } from "vitest";
+import { expect, inject, it } from "vitest";
 import { waitFor } from "../../../test/support.js";
 import { createLeaderLock } from "./leader-lock.js";
 
@@ -22,6 +22,8 @@ it("ends the isolated scheduler's admission before its peer acquires leadership"
     "--detach",
     "--name",
     name,
+    "--label",
+    inject("dockerRun").label,
     "--publish",
     "127.0.0.1::6379",
     image,

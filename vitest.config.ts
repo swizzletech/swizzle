@@ -59,6 +59,7 @@ export default defineConfig({
           name: "docker",
           include: ["**/*.docker.test.ts"],
           exclude: ["**/dist/**", "**/node_modules/**"],
+          globalSetup: ["test/docker-global.ts"],
           fileParallelism: false,
           maxConcurrency: 2,
           // These build and load real images on the host's Docker daemon, which other worktrees'

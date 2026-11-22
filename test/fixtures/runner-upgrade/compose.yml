@@ -5,6 +5,7 @@ x-build: &build
   dockerfile: Dockerfile
   args: &args
     VERSION: &version 1.0.3
+    SWIZZLE_DOCKER_TEST_RUN: ${SWIZZLE_DOCKER_TEST_RUN}
 services:
   runner-base:
     network_mode: none
@@ -29,6 +30,8 @@ services:
     init: true
     network_mode: none
     image: node:26.12.1-alpine3.24
+    labels:
+      swizzle.test.run: ${SWIZZLE_DOCKER_TEST_RUN}
     environment:
       RELEASE_VERSION: *version
     command:

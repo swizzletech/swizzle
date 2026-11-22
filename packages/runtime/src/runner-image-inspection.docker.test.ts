@@ -5,7 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { parseAutomationConfig } from "@swizzle/config";
 import { create as tarCreate } from "tar";
-import { expect, it, vi } from "vitest";
+import { expect, inject, it, vi } from "vitest";
 import { removeDockerImages } from "../../../test/docker-images.js";
 import { heldDeadlines, temporaryDirectory } from "../../../test/support.js";
 import { createRunnerImageChecks } from "./runner-image-checks.js";
@@ -25,7 +25,11 @@ it("keeps a custom image without a tool record ready with unverified requirement
   await tarCreate({ cwd: directory, file: rootfs }, ["marker"]);
   const checks = createRunnerImageChecks();
   try {
-    await exec("docker", ["image", "import", rootfs, image], { signal });
+    await exec(
+      "docker",
+      ["image", "import", "--change", `LABEL ${inject("dockerRun").label}`, rootfs, image],
+      { signal },
+    );
     const config = parseAutomationConfig(`
 name: legacy-image
 version: 1.0.0
@@ -129,7 +133,16 @@ it("reads the selected image's inventory without starting its entrypoint", async
   try {
     await exec(
       "docker",
-      ["image", "import", "--change", 'ENTRYPOINT ["/never-execute"]', rootfs, image],
+      [
+        "image",
+        "import",
+        "--change",
+        `LABEL ${inject("dockerRun").label}`,
+        "--change",
+        'ENTRYPOINT ["/never-execute"]',
+        rootfs,
+        image,
+      ],
       { signal },
     );
     expect(await inspectRunnerImage({ id: "record-probe", image })).toMatchObject({

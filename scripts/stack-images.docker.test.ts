@@ -5,7 +5,7 @@ import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { collectWorkerCapabilities, readRunnerTools } from "@swizzle/runtime";
-import { expect, it } from "vitest";
+import { expect, inject, it } from "vitest";
 import { removeImagesWithLabel } from "../test/docker-images.js";
 import { temporaryDirectory } from "../test/support.js";
 import { type PreparedStack, readCompose, writeCompose } from "./stack-images.ts";
@@ -99,7 +99,11 @@ it.concurrent.for([
                   context: root,
                   dockerfile: "Dockerfile",
                   target: name,
-                  args: { VERSION: identity, SWIZZLE_RUNNER_APT_PACKAGES: "jq" },
+                  args: {
+                    VERSION: identity,
+                    SWIZZLE_RUNNER_APT_PACKAGES: "jq",
+                    SWIZZLE_DOCKER_TEST_RUN: inject("dockerRun").run,
+                  },
                 },
               },
             ]),
@@ -216,6 +220,7 @@ it("keeps local runner tags stable and tools available through just upgrade", as
     ...process.env,
     COMPOSE_PROJECT_NAME: project,
     MISE_TRUSTED_CONFIG_PATHS: root,
+    SWIZZLE_DOCKER_TEST_RUN: inject("dockerRun").run,
   };
   const command = async (program: string, ...args: string[]) =>
     (await execute(program, args, { cwd: root, env: environment })).stdout.trim();
@@ -430,7 +435,8 @@ it("starts with cached dependency images when their registry is unreachable", as
   } catch {
     await execute("docker", ["pull", alpine]);
   }
-  await execute("docker", ["tag", alpine, image]);
+  await writeFile(path.join(root, "Dockerfile"), `FROM ${alpine}\n`);
+  await execute("docker", ["build", "--label", inject("dockerRun").label, "--tag", image, root]);
   try {
     const options = { cwd: root, env: { ...process.env, MISE_TRUSTED_CONFIG_PATHS: root } };
     await execute("mise", ["exec", "--", "just", "init-env"], options);
@@ -491,6 +497,7 @@ it("preserves literal dollars and shell variables when starting a resolved Compo
         probe: {
           image: "alpine:3.24.3",
           network_mode: "none",
+          labels: [inject("dockerRun").label],
           environment: { VALUE: "literal$$VALUE" },
           command: ["sh", "-c", 'printf "%s\\n" "$$VALUE"'],
         },
@@ -538,7 +545,7 @@ it("retains the first prepared source image after a rebuild moves its local tag"
   const prepare = async (revision: string): Promise<string> => {
     await writeFile(
       path.join(root, "Dockerfile"),
-      `FROM scratch AS probe\nLABEL fixture.revision=${revision}\n`,
+      `FROM scratch AS probe\nLABEL fixture.revision=${revision} ${inject("dockerRun").label}\n`,
     );
     const output = path.join(directory, revision, "compose.json");
     await prepareFixture(root, output, signal, "local");
@@ -579,6 +586,7 @@ it("reuses development image tags and preserves prepared upgrade images with ser
   const project = `swizzle-legacy-image-${randomUUID()}`;
   const envFile = path.join(root, ".env");
   const dockerfile = String.raw`FROM alpine:3.24.3 AS probe
+LABEL ${inject("dockerRun").label}
 RUN printf '%s\n' '#!/bin/sh' 'printf "%s\n" "$*" > /turbo-args' > /usr/local/bin/pnpm && chmod +x /usr/local/bin/pnpm
 RUN pnpm exec turbo run build
 CMD ["cat", "/turbo-args"]

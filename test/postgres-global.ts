@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import type { TestProject } from "vitest/node";
 import { createDatabaseClient, type DatabaseClient } from "../packages/db/src/client.js";
+import { registerProjectCleanup } from "./project-cleanup.js";
 
 export default async function setup(project: TestProject) {
   const name = `swizzle-tests-${randomUUID()}`;
@@ -22,28 +23,7 @@ export default async function setup(project: TestProject) {
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
-  let stopped = false;
-  const stop = () => {
-    if (stopped) return;
-    stopped = true;
-    process.off("exit", stop);
-    process.off("SIGINT", interrupt);
-    process.off("SIGTERM", terminate);
-    compose("down", "-v");
-  };
-  const stopForSignal = (signal: NodeJS.Signals) => {
-    try {
-      stop();
-    } finally {
-      process.removeAllListeners(signal);
-      process.kill(process.pid, signal);
-    }
-  };
-  const interrupt = () => stopForSignal("SIGINT");
-  const terminate = () => stopForSignal("SIGTERM");
-  process.once("exit", stop);
-  process.once("SIGINT", interrupt);
-  process.once("SIGTERM", terminate);
+  const stop = registerProjectCleanup(project.vitest, () => compose("down", "-v"));
   try {
     compose("up", "-d", "--wait", "postgres");
     const address = compose("port", "postgres", "5432").trim();
@@ -60,7 +40,6 @@ export default async function setup(project: TestProject) {
     stop();
     throw error;
   }
-  project.vitest.onClose(async () => stop());
 }
 
 declare module "vitest" {

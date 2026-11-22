@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { inject } from "vitest";
 import { waitFor } from "../../../test/support.js";
 import { FALLBACK_BASE_IMAGES } from "../src/run-image.js";
 
@@ -33,7 +34,11 @@ exec node /usr/local/lib/node_modules/npm/bin/npm-cli.js "$@"
   return {
     baseImage,
     async build(signal: AbortSignal) {
-      await exec("docker", ["build", "--tag", baseImage, directory], { signal });
+      await exec(
+        "docker",
+        ["build", "--label", inject("dockerRun").label, "--tag", baseImage, directory],
+        { signal },
+      );
     },
     async release(signal: AbortSignal) {
       await waitFor(signal, async () => {
