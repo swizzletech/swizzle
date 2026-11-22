@@ -14,7 +14,7 @@ import {
   sql,
   TransactionRollbackError,
 } from "drizzle-orm";
-import { causeViolation, type DatabaseClient, PG_ERROR } from "./client.js";
+import { type DatabaseClient, isUniqueViolation } from "./client.js";
 import { CodedError } from "./coded-error.js";
 import { shareLiveAutomation } from "./control-plane-automations.js";
 import { getRunById } from "./control-plane-read-models.js";
@@ -197,7 +197,7 @@ export async function createChainJoinRun(
       });
     });
   } catch (error) {
-    if (isChainJoinAlreadyFired(error)) {
+    if (isUniqueViolation(error, "chain_join_fires_trigger_origin_unique")) {
       return null;
     }
     throw error;
@@ -251,14 +251,6 @@ export async function findSucceededChainSourceRuns(
 
 export async function getRun(client: DatabaseClient, runId: string): Promise<StoredRun | null> {
   return await getRunById(client, runId);
-}
-
-function isChainJoinAlreadyFired(error: unknown): boolean {
-  const violation = causeViolation(error);
-  return (
-    violation?.code === PG_ERROR.uniqueViolation &&
-    violation.constraint === "chain_join_fires_trigger_origin_unique"
-  );
 }
 
 export async function createRunExecution(

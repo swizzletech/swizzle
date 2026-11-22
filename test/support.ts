@@ -10,10 +10,13 @@ export const TEST_ENCRYPTION_KEY = "12345678901234567890123456789012";
 
 export const temporaryDirectories = new Set<string>();
 
-export async function temporaryDirectory(prefix: string): Promise<string> {
+export async function temporaryDirectory(
+  prefix: string,
+  finish: (cleanup: () => Promise<void>) => void = onTestFinished,
+): Promise<string> {
   const directory = await mkdtemp(path.join(os.tmpdir(), prefix));
   temporaryDirectories.add(directory);
-  onTestFinished(() => rm(directory, { force: true, recursive: true }));
+  finish(() => rm(directory, { force: true, recursive: true }));
   return directory;
 }
 

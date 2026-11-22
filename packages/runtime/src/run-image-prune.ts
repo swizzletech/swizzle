@@ -1,21 +1,14 @@
 import { RUN_IMAGE_DISK_DETAILS_LIMIT, type RunImageDisk } from "@swizzle/db";
 import {
-  CONTROL_TIMEOUT_MS,
   DOCKER_DEADLINES,
-  type DockerDeadlines,
   DockerScope,
   removeAbandonedContainers,
   stackLabel,
-  TRANSFER_TIMEOUT_MS,
 } from "./docker-cli.js";
 import { readImageLayerHistory } from "./docker-image-history.js";
 import { AutomationRuntimeError } from "./errors.js";
 
-export type PruneDeadlines = DockerDeadlines & { readonly pass: number };
-export const PRUNE_DEADLINES: PruneDeadlines = {
-  ...DOCKER_DEADLINES,
-  pass: TRANSFER_TIMEOUT_MS + 12 * CONTROL_TIMEOUT_MS,
-};
+export const PRUNE_PASS_TIMEOUT_MS = DOCKER_DEADLINES.transfer + 12 * DOCKER_DEADLINES.control;
 
 const DEFAULT_IMAGE_RETENTION_HOURS = 24;
 const DEFAULT_IMAGE_DISK_MB = 20_480;
@@ -28,41 +21,36 @@ export async function pruneRunImages(input: {
   readonly keep: ReadonlySet<string>;
   readonly logger?: ImagePruneLogger;
   readonly signal?: AbortSignal;
-  readonly deadlines?: PruneDeadlines;
 }): Promise<{ readonly removed: number; readonly disk: RunImageDisk }> {
-  return await withPassOwner(
-    async (owner) => {
-      const docker: DockerCall = (args) => owner.run(args, { outputLimitBytes: 1_048_576 });
-      const now = Date.now();
-      const budgetBytes = diskBudgetBytes();
-      await removeAbandonedContainers();
-      const listed = await listStackRunImages(docker);
-      const inventory = await measureImageFootprints(listed, owner, input.logger);
-      const remaining = new Map(inventory.map((image) => [image.id, image]));
-      const imageCount = remaining.size;
-      const refused = new Set<string>();
-      const retentionMs =
-        positiveInteger("SWIZZLE_RUNNER_IMAGE_RETENTION_HOURS", DEFAULT_IMAGE_RETENTION_HOURS) *
-        3_600_000;
-      for (;;) {
-        const { removals, disk } = planPrune(
-          { images: [...remaining.values()], refused },
-          input.keep,
-          now,
-          budgetBytes,
-          retentionMs,
-        );
-        const refusedId = await executeRemovals(removals, remaining, docker);
-        if (refusedId === null) {
-          input.signal?.throwIfAborted();
-          return { removed: imageCount - remaining.size, disk };
-        }
-        refused.add(refusedId);
+  return await withPassOwner(async (owner) => {
+    const docker: DockerCall = (args) => owner.run(args, { outputLimitBytes: 1_048_576 });
+    const now = Date.now();
+    const budgetBytes = diskBudgetBytes();
+    await removeAbandonedContainers();
+    const listed = await listStackRunImages(docker);
+    const inventory = await measureImageFootprints(listed, owner, input.logger);
+    const remaining = new Map(inventory.map((image) => [image.id, image]));
+    const imageCount = remaining.size;
+    const refused = new Set<string>();
+    const retentionMs =
+      positiveInteger("SWIZZLE_RUNNER_IMAGE_RETENTION_HOURS", DEFAULT_IMAGE_RETENTION_HOURS) *
+      3_600_000;
+    for (;;) {
+      const { removals, disk } = planPrune(
+        { images: [...remaining.values()], refused },
+        input.keep,
+        now,
+        budgetBytes,
+        retentionMs,
+      );
+      const refusedId = await executeRemovals(removals, remaining, docker);
+      if (refusedId === null) {
+        input.signal?.throwIfAborted();
+        return { removed: imageCount - remaining.size, disk };
       }
-    },
-    input.signal,
-    input.deadlines,
-  );
+      refused.add(refusedId);
+    }
+  }, input.signal);
 }
 
 type ImageRemoval = { readonly id: string; readonly references: readonly string[] };
@@ -144,11 +132,9 @@ type DockerCall = (args: readonly string[]) => Promise<{ readonly stdout: string
 async function withPassOwner<T>(
   pass: (docker: DockerScope) => Promise<T>,
   signal?: AbortSignal,
-  deadlines: PruneDeadlines = PRUNE_DEADLINES,
 ): Promise<T> {
   const owner = new DockerScope({
-    timeoutMs: deadlines.pass,
-    deadlines,
+    timeoutMs: PRUNE_PASS_TIMEOUT_MS,
     containerName: null,
     ...(signal === undefined ? {} : { signal }),
   });

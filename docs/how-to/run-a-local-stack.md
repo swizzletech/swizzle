@@ -58,6 +58,8 @@ The affected-test cache reuses green results only when repository contents, sele
 
 Run `just verify` before landing. It runs every test without using the affected-test cache. CI runs the same lanes in parallel and splits the test lane across three jobs. The required `Verify` check depends on all three, so a failure outside the affected-test selection fails CI too. The static gate checks that required test jobs cover every shard once and that required jobs and steps preserve failure status. CI also runs `just audit` against the live advisory feed. On a push to main, the static lane checks comment budget growth against the branch tip before the push. It rejects pushes that create main or whose previous commit is unavailable. Pull requests use the merge base with main.
 
+The Vitest `docker` project runs one file at a time and allows at most two concurrent cases per file. Docker tests share the host daemon with other worktrees.
+
 ## Check PostgreSQL behavior
 
 Run `just verify-state-machine` to run the Vitest `postgres` project. The project starts a disposable PostgreSQL container and migrates a template database. Each test file gets a database clone, and the fixture resets its rows before each test. Store, auth, and route tests use the production PostgreSQL implementations.

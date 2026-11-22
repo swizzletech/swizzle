@@ -4,7 +4,8 @@ import { runImageDiskOverBudget, runImageDiskWarning } from "@swizzle/db";
 import { create as tarCreate } from "tar";
 import { expect, it, vi } from "vitest";
 import { heldDeadlines, temporaryDirectory, waitFor } from "../../../test/support.js";
-import { PRUNE_DEADLINES, planPrune, pruneRunImages } from "./run-image-prune.js";
+import { DOCKER_DEADLINES } from "./docker-cli.js";
+import { PRUNE_PASS_TIMEOUT_MS, planPrune, pruneRunImages } from "./run-image-prune.js";
 
 it("keeps the newest cache within budget, counting shared parent chains once", () => {
   expect(
@@ -406,7 +407,7 @@ it.for(["timeout", "broken-archive"] as const)(
     );
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "301");
     const warn = vi.fn();
-    const deadlines = heldDeadlines(PRUNE_DEADLINES.transfer);
+    const deadlines = heldDeadlines(DOCKER_DEADLINES.transfer);
     const pruning = pruneRunImages({ keep: new Set([active]), logger: { warn } });
     if (exportFault === "timeout") {
       await waitFor(signal, () =>
@@ -476,7 +477,7 @@ it("rejects an expired prune owner during export without removing images", async
     [{ tag: `swizzle-run:${"a".repeat(24)}`, layers: { base: 300, empty: 0, inactive: 1 } }],
     "timeout",
   );
-  const deadline = heldDeadlines(PRUNE_DEADLINES.pass);
+  const deadline = heldDeadlines(PRUNE_PASS_TIMEOUT_MS);
   const pruning = pruneRunImages({ keep: new Set() });
   const rejected = expect(pruning).rejects.toMatchObject({ code: "DOCKER_TRANSFER_TIMEOUT" });
   await waitFor(signal, () =>
@@ -716,7 +717,7 @@ for (const fault of ["unmappable", "timeout", "broken-archive"] as const) {
       ],
       fault === "unmappable" ? undefined : fault,
     );
-    const deadlines = heldDeadlines(PRUNE_DEADLINES.transfer);
+    const deadlines = heldDeadlines(DOCKER_DEADLINES.transfer);
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "301");
     vi.resetModules();
     const { startDeploymentPreparation } = await import("./deployment-preparation.js");

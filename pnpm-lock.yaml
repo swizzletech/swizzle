@@ -576,6 +576,9 @@ importers:
       bullmq:
         specifier: 'catalog:'
         version: 6.7.8(ioredis@6.0.0(supports-color@7.2.0))(pg@8.23.1)
+      cron-parser:
+        specifier: ^5.10.6
+        version: 5.10.6
       esbuild:
         specifier: ^0.28.2
         version: 0.28.2

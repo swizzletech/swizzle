@@ -7,6 +7,8 @@ import { controlEgressAgentOptions, EgressProxyConfigurationError } from "./http
 import { createLogger } from "./logger.js";
 import { APP_VERSION } from "./version.js";
 
+const TRACE_ONLY_SDK_OPTIONS = { logRecordProcessors: [], metricReaders: [] };
+
 let sdk: NodeSDK | null = null;
 
 export async function startTracing(serviceName: string): Promise<void> {
@@ -41,8 +43,7 @@ export async function startTracing(serviceName: string): Promise<void> {
   sdk = new NodeSDK({
     resource: resourceFromAttributes({ [ATTR_SERVICE_VERSION]: APP_VERSION }),
     serviceName,
-    logRecordProcessors: [],
-    metricReaders: [],
+    ...TRACE_ONLY_SDK_OPTIONS,
     traceExporter: new OTLPTraceExporter({
       httpAgentOptions: { keepAlive: true, ...agentOptions },
     }),

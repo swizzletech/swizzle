@@ -64,10 +64,13 @@ export async function readImageLayerHistory(
     await owner.run(["image", "save", ...images.map((image) => image.id)], {
       deadline: "transfer",
       outputLimitBytes: 4096,
-      onStdoutBytes: (chunk) => {
-        parser.write(chunk);
-        if (unreadable || histories.size === images.length) return "stop";
-        return undefined;
+      stdout: {
+        kind: "bytes",
+        onChunk: (chunk) => {
+          parser.write(chunk);
+          if (unreadable || histories.size === images.length) return "stop";
+          return undefined;
+        },
       },
     });
     if (histories.size !== images.length) parser.end();

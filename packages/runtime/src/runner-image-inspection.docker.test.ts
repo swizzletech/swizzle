@@ -1,14 +1,18 @@
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { parseAutomationConfig } from "@swizzle/config";
+import { create as tarCreate } from "tar";
 import { expect, it, vi } from "vitest";
+import { removeDockerImages } from "../../../test/docker-images.js";
 import { heldDeadlines, temporaryDirectory } from "../../../test/support.js";
 import { createRunnerImageChecks } from "./runner-image-checks.js";
 import { inspectRunnerImage } from "./runner-image-inspection.js";
 import { evaluateAutomationReadiness } from "./runtime-requirements.js";
+
+const exec = promisify(execFile);
 
 it("keeps a custom image without a tool record ready with unverified requirements", async ({
   signal,
@@ -16,12 +20,12 @@ it("keeps a custom image without a tool record ready with unverified requirement
   heldDeadlines();
   const directory = await temporaryDirectory("swizzle-image-no-record-");
   const image = `swizzle-image-no-record:${randomUUID()}`;
-  const exec = promisify(execFile);
+  const rootfs = path.join(directory, "rootfs.tar");
   await writeFile(path.join(directory, "marker"), "legacy image\n");
-  await writeFile(path.join(directory, "Dockerfile"), "FROM scratch\nCOPY marker /marker\n");
-  await exec("docker", ["build", "--tag", image, directory], { signal });
+  await tarCreate({ cwd: directory, file: rootfs }, ["marker"]);
   const checks = createRunnerImageChecks();
   try {
+    await exec("docker", ["image", "import", rootfs, image], { signal });
     const config = parseAutomationConfig(`
 name: legacy-image
 version: 1.0.0
@@ -73,7 +77,7 @@ runtime:
     expect(selected?.runnerImage).toEqual({ kind: "unverified" });
   } finally {
     checks.close();
-    await exec("docker", ["image", "rm", image]);
+    await removeDockerImages([image]);
   }
 });
 
@@ -104,9 +108,11 @@ it("reads the selected image's inventory without starting its entrypoint", async
   heldDeadlines();
   const directory = await temporaryDirectory("swizzle-image-record-");
   const image = `swizzle-image-record:${randomUUID()}`;
-  const exec = promisify(execFile);
+  const rootfs = path.join(directory, "rootfs.tar");
+  const toolDirectory = path.join(directory, "etc/swizzle");
+  await mkdir(toolDirectory, { recursive: true });
   await writeFile(
-    path.join(directory, "runner-tools.json"),
+    path.join(toolDirectory, "runner-tools.json"),
     JSON.stringify({
       languages: [
         { name: "node", version: "26.12.1" },
@@ -119,12 +125,13 @@ it("reads the selected image's inventory without starting its entrypoint", async
       ],
     }),
   );
-  await writeFile(
-    path.join(directory, "Dockerfile"),
-    'FROM scratch\nCOPY runner-tools.json /etc/swizzle/runner-tools.json\nENTRYPOINT ["/never-execute"]\n',
-  );
-  await exec("docker", ["build", "--tag", image, directory], { signal });
+  await tarCreate({ cwd: directory, file: rootfs }, ["etc"]);
   try {
+    await exec(
+      "docker",
+      ["image", "import", "--change", 'ENTRYPOINT ["/never-execute"]', rootfs, image],
+      { signal },
+    );
     expect(await inspectRunnerImage({ id: "record-probe", image })).toMatchObject({
       id: "record-probe",
       result: {
@@ -143,6 +150,6 @@ it("reads the selected image's inventory without starting its entrypoint", async
       },
     });
   } finally {
-    await exec("docker", ["image", "rm", image]);
+    await removeDockerImages([image]);
   }
 });

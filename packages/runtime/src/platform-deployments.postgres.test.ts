@@ -387,6 +387,36 @@ describe("platform deployments", () => {
     });
   });
 
+  it("rejects a rollback that would reclaim another automation's webhook path", async () => {
+    const platform = await testPlatform();
+    const deploy = async (name: string, webhookPath: string) =>
+      await platform.deployAutomationToPlatform({
+        environment: "local",
+        automationDirectory: await createAutomationFixture({
+          name,
+          triggerLines: ["  type: webhook", `  path: ${webhookPath}`],
+        }),
+      });
+    const first = await deploy("rollback-owner", "/original");
+    const second = await deploy("rollback-owner", "/moved");
+    await deploy("new-owner", "/original");
+
+    await expect(
+      platform.rollbackDeployment({
+        environment: "local",
+        automationName: "rollback-owner",
+        targetDeploymentId: first.deploymentId,
+      }),
+    ).rejects.toMatchObject({ code: "ROLLBACK_CONFLICT" });
+    expect(await platform.getAutomationTrigger("rollback-owner", "local")).toMatchObject({
+      deploymentId: second.deploymentId,
+      webhookPath: "/moved",
+    });
+    expect(
+      await platform.triggerWebhookByPath({ environment: "local", path: "/original" }),
+    ).toMatchObject({ automationName: "new-owner" });
+  });
+
   it("fails clearly when triggering an unknown webhook path", async () => {
     const platform = await testPlatform();
 

@@ -54,11 +54,14 @@ export async function inspectRunnerImage(request: RunnerImageRequest): Promise<R
       await scope.run(["cp", `${name}:/etc/swizzle/runner-tools.json`, "-"], {
         deadline: "transfer",
         outputLimitBytes: 1_048_576,
-        onStdoutBytes: (chunk) => {
-          bytes += chunk.length;
-          if (bytes > 1_048_576) throw new Error("Runner inventory exceeds 1 MiB.");
-          chunks.push(chunk);
-          return undefined;
+        stdout: {
+          kind: "bytes",
+          onChunk: (chunk) => {
+            bytes += chunk.length;
+            if (bytes > 1_048_576) throw new Error("Runner inventory exceeds 1 MiB.");
+            chunks.push(chunk);
+            return undefined;
+          },
         },
       });
     } catch (error) {

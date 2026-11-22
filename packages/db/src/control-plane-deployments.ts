@@ -1,6 +1,6 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { recordDeploymentChange } from "./audit-resources.js";
-import { causeViolation, type DatabaseClient, PG_ERROR } from "./client.js";
+import { type DatabaseClient, isUniqueViolation } from "./client.js";
 import { CodedError } from "./coded-error.js";
 import { syncDeploymentCheckInTransaction } from "./control-plane-checks.js";
 import {
@@ -298,7 +298,7 @@ export async function commitDeployment(
       };
     });
   } catch (error) {
-    if (isWebhookPathConflict(error)) {
+    if (isUniqueViolation(error, "automation_triggers_webhook_path_unique")) {
       throw new CodedError(
         "TRIGGER_WEBHOOK_PATH_CONFLICT",
         `Webhook path is already claimed in environment ${input.deployment.environment}: ${
@@ -401,7 +401,7 @@ export async function commitRollbackDeployment(
       };
     });
   } catch (error) {
-    if (isWebhookPathConflict(error)) {
+    if (isUniqueViolation(error, "automation_triggers_webhook_path_unique")) {
       throw new CodedError(
         "TRIGGER_WEBHOOK_PATH_CONFLICT",
         `Webhook path is already claimed in environment ${input.environment}`,
@@ -665,14 +665,6 @@ async function insertDeploymentAuditEventInTransaction(
   input: CreateDeploymentAuditEventInput,
 ): Promise<void> {
   await recordDeploymentChange(tx, input);
-}
-
-function isWebhookPathConflict(error: unknown): boolean {
-  const violation = causeViolation(error);
-  return (
-    violation?.code === PG_ERROR.uniqueViolation &&
-    violation.constraint === "automation_triggers_webhook_path_unique"
-  );
 }
 
 async function getChainTriggersForSourceInTransaction(

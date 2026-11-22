@@ -87,3 +87,8 @@ export function causeViolation(
 export function causeCode(error: unknown): string | undefined {
   return causeViolation(error)?.code;
 }
+
+export function isUniqueViolation(error: unknown, constraint: string): boolean {
+  const violation = causeViolation(error);
+  return violation?.code === PG_ERROR.uniqueViolation && violation.constraint === constraint;
+}

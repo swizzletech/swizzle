@@ -1,15 +1,19 @@
 import { execFile } from "node:child_process";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { gzipSync } from "node:zlib";
 import { create as tarCreate } from "tar";
 import { expect, it, vi } from "vitest";
 import { z } from "zod";
-import { heldDeadlines, temporaryDirectory, waitFor } from "../../../test/support.js";
+import { removeDockerImages, removeImagesWithLabel } from "../../../test/docker-images.js";
+import { heldDeadlines, temporaryDirectory } from "../../../test/support.js";
 import { createInstallGate } from "../test/install-gate.js";
+import { DockerScope } from "./docker-cli.js";
 import { pruneRunImages } from "./run-image-prune.js";
 import { runAutomation } from "./runner.js";
+import { sandboxRemovals } from "./sandbox.js";
 
 const exec = promisify(execFile);
 const MIB = 1_048_576;
@@ -20,13 +24,17 @@ const inspectedImage = z.object({
 
 it("lets a healthy run finish when another run exceeds its shared assembly log budget", async ({
   signal,
+  onTestFinished,
+  onTestFailed,
 }) => {
-  heldDeadlines();
+  const deadlines = heldDeadlines();
   const directory = await temporaryDirectory("swizzle-image-isolation-");
   const stack = `image-isolation-${randomUUID()}`;
   vi.stubEnv("SWIZZLE_STACK", stack);
   vi.stubEnv("SWIZZLE_RUNNER_NETWORK", "none");
   const gate = await createInstallGate(directory, `local-${stack}`);
+  const stop = new AbortController();
+  const runSignal = AbortSignal.any([signal, stop.signal]);
   await writeFile(
     path.join(directory, "config.yaml"),
     [
@@ -63,7 +71,7 @@ it("lets a healthy run finish when another run exceeds its shared assembly log b
       automationDirectory: directory,
       environmentName: "local",
       runId: randomUUID(),
-      abortSignal: signal,
+      abortSignal: runSignal,
       ...limit,
       onStderrChunk: (chunk) => {
         logs += chunk;
@@ -92,33 +100,43 @@ it("lets a healthy run finish when another run exceeds its shared assembly log b
       ended: () => ended,
     };
   };
-  const owned = async (kind: "container" | "image") =>
-    (
-      await exec("docker", [
-        kind,
-        "ls",
-        "--all",
-        "--quiet",
-        "--filter",
-        `label=swizzle.stack=local-${stack}`,
-      ])
-    ).stdout
-      .trim()
-      .split("\n")
-      .filter(Boolean);
-  const releaseUntil = (done: () => boolean | Promise<boolean>) =>
-    waitFor(signal, async () => {
-      await gate.release().catch(() => {});
-      return await done();
-    });
-  const healthy = start();
+  let healthy: ReturnType<typeof start> | undefined;
   let limited: ReturnType<typeof start> | undefined;
-  const runsEnded = () => healthy.ended() && (limited?.ended() ?? true);
+  const cleanup = new AbortController();
+  onTestFailed(() => cleanup.abort());
+  let teardown: Promise<void> | undefined;
+  const finish = () => {
+    teardown ??= (async () => {
+      stop.abort();
+      if (healthy?.ended() === false || limited?.ended() === false) deadlines.expire();
+      await Promise.allSettled([healthy?.result, limited?.result]);
+      try {
+        await Promise.all([DockerScope.removals(), sandboxRemovals()]);
+        const label = `swizzle.stack=local-${stack}`;
+        const options = { signal: cleanup.signal };
+        const { stdout } = await exec(
+          "docker",
+          ["container", "ls", "--all", "--quiet", "--filter", `label=${label}`],
+          options,
+        );
+        const containers = stdout.split("\n").filter(Boolean);
+        if (containers.length > 0)
+          await exec("docker", ["container", "rm", "--force", "--volumes", ...containers], options);
+        await removeImagesWithLabel(label, cleanup.signal);
+      } finally {
+        await gate.close(cleanup.signal);
+      }
+    })();
+    return teardown;
+  };
+  onTestFinished(finish);
   try {
+    await gate.build(signal);
+    healthy = start();
     await healthy.joined;
     limited = start({ outputLimitBytes: 64 });
     await limited.joined;
-    await releaseUntil(runsEnded);
+    await gate.release(signal);
     expect(await limited.result).toMatchObject({
       success: false,
       code: "PROCESS_OUTPUT_LIMIT_EXCEEDED",
@@ -128,10 +146,7 @@ it("lets a healthy run finish when another run exceeds its shared assembly log b
     expect(await healthy.result).toMatchObject({ success: true, result: { ok: true } });
     expect([healthy.started(), limited.started()]).toEqual([true, false]);
   } finally {
-    await releaseUntil(async () => runsEnded() && (await owned("container")).length === 0);
-    const images = await owned("image");
-    if (images.length > 0) await exec("docker", ["image", "rm", "--force", ...images]);
-    await gate.close();
+    await finish();
   }
 });
 
@@ -169,12 +184,14 @@ it("measures partially shared bases independently of excluded images, orphan com
   const old = new Date(Date.now() - 11 * 60_000).toISOString();
   const common = await fixture.layer("common", Buffer.alloc(8 * MIB, "a"));
   const zero = await fixture.layer("zero", Buffer.alloc(0));
-  const customA = await fixture.layer("custom-a", randomBytes(4 * MIB));
-  const customB = await fixture.layer("custom-b", randomBytes(6 * MIB));
+  const customA = await fixture.layer("custom-a", Buffer.alloc(4 * MIB, "b"));
+  const customB = await fixture.layer("custom-b", Buffer.alloc(6 * MIB, "c"));
   const tag = (name: string) =>
     `swizzle-run:${createHash("sha256").update(`${marker}:${name}`).digest("hex").slice(0, 24)}`;
   const baseCommon = tag("common");
   const baseA = tag("base-a");
+  const ownedImages = new Set<string>();
+  let committingUntaggedImage = false;
   const add = async (
     name: string,
     layers: readonly LayerDescriptor[],
@@ -182,6 +199,7 @@ it("measures partially shared bases independently of excluded images, orphan com
     created = old,
   ) => {
     const reference = tag(name);
+    ownedImages.add(reference);
     await fixture.image(
       reference,
       layers,
@@ -194,7 +212,6 @@ it("measures partially shared bases independently of excluded images, orphan com
     );
     return reference;
   };
-  const load = async () => docker("image", "load", "--input", await fixture.archive());
   const closeToDisk = (actual: number, expected: number) => {
     expect(Math.abs(actual - expected) / expected).toBeLessThan(0.03);
   };
@@ -207,17 +224,42 @@ it("measures partially shared bases independently of excluded images, orphan com
     await add("common", [common, zero], `${stack}-excluded`);
     await add("base-a", [common, zero, customA], `${stack}-excluded`);
     await add("base-b", [common, zero, customB], `${stack}-excluded`);
-    await load();
     const a = tag("a");
     const b = tag("b");
-    await add("a", [common, zero, customA, await fixture.layer("a", randomBytes(MIB))], stack, old);
-    await add("b", [common, zero, customB, await fixture.layer("b", randomBytes(MIB))], stack, old);
+    await add(
+      "a",
+      [common, zero, customA, await fixture.layer("a", Buffer.alloc(MIB, "d"))],
+      stack,
+      old,
+    );
+    await add(
+      "b",
+      [common, zero, customB, await fixture.layer("b", Buffer.alloc(MIB, "e"))],
+      stack,
+      old,
+    );
     await add(
       "excluded",
-      [common, zero, customA, await fixture.layer("excluded", randomBytes(2 * MIB))],
+      [common, zero, customA, await fixture.layer("excluded", Buffer.alloc(2 * MIB, "f"))],
       `${stack}-excluded`,
     );
-    await load();
+    const largeStack = `${stack}-large`;
+    const inventory = Array.from({ length: 20 }, (_, i) => tag(`inventory-${i}`));
+    for (const [i] of inventory.entries()) {
+      await add(
+        `inventory-${i}`,
+        [common, zero, customA, await fixture.layer(`inventory-${i}`, Buffer.from(`source ${i}`))],
+        largeStack,
+        old,
+      );
+    }
+    const cached = await add(
+      "cached",
+      [common, zero, customA, await fixture.layer("cached", Buffer.alloc(MIB, "g"))],
+      stack,
+      old,
+    );
+    await docker("image", "load", "--input", await fixture.archive());
     const imageA = await inspect(a);
     const imageB = await inspect(b);
     expect(imageA.RootFS.Layers.filter((id) => imageB.RootFS.Layers.includes(id))).toEqual(
@@ -231,16 +273,8 @@ it("measures partially shared bases independently of excluded images, orphan com
     console.log(`Active union: measured=${active.disk.activeBytes}, independent=${expectedActive}`);
     closeToDisk(active.disk.activeBytes, expectedActive);
 
-    const cached = tag("cached");
-    await add(
-      "cached",
-      [common, zero, customA, await fixture.layer("cached", randomBytes(MIB))],
-      stack,
-      old,
-    );
-    await load();
     const source = path.join(directory, "untagged.bin");
-    await writeFile(source, randomBytes(MIB));
+    await writeFile(source, Buffer.alloc(MIB, "h"));
     const assembly = (
       await docker(
         "create",
@@ -257,7 +291,9 @@ it("measures partially shared bases independently of excluded images, orphan com
     ).trim();
     try {
       await docker("cp", source, `${assembly}:/untagged`);
-      await docker("commit", assembly);
+      committingUntaggedImage = true;
+      ownedImages.add((await docker("commit", assembly)).trim());
+      committingUntaggedImage = false;
     } finally {
       await cleanup("container", "rm", assembly);
     }
@@ -272,78 +308,58 @@ it("measures partially shared bases independently of excluded images, orphan com
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", String(Math.floor(expectedRetained / MIB) - 1));
     expect((await pruneRunImages({ keep: new Set([a, b]), signal })).removed).toBe(1);
 
-    const largeStack = `${stack}-large`;
-    const inventory = Array.from({ length: 20 }, (_, i) => tag(`inventory-${i}`));
-    for (const [i] of inventory.entries()) {
-      await add(
-        `inventory-${i}`,
-        [
-          common,
-          zero,
-          customA,
-          await fixture.layer(`inventory-${i}`, Buffer.from(`source ${marker} ${i}`)),
-        ],
-        largeStack,
-        old,
-      );
-    }
-    await load();
     vi.stubEnv("SWIZZLE_STACK", largeStack);
     vi.stubEnv("SWIZZLE_RUNNER_IMAGE_DISK_MB", "100");
     const large = await pruneRunImages({ keep: new Set(inventory), signal });
     expect(large.removed).toBe(0);
     closeToDisk(large.disk.activeBytes, 12 * MIB);
   } finally {
-    const ids = [
-      ...new Set(
-        (
-          await cleanup(
-            "image",
-            "ls",
-            "--all",
-            "--filter",
-            `label=${label}`,
-            "--quiet",
-            "--no-trunc",
-          )
-        )
-          .trim()
-          .split("\n")
-          .filter(Boolean),
-      ),
-    ];
-    if (ids.length > 0) await cleanup("image", "rm", ...ids);
+    if (committingUntaggedImage) await removeImagesWithLabel(label);
+    else await removeDockerImages(ownedImages);
   }
 });
 
 interface LayerDescriptor {
   readonly diffId: string;
-  readonly file: string;
+  readonly blob: BlobDescriptor;
+}
+
+interface BlobDescriptor {
+  readonly mediaType: string;
+  readonly digest: string;
+  readonly size: number;
 }
 
 async function imageArchive(directory: string, marker: string) {
   const root = path.join(directory, "archive");
-  await mkdir(root);
-  const manifests: { Config: string; RepoTags: string[]; Layers: string[] }[] = [];
-  const json = async (value: unknown) => {
-    const bytes = Buffer.from(JSON.stringify(value));
-    const file = `${createHash("sha256").update(bytes).digest("hex")}.json`;
-    await writeFile(path.join(root, file), bytes);
-    return file;
+  const blobDirectory = "blobs/sha256";
+  await mkdir(path.join(root, blobDirectory), { recursive: true });
+  await writeFile(path.join(root, "oci-layout"), '{"imageLayoutVersion":"1.0.0"}');
+  const legacy: { Config: string; RepoTags: string[]; Layers: string[] }[] = [];
+  const manifests: (BlobDescriptor & { annotations: Record<string, string> })[] = [];
+  const digest = (bytes: Buffer) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+  const file = (blob: BlobDescriptor) => `${blobDirectory}/${blob.digest.slice("sha256:".length)}`;
+  const blob = async (suffix: string, bytes: Buffer): Promise<BlobDescriptor> => {
+    const descriptor = {
+      mediaType: `application/vnd.oci.image.${suffix}`,
+      digest: digest(bytes),
+      size: bytes.length,
+    };
+    await writeFile(path.join(root, file(descriptor)), bytes);
+    return descriptor;
   };
+  const json = (type: string, value: unknown) =>
+    blob(`${type}+json`, Buffer.from(JSON.stringify(value)));
   return {
     layer: async (name: string, contents: Buffer): Promise<LayerDescriptor> => {
       const source = path.join(directory, name);
       await mkdir(source);
       const filename = `${marker}-${name}`;
       await writeFile(path.join(source, filename), contents);
-      const file = `${name}.tar`;
-      await tarCreate({ cwd: source, file: path.join(root, file), portable: true }, [filename]);
-      const bytes = await readFile(path.join(root, file));
-      return {
-        file,
-        diffId: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
-      };
+      const layer = path.join(source, "layer.tar");
+      await tarCreate({ cwd: source, file: layer, portable: true, mtime: new Date(0) }, [filename]);
+      const bytes = await readFile(layer);
+      return { diffId: digest(bytes), blob: await blob("layer.v1.tar+gzip", gzipSync(bytes)) };
     },
     image: async (
       tag: string,
@@ -351,7 +367,7 @@ async function imageArchive(directory: string, marker: string) {
       labels: Record<string, string>,
       created: string,
     ) => {
-      const config = await json({
+      const config = await json("config.v1", {
         created,
         architecture: process.arch === "arm64" ? "arm64" : "amd64",
         os: "linux",
@@ -359,18 +375,37 @@ async function imageArchive(directory: string, marker: string) {
         rootfs: { type: "layers", diff_ids: layers.map((layer) => layer.diffId) },
         history: layers.map(() => ({ created, created_by: "COPY fixture" })),
       });
+      const manifest = await json("manifest.v1", {
+        schemaVersion: 2,
+        config,
+        layers: layers.map((layer) => layer.blob),
+      });
       manifests.push({
-        Config: config,
+        ...manifest,
+        annotations: { "io.containerd.image.name": `docker.io/library/${tag}` },
+      });
+      legacy.push({
+        Config: file(config),
         RepoTags: [tag],
-        Layers: layers.map((layer) => layer.file),
+        Layers: layers.map((layer) => file(layer.blob)),
       });
     },
     archive: async () => {
-      await writeFile(path.join(root, "manifest.json"), JSON.stringify(manifests));
-      const file = path.join(directory, "images.tar");
-      await tarCreate({ cwd: root, file }, ["."]);
-      manifests.length = 0;
-      return file;
+      await writeFile(
+        path.join(root, "index.json"),
+        JSON.stringify({ schemaVersion: 2, manifests }),
+      );
+      await writeFile(path.join(root, "manifest.json"), JSON.stringify(legacy));
+      const archive = path.join(directory, "images.tar");
+      const entries = new Set([
+        "oci-layout",
+        "index.json",
+        "manifest.json",
+        ...manifests.map(file),
+        ...legacy.flatMap(({ Config, Layers }) => [Config, ...Layers]),
+      ]);
+      await tarCreate({ cwd: root, file: archive }, [...entries]);
+      return archive;
     },
   };
 }

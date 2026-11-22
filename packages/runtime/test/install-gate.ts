@@ -3,11 +3,12 @@ import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { waitFor } from "../../../test/support.js";
+import { FALLBACK_BASE_IMAGES } from "../src/run-image.js";
 
 const exec = promisify(execFile);
 
 export async function createInstallGate(directory: string, stack: string) {
-  const name = `swizzle-install-gate-${randomUUID()}`;
   const baseImage = `swizzle-install-gate:${randomUUID()}`;
   const script = path.join(directory, "gated-npm");
   await writeFile(
@@ -20,41 +21,49 @@ exec node /usr/local/lib/node_modules/npm/bin/npm-cli.js "$@"
 `,
     { mode: 0o755 },
   );
-  try {
-    await exec("docker", [
-      "create",
-      "--name",
-      name,
-      "--entrypoint",
-      "/bin/sh",
-      "node:26.12.1-trixie-slim",
-      "-c",
-      "rm /usr/local/bin/npm",
-    ]);
-    await exec("docker", ["start", "--attach", name]);
-    await exec("docker", ["cp", script, `${name}:/usr/local/bin/npm`]);
-    await exec("docker", ["commit", name, baseImage]);
-  } finally {
-    await exec("docker", ["rm", "--force", name]);
-  }
+  await writeFile(
+    path.join(directory, "Dockerfile"),
+    [
+      `FROM ${FALLBACK_BASE_IMAGES.node}`,
+      "RUN rm /usr/local/bin/npm",
+      "COPY gated-npm /usr/local/bin/npm",
+      "",
+    ].join("\n"),
+  );
   return {
     baseImage,
-    async release() {
-      const listed = await exec("docker", [
-        "ps",
-        "--quiet",
-        "--filter",
-        `label=swizzle.stack=${stack}`,
-        "--filter",
-        "name=swizzle-image-",
-      ]);
-      const containers = listed.stdout.trim().split("\n").filter(Boolean);
-      if (containers.length !== 1)
-        throw new Error(`Expected one gated assembly, found ${containers.length}.`);
-      await exec("docker", ["exec", containers[0] ?? "", "touch", "/tmp/release-install"]);
+    async build(signal: AbortSignal) {
+      await exec("docker", ["build", "--tag", baseImage, directory], { signal });
     },
-    async close() {
-      await exec("docker", ["image", "rm", "--force", baseImage]);
+    async release(signal: AbortSignal) {
+      await waitFor(signal, async () => {
+        const listed = await exec(
+          "docker",
+          [
+            "ps",
+            "--quiet",
+            "--filter",
+            `label=swizzle.stack=${stack}`,
+            "--filter",
+            "name=swizzle-image-",
+          ],
+          { signal },
+        );
+        const [container, ...others] = listed.stdout.trim().split("\n").filter(Boolean);
+        if (others.length > 0)
+          throw new Error(`Expected one gated assembly, found ${others.length + 1}.`);
+        if (container === undefined) return false;
+        await exec("docker", ["exec", container, "touch", "/tmp/release-install"], { signal });
+        return true;
+      });
+    },
+    async close(signal: AbortSignal) {
+      try {
+        await exec("docker", ["image", "rm", "--no-prune", baseImage], { signal });
+      } catch (error) {
+        if (!(error instanceof Error && error.message.includes(`No such image: ${baseImage}`)))
+          throw error;
+      }
     },
   };
 }

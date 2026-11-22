@@ -20,7 +20,7 @@ it("kills and names a process whose parent exited, by the test directory it runs
   const orphan = Number(output.trim());
   expect(isRunning(orphan)).toBe(true);
 
-  expect(() => killLeftProcesses(temporaryDirectories)).toThrow(`${orphan} sleep 300`);
+  expect(() => killLeftProcesses(temporaryDirectories, [])).toThrow(`${orphan} sleep 300`);
   await waitFor(signal, () => !isRunning(orphan));
 });
 
