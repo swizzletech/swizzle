@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import {
   CodedError,
   type ControlPlaneStore,
+  countTimetable,
   type DashboardTriggerSummary,
   DEFAULT_PROJECT_ID,
   decide,
@@ -10,6 +11,7 @@ import {
   RELEASE_TEAM_ID,
   type ReadScope,
   readScope,
+  timetableWindow,
 } from "@swizzle/db";
 import {
   createDashboardStore,
@@ -202,16 +204,20 @@ async function verifyAccess(client: DatabaseClient, store: ControlPlaneStore): P
   };
   const seen = async (scope: ReadScope) => {
     const since = new Date(Date.now() - 60_000);
-    const [automations, runs, counts, changes] = await Promise.all([
+    const [automations, runs, timetable, changes] = await Promise.all([
       dashboard.listAutomationSummaries(ENVIRONMENT, scope),
       dashboard.listRuns({ environment: ENVIRONMENT, scope }),
-      dashboard.countRunsSince(ENVIRONMENT, since, scope),
+      dashboard.getTimetable(
+        ENVIRONMENT,
+        timetableWindow({ now: new Date(), utcOffsetMinutes: 0 }),
+        scope,
+      ),
       dashboard.listDeploymentChanges(ENVIRONMENT, since, 50, scope),
     ]);
     return {
       automations: automations.map((entry) => entry.automationSlug),
       changes: [...new Set(changes.map((entry) => entry.automationSlug))],
-      queued: counts.queued,
+      queued: countTimetable(timetable).queued,
       runs: [...new Set(runs.runs.map((run) => run.automationSlug))],
     };
   };

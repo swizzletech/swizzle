@@ -44,7 +44,6 @@ it.each([false, true])(
     };
     const dashboardStore: DashboardStore = {
       close: vi.fn(async () => {}),
-      countRunsSince: unused,
       countStepReach: unused,
       listDeploymentChanges: unused,
       listServiceHeartbeats: unused,

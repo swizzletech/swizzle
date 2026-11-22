@@ -26,8 +26,10 @@ import type {
 } from "@swizzle/db";
 import {
   buildAttention,
+  countTimetable,
   explainPlacement,
   INSTANCE_ATTENTION,
+  timetableWindow,
   workerReachesEnvironment,
 } from "@swizzle/db";
 import { createDashboardStore } from "@swizzle/db/postgres";
@@ -311,8 +313,11 @@ export function createDashboardDataProvider(
       const schedulerEnvironments = await liveSchedulerEnvironments();
       const workers = await reachingWorkers(options.workerRegistry, environment);
       const dayAgo = new Date(observedAt.getTime() - DAY_MS);
+      const window = timetableWindow({
+        now: observedAt,
+        utcOffsetMinutes: viewer.utcOffsetMinutes,
+      });
       const [
-        last24h,
         lastFailed,
         automations,
         waitingApprovals,
@@ -323,12 +328,11 @@ export function createDashboardDataProvider(
         queued,
         timetable,
       ] = await Promise.all([
-        dashboardStore.countRunsSince(environment, dayAgo, scope),
         dashboardStore.listRuns({
           environment,
           failedOnly: true,
           limit: 1,
-          queuedSince: dayAgo,
+          queuedSince: window.from,
           scope,
           topLevelOnly: true,
         }),
@@ -362,11 +366,7 @@ export function createDashboardDataProvider(
           scope,
         ),
         dashboardStore.listQueuedRuns(environment, scope),
-        dashboardStore.getTimetable(
-          environment,
-          { now: observedAt, utcOffsetMinutes: viewer.utcOffsetMinutes },
-          scope,
-        ),
+        dashboardStore.getTimetable(environment, window, scope),
       ]);
       const editable = (
         await Promise.all(
@@ -395,8 +395,8 @@ export function createDashboardDataProvider(
 
       return {
         environment,
-        last24h,
-        last24hFrom: dayAgo.toISOString(),
+        last24h: countTimetable(timetable),
+        last24hFrom: timetable.from,
         lastFailureAt: lastFailureAt(lastFailed.runs[0]),
         needsYou: buildAttention({
           approvals,

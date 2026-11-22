@@ -7,20 +7,13 @@ import type {
   DashboardHourCounts,
   DashboardTimetable,
   DashboardTimetableRow,
-  TimetableClock,
+  TimetableWindow,
 } from "./dashboard-types.js";
+import { TIMETABLE_HOURS } from "./dashboard-window.js";
 import { type RunState, runState } from "./run-status.js";
 import { auditEvents, automations, deployments, runs } from "./schema.js";
 
-const HOUR_MS = 60 * 60_000;
-const HOURS = 24;
 const DEPLOYMENT_LIMIT = 24;
-
-function timetableStart(clock: TimetableClock): Date {
-  const offsetMs = clock.utcOffsetMinutes * 60_000;
-  const hourStart = Math.floor((clock.now.getTime() + offsetMs) / HOUR_MS) * HOUR_MS - offsetMs;
-  return new Date(hourStart - (HOURS - 1) * HOUR_MS);
-}
 
 function listDeploymentMarkers(
   client: DatabaseClient,
@@ -61,11 +54,9 @@ function listDeploymentMarkers(
 export async function getTimetable(
   client: DatabaseClient,
   environment: string,
-  clock: TimetableClock,
+  { from, until }: TimetableWindow,
   scope: ReadScope,
 ): Promise<DashboardTimetable> {
-  const from = timetableStart(clock);
-  const until = new Date(from.getTime() + HOURS * HOUR_MS);
   const fromSeconds = sql.raw(String(from.getTime() / 1000));
   const hour = sql<number>`floor((extract(epoch from ${runs.queuedAt}) - ${fromSeconds}) / 3600)::int`;
   const [counted, changes] = await Promise.all([
@@ -103,7 +94,7 @@ export async function getTimetable(
     if (known !== undefined) return known;
     const row: Row = {
       deployments: [],
-      hours: Array.from({ length: HOURS }, (): Partial<Record<RunState, number>> => ({})),
+      hours: Array.from({ length: TIMETABLE_HOURS }, (): Partial<Record<RunState, number>> => ({})),
     };
     rows.set(automationSlug, row);
     return row;

@@ -61,7 +61,7 @@ export function emptyOverview(): Overview {
       succeeded: 0,
       waiting: 0,
     },
-    last24hFrom: new Date(Date.now() - 24 * HOUR).toISOString(),
+    last24hFrom: from.toISOString(),
     lastFailureAt: null,
     needsYou: [],
     recentChanges: [],
