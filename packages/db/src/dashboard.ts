@@ -7,7 +7,7 @@ import {
 } from "./dashboard-automations.js";
 import { listServiceHeartbeats, upsertServiceHeartbeat } from "./dashboard-heartbeats.js";
 import { getMermaidDiagram } from "./dashboard-mermaid.js";
-import { countRunsSince, listQueuedRuns, listRuns } from "./dashboard-runs.js";
+import { listQueuedRuns, listRuns } from "./dashboard-runs.js";
 import { countStepReach, listRunSteps } from "./dashboard-steps.js";
 import { getTimetable } from "./dashboard-timetable.js";
 import type { DashboardStore } from "./dashboard-types.js";
@@ -29,10 +29,6 @@ export function createDashboardStore(
       }
     },
 
-    async countRunsSince(environment, since, scope) {
-      return await countRunsSince(client, environment, since, scope);
-    },
-
     async countStepReach(automationSlug, environment, limit) {
       return await countStepReach(client, automationSlug, environment, limit);
     },
@@ -45,8 +41,8 @@ export function createDashboardStore(
       return await getMermaidDiagram(client, automationSlug, environment);
     },
 
-    async getTimetable(environment, clock, scope) {
-      return await getTimetable(client, environment, clock, scope);
+    async getTimetable(environment, window, scope) {
+      return await getTimetable(client, environment, window, scope);
     },
 
     async listAutomationSummaries(environment, scope) {

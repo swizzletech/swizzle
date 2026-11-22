@@ -292,8 +292,10 @@ export type {
   DashboardTriggerSummary,
   ServiceHeartbeatRecord,
   TimetableClock,
+  TimetableWindow,
   UpsertServiceHeartbeatInput,
 } from "./dashboard-types.js";
+export { countTimetable, timetableWindow } from "./dashboard-window.js";
 export {
   type DeploymentChange,
   deploymentChanges,

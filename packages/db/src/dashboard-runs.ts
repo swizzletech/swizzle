@@ -32,7 +32,7 @@ import type {
 } from "./dashboard-types.js";
 import { getRunApproval } from "./run-approval.js";
 import { encodeRunCursor } from "./run-cursor.js";
-import { type RunState, runState } from "./run-status.js";
+import { runState } from "./run-status.js";
 import { isCancelledRunSql, runStateSql } from "./run-status-query.js";
 import { automations, automationVersions, deployments, runs } from "./schema.js";
 
@@ -346,43 +346,6 @@ export async function listRecentRunGlances(
     }
   }
   return glances;
-}
-
-export async function countRunsSince(
-  client: DatabaseClient,
-  environment: string,
-  since: Date,
-  scope: ReadScope,
-): Promise<Record<RunState, number>> {
-  const rows = await client.db
-    .select({ deadLetterReason: runs.deadLetterReason, runs: count(), status: runs.status })
-    .from(runs)
-    .innerJoin(deployments, eq(runs.deploymentId, deployments.id))
-    .innerJoin(automations, eq(runs.automationId, automations.id))
-    .where(
-      and(
-        eq(deployments.environment, environment),
-        gte(runs.queuedAt, since),
-        isNull(runs.parentRunId),
-        ownedInScope(scope, runs),
-      ),
-    )
-    .groupBy(runs.status, runs.deadLetterReason);
-
-  const counts: Record<RunState, number> = {
-    cancelled: 0,
-    "dead-lettered": 0,
-    failed: 0,
-    queued: 0,
-    running: 0,
-    succeeded: 0,
-    waiting: 0,
-  };
-  for (const row of rows) {
-    const status = row.status as DashboardRunListItem["status"];
-    counts[runState({ deadLetterReason: row.deadLetterReason, status })] += row.runs;
-  }
-  return counts;
 }
 
 function mapRunRow(row: {

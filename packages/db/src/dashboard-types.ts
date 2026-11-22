@@ -339,6 +339,11 @@ export interface TimetableClock {
   readonly utcOffsetMinutes: number;
 }
 
+export interface TimetableWindow {
+  readonly from: Date;
+  readonly until: Date;
+}
+
 export interface DashboardTimetableRow {
   readonly automationSlug: string;
   readonly hours: readonly DashboardHourCounts[];
@@ -472,11 +477,6 @@ export interface DashboardStore {
     environment: string,
     scope: ReadScope,
   ): Promise<readonly DashboardAutomationSummary[]>;
-  countRunsSince(
-    environment: string,
-    since: Date,
-    scope: ReadScope,
-  ): Promise<Readonly<Record<RunState, number>>>;
   listDeploymentChanges(
     environment: string,
     since: Date,
@@ -485,7 +485,7 @@ export interface DashboardStore {
   ): Promise<readonly DashboardDeploymentChange[]>;
   getTimetable(
     environment: string,
-    clock: TimetableClock,
+    window: TimetableWindow,
     scope: ReadScope,
   ): Promise<DashboardTimetable>;
   listRuns(query: DashboardRunsQuery): Promise<DashboardRunsResult>;

@@ -11,6 +11,15 @@ import { testPeople } from "../test/people.js";
 import { buildTestServer } from "../test/server-harness.js";
 import { createDashboardDataProvider } from "./dashboard.js";
 
+interface Timetable {
+  readonly from: string;
+  readonly rows: {
+    readonly automationSlug: string;
+    readonly deployments: unknown[];
+    readonly hours: Record<string, number>[];
+  }[];
+}
+
 const NOW = new Date("2026-11-06T14:37:00.000Z");
 const FROM = "2026-11-05T15:30:00.000Z";
 const at = (hours: number, minutes = 10) =>
@@ -91,11 +100,14 @@ async function reportAutomation() {
     },
     failed: async (iso: string) => await run({ fail: true }, iso),
     succeeded: async (iso: string) => await run({}, iso),
-    timetable: async () =>
-      (await send("GET", "/dashboard/overview?utcOffset=330")).timetable as {
-        from: string;
-        rows: { automationSlug: string; deployments: unknown[]; hours: object[] }[];
+    overview: async () =>
+      (await send("GET", "/dashboard/overview?utcOffset=330")) as {
+        last24h: Record<string, number>;
+        last24hFrom: string;
+        timetable: Timetable;
       },
+    timetable: async () =>
+      (await send("GET", "/dashboard/overview?utcOffset=330")).timetable as Timetable,
   };
 }
 
@@ -155,4 +167,31 @@ it("keeps another automation's deployment marker when one automation has over 50
   expect(busy).toHaveLength(24);
   expect(busy?.at(0)).toEqual({ at: "2026-11-05T17:47:58.000Z", version: "1.0.0" });
   expect(busy?.at(-1)).toEqual({ at: "2026-11-05T17:48:21.000Z", version: "1.0.0" });
+});
+
+it("counts the status card and its failure link over the timetable's hours", async () => {
+  const report = await reportAutomation();
+  await report.failed(at(-1, 59));
+  await report.succeeded(at(0, 0));
+  await report.failed(at(23, 5));
+  await report.cancelled(at(23, 6));
+
+  const overview = await report.overview();
+  const summed: Record<string, number> = {};
+  for (const hours of overview.timetable.rows.map((row) => row.hours)) {
+    for (const [state, runs] of hours.flatMap((hour) => Object.entries(hour))) {
+      summed[state] = (summed[state] ?? 0) + runs;
+    }
+  }
+  expect(summed).toEqual({ cancelled: 1, "dead-lettered": 1, succeeded: 1 });
+  expect(overview.last24h).toEqual({
+    cancelled: 1,
+    "dead-lettered": 1,
+    failed: 0,
+    queued: 0,
+    running: 0,
+    succeeded: 1,
+    waiting: 0,
+  });
+  expect(overview.last24hFrom).toBe(overview.timetable.from);
 });
