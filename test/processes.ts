@@ -5,7 +5,10 @@ interface RunningProcess {
   readonly command: string;
 }
 
-export function killLeftProcesses(directories: ReadonlySet<string>): void {
+export function killLeftProcesses(
+  directories: ReadonlySet<string>,
+  suspects: readonly string[],
+): void {
   if (process.platform !== "linux") return;
   const running = new Map<number, string>();
   for (const { pid, command } of [
@@ -17,12 +20,17 @@ export function killLeftProcesses(directories: ReadonlySet<string>): void {
   if (running.size === 0) return;
   for (const pid of running.keys()) tryKillLeakedProcess(pid);
   throw new Error(
-    `This test, or one before it in this file that timed out, left ${running.size} processes running, now killed:\n${[
+    `${suspectsOf(suspects)}, or an earlier test in this file that timed out, left ${running.size} processes running, now killed:\n${[
       ...running,
     ]
       .map(([pid, command]) => `  ${pid} ${command}`)
       .join("\n")}`,
   );
+}
+
+function suspectsOf(suspects: readonly string[]): string {
+  if (suspects.length <= 1) return "This test";
+  return `One of the concurrent tests ${suspects.map((name) => `"${name}"`).join(", ")}`;
 }
 
 function tryKillLeakedProcess(pid: number): void {

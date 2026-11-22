@@ -45,6 +45,7 @@
     "@swizzle/core": "workspace:*",
     "@swizzle/db": "workspace:*",
     "bullmq": "catalog:",
+    "cron-parser": "^5.10.6",
     "esbuild": "^0.28.2",
     "ioredis": "^6.0.0",
     "tar": "catalog:",

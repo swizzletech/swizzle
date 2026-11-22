@@ -155,11 +155,9 @@ async function collectDownstreamAutomationIds(
   return reached;
 }
 
-export function getNextCronOccurrence(schedule: string, from: Date): string {
-  return iterateCronOccurrences(schedule, from).next().value;
-}
-
-export function* iterateCronOccurrences(schedule: string, from: Date): Generator<string, never> {
-  const expression = CronExpressionParser.parse(schedule, { currentDate: from, tz: "UTC" });
-  while (true) yield expression.next().toDate().toISOString();
+function getNextCronOccurrence(schedule: string, from: Date): string {
+  return CronExpressionParser.parse(schedule, { currentDate: from, tz: "UTC" })
+    .next()
+    .toDate()
+    .toISOString();
 }

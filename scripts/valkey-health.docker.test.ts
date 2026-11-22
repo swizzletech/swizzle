@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { expect, it } from "vitest";
+import { it } from "vitest";
 import { temporaryDirectory, waitFor } from "../test/support.js";
 import { ensureEnvFile, packagedStackValues } from "./env-file.ts";
 import { readCompose } from "./stack-images.ts";
@@ -12,10 +12,12 @@ import { readCompose } from "./stack-images.ts";
 const execute = promisify(execFile);
 
 for (const authentication of ["correct", "wrong", "empty"] as const) {
-  it(`the packaged Valkey probe reports ${authentication} authentication correctly`, async ({
+  it.concurrent(`the packaged Valkey probe reports ${authentication} authentication correctly`, async ({
+    expect,
+    onTestFinished,
     signal,
   }) => {
-    const directory = await temporaryDirectory("swizzle-valkey-health-");
+    const directory = await temporaryDirectory("swizzle-valkey-health-", onTestFinished);
     const values = packagedStackValues(`swizzle-valkey-${randomUUID()}`);
     const envFile = path.join(directory, ".env");
     await ensureEnvFile(envFile, await readFile(".env.example", "utf8"), values);

@@ -15,16 +15,17 @@ it("serializes both pipes, delivers the accepted UTF-8 prefix, and reports the f
     events.push(`${name}:${chunk}`);
     activeCallbacks--;
   };
-  const output = new OutputPump({
-    stdout,
-    stderr,
-    stdoutLimitBytes: 4,
-    stderrLimitBytes: 4,
-    onStdoutChunk: callback("out"),
-    onStderrChunk: callback("err"),
-    limitPolicy: "stop",
-    onStop: (reason) => events.push(JSON.stringify(reason)),
-  });
+  const output = new OutputPump(
+    { stdout, stderr },
+    {
+      stdout: { kind: "text", onChunk: callback("out") },
+      stdoutLimitBytes: 4,
+      stderrLimitBytes: 4,
+      onStderrChunk: callback("err"),
+      limitPolicy: "stop",
+      onStop: (reason) => events.push(JSON.stringify(reason)),
+    },
+  );
   const ended = Promise.all([once(stdout, "end"), once(stderr, "end")]);
   stdout.end("abcé");
   stderr.end("log");
@@ -39,22 +40,27 @@ it("bounds Docker capture while delivering every text and binary byte", async ()
   const stderr = new PassThrough();
   const bytes: number[] = [];
   const logs: string[] = [];
-  const output = new OutputPump({
-    stdout,
-    stderr,
-    stdoutLimitBytes: 2,
-    stderrLimitBytes: 2,
-    onStdoutBytes: (chunk) => {
-      bytes.push(...chunk);
+  const output = new OutputPump(
+    { stdout, stderr },
+    {
+      stdoutLimitBytes: 2,
+      stderrLimitBytes: 2,
+      stdout: {
+        kind: "bytes",
+        onChunk: (chunk) => {
+          bytes.push(...chunk);
+          return undefined;
+        },
+      },
+      onStderrChunk: (chunk) => {
+        logs.push(chunk);
+      },
+      limitPolicy: "capture",
+      onStop: () => {
+        throw new Error("unexpected stop");
+      },
     },
-    onStderrChunk: (chunk) => {
-      logs.push(chunk);
-    },
-    limitPolicy: "capture",
-    onStop: () => {
-      throw new Error("unexpected stop");
-    },
-  });
+  );
   const ended = Promise.all([once(stdout, "end"), once(stderr, "end")]);
   stdout.end(Buffer.from([0, 255, 128, 10]));
   stderr.end("complete log");
@@ -70,20 +76,24 @@ it("propagates a callback failure and skips callbacks already queued on the othe
   const stderr = new PassThrough();
   const events: string[] = [];
   const failure = new Error("persistence failed");
-  const output = new OutputPump({
-    stdout,
-    stderr,
-    stdoutLimitBytes: 100,
-    stderrLimitBytes: 100,
-    onStdoutChunk: async () => {
-      throw failure;
+  const output = new OutputPump(
+    { stdout, stderr },
+    {
+      stdoutLimitBytes: 100,
+      stderrLimitBytes: 100,
+      stdout: {
+        kind: "text",
+        onChunk: async () => {
+          throw failure;
+        },
+      },
+      onStderrChunk: () => {
+        events.push("delivered stderr");
+      },
+      limitPolicy: "stop",
+      onStop: (reason) => events.push(reason.kind),
     },
-    onStderrChunk: () => {
-      events.push("delivered stderr");
-    },
-    limitPolicy: "stop",
-    onStop: (reason) => events.push(reason.kind),
-  });
+  );
   const ended = Promise.all([once(stdout, "end"), once(stderr, "end")]);
   stdout.end("result");
   stderr.end("log");

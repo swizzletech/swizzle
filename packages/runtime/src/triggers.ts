@@ -1,5 +1,4 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { scheduler } from "node:timers/promises";
 import {
   type AutomationWebhookSignatureConfig,
   normalizeWebhookPath,
@@ -7,14 +6,14 @@ import {
   type WebhookPayloadValidationIssue,
 } from "@swizzle/config";
 import { createDisplayName } from "@swizzle/core";
-import type { AuditEventOf } from "@swizzle/db";
-import {
-  type ControlPlaneStore,
-  iterateCronOccurrences,
-  type RunTriggerType,
-  type StoredRun,
-  type StoredTrigger,
+import type {
+  AuditEventOf,
+  ControlPlaneStore,
+  RunTriggerType,
+  StoredRun,
+  StoredTrigger,
 } from "@swizzle/db";
+import { advanceCronSchedule } from "./cron-schedule.js";
 import { boundCredentialsNamed } from "./deployment-credentials.js";
 import { AutomationRuntimeError, getErrorMessage } from "./errors.js";
 import { isWebhookDeliveryPath } from "./http-contract.js";
@@ -284,42 +283,17 @@ export async function materializeDueCronRuns(
         continue;
       }
 
-      let scheduledFor = trigger.nextRunAt;
-      let previousDueAt = scheduledFor;
-      let dueCount = 1;
-      let nextRunAt: string;
-      if (trigger.cronIntervalMs !== null) {
-        const firstDue = Date.parse(scheduledFor);
-        dueCount += Math.floor((now.getTime() - firstDue) / trigger.cronIntervalMs);
-        scheduledFor = new Date(firstDue + (dueCount - 1) * trigger.cronIntervalMs).toISOString();
-        previousDueAt = new Date(Date.parse(scheduledFor) - trigger.cronIntervalMs).toISOString();
-        nextRunAt = new Date(firstDue + dueCount * trigger.cronIntervalMs).toISOString();
-      } else if (trigger.cronSchedule !== null) {
-        const occurrences = iterateCronOccurrences(trigger.cronSchedule, new Date(scheduledFor));
-        nextRunAt = occurrences.next().value;
-        while (Date.parse(nextRunAt) <= now.getTime()) {
-          previousDueAt = scheduledFor;
-          scheduledFor = nextRunAt;
-          dueCount++;
-          nextRunAt = occurrences.next().value;
-          if (dueCount % 1_000 === 0) await scheduler.yield();
-        }
-      } else {
-        continue;
-      }
-      const withinGrace = now.getTime() - Date.parse(scheduledFor) <= 30_000;
-      const missedCount = dueCount - (withinGrace ? 1 : 0);
+      const advance = await advanceCronSchedule({
+        firstDueAt: trigger.nextRunAt,
+        intervalMs: trigger.cronIntervalMs,
+        schedule: trigger.cronSchedule,
+        now,
+      });
+      if (advance === null) continue;
+      const { nextRunAt, runAt: scheduledFor, missed } = advance;
       const claimed = await options.store.advanceCronTriggerCursor({
         expectedNextRunAt: trigger.nextRunAt,
-        ...(missedCount > 0
-          ? {
-              missed: {
-                firstMissedAt: trigger.nextRunAt,
-                lastMissedAt: withinGrace ? previousDueAt : scheduledFor,
-                missedCount,
-              },
-            }
-          : {}),
+        ...(missed === undefined ? {} : { missed }),
         nextRunAt,
         triggerId: trigger.triggerId,
         updatedAt: nowIso,
@@ -330,7 +304,7 @@ export async function materializeDueCronRuns(
       }
 
       claimedAny = true;
-      if (!withinGrace) continue;
+      if (scheduledFor === null) continue;
 
       const deployment = await options.store.getDeploymentById(trigger.deploymentId);
       const onOverlap = deployment?.config.runtime.on_overlap ?? "skip";

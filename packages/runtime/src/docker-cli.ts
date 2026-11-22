@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import { setTimeout as delay } from "node:timers/promises";
 import { AutomationRuntimeError, getErrorMessage } from "./errors.js";
-import { OutputPump } from "./output-pump.js";
+import { OutputPump, type StdoutOutput } from "./output-pump.js";
 
 export interface DockerOutcome {
   readonly exitCode: number | null;
@@ -22,14 +22,8 @@ export async function withLocalDockerStack<T>(run: () => Promise<T>): Promise<T>
 const REMOVE_ATTEMPTS = 3;
 const REMOVE_RETRY_MS = 1_000;
 
-export const CONTROL_TIMEOUT_MS = 5_000;
-export const TRANSFER_TIMEOUT_MS = 60_000;
-export type DockerDeadlines = Readonly<{ control: number; transfer: number }>;
-export const DOCKER_DEADLINES: DockerDeadlines = {
-  control: CONTROL_TIMEOUT_MS,
-  transfer: TRANSFER_TIMEOUT_MS,
-};
-type DockerDeadline = keyof DockerDeadlines;
+export const DOCKER_DEADLINES = { control: 5_000, transfer: 60_000 } as const;
+type DockerDeadline = keyof typeof DOCKER_DEADLINES;
 
 const scopes = new Set<DockerScope>();
 const PROCESS_LABEL = "swizzle.sandbox-process";
@@ -40,20 +34,14 @@ export function sandboxProcessLabel(): string {
 }
 let closed = false;
 
-type DockerOutputOptions = {
+interface DockerOutputOptions {
   readonly onStderrChunk?: (chunk: string) => void;
   readonly outputLimitBytes: number;
-} & (
-  | { readonly onStdoutChunk?: (chunk: string) => void; readonly onStdoutBytes?: never }
-  | {
-      readonly onStdoutBytes: (chunk: Buffer) => "stop" | undefined;
-      readonly onStdoutChunk?: never;
-    }
-);
+  readonly stdout?: StdoutOutput;
+}
 
 export class DockerScope {
   readonly signal: AbortSignal;
-  private readonly deadlines: DockerDeadlines;
   private readonly controller = new AbortController();
   private readonly commands = new Set<Promise<unknown>>();
   private image: string | null = null;
@@ -62,7 +50,6 @@ export class DockerScope {
 
   constructor(input: {
     readonly timeoutMs: number;
-    readonly deadlines?: DockerDeadlines;
     readonly signal?: AbortSignal;
     readonly containerName: string | null;
   }) {
@@ -75,7 +62,6 @@ export class DockerScope {
       ...(input.signal === undefined ? [] : [input.signal]),
     ]);
     this.container = input.containerName;
-    this.deadlines = input.deadlines ?? DOCKER_DEADLINES;
     scopes.add(this);
   }
 
@@ -91,7 +77,7 @@ export class DockerScope {
     return this.command(
       args,
       options,
-      AbortSignal.any([this.signal, AbortSignal.timeout(this.deadlines[deadline])]),
+      AbortSignal.any([this.signal, AbortSignal.timeout(DOCKER_DEADLINES[deadline])]),
       deadline,
     );
   }
@@ -150,7 +136,7 @@ export class DockerScope {
           : runDocker(
               ["image", "rm", this.image],
               { outputLimitBytes: 4096 },
-              AbortSignal.timeout(CONTROL_TIMEOUT_MS),
+              AbortSignal.timeout(DOCKER_DEADLINES.control),
             ).catch(() => undefined),
       ]);
     } finally {
@@ -177,25 +163,11 @@ async function runDocker(
       env: dockerCliEnvironment(),
       stdio: ["ignore", "pipe", "pipe"],
     });
-    let stopped = false;
-    const onStdoutBytes = options.onStdoutBytes;
-    const output = new OutputPump({
-      stdout: child.stdout,
-      stderr: child.stderr,
+    const output = new OutputPump(child, {
+      stdout: options.stdout ?? { kind: "text" },
       stdoutLimitBytes: options.outputLimitBytes,
       stderrLimitBytes: options.outputLimitBytes,
       onStderrChunk: options.onStderrChunk,
-      ...(onStdoutBytes === undefined
-        ? { onStdoutChunk: options.onStdoutChunk }
-        : {
-            onStdoutBytes: (chunk: Buffer) => {
-              if (onStdoutBytes(chunk) === "stop") {
-                stopped = true;
-                output.stop();
-                killDockerProcess(child);
-              }
-            },
-          }),
       limitPolicy: "capture",
       onStop: () => killDockerProcess(child),
     });
@@ -218,7 +190,7 @@ async function runDocker(
           signal.removeEventListener("abort", abort);
           if (signal.aborted) {
             reject(dockerAbortError(args, signal, deadline));
-          } else if (stopped || exitCode === 0)
+          } else if (output.stoppedByRequest || exitCode === 0)
             resolve({ exitCode, signal: exitSignal, stderr: output.stderr, stdout: output.stdout });
           else
             reject(
@@ -267,7 +239,7 @@ async function removeContainer(name: string): Promise<void> {
       await runDocker(
         ["rm", "--force", name],
         { outputLimitBytes: 4096 },
-        AbortSignal.timeout(CONTROL_TIMEOUT_MS),
+        AbortSignal.timeout(DOCKER_DEADLINES.control),
       );
       return;
     } catch (error) {
@@ -289,7 +261,7 @@ export async function removeAbandonedContainers(): Promise<void> {
       `{{.Names}} {{.State}} {{.Label "${PROCESS_LABEL}"}}`,
     ],
     { outputLimitBytes: 1_048_576 },
-    AbortSignal.timeout(CONTROL_TIMEOUT_MS),
+    AbortSignal.timeout(DOCKER_DEADLINES.control),
   );
   for (const line of listed.stdout.split("\n")) {
     const [name = "", state, owner] = line.trim().split(" ");
@@ -331,7 +303,7 @@ export async function removeLeftoverContainers(): Promise<number> {
       await runDocker(
         ["ps", ...(all ? ["--all"] : []), "--filter", `label=${label}`, "--format", format],
         { outputLimitBytes: 1_048_576 },
-        AbortSignal.timeout(CONTROL_TIMEOUT_MS),
+        AbortSignal.timeout(DOCKER_DEADLINES.control),
       )
     ).stdout
       .split("\n")

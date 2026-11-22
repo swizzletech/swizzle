@@ -22,7 +22,7 @@ const ASSEMBLY_TIMEOUT_MS = 10 * 60 * 1_000;
 const LAYER_CHECK_INTERVAL_MS = 1_000;
 const TOOL_DIRECTORY = "/opt/swizzle";
 const NODE_BASE_IMAGE = "node:26.12.1-trixie-slim";
-const FALLBACK_BASE_IMAGES: Record<AutomationRuntimeConfig["language"], string> = {
+export const FALLBACK_BASE_IMAGES: Record<AutomationRuntimeConfig["language"], string> = {
   node: NODE_BASE_IMAGE,
   python: "python:3.15.1-slim-trixie",
   typescript: NODE_BASE_IMAGE,
@@ -389,7 +389,9 @@ async function runInstallStep(
   );
   const installation = owner
     .attachInstall(name, {
-      ...(onLog !== undefined ? { onStderrChunk: onLog, onStdoutChunk: onLog } : {}),
+      ...(onLog !== undefined
+        ? { onStderrChunk: onLog, stdout: { kind: "text", onChunk: onLog } }
+        : {}),
       outputLimitBytes: 2 * 1_048_576,
     })
     .then(

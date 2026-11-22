@@ -122,15 +122,16 @@ export async function executeProcess(input: {
         );
       }
     };
-    const output = new OutputPump({
-      stdout: child.stdout,
-      stderr: child.stderr,
+    const output = new OutputPump(child, {
+      stdout: { kind: "text", onChunk: chunkDelivery(input.onStdoutChunk) },
       stdoutLimitBytes: input.outputLimitBytes,
       stderrLimitBytes: input.stderrLimitBytes ?? input.outputLimitBytes,
-      onStdoutChunk: chunkDelivery(input.onStdoutChunk),
       onStderrChunk: chunkDelivery(input.onStderrChunk),
       limitPolicy: "stop",
-      onStop: (reason) => stop(reason.kind === "limit" ? { limit: reason.stream } : reason.kind),
+      onStop: (reason) => {
+        if (reason.kind === "limit") stop({ limit: reason.stream });
+        if (reason.kind === "callback-failed") stop(reason.kind);
+      },
     });
     const timeout = setTimeout(() => stop("timeout"), input.timeoutMs);
     const abort = () => stop("aborted");

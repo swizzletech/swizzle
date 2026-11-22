@@ -1,51 +1,70 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { addAbortListener, once } from "node:events";
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { collectWorkerCapabilities, readRunnerTools } from "@swizzle/runtime";
 import { expect, it } from "vitest";
+import { removeImagesWithLabel } from "../test/docker-images.js";
 import { temporaryDirectory } from "../test/support.js";
-import { prepareImages, readCompose, writeCompose } from "./stack-images.ts";
+import { type PreparedStack, readCompose, writeCompose } from "./stack-images.ts";
 
 const execute = promisify(execFile);
+const fixture = new URL("../test/fixtures/runner-upgrade/", import.meta.url);
+const driver = new URL("prepare.mjs", fixture).pathname;
 
-async function removeComposeProjectImages(project: string): Promise<void> {
-  const { stdout } = await execute("docker", [
-    "image",
-    "ls",
-    "--all",
-    "--quiet",
-    "--no-trunc",
-    "--filter",
-    `label=com.docker.compose.project=${project}`,
-  ]);
-  const images = new Set(stdout.split("\n").filter(Boolean));
-  const removals = await Promise.allSettled(
-    Array.from(images, (id) => execute("docker", ["image", "rm", "--force", "--no-prune", id])),
-  );
-  const errors = removals.flatMap((result) =>
-    result.status === "rejected" ? [result.reason] : [],
-  );
-  if (errors.length > 0)
-    throw new AggregateError(errors, `Removing Docker images for ${project} failed`);
+async function prepareFixture(
+  root: string,
+  output: string,
+  signal: AbortSignal,
+  tags?: string,
+  env = process.env,
+): Promise<string> {
+  signal.throwIfAborted();
+  const child = spawn(process.execPath, [driver, root, output, ...(tags ? [tags] : [])], {
+    env,
+    detached: true,
+    stdio: ["ignore", "ignore", "pipe"],
+  });
+  using _abort = addAbortListener(signal, () => {
+    if (child.pid === undefined) return;
+    try {
+      process.kill(-child.pid, "SIGKILL");
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error;
+    }
+  });
+  let stderr = "";
+  child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+    stderr += chunk;
+  });
+  const [code, terminationSignal] = await once(child, "close");
+  signal.throwIfAborted();
+  if (code !== 0) {
+    throw Object.assign(
+      new Error(`Preparing fixture failed: ${code ?? terminationSignal}\n${stderr}`),
+      {
+        stderr,
+      },
+    );
+  }
+  return stderr;
 }
 
-it.each([
+it.concurrent.for([
   { target: "runner", tags: "local", outcome: "prepared" },
   { target: "worker", tags: "local", outcome: "prepared" },
   { target: "runner", tags: "directory", outcome: "prepared" },
   { target: "worker", tags: "local", outcome: "build-error" },
 ] as const)(
   "keeps preparation results when interleaved before its $target extension ($tags tags, $outcome)",
-  async ({ target, tags, outcome }) => {
-    const directory = await temporaryDirectory("swizzle-interleaved-packages-");
+  async ({ target, tags, outcome }, { expect, onTestFinished, signal }) => {
+    const directory = await temporaryDirectory("swizzle-interleaved-packages-", onTestFinished);
     const project = `swizzle-interleaved-${randomUUID()}`;
     const command = async (...args: string[]) =>
-      (await execute("docker", args, { maxBuffer: 64 * 1024 * 1024 })).stdout.trim();
+      (await execute("docker", args, { maxBuffer: 64 * 1024 * 1024, signal })).stdout.trim();
     const docker = (await execute("which", ["docker"])).stdout.trim();
-    const fixture = new URL("../test/fixtures/runner-upgrade/", import.meta.url);
-    const driver = new URL("prepare.mjs", fixture).pathname;
     const bin = path.join(directory, "bin");
     await mkdir(bin);
     await copyFile(new URL("interleave-docker.mjs", fixture), path.join(bin, "docker"));
@@ -92,28 +111,31 @@ it.each([
     const first = path.join(directory, "prepared-a", suffix, "compose.json");
     const second = path.join(directory, "prepared-b", suffix, "compose.json");
     const cleanupCalls = path.join(directory, "cleanup-calls");
+    const preparation = prepareFixture(roots[0], first, signal, tags, {
+      ...process.env,
+      PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+      INTERLEAVE_TARGET: target,
+      INTERLEAVE_PREPARE: driver,
+      INTERLEAVE_ROOT: roots[1],
+      INTERLEAVE_OUTPUT: second,
+      INTERLEAVE_PATH: process.env.PATH,
+      INTERLEAVE_DOCKER: docker,
+      INTERLEAVE_TAG: tags,
+      ...(target === "worker" ? { INTERLEAVE_CLEANUP_CALLS: cleanupCalls } : {}),
+    });
+    let cleanup: Promise<void> | undefined;
+    const finish = () =>
+      (cleanup ??= preparation
+        .catch(() => {})
+        .then(() => removeImagesWithLabel(`com.docker.compose.project=${project}`)));
+    onTestFinished(finish);
     try {
-      const preparation = execute(process.execPath, [driver, roots[0], first, tags], {
-        maxBuffer: 64 * 1024 * 1024,
-        env: {
-          ...process.env,
-          PATH: `${bin}${path.delimiter}${process.env.PATH}`,
-          INTERLEAVE_TARGET: target,
-          INTERLEAVE_PREPARE: driver,
-          INTERLEAVE_ROOT: roots[1],
-          INTERLEAVE_OUTPUT: second,
-          INTERLEAVE_PATH: process.env.PATH,
-          INTERLEAVE_DOCKER: docker,
-          INTERLEAVE_TAG: tags,
-          ...(target === "worker" ? { INTERLEAVE_CLEANUP_CALLS: cleanupCalls } : {}),
-        },
-      });
       if (outcome === "build-error") {
         await expect(preparation).rejects.toMatchObject({
           stderr: expect.stringContaining("Error: Command failed: docker buildx build"),
         });
       } else {
-        const { stderr } = await preparation;
+        const stderr = await preparation;
         if (target === "worker") expect(stderr).toContain("Could not remove temporary stock image");
         for (const [file, identity] of [
           [first, "a"],
@@ -166,7 +188,7 @@ it.each([
         ]);
       }
     } finally {
-      await removeComposeProjectImages(project);
+      await finish();
     }
   },
 );
@@ -246,7 +268,7 @@ it("keeps local runner tags stable and tools available through just upgrade", as
   const observe = async (version: string) => {
     const container = await compose("ps", "--all", "--quiet", "runner-base");
     const runner = await command("docker", "inspect", "--format", "{{.Image}}", container);
-    expect(
+    const [jqVersion, ...runnerRecord] = (
       await command(
         "docker",
         "run",
@@ -254,11 +276,13 @@ it("keeps local runner tags stable and tools available through just upgrade", as
         "--network",
         "none",
         "--entrypoint",
-        "jq",
+        "sh",
         runner,
-        "--version",
-      ),
-    ).toMatch(/^jq-1\./u);
+        "-ec",
+        "jq --version; cat /etc/swizzle/runner-tools.json",
+      )
+    ).split("\n");
+    expect(jqVersion).toMatch(/^jq-1\./u);
     expect(
       await command(
         "docker",
@@ -269,13 +293,17 @@ it("keeps local runner tags stable and tools available through just upgrade", as
         runner,
       ),
     ).toBe(version);
-    const inventory = await compose(
-      "exec",
-      "-T",
-      "worker",
-      "cat",
-      "/etc/swizzle/runner-tools.json",
-    );
+    const [workerBase, ...workerRecord] = (
+      await compose(
+        "exec",
+        "-T",
+        "worker",
+        "sh",
+        "-ec",
+        "printenv SWIZZLE_RUNNER_BASE_IMAGE; cat /etc/swizzle/runner-tools.json",
+      )
+    ).split("\n");
+    const inventory = workerRecord.join("\n");
     expect(JSON.parse(inventory).binaries).toContainEqual({
       name: "jq",
       version: expect.stringMatching(/^1\./u),
@@ -291,23 +319,8 @@ it("keeps local runner tags stable and tools available through just upgrade", as
         { name: "typescript", version: "26.12.1" },
       ],
     });
-    expect(await compose("exec", "-T", "worker", "printenv", "SWIZZLE_RUNNER_BASE_IMAGE")).toBe(
-      runner,
-    );
-
-    expect(
-      await command(
-        "docker",
-        "run",
-        "--rm",
-        "--network",
-        "none",
-        "--entrypoint",
-        "cat",
-        runner,
-        "/etc/swizzle/runner-tools.json",
-      ),
-    ).toBe(inventory);
+    expect(workerBase).toBe(runner);
+    expect(runnerRecord.join("\n")).toBe(inventory);
     return runner;
   };
   try {
@@ -367,11 +380,13 @@ it("keeps local runner tags stable and tools available through just upgrade", as
     const owned = ["--all", "--quiet", "--filter", `label=com.docker.compose.project=${project}`];
     const containers = (await command("docker", "ps", ...owned)).split("\n").filter(Boolean);
     if (containers.length > 0) await command("docker", "rm", "--force", "--volumes", ...containers);
-    await removeComposeProjectImages(project);
+    await removeImagesWithLabel(`com.docker.compose.project=${project}`);
   }
 });
 
-it("starts with cached dependency images when their registry is unreachable", async () => {
+it("starts with cached dependency images when their registry is unreachable", async ({
+  signal,
+}) => {
   const root = await temporaryDirectory("swizzle-offline-stack-");
   const project = `swizzle-offline-${randomUUID()}`;
   const image = `127.0.0.1:1/${project}:cached`;
@@ -409,8 +424,13 @@ it("starts with cached dependency images when their registry is unreachable", as
     "-m",
     "Installed source",
   ]);
-  await execute("docker", ["pull", "alpine:3.24.3"]);
-  await execute("docker", ["tag", "alpine:3.24.3", image]);
+  const alpine = "alpine:3.24.3";
+  try {
+    await execute("docker", ["image", "inspect", alpine]);
+  } catch {
+    await execute("docker", ["pull", alpine]);
+  }
+  await execute("docker", ["tag", alpine, image]);
   try {
     const options = { cwd: root, env: { ...process.env, MISE_TRUSTED_CONFIG_PATHS: root } };
     await execute("mise", ["exec", "--", "just", "init-env"], options);
@@ -434,7 +454,7 @@ it("starts with cached dependency images when their registry is unreachable", as
     ]);
     expect(state.trim()).toBe("running");
     const output = path.join(root, "prepared/compose.json");
-    prepareImages({ root, envFile: path.join(root, ".env") }, output);
+    await prepareFixture(root, output, signal);
     const prepared = JSON.parse(await readFile(output, "utf8"));
     expect(prepared.services.probe).toMatchObject({ pull_policy: "never" });
     const { stdout: id } = await execute("docker", [
@@ -495,7 +515,9 @@ it("preserves literal dollars and shell variables when starting a resolved Compo
   }
 });
 
-it("reuses development image tags and preserves prepared upgrade images with serial builds", async () => {
+it("reuses development image tags and preserves prepared upgrade images with serial builds", async ({
+  signal,
+}) => {
   const directory = await temporaryDirectory("swizzle-legacy-image-");
   const root = path.join(directory, "checkout");
   const project = `swizzle-legacy-image-${randomUUID()}`;
@@ -548,12 +570,16 @@ CMD ["cat", "/turbo-args"]
     "-m",
     "Earlier release build recipe",
   ]);
-  try {
-    const prepared = prepareImages(
-      { root, envFile },
-      path.join(directory, "prepared/compose.json"),
+  const prepareProbe = async (phase: "prepared" | "upgrade") => {
+    const file = path.join(directory, phase, "compose.json");
+    await prepareFixture(root, file, signal);
+    const images: PreparedStack["images"] = JSON.parse(
+      await readFile(`${file}.images.json`, "utf8"),
     );
-    const image = prepared.images.probe;
+    return images.probe;
+  };
+  try {
+    const image = await prepareProbe("prepared");
     expect(image).toBeDefined();
     if (image === undefined) throw new Error("No prepared probe image.");
     const { stdout } = await execute("docker", ["run", "--rm", "--network", "none", image]);
@@ -587,7 +613,7 @@ CMD ["cat", "/turbo-args"]
       .sort();
     expect(tags).toEqual(["local", "prepared-compose"]);
     await writeFile(path.join(root, "Dockerfile"), `${dockerfile}LABEL revision=upgrade\n`);
-    const upgrade = prepareImages({ root, envFile }, path.join(directory, "upgrade/compose.json"));
+    const upgradedImage = await prepareProbe("upgrade");
     expect(
       (
         await execute("docker", [
@@ -610,7 +636,6 @@ CMD ["cat", "/turbo-args"]
         ])
       ).stdout.trim(),
     ).toBe(second);
-    const upgradedImage = upgrade.images.probe;
     if (upgradedImage === undefined) throw new Error("No upgrade image");
     expect(
       (
@@ -631,7 +656,7 @@ CMD ["cat", "/turbo-args"]
         .filter(Boolean);
       if (containers.length > 0) await execute("docker", ["rm", "--force", ...containers]);
     } finally {
-      await removeComposeProjectImages(project);
+      await removeImagesWithLabel(`com.docker.compose.project=${project}`);
     }
   }
 });

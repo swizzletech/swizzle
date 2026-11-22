@@ -277,6 +277,25 @@ describe("platform chain triggers", () => {
       },
     });
 
+    const duplicateJoinRunId = randomUUID();
+    await expect(
+      platform.store.createChainJoinRun({
+        attemptsMax: 1,
+        automationId: joinTrigger.automationId,
+        deploymentId: joinTrigger.deploymentId,
+        originRunId: originRun.runId,
+        payload: {},
+        queueJobId: duplicateJoinRunId,
+        queueName: "platform-runs--host-default",
+        runId: duplicateJoinRunId,
+        sourceRunIds: joinRun?.chainSourceRunIds ?? [],
+        triggerId: joinTrigger.triggerId,
+        triggerType: "chain",
+        versionId: joinTrigger.versionId,
+      }),
+    ).resolves.toBeNull();
+    expect(await platform.store.getRun(duplicateJoinRunId)).toBeNull();
+
     expect(await platform.processNextPlatformRun()).toBeNull();
   });
 

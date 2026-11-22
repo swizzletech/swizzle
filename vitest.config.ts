@@ -59,6 +59,8 @@ export default defineConfig({
           name: "docker",
           include: ["**/*.docker.test.ts"],
           exclude: ["**/dist/**", "**/node_modules/**"],
+          fileParallelism: false,
+          maxConcurrency: 2,
           // These build and load real images on the host's Docker daemon, which other worktrees'
           // runs share. They hold the code's Docker deadlines, so this ceiling is their only bound.
           testTimeout: 600_000,
