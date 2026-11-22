@@ -1,6 +1,17 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { capture, RELEASE_TAG, readCompose, registryImage, run } from "./stack-images.ts";
+import {
+  capture,
+  composeBuilds,
+  RELEASE_TAG,
+  readCompose,
+  registryImage,
+  run,
+} from "./stack-images.ts";
+
+function bakeLiteral(value: string): string {
+  return value.replaceAll(/\$\{|%\{/gu, (marker) => marker.charAt(0) + marker);
+}
 
 const [command, version, file] = process.argv.slice(2);
 try {
@@ -13,10 +24,8 @@ try {
   ) {
     throw new Error("Usage: just image-plan|image-publish|image-sign <X.Y.Z> <file>");
   }
-  const config = readCompose({ root: process.cwd(), envFile: path.resolve(".env") });
-  const services = Object.entries(config.services).filter(
-    ([, service]) => service.build !== undefined,
-  );
+  const root = process.cwd();
+  const services = composeBuilds(readCompose({ root, envFile: path.resolve(".env") }), root);
   if (command === "plan") {
     const manifest: unknown = JSON.parse(readFileSync("package.json", "utf8"));
     if (
@@ -26,21 +35,27 @@ try {
       manifest.version !== version
     )
       throw new Error("The release tag and package.json version must match.");
+    const revision = capture("git", ["rev-parse", "HEAD"]);
     const target = Object.fromEntries(
-      services.map(([name, service]) => [
+      services.map(({ name, build }) => [
         name,
         {
-          context: ".",
-          dockerfile: "infra/docker/Dockerfile",
-          target: service.build?.target,
-          args: { ...service.build?.args, VITE_API_BASE_URL: "/api" },
+          context: bakeLiteral(path.relative(root, build.context) || "."),
+          dockerfile: bakeLiteral(build.dockerfile),
+          target: bakeLiteral(build.target),
+          args: {
+            ...Object.fromEntries(
+              Object.entries(build.args).map(([name, value]) => [name, bakeLiteral(value)]),
+            ),
+            VITE_API_BASE_URL: "/api",
+          },
           tags: [registryImage(name, version)],
           platforms: ["linux/amd64", "linux/arm64"],
           attest: ["type=provenance,mode=max"],
           labels: {
             "org.opencontainers.image.source": "https://github.com/swizzletech/swizzle",
             "org.opencontainers.image.version": version,
-            "org.opencontainers.image.revision": capture("git", ["rev-parse", "HEAD"]),
+            "org.opencontainers.image.revision": revision,
           },
         },
       ]),
@@ -63,7 +78,7 @@ try {
     const metadata: unknown = JSON.parse(readFileSync(`${file}.metadata.json`, "utf8"));
     if (metadata === null || typeof metadata !== "object")
       throw new Error("Invalid bake metadata.");
-    for (const [name] of services) {
+    for (const { name } of services) {
       if (!(name in metadata)) throw new Error(`No published digest for ${name}.`);
       const result: unknown = Reflect.get(metadata, name);
       const digest: unknown =

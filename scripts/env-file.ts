@@ -69,47 +69,50 @@ export function dockerCpus(): number {
   return cpus;
 }
 
-export function cpuLimit(
-  name: string,
-  value: string | undefined,
+const CPU_SETTINGS = ["SWIZZLE_WORKER_CPUS", "SWIZZLE_MAX_RUN_CPUS"] as const;
+type CpuSetting = (typeof CPU_SETTINGS)[number];
+type CpuLimits = Record<CpuSetting, string>;
+
+export function effectiveCpuLimits(
+  file: string,
+  values: Readonly<Record<string, string | undefined>>,
   hostCpus: number,
-  preferred: number,
-): string {
-  if (!value) return String(Math.min(preferred, hostCpus));
-  if (Number(value) > hostCpus) {
-    throw new Error(
-      `${name}=${value} exceeds the ${hostCpus} CPU${hostCpus === 1 ? "" : "s"} of the Docker host. ` +
-        `Set it to ${hostCpus} or less, or leave it empty to size it to the host.`,
-    );
-  }
-  return value;
+  defaults: CpuLimits,
+): CpuLimits {
+  const resolve = (name: CpuSetting): string => {
+    const exported = process.env[name];
+    const value = (exported ?? values[name]) || defaults[name];
+    if (Number(value) > hostCpus) {
+      const source = exported === undefined ? file : `the shell before ${file}`;
+      throw new Error(
+        `${name}=${value} exceeds the ${hostCpus} CPU${hostCpus === 1 ? "" : "s"} of the Docker host. ` +
+          `Compose reads it from ${source}. Set it to ${hostCpus} or less, or unset the shell override and leave the file value empty to size it to the host.`,
+      );
+    }
+    return value;
+  };
+  return {
+    SWIZZLE_WORKER_CPUS: resolve("SWIZZLE_WORKER_CPUS"),
+    SWIZZLE_MAX_RUN_CPUS: resolve("SWIZZLE_MAX_RUN_CPUS"),
+  };
 }
 
 export async function sizeCpuLimits(file: string, hostCpus: number): Promise<string[]> {
   const values = parseEnv(await readFile(file, "utf8"));
+  const defaultLimit = String(Math.min(2, hostCpus));
   const predatesSizing = values.SWIZZLE_WORKER_CPUS === undefined;
   const maxRun = values.SWIZZLE_MAX_RUN_CPUS;
-  for (const name of ["SWIZZLE_WORKER_CPUS", "SWIZZLE_MAX_RUN_CPUS"]) {
-    try {
-      cpuLimit(name, process.env[name], hostCpus, 2);
-    } catch (error) {
-      throw new Error(
-        `${(error as Error).message} Compose reads it from the shell before ${file}.`,
-      );
-    }
-  }
   const limits = {
-    SWIZZLE_WORKER_CPUS: cpuLimit("SWIZZLE_WORKER_CPUS", values.SWIZZLE_WORKER_CPUS, hostCpus, 2),
-    SWIZZLE_MAX_RUN_CPUS: cpuLimit(
-      "SWIZZLE_MAX_RUN_CPUS",
-      predatesSizing && maxRun === "2" ? undefined : maxRun,
-      hostCpus,
-      2,
-    ),
+    SWIZZLE_WORKER_CPUS: values.SWIZZLE_WORKER_CPUS || defaultLimit,
+    SWIZZLE_MAX_RUN_CPUS: (predatesSizing && maxRun === "2" ? undefined : maxRun) || defaultLimit,
   };
-  const changed = Object.entries(limits).filter(([name, value]) => values[name] !== value);
-  await updateEnvFile(file, Object.fromEntries(changed));
-  return changed.map(([name]) => name);
+  effectiveCpuLimits(file, limits, hostCpus, {
+    SWIZZLE_WORKER_CPUS: "1",
+    SWIZZLE_MAX_RUN_CPUS: "2",
+  });
+  const changed = CPU_SETTINGS.filter((name) => values[name] !== limits[name]);
+  await updateEnvFile(file, Object.fromEntries(changed.map((name) => [name, limits[name]])));
+  return changed;
 }
 
 async function updateEnvFile(

@@ -510,31 +510,39 @@ describe("run image assembly", () => {
     },
   );
 
-  it("stops a stalled install step at the assembly deadline and removes its container", async ({
-    signal,
-  }) => {
-    const docker = await fakeDocker({ failInstall: "stall", missingImage: true });
-    const options = await makeRunOptions(false);
-    await writeFile(path.join(options.automationDirectory, "requirements.txt"), "slow==1\n");
-    const definition = makeDefinition(
-      `${PYTHON_CONFIG}  requirements:\n    python:\n      requirements_file: requirements.txt\n`,
-      options.automationDirectory,
-    );
-    const deadlines = heldDeadlines(600_000);
+  it.for([false, true])(
+    "stops a stalled install at the assembly deadline and removes its container (checking layer: %s)",
+    async (checkingLayer, { signal }) => {
+      const docker = await fakeDocker({
+        failInstall: "stall",
+        missingImage: true,
+        ...(checkingLayer ? { stallControl: "container inspect" } : {}),
+      });
+      const options = await makeRunOptions(false);
+      await writeFile(path.join(options.automationDirectory, "requirements.txt"), "slow==1\n");
+      const definition = makeDefinition(
+        `${PYTHON_CONFIG}  requirements:\n    python:\n      requirements_file: requirements.txt\n`,
+        options.automationDirectory,
+      );
+      const deadlines = heldDeadlines(600_000);
 
-    const run = runContainerAutomation({ ...options, definition });
-    await docker.reached(signal, "start --attach");
-    deadlines.expireNewest();
-    const result = await run;
-    const calls = await docker.calls();
-    const assembly = calls.flatMap(
-      (call) => /--name (swizzle-image-\S+)/u.exec(call)?.[1] ?? [],
-    )[0];
+      const run = runContainerAutomation({ ...options, definition });
+      await docker.reached(signal, "start --attach");
+      if (checkingLayer) await docker.reached(signal, "container inspect");
+      deadlines.expireNewest();
+      const result = await run;
+      const calls = await docker.calls();
+      const assembly = calls.flatMap(
+        (call) => /--name (swizzle-image-\S+)/u.exec(call)?.[1] ?? [],
+      )[0];
 
-    expect(result.success ? null : result.code).toBe("CONTAINER_BUILD_FAILED");
-    expect(result.success ? null : result.message).toContain("docker start stopped");
-    expect(calls).toContain(`rm --force ${assembly}`);
-  });
+      expect(result.success ? null : result.code).toBe("CONTAINER_BUILD_FAILED");
+      expect(result.success ? null : result.message).toContain(
+        "docker start stopped: Docker assembly deadline exceeded",
+      );
+      expect(calls).toContain(`rm --force ${assembly}`);
+    },
+  );
 
   it("removes the committed image, not the tag, when tagging it fails", async () => {
     const docker = await fakeDocker({ failTag: true, missingImage: true });

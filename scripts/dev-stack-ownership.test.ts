@@ -1,10 +1,65 @@
+import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 import { fixture, invoke, ownedProcess, processAlive } from "../test/dev-stack.js";
 import { temporaryDirectory, waitFor } from "../test/support.js";
+
+test("just dev-down leaves a running verifier's project alone", async ({ signal }) => {
+  const f = await fixture();
+  await writeFile(
+    path.join(f.root, "bin/docker"),
+    `#!/bin/sh
+printf '%s\\n' "$*" >> docker-calls
+case " $* " in *" port "*) echo 127.0.0.1:1 ;; esac
+`,
+  );
+  const verifier = spawn(
+    process.execPath,
+    [
+      "scripts/dev-stack.mts",
+      "verify",
+      "--",
+      process.execPath,
+      "-e",
+      `const fs = require("node:fs");
+const watch = fs.watch(".", () => {
+  if (fs.existsSync("verifier-release")) watch.close();
+});
+fs.writeFileSync("verifier-ready", process.env.DATABASE_URL);`,
+    ],
+    { cwd: f.root, env: f.env, stdio: "ignore" },
+  );
+  const exited = once(verifier, "exit");
+  const release = () => writeFile(path.join(f.root, "verifier-release"), "");
+  onTestFinished(async () => {
+    await release();
+    await exited;
+  });
+  await waitFor(signal, () => existsSync(path.join(f.root, "verifier-ready")));
+  expect(await readFile(path.join(f.root, "verifier-ready"), "utf8")).toMatch(
+    /@127\.0\.0\.1:1\/swizzle$/u,
+  );
+
+  const result = await invoke("just", ["dev-down"], { cwd: f.root, env: f.env });
+
+  expect(result.status, result.stderr).toBe(0);
+  const calls = path.join(f.root, "docker-calls");
+  const project = /compose -p (\S+) -f \S+ up/u.exec(await readFile(calls, "utf8"))?.[1];
+  if (!project) throw new Error("Verifier did not start a Compose project");
+  expect(await readFile(calls, "utf8")).not.toContain(
+    `-p ${project} -f infra/docker/compose.dev.yml down`,
+  );
+  expect(processAlive(verifier.pid)).toBe(true);
+
+  await release();
+  expect((await exited)[0]).toBe(0);
+  expect(await readFile(calls, "utf8")).toContain(
+    `-p ${project} -f infra/docker/compose.dev.yml down --volumes`,
+  );
+});
 
 test("down dev stops the persistent project and keeps its data without a stack record", async () => {
   const f = await fixture();

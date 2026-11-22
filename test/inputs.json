@@ -3,6 +3,7 @@
     "apps/api/src/{recover-owner,http-shared}.ts",
     "packages/*/src/**"
   ],
+  "apps/web/vite.config.test.ts": ["apps/web/vite.config.ts", "packages/core/src/dev-port.ts"],
   "packages/core/src/logger.test.ts": ["packages/core/src/logger*.ts"],
   "scripts/affected-tests.test.ts": [
     ".github/workflows/ci.yml",
@@ -25,6 +26,7 @@
     "scripts/{dev-stack.mts,dev-stack-ports.ts,dev-stack-supervisor.mts,dev-stack-timeout.ts,env-file.ts,process-identity.ts}"
   ],
   "scripts/init-env.test.ts": ["scripts/{init-env,env-file}.ts"],
+  "scripts/worker-stack.test.ts": ["scripts/{worker-stack.mts,env-file.ts}"],
   "scripts/conventions/rules/comment-budget.test.ts": [
     "scripts/conventions/comment-budget.json",
     "{apps,packages,scripts,test}/**/*.{ts,mts,cts,tsx,css,html}"
@@ -54,6 +56,8 @@
   ],
   "scripts/agent-reference-drift.test.ts": ["apps/cli/assets/skills/**"],
   "scripts/runner-tools.test.ts": ["infra/docker/runner-tools.mjs"],
+  "scripts/docker-build-context.docker.test.ts": [".dockerignore"],
+  "scripts/stack-image-plan.test.ts": ["scripts/{release-images,stack-images}.ts"],
   "scripts/stack-images.docker.test.ts": [
     "justfile",
     "mise.toml",
@@ -77,6 +81,7 @@
     "scripts/{stack-images,env-file}.ts"
   ],
   "scripts/runner-packages.test.ts": ["scripts/stack-images.ts"],
+  "scripts/verify-api-process.postgres.test.ts": ["apps/api/src/**", "packages/*/src/**"],
   "scripts/verify-upgrade.test.ts": [
     ".env.example",
     "scripts/{verify-upgrade,packaged-stack}.mts",

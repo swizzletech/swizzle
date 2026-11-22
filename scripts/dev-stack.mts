@@ -1,12 +1,12 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { appendFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { startMailSink } from "../test/mail-sink.ts";
-import { choosePorts } from "./dev-stack-ports.ts";
+import { holdPorts } from "./dev-stack-ports.ts";
 import type { CommandExit } from "./dev-stack-supervisor.mts";
 import { composeTeardownTimeoutMs, stopTimeoutMs } from "./dev-stack-timeout.ts";
 import { ensureEnvFile, secret } from "./env-file.ts";
@@ -226,7 +226,7 @@ function serviceEnvironment(record: StackRecord) {
   const tailnet = record.tailnetUrl === undefined ? undefined : new URL(record.tailnetUrl);
   return {
     API_HOST: "127.0.0.1",
-    API_PORT: String(record.ports.api),
+    API_PORT: "0",
     SWIZZLE_DASHBOARD_ORIGIN: tailnet?.origin ?? record.url,
     SWIZZLE_API_ORIGIN: `${tailnet?.origin ?? record.url}/api`,
     SWIZZLE_PUBLIC_URL: `${tailnet?.origin ?? record.url}/api`,
@@ -242,7 +242,6 @@ function serviceEnvironment(record: StackRecord) {
     SCHEDULER_HEALTH_PORT: "0",
     VITE_API_PROXY_TARGET: record.apiUrl,
     WEB_ALLOWED_HOSTS: tailnet?.hostname ?? "",
-    WEB_PORT: String(record.ports.web),
     WORKER_HEALTH_PORT: "0",
   };
 }
@@ -437,12 +436,16 @@ async function start(worktree: Worktree, mode: Mode): Promise<number> {
 
   const groups: ProcessGroup[] = [];
   let published: number | undefined;
+  let listeners: Awaited<ReturnType<typeof holdPorts>> | undefined;
+  const targets = path.join(worktree.stateDirectory, `ports-${identity.incarnation}`);
   let stopping = false;
   const stop = async (code: number): Promise<never> => {
     if (stopping) return new Promise<never>(() => {});
     stopping = true;
     if (published !== undefined) tailscaleServe(published, "off");
     await stopGroups(groups);
+    listeners?.close();
+    await rm(targets, { recursive: true, force: true });
     await writeFile(
       shutdownMarker(worktree, { pid: process.pid, incarnation: identity.incarnation }),
       "",
@@ -454,11 +457,15 @@ async function start(worktree: Worktree, mode: Mode): Promise<number> {
   for (const name of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(name, () => void stop(0));
 
   try {
-    const [api = 0, web = 0, localWorker = 0] = await choosePorts([
-      previous?.ports.api,
-      previous?.ports.web,
-      previous?.ports.localWorker,
-    ]);
+    if (previous !== undefined) {
+      await rm(path.join(worktree.stateDirectory, `ports-${previous.incarnation}`), {
+        recursive: true,
+        force: true,
+      });
+    }
+    await mkdir(targets, { mode: 0o700 });
+    listeners = await holdPorts(targets, previous?.ports);
+    const { api, web, localWorker } = listeners.ports;
     const { values: local } = await ensureEnvFile(
       path.join(worktree.stateDirectory, "local-worker.env"),
       "# The local worker token of this worktree's dev stack (scripts/dev-stack.mts).\nSWIZZLE_LOCAL_WORKER_TOKEN=\n",
@@ -501,7 +508,10 @@ async function start(worktree: Worktree, mode: Mode): Promise<number> {
       WORKER_CONCURRENCY: workerConcurrency,
       SWIZZLE_LOCAL_WORKER_TOKEN: local.SWIZZLE_LOCAL_WORKER_TOKEN,
       SWIZZLE_LOCAL_WORKER_API_HOST: "127.0.0.1",
-      SWIZZLE_LOCAL_WORKER_API_PORT: String(localWorker),
+      SWIZZLE_LOCAL_WORKER_API_PORT: "0",
+      SWIZZLE_DEV_API_PORT_FILE: listeners.targets.api,
+      SWIZZLE_DEV_LOCAL_WORKER_PORT_FILE: listeners.targets.localWorker,
+      WEB_DEV_PORT_FILE: listeners.targets.web,
       SWIZZLE_WORKER_API_URL: `http://127.0.0.1:${localWorker}`,
       SWIZZLE_WORKER_TOKEN: local.SWIZZLE_LOCAL_WORKER_TOKEN,
     };
@@ -569,6 +579,47 @@ function assertStackOwnershipBeforeShutdown(
   }
 }
 
+function verificationWorktree(worktree: Worktree, owner: ProcessGroup): Worktree {
+  const id = `${owner.pid}-${owner.incarnation}`;
+  return {
+    ...worktree,
+    project: `${worktree.project}-${id}`,
+    stateDirectory: path.join(`${worktree.stateDirectory}-runs`, id),
+  };
+}
+
+async function removeProject(worktree: Worktree, env: DevEnv): Promise<void> {
+  compose(worktree, env, ["down", "--volumes", "--remove-orphans"], composeTeardownTimeoutMs);
+  assertProjectRemoved(worktree, env);
+  await rm(worktree.stateDirectory, { force: true, recursive: true });
+  process.stdout.write(`Removed ${worktree.project} and its data.\n`);
+}
+
+async function removeStaleVerifications(worktree: Worktree, env: DevEnv): Promise<void> {
+  const directory = `${worktree.stateDirectory}-runs`;
+  const runs = await readdir(directory, { withFileTypes: true }).catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") return [];
+      throw error;
+    },
+  );
+  for (const run of runs) {
+    if (!run.isDirectory()) continue;
+    const [pid, incarnation, extra] = run.name.split("-");
+    if (
+      pid === undefined ||
+      incarnation === undefined ||
+      extra !== undefined ||
+      !/^[1-9][0-9]*$/u.test(pid) ||
+      !/^[a-f0-9]{32}$/u.test(incarnation)
+    )
+      continue;
+    const owner = { pid: Number(pid), incarnation };
+    if (processOwnerState(owner).kind === "running") continue;
+    await removeProject(verificationWorktree(worktree, owner), env);
+  }
+}
+
 async function down(modes: readonly ProjectMode[]): Promise<number> {
   const stacks = await Promise.all(
     modes.map(async (mode) => {
@@ -590,17 +641,18 @@ async function down(modes: readonly ProjectMode[]): Promise<number> {
       compose(worktree, env, ["stop"], composeTeardownTimeoutMs);
       process.stdout.write(`Stopped ${worktree.project}; its data stays.\n`);
     } else {
-      compose(worktree, env, ["down", "--volumes", "--remove-orphans"], composeTeardownTimeoutMs);
-      assertProjectRemoved(worktree, env);
-      await rm(worktree.stateDirectory, { force: true, recursive: true });
-      process.stdout.write(`Removed ${worktree.project} and its data.\n`);
+      await removeProject(worktree, env);
+      if (mode === "verify") await removeStaleVerifications(worktree, env);
     }
   }
   return 0;
 }
 
-async function run(worktree: Worktree, argv: readonly [string, ...string[]]): Promise<number> {
-  const env = await loadDevEnv();
+async function runCommand(
+  worktree: Worktree,
+  argv: readonly [string, ...string[]],
+  env: DevEnv,
+): Promise<number> {
   const ports = startDatabases(worktree, env, false);
   const child = spawnGroup(worktree, argv, {
     ...process.env,
@@ -616,12 +668,32 @@ async function run(worktree: Worktree, argv: readonly [string, ...string[]]): Pr
   }
 }
 
+async function run(
+  worktree: Worktree,
+  command: Extract<Command, { kind: "run" }>,
+): Promise<number> {
+  const env = await loadDevEnv();
+  if (command.mode === "dev") return runCommand(worktree, command.argv, env);
+  const identity = readProcessIdentity(process.pid);
+  if (identity === undefined) throw new Error("Cannot identify verifier");
+  const owned = verificationWorktree(worktree, {
+    pid: process.pid,
+    incarnation: identity.incarnation,
+  });
+  await mkdir(owned.stateDirectory, { recursive: true, mode: 0o700 });
+  try {
+    return await runCommand(owned, command.argv, env);
+  } finally {
+    await removeProject(owned, env);
+  }
+}
+
 async function main(): Promise<number> {
   const command = parseCommand(process.argv.slice(2));
   if (command.kind === "start") return start(resolveWorktree(command.mode), command.mode);
   if (command.kind === "down") return down(command.modes);
   if (command.kind === "status") return status(command.mode);
-  return run(resolveWorktree(command.mode), command.argv);
+  return run(resolveWorktree(command.mode), command);
 }
 
 process.exitCode = await main().catch((error: unknown) => {

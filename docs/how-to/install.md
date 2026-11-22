@@ -139,7 +139,7 @@ Webhook senders and OAuth providers may need the API from the internet. The sign
 
 3. Set `WORKER_CONCURRENCY` in `.env` to the number of parallel local runs. The server admits that many leases across all groups of this identity. Start conservatively, for example 2 on four cores, and increase it for I/O-bound automations as memory permits. On a 1-vCPU server with about 4 GB of RAM, start with 1; concurrent dependency installs can exhaust memory.
 
-   `just init-env` writes `SWIZZLE_WORKER_CPUS`, the CPUs of the worker process, and `SWIZZLE_MAX_RUN_CPUS`, the most CPUs one run may ask for. Each is 2, or the host's CPU count when that is smaller, so a 1-vCPU server gets 1 for both. Docker refuses a limit above the host's CPU count. A value you set yourself stays, but `just stack` stops before it builds an image when the value exceeds the host, and names the key and the host's CPU count. Leave a value empty to size it to the host again.
+   `just init-env` writes `SWIZZLE_WORKER_CPUS`, the CPUs of the worker process, and `SWIZZLE_MAX_RUN_CPUS`, the most CPUs one run may ask for. Each is 2, or the host's CPU count when that is smaller, so a 1-vCPU server gets 1 for both. Docker refuses a limit above the host's CPU count. A value you set yourself stays, but `just stack` stops before it builds an image when the value exceeds the host, and names the key and the host's CPU count. Shell values take precedence over saved values, and startup validates the values Compose will use. To size a setting to the host again, unset its shell override and leave its value empty in `.env`.
 
    The stack has one configured local worker, shown as **Local** under Settings > Workers. It serves every project and environment, including ones created later. `just init-env` creates its private credential. Additional machines enroll with their own worker identity, grants and capacity ([add a remote worker](add-a-remote-worker.md)). Give CPU-bound work its own explicit group; a sleeping group's runs wait for it rather than falling back to the local worker.
 
@@ -155,6 +155,8 @@ Run `just stack` again after a change to `.env`.
 Set either value in `.env` using a count per `sec`, `min`, or `hour`. Set it to `off` to disable that budget. Over-budget requests receive HTTP 429 with a `Retry-After` header. The dashboard keeps its last session status while it waits to retry.
 
 ## Add a tool to the runner image
+
+Deployed automations run in containers based on the runner image. The runner includes Poppler and DejaVu fonts for PDFs. The worker reads the runner's tool inventory to check automation requirements.
 
 To add Debian packages to the runner, set a space-separated list in `.env`:
 

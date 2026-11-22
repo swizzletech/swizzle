@@ -1,3 +1,4 @@
+import { publishDevPort } from "@swizzle/core/dev-port";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defaultClientConditions, defineConfig, type Plugin } from "vite";
@@ -15,14 +16,23 @@ const refuseFraming: Plugin = {
   },
 };
 
+const devPortFile = process.env.WEB_DEV_PORT_FILE;
+const reportDevPort: Plugin = {
+  name: "swizzle-dev-port",
+  configureServer({ httpServer }) {
+    if (devPortFile === undefined || httpServer === null) return;
+    httpServer.once("listening", () => publishDevPort(httpServer, devPortFile));
+  },
+};
+
 export default defineConfig({
-  plugins: [react(), tailwindcss(), refuseFraming],
+  plugins: [react(), tailwindcss(), refuseFraming, reportDevPort],
   resolve: { conditions: ["swizzle-source", ...defaultClientConditions] },
   server: {
     host: "127.0.0.1",
     allowedHosts: process.env.WEB_ALLOWED_HOSTS?.split(",") ?? [],
-    port: Number(process.env.WEB_PORT ?? 5173),
-    strictPort: process.env.WEB_PORT !== undefined,
+    port: devPortFile === undefined ? Number(process.env.WEB_PORT ?? 5173) : 5173,
+    strictPort: devPortFile === undefined && process.env.WEB_PORT !== undefined,
     proxy:
       apiProxyTarget === undefined
         ? {}

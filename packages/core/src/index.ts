@@ -5,6 +5,7 @@ export {
   isApiErrorCode,
 } from "./api-errors.js";
 export { bootService, ConfigurationError } from "./boot.js";
+export { publishDevPort } from "./dev-port.js";
 export {
   configureOutboundHttpProxy,
   controlEgressAgentOptions,

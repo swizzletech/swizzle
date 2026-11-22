@@ -4,6 +4,7 @@ import { expect, it, vi } from "vitest";
 import { heldDeadlines, temporaryDirectory, waitFor } from "../../../test/support.js";
 import {
   closeDockerScopes,
+  DockerDeadlineError,
   DockerScope,
   leftoverContainers,
   removeAbandonedContainers,
@@ -11,6 +12,50 @@ import {
   sandboxProcessLabel,
 } from "./docker-cli.js";
 import { pruneRunImages } from "./run-image-prune.js";
+
+it.for([
+  { command: "inspect", deadline: "control" },
+  { command: "commit", deadline: "transfer" },
+] as const)(
+  "reports the assembly deadline when it interrupts $command",
+  async ({ command, deadline }, { signal }) => {
+    const directory = await temporaryDirectory("swizzle-docker-assembly-");
+    const started = path.join(directory, "started");
+    await writeFile(
+      path.join(directory, "docker"),
+      `#!/bin/sh
+printf '%s' "$1" > ${JSON.stringify(started)}
+exec sleep 1000
+`,
+      { mode: 0o755 },
+    );
+    vi.stubEnv("PATH", `${directory}:${process.env.PATH}`);
+    const timeoutMs = 600_000;
+    const deadlines = heldDeadlines();
+    const owner = new DockerScope({ timeoutMs, deadlineKind: "assembly", containerName: null });
+    try {
+      const result = owner
+        .run([command], { deadline, outputLimitBytes: 4096 })
+        .catch((error: unknown) => error);
+      await waitFor(signal, () =>
+        readFile(started, "utf8").then(
+          (value) => value === command,
+          () => false,
+        ),
+      );
+      deadlines.expire(0);
+      const error = await result;
+      expect(error).toBeInstanceOf(DockerDeadlineError);
+      expect(error).toMatchObject({
+        kind: "assembly",
+        code: "CONTAINER_RUNTIME_UNAVAILABLE",
+        message: `docker ${command} stopped: Docker assembly deadline exceeded`,
+      });
+    } finally {
+      await owner.close();
+    }
+  },
+);
 
 it("removes what a restarted or gone worker left, and keeps a live replica's", () => {
   const containers = [

@@ -28,7 +28,7 @@ When more than one stop reason arrives before the execution settles, cancellatio
 | `PROCESS_STDOUT_INVALID_JSON` | Exit code `0`, but stdout was not one JSON document. |
 | `DOCKER_CONTROL_TIMEOUT` | A Docker control command exceeded its five-second deadline. Cleanup uses separate deadlines. See [Docker lifecycle limits](../explanation/security-model.md#docker-lifecycle-limits). |
 | `DOCKER_TRANSFER_TIMEOUT` | A Docker container create, copy, commit, or image export exceeded its sixty-second deadline. See [Docker lifecycle limits](../explanation/security-model.md#docker-lifecycle-limits). |
-| `CONTAINER_RUNTIME_UNAVAILABLE` | Docker failed the platform: the CLI or daemon is unreachable, or a step of the run image assembly, such as the commit, failed twice. |
+| `CONTAINER_RUNTIME_UNAVAILABLE` | The Docker CLI or daemon is unreachable, an assembly command failed twice, or the assembly deadline interrupted a control or transfer command. That deadline reports “Docker assembly deadline exceeded.” See [Docker lifecycle limits](../explanation/security-model.md#docker-lifecycle-limits). |
 | `PLATFORM_CONNECTION_REFRESH_FAILED` | A connection token refresh failed transiently. The connection stays active and the run retries within its retry budget. See [connections](../explanation/connections.md). |
 | `PLATFORM_CONFIG_INVALID` | An operator setting the worker reads before the run is invalid, such as a `SWIZZLE_MAX_RUN_MEMORY_MB` that is not a positive number. Every attempt would meet the same setting, so the run fails at once. |
 | `CONTAINER_BUILD_FAILED` | The automation's dependency install failed, ran past the assembly deadline, or wrote more than `SWIZZLE_MAX_INSTALL_DISK_MB`. |

@@ -82,6 +82,27 @@ describe("error logging", () => {
 });
 
 describe("production logging", () => {
+  it("does not register child process listeners when importing file logging modules", async ({
+    signal,
+  }) => {
+    const { stdout } = await run(
+      process.execPath,
+      [
+        "--input-type=module",
+        "--eval",
+        `
+          const events = ["message", "disconnect"];
+          const before = events.map(event => process.listenerCount(event));
+          await import(${JSON.stringify(new URL("./logger-file-worker.ts", import.meta.url).href)});
+          await import(${JSON.stringify(new URL("./logger-file-writer.ts", import.meta.url).href)});
+          console.log(JSON.stringify(events.map((event, index) => process.listenerCount(event) - before[index])));
+        `,
+      ],
+      { signal },
+    );
+    expect(stdout).toBe("[0,0]\n");
+  });
+
   it("keeps the caller alive when a log file stops accepting writes", async ({ signal }) => {
     const directory = await temporaryDirectory("swizzle-log-stalled-");
     const fifo = path.join(directory, "api.1.log");
@@ -114,8 +135,28 @@ describe("production logging", () => {
       "second request after the stall",
     ]);
     expect(stderr).toBe(
-      `Swizzle switched file logging to stdout after "${directory}/api.log" failed. Cause "_flushSync took too long (10s)"\n`,
+      `Swizzle switched file logging to stdout after "${directory}/api.log" failed. Cause "File log sink stalled"\n`,
     );
+  });
+
+  it("exits after a file sink stalls without waiting for its reader", async ({ signal }) => {
+    const directory = await temporaryDirectory("swizzle-log-shutdown-");
+    const fifo = path.join(directory, "api.1.log");
+    await run("mkfifo", [fifo], { signal });
+    const reader = await open(fifo, constants.O_RDWR | constants.O_NONBLOCK);
+    onTestFinished(() => reader.close());
+    const { stdout, stderr } = await runFileLogger(
+      path.join(directory, "api.log"),
+      `
+        const payload = "x".repeat(256 * 1024);
+        log.info({ payload }, "fills the pipe");
+        process.stdout.write("exiting\\n", () => process.exit(0));
+      `,
+      signal,
+    );
+
+    expect(stdout).toBe("exiting\n");
+    expect(stderr).toContain("File log sink stalled");
   });
 
   it("reports the file failure once and switches to stdout", async ({ signal }) => {

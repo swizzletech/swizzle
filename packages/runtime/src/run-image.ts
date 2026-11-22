@@ -7,7 +7,7 @@ import type { AutomationRuntimeConfig } from "@swizzle/config";
 import { BoundedOutput } from "./bounded-output.js";
 
 import { containerLimitArguments, installDiskLimitMb } from "./container-limits.js";
-import { DockerScope, stackLabel, workerLabel } from "./docker-cli.js";
+import { DockerDeadlineError, DockerScope, stackLabel, workerLabel } from "./docker-cli.js";
 import { AutomationRuntimeError, getErrorMessage } from "./errors.js";
 import {
   egressProxyEnvironment,
@@ -286,7 +286,11 @@ async function containerId(name: string): Promise<string | null> {
 async function assembleOnce(input: AssemblyInput): Promise<void> {
   const { install } = input.recipe;
   const name = assemblyContainer(input.tag);
-  const owner = new DockerScope({ timeoutMs: ASSEMBLY_TIMEOUT_MS, containerName: name });
+  const owner = new DockerScope({
+    timeoutMs: ASSEMBLY_TIMEOUT_MS,
+    deadlineKind: "assembly",
+    containerName: name,
+  });
   const docker = (args: readonly string[], deadline: "control" | "transfer" = "control") =>
     owner.run(args, { outputLimitBytes: 64 * 1_024, deadline });
   let toolDirectory: string | null = null;
@@ -399,7 +403,13 @@ async function runInstallStep(
       (error: unknown) => error,
     )
     .finally(() => finished.abort());
-  const [installError, sampledLayerBytes] = await Promise.all([installation, guard]);
+  const [installError, sampledLayerBytes] = await Promise.all([
+    installation,
+    guard.catch((error: unknown) => {
+      if (error instanceof DockerDeadlineError && error.kind === "assembly") return null;
+      throw error;
+    }),
+  ]);
   const layerBytes =
     sampledLayerBytes ?? (installError === null ? await writableLayerBytes(name, owner) : null);
   if (layerBytes !== null && layerBytes > limitBytes) {
@@ -409,8 +419,7 @@ async function runInstallStep(
   }
   if (installError !== null) {
     const deadline =
-      installError instanceof AutomationRuntimeError &&
-      installError.code === "DOCKER_CONTROL_TIMEOUT";
+      installError instanceof DockerDeadlineError && installError.kind === "assembly";
     if (!deadline && installError instanceof AutomationRuntimeError) throw installError;
     if (!deadline && !(await exitedNonZero(name, owner))) {
       throw new Error(

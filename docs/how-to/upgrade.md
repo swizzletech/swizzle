@@ -30,7 +30,7 @@ If `.env` sets `SWIZZLE_RUNNER_APT_PACKAGES`, image preparation builds a runner 
 
 After image preparation, the recipe stops the API, scheduler, and worker so the database and artifacts are captured together. It stores the backup and a copy of `.env` in a private directory under the checkout's Git directory. Keep that directory until you have checked the upgraded instance.
 
-After backup, the recipe checks out the release, updates `.env`, and starts the prepared images without pulling or building. Compose applies migrations through its `migrate` service before starting the API. The recipe waits for `/health` to report the version from the new code, then prints the old and new commits and the backup path. The checkout stays detached at the release commit. Use `just stack` to apply later configuration changes with that release's image selection.
+After backup, the recipe checks out the release, updates `.env`, and starts the prepared images without pulling or building. Compose applies migrations through its `migrate` service before starting the API. Once Compose reports the stack healthy, the recipe reads the API’s `/health` endpoint once, checks the running version against the release, and prints the old and new commits and the backup path. The checkout stays detached at the release commit. Use `just stack` to apply later configuration changes with that release's image selection.
 
 ### If your installed release predates image preparation
 
@@ -58,7 +58,7 @@ cosign verify "ghcr.io/swizzletech/swizzle-api:$VERSION" \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-Use a version with published images. Repeat the command for each `swizzle-<service>` image listed by `just image-plan "$VERSION" images.json`. The plan derives the list from the packaged Compose stack, including the backup and runner images. A successful verification reports the signed digest. Inspect the attached provenance with `docker buildx imagetools inspect "ghcr.io/swizzletech/swizzle-api:$VERSION" --format '{{json .Provenance.SLSA}}'`.
+Use a version with published images. Repeat the command for each `swizzle-<service>` image listed by `just image-plan "$VERSION" images.json`. The plan uses the build context, Dockerfile, target, and build arguments from the packaged Compose stack, just as source builds do. Published dashboard images use `/api`. A custom dashboard API URL triggers a local dashboard build. Image preparation stops and names any unsupported Compose build field. A successful verification reports the signed digest. Inspect the attached provenance with `docker buildx imagetools inspect "ghcr.io/swizzletech/swizzle-api:$VERSION" --format '{{json .Provenance.SLSA}}'`.
 
 ## Check the result
 

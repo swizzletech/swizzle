@@ -23,7 +23,35 @@ const REMOVE_ATTEMPTS = 3;
 const REMOVE_RETRY_MS = 1_000;
 
 export const DOCKER_DEADLINES = { control: 5_000, transfer: 60_000 } as const;
-type DockerDeadline = keyof typeof DOCKER_DEADLINES;
+type CommandDeadline = keyof typeof DOCKER_DEADLINES;
+type DeadlineKind = CommandDeadline | "assembly";
+
+interface Deadline {
+  readonly kind: DeadlineKind;
+  readonly signal: AbortSignal;
+}
+
+export class DockerDeadlineError extends AutomationRuntimeError {
+  constructor(
+    readonly kind: DeadlineKind,
+    command: string,
+  ) {
+    const code =
+      kind === "transfer"
+        ? "DOCKER_TRANSFER_TIMEOUT"
+        : kind === "control"
+          ? "DOCKER_CONTROL_TIMEOUT"
+          : "CONTAINER_RUNTIME_UNAVAILABLE";
+    super(
+      code,
+      `docker ${command} stopped: ${kind === "assembly" ? "Docker assembly deadline exceeded" : `${code}: Docker deadline exceeded`}`,
+    );
+  }
+}
+
+function commandDeadline(kind: CommandDeadline): Deadline {
+  return { kind, signal: AbortSignal.timeout(DOCKER_DEADLINES[kind]) };
+}
 
 const scopes = new Set<DockerScope>();
 const PROCESS_LABEL = "swizzle.sandbox-process";
@@ -42,6 +70,8 @@ interface DockerOutputOptions {
 
 export class DockerScope {
   readonly signal: AbortSignal;
+  private readonly ownerDeadline: AbortSignal;
+  private readonly ownerDeadlineKind: "assembly" | undefined;
   private readonly controller = new AbortController();
   private readonly commands = new Set<Promise<unknown>>();
   private image: string | null = null;
@@ -50,15 +80,18 @@ export class DockerScope {
 
   constructor(input: {
     readonly timeoutMs: number;
+    readonly deadlineKind?: "assembly";
     readonly signal?: AbortSignal;
     readonly containerName: string | null;
   }) {
     if (closed) {
       throw new AutomationRuntimeError("CONTAINER_RUNTIME_UNAVAILABLE", "Docker is shutting down.");
     }
+    this.ownerDeadlineKind = input.deadlineKind;
+    this.ownerDeadline = AbortSignal.timeout(input.timeoutMs);
     this.signal = AbortSignal.any([
       this.controller.signal,
-      AbortSignal.timeout(input.timeoutMs),
+      this.ownerDeadline,
       ...(input.signal === undefined ? [] : [input.signal]),
     ]);
     this.container = input.containerName;
@@ -71,14 +104,19 @@ export class DockerScope {
 
   run(
     args: readonly string[],
-    options: DockerOutputOptions & { readonly deadline?: DockerDeadline },
+    options: DockerOutputOptions & { readonly deadline?: CommandDeadline },
   ): Promise<DockerOutcome> {
-    const deadline = options.deadline ?? (args[0] === "create" ? "transfer" : "control");
-    return this.command(
-      args,
-      options,
-      AbortSignal.any([this.signal, AbortSignal.timeout(DOCKER_DEADLINES[deadline])]),
-      deadline,
+    const kind = options.deadline ?? (args[0] === "create" ? "transfer" : "control");
+    return this.track(
+      runDocker(
+        args,
+        options,
+        [
+          { kind: this.ownerDeadlineKind ?? kind, signal: this.ownerDeadline },
+          commandDeadline(kind),
+        ],
+        this.signal,
+      ),
     );
   }
 
@@ -87,7 +125,14 @@ export class DockerScope {
   }
 
   attachInstall(name: string, options: DockerOutputOptions): Promise<DockerOutcome> {
-    return this.command(["start", "--attach", name], options, this.signal);
+    return this.track(
+      runDocker(
+        ["start", "--attach", name],
+        options,
+        [{ kind: "assembly", signal: this.ownerDeadline }],
+        this.signal,
+      ),
+    );
   }
 
   ownImage(image: string): void {
@@ -107,15 +152,6 @@ export class DockerScope {
     return this.closing;
   }
 
-  private command(
-    args: readonly string[],
-    options: DockerOutputOptions,
-    signal: AbortSignal,
-    deadline: DockerDeadline = "control",
-  ): Promise<DockerOutcome> {
-    return this.track(runDocker(args, options, signal, deadline));
-  }
-
   private track<T>(command: Promise<T>): Promise<T> {
     this.commands.add(command);
     void command.then(
@@ -133,11 +169,9 @@ export class DockerScope {
         this.container === null ? undefined : removeContainer(this.container),
         this.image === null
           ? undefined
-          : runDocker(
-              ["image", "rm", this.image],
-              { outputLimitBytes: 4096 },
-              AbortSignal.timeout(DOCKER_DEADLINES.control),
-            ).catch(() => undefined),
+          : runDocker(["image", "rm", this.image], { outputLimitBytes: 4096 }, [
+              commandDeadline("control"),
+            ]).catch(() => undefined),
       ]);
     } finally {
       scopes.delete(this);
@@ -153,10 +187,26 @@ export async function closeDockerScopes(): Promise<void> {
 async function runDocker(
   args: readonly string[],
   options: DockerOutputOptions,
-  signal: AbortSignal,
-  deadline: DockerDeadline = "control",
+  deadlines: readonly Deadline[],
+  owner?: AbortSignal,
 ): Promise<DockerOutcome> {
-  if (signal.aborted) throw dockerAbortError(args, signal, deadline);
+  const signal = AbortSignal.any([
+    ...(owner === undefined ? [] : [owner]),
+    ...deadlines.map((deadline) => deadline.signal),
+  ]);
+  const abortError = () => {
+    const command = args[0] ?? "command";
+    const deadline = deadlines.find(
+      ({ signal: clock }) => clock.aborted && clock.reason === signal.reason,
+    );
+    return deadline === undefined
+      ? new AutomationRuntimeError(
+          "CONTAINER_RUNTIME_UNAVAILABLE",
+          `docker ${command} stopped: ${getErrorMessage(signal.reason)}`,
+        )
+      : new DockerDeadlineError(deadline.kind, command);
+  };
+  if (signal.aborted) throw abortError();
   return await new Promise((resolve, reject) => {
     const child = spawn("docker", [...args], {
       detached: process.platform !== "win32",
@@ -189,7 +239,7 @@ async function runDocker(
         () => {
           signal.removeEventListener("abort", abort);
           if (signal.aborted) {
-            reject(dockerAbortError(args, signal, deadline));
+            reject(abortError());
           } else if (output.stoppedByRequest || exitCode === 0)
             resolve({ exitCode, signal: exitSignal, stderr: output.stderr, stdout: output.stdout });
           else
@@ -220,27 +270,12 @@ export function killDockerProcess(child: ChildProcess): void {
   child.stderr?.destroy();
 }
 
-function dockerAbortError(
-  args: readonly string[],
-  signal: AbortSignal,
-  deadline: DockerDeadline,
-): AutomationRuntimeError {
-  const timeout = signal.reason instanceof Error && signal.reason.name === "TimeoutError";
-  const code = deadline === "transfer" ? "DOCKER_TRANSFER_TIMEOUT" : "DOCKER_CONTROL_TIMEOUT";
-  return new AutomationRuntimeError(
-    timeout ? code : "CONTAINER_RUNTIME_UNAVAILABLE",
-    `docker ${args[0] ?? "command"} stopped: ${timeout ? `${code}: Docker deadline exceeded` : getErrorMessage(signal.reason)}`,
-  );
-}
-
 async function removeContainer(name: string): Promise<void> {
   for (let attempt = 1; ; attempt += 1) {
     try {
-      await runDocker(
-        ["rm", "--force", name],
-        { outputLimitBytes: 4096 },
-        AbortSignal.timeout(DOCKER_DEADLINES.control),
-      );
+      await runDocker(["rm", "--force", name], { outputLimitBytes: 4096 }, [
+        commandDeadline("control"),
+      ]);
       return;
     } catch (error) {
       if (/no such container/iu.test(getErrorMessage(error))) return;
@@ -261,7 +296,7 @@ export async function removeAbandonedContainers(): Promise<void> {
       `{{.Names}} {{.State}} {{.Label "${PROCESS_LABEL}"}}`,
     ],
     { outputLimitBytes: 1_048_576 },
-    AbortSignal.timeout(DOCKER_DEADLINES.control),
+    [commandDeadline("control")],
   );
   for (const line of listed.stdout.split("\n")) {
     const [name = "", state, owner] = line.trim().split(" ");
@@ -303,7 +338,7 @@ export async function removeLeftoverContainers(): Promise<number> {
       await runDocker(
         ["ps", ...(all ? ["--all"] : []), "--filter", `label=${label}`, "--format", format],
         { outputLimitBytes: 1_048_576 },
-        AbortSignal.timeout(DOCKER_DEADLINES.control),
+        [commandDeadline("control")],
       )
     ).stdout
       .split("\n")

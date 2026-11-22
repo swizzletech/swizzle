@@ -61,7 +61,7 @@ just worker /private/path/worker.env
 
 The command uses Docker's selected context, checks for a Linux amd64 or arm64 engine, builds native images and waits for service health. If it cannot reach the engine, start your Docker runtime and check `docker context show`. Remove a conflicting `DOCKER_DEFAULT_PLATFORM` setting. The broker mounts `/var/run/docker.sock` inside the engine, so do not replace it with your macOS client's socket path.
 
-The worker stack defaults to two CPUs for the worker process, capped at the Docker host's CPU count, and one CPU per run. If `SWIZZLE_WORKER_CPUS` or `SWIZZLE_MAX_RUN_CPUS` exceeds that count, `just worker` stops before the image build and names the setting.
+The worker stack defaults to two CPUs for the worker process, capped at the Docker host's CPU count, and one CPU per run. Shell values take precedence over values in the credential file. If the effective `SWIZZLE_WORKER_CPUS` or `SWIZZLE_MAX_RUN_CPUS` exceeds the host’s CPU count, `just worker` stops before the image build and names the setting.
 
 The stack copies the enrollment credential into its private `worker-credentials` volume once. The worker renews its token automatically during its last seven days of validity, including at startup after time offline. Renewal survives a dropped response and stores the replacement in that volume with mode 0600. Keep the volume across restarts. The original `/private/path/worker.env` remains a bootstrap file; it does not receive later tokens. Do not start two stacks from the same worker credential.
 
