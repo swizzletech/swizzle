@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import { DEFAULT_PROJECT_ID } from "@swizzle/db";
+import { createPostgresDispatchStore } from "@swizzle/db/postgres";
 
 import { describe, expect, it, vi } from "vitest";
 
@@ -17,6 +18,7 @@ import {
   processRunNotifications,
   sendApiAlert,
 } from "./notifications.js";
+import { processRunTerminalEffects } from "./run-lifecycle.js";
 
 const READER = "00000000-0000-4000-8000-0000000000aa";
 
@@ -482,6 +484,9 @@ describe("platform notifications", () => {
         });
       }
       expect((await platform.getPlatformRun(cancelled.runId)).deadLetterReason).toBe(cancelReason);
+      await createPostgresDispatchStore({ client: testDatabase() }).drainTerminals((run, store) =>
+        processRunTerminalEffects({ run, store }),
+      );
       expect(await platform.listNotificationDeliveries({ environment: "local" })).toEqual([]);
       for (const [index, reason] of ["retries-exhausted", "terminal-failure"].entries()) {
         const { runId } = await start();

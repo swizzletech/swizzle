@@ -722,6 +722,7 @@ export async function cancelRun(
         errorMessage,
         finishedAt,
         status: "dead-lettered",
+        terminalPending: true,
         updatedAt: finishedAt,
         wait: null,
       })

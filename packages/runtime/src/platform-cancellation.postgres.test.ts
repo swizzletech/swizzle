@@ -6,13 +6,16 @@ import { createServer, type ServerResponse } from "node:http";
 
 import path from "node:path";
 
+import { createPostgresDispatchStore } from "@swizzle/db/postgres";
 import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { testPlatform } from "../../../test/platform.js";
+import { testDatabase } from "../../../test/postgres.js";
 
 import { temporaryDirectory, waitFor } from "../../../test/support.js";
 
 import { createAutomationFixture } from "../test/platform-harness.js";
+import { processRunTerminalEffects } from "./run-lifecycle.js";
 
 describe("platform cancellation", () => {
   it("rejects a late suspension report after the parent is cancelled", async ({ signal }) => {
@@ -86,16 +89,22 @@ describe("platform cancellation", () => {
     expect((await platform.getPlatformRun(parentRun.runId)).status).toBe("dead-lettered");
   });
 
-  it("cancels a waiting parent and its non-terminal child without resurrecting the parent", async () => {
+  async function startWaitingFamily(descendantCount = 1) {
+    const client = testDatabase();
     const stateDirectory = await temporaryDirectory("swizzle-platform-");
 
     const platform = await testPlatform({
       artifactsDirectory: path.join(stateDirectory, "artifacts"),
+      client,
     });
     const childWaitUntil = "2031-01-01T00:00:00.000Z";
     const childDirectory = await createAutomationFixture({
       mainJs: [
-        `process.stdout.write(JSON.stringify({ $swizzle: { suspend: { reason: 'sleep', stepKey: 'child-sleep', until: '${childWaitUntil}' } } }) + '\\n');`,
+        "const { remaining } = JSON.parse(require('node:fs').readFileSync(0, 'utf8'));",
+        "const suspend = remaining > 0",
+        "  ? { reason: 'child', stepKey: 'nested-child', automation: 'cancelled-child', payload: { remaining: remaining - 1 } }",
+        `  : { reason: 'sleep', stepKey: 'child-sleep', until: '${childWaitUntil}' };`,
+        "console.log(JSON.stringify({ $swizzle: { suspend } }));",
         "",
       ].join("\n"),
       name: "cancelled-child",
@@ -107,7 +116,7 @@ describe("platform cancellation", () => {
         "  reason: 'child',",
         "  stepKey: 'child-wait',",
         "  automation: 'cancelled-child',",
-        "  payload: { ok: true },",
+        `  payload: { remaining: ${descendantCount - 1} },`,
         "} } }) + '\\n');",
         "",
       ].join("\n"),
@@ -134,13 +143,29 @@ describe("platform cancellation", () => {
     await platform.processNextPlatformRun();
     const waitingParent = await platform.getPlatformRun(parentRun.runId);
     expect(waitingParent).toMatchObject({ status: "waiting", wait: { reason: "child" } });
-    const waitingChild = await platform.processNextPlatformRun();
-    expect(waitingChild).toMatchObject({
-      parentRunId: parentRun.runId,
-      status: "waiting",
+    const descendants = [];
+    for (let depth = 1; depth <= descendantCount; depth++) {
+      const child = await platform.processNextPlatformRun();
+      if (child === null) throw new Error("Missing child run");
+      expect(child).toMatchObject({ invokeDepth: depth, status: "waiting" });
+      descendants.push(child);
+    }
+    const [waitingChild] = descendants;
+    if (waitingChild === undefined) throw new Error("Missing child run");
+    expect(waitingChild.parentRunId).toBe(parentRun.runId);
+    expect(descendants.at(-1)).toMatchObject({
       wait: { reason: "sleep", until: childWaitUntil },
     });
 
+    const drain = () =>
+      createPostgresDispatchStore({ client }).drainTerminals((run, store) =>
+        processRunTerminalEffects({ run, store }),
+      );
+    return { childWaitUntil, descendants, drain, parentRun, platform, waitingChild };
+  }
+
+  it("cancels a waiting parent and its non-terminal child without resurrecting the parent", async () => {
+    const { childWaitUntil, drain, parentRun, platform, waitingChild } = await startWaitingFamily();
     const cancelResult = await platform.cancelPlatformRun(parentRun.runId);
     expect(cancelResult.alreadyTerminal).toBe(false);
     expect(cancelResult.run).toMatchObject({
@@ -149,8 +174,9 @@ describe("platform cancellation", () => {
       wait: null,
     });
 
+    await drain();
     expect(await platform.processNextPlatformRun()).toBeNull();
-    const cancelledChild = await platform.getPlatformRun(waitingChild?.runId ?? "");
+    const cancelledChild = await platform.getPlatformRun(waitingChild.runId);
     expect(cancelledChild).toMatchObject({
       deadLetterReason: "parent-cancelled",
       errorCode: "RUN_CANCELLED",
@@ -173,6 +199,57 @@ describe("platform cancellation", () => {
       wait: null,
     });
     expect(cancelledParent.resumeCount).toBe(0);
+  });
+
+  it("resumes the waiting parent when its child is cancelled directly", async () => {
+    const { drain, parentRun, platform, waitingChild } = await startWaitingFamily();
+    expect(await platform.cancelPlatformRun(waitingChild.runId)).toMatchObject({
+      alreadyTerminal: false,
+      run: { deadLetterReason: "user-cancelled" },
+    });
+
+    await drain();
+
+    expect(await platform.getPlatformRun(parentRun.runId)).toMatchObject({
+      status: "queued",
+      resumeCount: 1,
+      wait: null,
+    });
+    expect(await platform.store.listRunSteps({ runId: parentRun.runId })).toMatchObject([
+      {
+        stepKey: "child-wait",
+        value: { status: "dead-lettered", errorCode: "RUN_CANCELLED" },
+      },
+    ]);
+  });
+
+  it("recovers child cancellation after the parent commits and the process exits", async () => {
+    const { descendants, drain, parentRun, platform } = await startWaitingFamily(8);
+    const cancelRun = platform.store.cancelRun;
+    const exited = new Error("process exited after committing cancellation");
+    const crash = vi.spyOn(platform.store, "cancelRun").mockImplementationOnce(async (input) => {
+      await cancelRun(input);
+      throw exited;
+    });
+    await expect(platform.cancelPlatformRun(parentRun.runId)).rejects.toBe(exited);
+    crash.mockRestore();
+    expect(await platform.getPlatformRun(parentRun.runId)).toMatchObject({
+      deadLetterReason: "user-cancelled",
+    });
+    for (const child of descendants) {
+      expect(await platform.getPlatformRun(child.runId)).toMatchObject({ status: "waiting" });
+    }
+
+    for (const _child of descendants) await drain();
+
+    for (const child of descendants) {
+      expect(await platform.getPlatformRun(child.runId)).toMatchObject({
+        deadLetterReason: "parent-cancelled",
+        errorCode: "RUN_CANCELLED",
+        status: "dead-lettered",
+        wait: null,
+      });
+    }
   });
 
   it("records which approval was cancelled without keeping the wait open", async () => {
