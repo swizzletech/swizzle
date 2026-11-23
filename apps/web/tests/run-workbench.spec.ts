@@ -136,7 +136,7 @@ test("the live refresh leaves 30 loaded pages in place and requests only the new
   await page.goto("/runs");
 
   const rows = page.getByTestId("run-row");
-  const older = page.getByRole("button", { name: "Load older runs" });
+  const older = page.getByTestId("run-list-end").getByRole("button", { name: "Load older runs" });
   const expectLoaded = async (count: number) => {
     await expect
       .poll(async () => {

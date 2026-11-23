@@ -5,7 +5,6 @@ import {
   deploymentChanges,
   placementInWords,
   type RunPlacement,
-  runState,
   type StoredRun,
 } from "@swizzle/db";
 import { enqueueDueChecks } from "./api-checks.js";
@@ -29,7 +28,7 @@ import {
   listPlatformConnections,
   resolvePlatformConnectionToken,
 } from "./platform-connections.js";
-import type { CancelRunResult, PlatformReadinessReport } from "./platform-records.js";
+import type { PlatformReadinessReport } from "./platform-records.js";
 import {
   deletePlatformSecret,
   getPlatformSecret,
@@ -106,22 +105,6 @@ export function createPlatformServiceFacade(
   options: CreatePlatformServiceFacadeOptions,
 ): PlatformServices {
   const { queue, store } = options;
-  const cancelRunRecursively = async (runId: string, depth = 0): Promise<CancelRunResult> => {
-    const result = await store.cancelRun({
-      cause: depth === 0 ? "user" : "parent",
-      runId,
-      finishedAt: new Date().toISOString(),
-    });
-    if (!result.alreadyTerminal) await options.onRunCancelled?.(runId);
-    if (depth < 8 && runState(result.run) === "cancelled") {
-      const children = await store.listChildRuns({ parentRunId: runId });
-      for (const child of children) {
-        await cancelRunRecursively(child.runId, depth + 1);
-      }
-    }
-    return result;
-  };
-
   return {
     runnerImageChecks: options.runnerImageChecks ?? createRunnerImageChecks(),
     beginConnectionAuthorization: async (authorizeOptions) => {
@@ -182,7 +165,15 @@ export function createPlatformServiceFacade(
 
     credentials: store,
 
-    cancelPlatformRun: async (runId) => await cancelRunRecursively(runId),
+    cancelPlatformRun: async (runId) => {
+      const result = await store.cancelRun({
+        cause: "user",
+        runId,
+        finishedAt: new Date().toISOString(),
+      });
+      if (!result.alreadyTerminal) await options.onRunCancelled?.(runId);
+      return result;
+    },
 
     checkReadiness: async () => {
       return await options.checkReadiness();

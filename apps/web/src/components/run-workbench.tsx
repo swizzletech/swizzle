@@ -133,7 +133,7 @@ function RunList(props: {
           </section>
         ))}
       </div>
-      <div className="list-end">
+      <div className="list-end" data-testid="run-list-end">
         {pages.complete ? null : (
           <button
             className="btn quiet small"

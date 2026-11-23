@@ -147,3 +147,43 @@ it("rolls back a lifecycle child when the surrounding transaction fails", async 
   ).rejects.toBe(failure);
   expect(await store.listQueuedRuns({})).toEqual([]);
 });
+
+it("skips chains for cancellation and fires them for a dead-lettered failure", async () => {
+  const client = testDatabase();
+  const platform = await testPlatform({ client });
+  const { store } = platform;
+  const source = await commitDeploymentFixture(store, "chain-source");
+  for (const on of ["finished", "dead-lettered"] as const) {
+    await commitDeploymentFixture(store, `on-${on}`, DEFAULT_PROJECT_ID, source.environment, [], {
+      type: "chain",
+      source: "chain-source",
+      on,
+      payload: "result",
+    });
+  }
+  const drain = () =>
+    createPostgresDispatchStore({ client }).drainTerminals((run, scopedStore) =>
+      processRunTerminalEffects({ run, store: scopedStore }),
+    );
+  const cancelledId = randomUUID();
+  await createQueuedRun(store, source, cancelledId, cancelledId, {});
+  expect(await platform.cancelPlatformRun(cancelledId)).toMatchObject({
+    run: { deadLetterReason: "user-cancelled" },
+  });
+  await drain();
+  expect(await store.listQueuedRuns({})).toEqual([]);
+
+  const failedId = randomUUID();
+  await createQueuedRun(store, source, failedId, failedId, {});
+  await store.updateRunState({
+    runId: failedId,
+    status: "dead-lettered",
+    deadLetterReason: "terminal-failure",
+  });
+  await store.markRunTerminalPending(failedId);
+  await drain();
+  expect((await store.listQueuedRuns({})).map((run) => run.automationName).sort()).toEqual([
+    "on-dead-lettered",
+    "on-finished",
+  ]);
+});
