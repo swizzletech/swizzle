@@ -10,14 +10,14 @@ catalog:
   "@types/node": ^26.6.6
   "@types/pg": ^8.23.1
   bullmq: ^6.7.8
-  fast-check: ^4.10.3
+  fast-check: ^4.11.0
   fastify: ^5.12.8
   pg: ^8.23.1
   pino: ^10.4.0
   tar: ^7.5.23
   tsx: ^4.23.15
-  # Held on 6: dependency-cruiser 18.7 parses TypeScript through its compiler API (>=2 <7),
-  # which TypeScript 7 no longer ships.
+  # Held on 6: TypeScript 7.0 lacks the compiler APIs dependency-cruiser needs.
+  # dependency-cruiser 18.9 supports the native compiler API from TypeScript 7.1.
   typescript: ^6.0.3
   yaml: ^2.9.1
   zod: ^4.6.7
