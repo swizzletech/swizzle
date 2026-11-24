@@ -3,6 +3,51 @@
 Each release lists changes for people who run Swizzle and write automations.
 Versions follow Semantic Versioning. Tags use `vX.Y.Z`; pre-releases use `X.Y.Z-rc.N`.
 
+## 1.4.0
+
+### Added
+
+- Run records now include the derived `state` alongside the stored `status`. Direct cancellations and cancellations caused by a parent run have state `cancelled` and stored status `dead-lettered`. Use `swizzle runs list --state` or the dashboard API's `GET /dashboard/runs?state=cancelled` to filter by outcome. Use `--status` or the API's `status` parameter to filter by stored status.
+- Run details retain `cancelledWaitStepKey` when cancellation closes a wait. Play and the Runs track show the reached station and its incoming lane.
+
+### Changed
+
+- The CLI shows the run state in its default output and reports cancelled runs separately in its statistics. Cancellations count toward totals and are excluded from the success rate and top errors.
+- The Overview and `GET /dashboard/overview` count runs over the timetable's 24 hourly buckets, including the current partial hour. `last24hFrom` equals `timetable.from`. The failure link lists the top-level failures in that same window. Each timetable row shows up to 24 recent deployment changes in the window.
+- Workers report measured disk overages and unmeasured active images together in Settings, the Overview, and `swizzle worker list`. Upgrade the server before its remote workers. The new server accepts older disk reports. An older server rejects heartbeats that include the new report, so the worker can appear offline.
+- Source builds and published images use the same build settings from Compose. Image preparation names any unsupported build field. A source build keeps its selected image IDs even if a later build moves the local tags.
+- `just upgrade` checks the running API version once Compose reports the new stack healthy. It shows the received health response when it cannot confirm the version. Recovery instructions use the saved Compose configuration and image IDs.
+- Dependencies are updated within their existing major versions, including the agent CLIs bundled in the runner image.
+- The dashboard uses the current Swizzle logo and shows its head alone on narrow screens.
+
+### Fixed
+
+- Cancelling a child run resumes its waiting parent with the child's terminal result. Cancelling a parent closes its open descendants even after an API restart. A child created as its parent finishes is closed with the applicable cancellation reason. Cancelled runs skip chains and failure notifications.
+- Run lists refresh the newest page and reuse older pages already loaded. After a burst leaves a gap, **Load older runs** restarts from the newest page.
+- Replay gives overlapping steps their full recorded durations and keeps the elapsed clock moving forward across item passes. Failed incoming lanes use the failure colour, and vertical branch labels sit clear of curved lanes. API check handoffs describe a dead-lettered failure in plain language.
+- A deployment with an invalid trigger, such as a chain whose source was deleted, is marked not ready in the dashboard and deployment API. Historical versions show their own readiness.
+- `swizzle validate` and `swizzle apply` accept numeric version prefixes, comparisons, and `latest` in recovered `config.yaml` files. Replace other rules in recovered 1.0.4 source before deploying it.
+- CLI commands detect the automation in recovered folders that still contain a saved legacy binary rule, so inspection, logs, deployment history, and the CLI home screen can use the current folder.
+- The CLI validates successful API responses against the data each command needs, including during environment discovery. The request deadline covers the response body. A stalled body reports `API_TIMEOUT`, and a broken connection during the read reports `API_UNREACHABLE`.
+- Project deletion retries if a concurrent deployment adds an automation. If the project's contents change during all three attempts, the API returns retryable HTTP 409 with `PROJECT_CONTENTS_CHANGED`.
+- The scheduler stops admitting new passes when its last acknowledged lease expires or renewal is refused. Passes already admitted can finish.
+- Workers preserve the lease loss reason when renewal is refused or the lease expires. After execution stops, the worker gives output delivery five seconds to make progress and renews that deadline on each acknowledgement. A stalled delivery stops without replacing the original cancellation or timeout reason.
+- Local host runs stop collecting output when an output callback fails and force-stop a process that ignores termination. Container assembly distinguishes Docker command timeouts from the assembly deadline and reports an expired dependency install as `CONTAINER_BUILD_FAILED`.
+- Run image pruning continues when a history read leaves an image unmeasured. It reserves disk for images Docker refuses to remove before keeping older cached images.
+- When a configured log file stalls or fails, Swizzle reports the cause once and sends subsequent logs to stdout. Services can shut down even when a file write stalls.
+- Packaged stacks and remote workers validate the CPU limits Docker will use before building images. Shell values take precedence over values saved in `.env` or the worker credential file.
+- The local development stack keeps its advertised URLs bound through startup and service restarts. `just dev-down` checks process ownership before cleanup and preserves the persistent development database.
+
+### Removed
+
+- PDF tools and fonts ship only in the runner image where deployed automations use them. Service build images omit those packages.
+
+### Security
+
+- Set `SWIZZLE_AUTH_STATUS_RATE_LIMIT` in `.env` to cap dashboard session checks per client address. It defaults to `120/min`. `SWIZZLE_DEPLOYMENT_UPLOAD_RATE_LIMIT` defaults to `30/min` and covers deploys and deployment checks across a person's or service account's tokens and sessions. Both return HTTP 429 with `Retry-After` when the budget runs out. The dashboard keeps its last session status while it waits, and the CLI reports when to retry.
+- The CLI opens only HTTP and HTTPS authorization URLs and keeps the URL separate from the browser launch command on Windows.
+- Authorization headers, artifact paths, worker queue names, and notice and wait links are processed in time proportional to their input length.
+
 ## 1.3.1
 
 ### Changed
@@ -12,7 +57,7 @@ Versions follow Semantic Versioning. Tags use `vX.Y.Z`; pre-releases use `X.Y.Z-
 ### Fixed
 
 - Runs retry transient connection token refresh failures while attempts remain, instead of failing permanently on the first attempt.
-- Recovered `config.yaml` files can use the `latest` binary rule and the stored `runtime.binary_version_matching: numeric-prefix` marker without edits. Validation accepts numeric prefixes, comparisons, and `latest`. Replace other rules in recovered 1.0.4 source before deploying it.
+- Source recovered from a deployment validates and deploys again. The artifact store keeps `config.yaml` as deployed, and validation accepts the `runtime.binary_version_matching: numeric-prefix` that earlier releases stored.
 - Runs a person or a parent run cancelled no longer count toward the repeated-failures alert.
 - CLI commands pointed at the dashboard instead of the API report `INVALID_API_RESPONSE` with the configured URL and its `/api` path instead of crashing. HTTP failures keep their status-based retry hints.
 
